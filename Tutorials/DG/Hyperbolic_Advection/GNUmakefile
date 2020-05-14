@@ -2,10 +2,10 @@
 machine := naphta
 
 ifeq ($(machine),naphta)
-AMREX_HOME ?= /home/vgulizzi/RACE/Projects/2020/amrex
+AMREX_HOME ?= ../../../
 endif
 ifeq ($(machine),cori)
-AMREX_HOME ?= /global/homes/v/vgulizzi/RACE/Projects/2020/amrex
+AMREX_HOME ?= ../../../
 endif
 #######################################################################
 
