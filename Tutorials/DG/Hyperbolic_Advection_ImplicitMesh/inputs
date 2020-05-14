@@ -1,5 +1,5 @@
 # SPACE ###############################################################
-space.is_periodic = 1 1 1
+space.is_periodic = 1 1 1 
 space.coord_sys   = 0
 space.prob_lo     = 0.0 0.0 0.0
 space.prob_hi     = +1.0 +1.0 +1.0
@@ -19,7 +19,7 @@ mesh.max_grid_size = 4 4 4
 mesh.n_time_steps  = 1000
 
 # DISCONTINUOUS GALERKIN METHOD INFO
-dG.phi_space_p       = 1
+dG.phi_space_p       = 3
 dG.space_p           = 2
 dG.time_p            = 2
 # ----------------------------------

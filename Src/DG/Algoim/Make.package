@@ -1,0 +1,5 @@
+CEXE_headers += algoim_tinyvector.hpp algoim_real.hpp algoim_utility.hpp algoim_gaussquad.hpp algoim_boundingbox.hpp algoim_interval.hpp algoim_multiloop.hpp algoim_quad.hpp
+CEXE_sources += 
+
+VPATH_LOCATIONS += $(AMREX_HOME)/Src/DG/Algoim
+INCLUDE_LOCATIONS += $(AMREX_HOME)/Src/DG/Algoim

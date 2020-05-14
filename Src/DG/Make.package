@@ -1,0 +1,5 @@
+CEXE_headers += AMReX_VTK_utils.H AMReX_DG_Quadrature.H AMReX_DG_BasisFunctions.H AMReX_DG_utils.H AMReX_DG_Base.H AMReX_DG_InputReader.H AMReX_DG_ImplicitGeometry.H AMReX_DG_MatrixFactory.H AMReX_DG_RK.H AMReX_DG.H AMReX_DG_Model.H
+CEXE_sources += AMReX_VTK_utils.cpp AMReX_DG_utils.cpp AMReX_DG_Base.cpp AMReX_DG_ImplicitGeometry.cpp
+
+VPATH_LOCATIONS += $(AMREX_HOME)/Src/DG
+INCLUDE_LOCATIONS += $(AMREX_HOME)/Src/DG

@@ -1,0 +1,5 @@
+CEXE_headers += AMReX_blas.H
+CEXE_sources +=
+
+VPATH_LOCATIONS += $(AMREX_HOME)/Src/DG/LinAlg/blas
+INCLUDE_LOCATIONS += $(AMREX_HOME)/Src/DG/LinAlg/blas

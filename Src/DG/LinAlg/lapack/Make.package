@@ -1,0 +1,12 @@
+CEXE_headers += AMReX_lapack.H
+CEXE_sources += ilaenv.cpp dlahr2.cpp dlarfb.cpp dlaexc.cpp dlatrd.cpp \
+                dgetf2.cpp dgetrf.cpp dgetrs.cpp dtrti2.cpp dtrtri.cpp dgetri.cpp \
+                dpotf2.cpp dpotrf.cpp dpotrs.cpp dgebal.cpp dgehd2.cpp dgehrd.cpp \
+                dorg2r.cpp dorgqr.cpp dorghr.cpp dtrexc.cpp dorm2r.cpp dormqr.cpp \
+                dormhr.cpp dtrevc.cpp dgebak.cpp dlasrt.cpp dsterf.cpp dorg2l.cpp \
+                dorgql.cpp dorgtr.cpp dsteqr.cpp dsytd2.cpp dsytrd.cpp dsyev.cpp \
+                dlaqr5.cpp dlaqr2.cpp dlaqr4.cpp dlaqr3.cpp dlaqr0.cpp dhseqr.cpp \
+                dgeev.cpp
+
+VPATH_LOCATIONS += $(AMREX_HOME)/Src/DG/LinAlg/lapack
+INCLUDE_LOCATIONS += $(AMREX_HOME)/Src/DG/LinAlg/lapack
