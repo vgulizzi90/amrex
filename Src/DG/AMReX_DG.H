@@ -185,7 +185,7 @@ public:
                 Real integrand;
 
                 // Data structures used to compute the basis functions
-                DG_mem_sol_space_BFX bf(sp, BF_ptr, AMREX_D_DECL(dBFdXI1_ptr, dBFdXI2_ptr, dBFdXI3_ptr), &iJ[0]);
+                DG_mem_sol_space_BF bf(sp, BF_ptr, AMREX_D_DECL(dBFdXI1_ptr, dBFdXI2_ptr, dBFdXI3_ptr), &iJ[0]);
 
                 // PROJECTION
                 for (int qi = 0; qi < dom_Nq; ++qi)

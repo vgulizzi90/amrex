@@ -384,7 +384,7 @@ struct MatrixFactory
                 BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_lo, BF_hi);
 
                 // Data structures used to compute the basis functions
-                DG_sol_space_BFX bf(BF_lo, BF_hi, sp);
+                DG_sol_space_BF bf(BF_lo, BF_hi, sp);
 
                 // EMPTY ELEMENTS -------------------------------------
                 if (elm_is_empty)
@@ -716,8 +716,8 @@ struct MatrixFactory
                     BF_CELL(&prob_lo[0], &dx[0], pls_i, pls_j, pls_k, pls_etype, pls_BF_lo, pls_BF_hi);
 
                     // Data structures used to compute the basis functions
-                    DG_sol_space_BFX min_bf(min_BF_lo, min_BF_hi, sp);
-                    DG_sol_space_BFX pls_bf(pls_BF_lo, pls_BF_hi, sp);
+                    DG_sol_space_BF min_bf(min_BF_lo, min_BF_hi, sp);
+                    DG_sol_space_BF pls_bf(pls_BF_lo, pls_BF_hi, sp);
 
                     // EMPTY ELEMENT BOUNDARY -------------------------
                     if (elm_bou_is_empty)

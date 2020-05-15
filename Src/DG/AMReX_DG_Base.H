@@ -969,6 +969,89 @@ typedef _algoim_DG_space_BFX_<AMREX_SPACEDIM, DG_PHI_MAX_SPACE_p, DG_PHI_MAX_SPA
 
 
 template<int N, int DG_MAX_p, int DG_MAX_Np>
+class _DG_space_BF_
+{
+private:
+    // VARIABLES
+    const Real * lo;
+    const Real * hi;
+    const int p, Np;
+
+public:
+    Real BF[DG_MAX_Np];
+    AMREX_D_TERM
+    (
+        Real P1[1+DG_MAX_p];,
+        Real P2[1+DG_MAX_p];,
+        Real P3[1+DG_MAX_p];
+    )
+    AMREX_D_TERM
+    (
+        Real dP1[1+DG_MAX_p];,
+        Real dP2[1+DG_MAX_p];,
+        Real dP3[1+DG_MAX_p];
+    )
+    AMREX_D_TERM
+    (
+        Real dBFdx1[DG_MAX_Np];,
+        Real dBFdx2[DG_MAX_Np];,
+        Real dBFdx3[DG_MAX_Np];
+    )
+
+public:
+    // CONSTRUCTOR ====================================================
+    AMREX_GPU_HOST_DEVICE
+    _DG_space_BF_(const Real * lo_, const Real * hi_, const int & p_):
+    lo(lo_), hi(hi_),
+    p(p_),
+    Np(AMREX_D_PICK((1+p_),(1+p_)*(1+p_),(1+p_)*(1+p_)*(1+p_)))
+    {}
+
+    AMREX_GPU_HOST_DEVICE
+    _DG_space_BF_(const int & p_):
+    lo(nullptr), hi(nullptr),
+    p(p_),
+    Np(AMREX_D_PICK((1+p_),(1+p_)*(1+p_),(1+p_)*(1+p_)*(1+p_)))
+    {}
+    // ================================================================
+
+    // MISC ===========================================================
+    AMREX_GPU_HOST_DEVICE
+    void set_support(const Real * lo_, const Real * hi_)
+    {
+        this->lo = lo_;
+        this->hi = hi_;
+    }
+    // ================================================================
+
+    // EVAL THE BASIS FUNCTIONS =======================================
+    AMREX_GPU_HOST_DEVICE
+    void _eval_BF_table_(const Real * x)
+    {
+        AMREX_D_PICK
+        (
+            DG_space_1d_BF_Table_NxL(1, this->p,
+                                     x, this->lo[0], this->hi[0],
+                                     this->P1, this->dP1,
+                                     this->BF, this->dBFdx1);,
+            DG_space_2d_BF_Table_NxL(1, this->p,
+                                     &x[0], &x[1], this->lo, this->hi,
+                                     this->P1, this->dP1, this->P2, this->dP2,
+                                     this->BF, this->dBFdx1, this->dBFdx2);,
+            DG_space_3d_BF_Table_NxL(1, this->p,
+                                     &x[0], &x[1], &x[2], this->lo, this->hi,
+                                     this->P1, this->dP1, this->P2, this->dP2, this->P3, this->dP3,
+                                     this->BF, this->dBFdx1, this->dBFdx2, this->dBFdx3);
+        )
+    }
+    // ================================================================
+};
+
+typedef _DG_space_BF_<AMREX_SPACEDIM, DG_PHI_MAX_SPACE_p, DG_PHI_MAX_SPACE_Np> DG_phi_space_BF;
+typedef _DG_space_BF_<AMREX_SPACEDIM, DG_SOL_MAX_SPACE_p, DG_SOL_MAX_SPACE_Np> DG_sol_space_BF;
+
+
+template<int N, int DG_MAX_p, int DG_MAX_Np>
 class _DG_space_BFX_
 {
 private:
@@ -1013,26 +1096,6 @@ public:
     p(p_),
     Np(AMREX_D_PICK((1+p_),(1+p_)*(1+p_),(1+p_)*(1+p_)*(1+p_))),
     i(i_), j(j_), k(k_), u(u_),
-    sgn(-1.0)
-    {}
-
-    AMREX_GPU_HOST_DEVICE
-    _DG_space_BFX_(const Real * lo_, const Real * hi_, const int & p_):
-    lo(lo_), hi(hi_),
-    fab(Array4<Real>()),
-    p(p_),
-    Np(AMREX_D_PICK((1+p_),(1+p_)*(1+p_),(1+p_)*(1+p_)*(1+p_))),
-    i(-1), j(-1), k(-1), u(-1),
-    sgn(-1.0)
-    {}
-
-    AMREX_GPU_HOST_DEVICE
-    _DG_space_BFX_(const int & p_):
-    lo(nullptr), hi(nullptr),
-    fab(Array4<Real>()),
-    p(p_),
-    Np(AMREX_D_PICK((1+p_),(1+p_)*(1+p_),(1+p_)*(1+p_)*(1+p_))),
-    i(-1), j(-1), k(-1), u(-1),
     sgn(-1.0)
     {}
     
@@ -1161,6 +1224,102 @@ typedef _DG_space_BFX_<AMREX_SPACEDIM, DG_SOL_MAX_SPACE_p, DG_SOL_MAX_SPACE_Np> 
 
 
 template<int N, int DG_MAX_p, int DG_MAX_Np>
+class _DG_MEM_space_BF_
+{
+private:
+    // VARIABLES
+    const int p, Np;
+    const Real * BF_ptr;
+    const Real * dBFdXI1_ptr;
+    const Real * dBFdXI2_ptr;
+    const Real * dBFdXI3_ptr;
+    const Real * iJ;
+
+public:
+    Real BF[DG_MAX_Np];
+    AMREX_D_TERM
+    (
+        Real dBFdx1[DG_MAX_Np];,
+        Real dBFdx2[DG_MAX_Np];,
+        Real dBFdx3[DG_MAX_Np];
+    )
+
+public:
+    // CONSTRUCTOR ====================================================
+    AMREX_GPU_HOST_DEVICE
+    _DG_MEM_space_BF_(const int & p_,
+                      const Real * BF_ptr_, AMREX_D_DECL(const Real * dBFdXI1_ptr_, const Real * dBFdXI2_ptr_, const Real * dBFdXI3_ptr_),
+                      const Real * iJ_):
+    p(p_),
+    Np(AMREX_D_PICK((1+p_),(1+p_)*(1+p_),(1+p_)*(1+p_)*(1+p_))),
+    BF_ptr(BF_ptr_),
+    AMREX_D_DECL
+    (
+        dBFdXI1_ptr(dBFdXI1_ptr_),
+        dBFdXI2_ptr(dBFdXI2_ptr_),
+        dBFdXI3_ptr(dBFdXI3_ptr_)
+    ),
+    iJ(iJ_)
+    {}
+    // ================================================================
+
+    // MISC ===========================================================
+    AMREX_GPU_HOST_DEVICE
+    void set_BF_ptrs(const Real * BF_ptr_)
+    {
+        this->BF_ptr = BF_ptr_;
+        AMREX_D_TERM
+        (
+            this->dBFdXI1_ptr = nullptr;,
+            this->dBFdXI2_ptr = nullptr;,
+            this->dBFdXI3_ptr = nullptr;
+        )
+    }
+    
+    AMREX_GPU_HOST_DEVICE
+    void set_BF_ptrs(const Real * BF_ptr_, AMREX_D_DECL(const Real * dBFdXI1_ptr_, const Real * dBFdXI2_ptr_, const Real * dBFdXI3_ptr_))
+    {
+        this->BF_ptr = BF_ptr_;
+        AMREX_D_TERM
+        (
+            this->dBFdXI1_ptr = dBFdXI1_ptr_;,
+            this->dBFdXI2_ptr = dBFdXI2_ptr_;,
+            this->dBFdXI3_ptr = dBFdXI3_ptr_;
+        )
+    }
+    // ================================================================
+
+    // EVAL THE BASIS FUNCTIONS =======================================
+    AMREX_GPU_HOST_DEVICE
+    void _eval_BF_table_(const int & q)
+    {
+        for (int c = 0; c < (this->Np); ++c)
+        {
+            this->BF[c] = BF_ptr[c+q*(this->Np)];
+            AMREX_D_TERM
+            (
+                this->dBFdx1[c] = dBFdXI1_ptr[c+q*(this->Np)]*(this->iJ[0]);,
+                this->dBFdx2[c] = dBFdXI2_ptr[c+q*(this->Np)]*(this->iJ[1]);,
+                this->dBFdx3[c] = dBFdXI3_ptr[c+q*(this->Np)]*(this->iJ[2]);
+            )
+        }
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void _eval_BF_only_table_(const int & q)
+    {
+        for (int c = 0; c < (this->Np); ++c)
+        {
+            this->BF[c] = BF_ptr[c+q*(this->Np)];
+        }
+    }
+    // ================================================================
+};
+
+typedef _DG_MEM_space_BF_<AMREX_SPACEDIM, DG_SOL_MAX_SPACE_p, DG_SOL_MAX_SPACE_Np> DG_mem_sol_space_BF;
+
+
+template<int N, int DG_MAX_p, int DG_MAX_Np>
 class _DG_MEM_space_BFX_
 {
 private:
@@ -1195,24 +1354,6 @@ public:
     p(p_),
     Np(AMREX_D_PICK((1+p_),(1+p_)*(1+p_),(1+p_)*(1+p_)*(1+p_))),
     i(i_), j(j_), k(k_), u(u_),
-    BF_ptr(BF_ptr_),
-    AMREX_D_DECL
-    (
-        dBFdXI1_ptr(dBFdXI1_ptr_),
-        dBFdXI2_ptr(dBFdXI2_ptr_),
-        dBFdXI3_ptr(dBFdXI3_ptr_)
-    ),
-    iJ(iJ_)
-    {}
-
-    AMREX_GPU_HOST_DEVICE
-    _DG_MEM_space_BFX_(const int & p_,
-                       const Real * BF_ptr_, AMREX_D_DECL(const Real * dBFdXI1_ptr_, const Real * dBFdXI2_ptr_, const Real * dBFdXI3_ptr_),
-                       const Real * iJ_):
-    fab(Array4<Real>()),
-    p(p_),
-    Np(AMREX_D_PICK((1+p_),(1+p_)*(1+p_),(1+p_)*(1+p_)*(1+p_))),
-    i(-1), j(-1), k(-1), u(-1),
     BF_ptr(BF_ptr_),
     AMREX_D_DECL
     (

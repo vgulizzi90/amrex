@@ -1,17 +1,9 @@
 # PATH TO AMREX #######################################################
-machine := naphta
-
-ifeq ($(machine),naphta)
-AMREX_HOME ?= ../../../
-endif
-ifeq ($(machine),cori)
-AMREX_HOME ?= ../../../
-endif
+AMREX_HOME ?= ../../..
 #######################################################################
 
-COMP = gnu
 DEBUG = TRUE
-USE_MPI = TRUE
+USE_MPI = FALSE
 USE_CUDA = FALSE
 
 DIM = 2
