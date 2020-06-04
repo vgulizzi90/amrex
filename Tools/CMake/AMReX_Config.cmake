@@ -48,28 +48,40 @@ function (configure_amrex)
    # Moreover, it will also enforce such standard on all the consuming targets
    #
    set_target_properties(amrex PROPERTIES CXX_EXTENSIONS OFF)
-
    target_compile_features(amrex PUBLIC cxx_std_11)  # minimum: C++11
+
+   if (ENABLE_CUDA AND (CMAKE_VERSION VERSION_GREATER_EQUAL 3.17) )
+       set_target_properties(amrex PROPERTIES CUDA_EXTENSIONS OFF)
+       target_compile_features(amrex PUBLIC cuda_std_11)  # minimum: C++11
+   endif()
+
+   # flags needed for MSVC on Windows
+   target_compile_options(amrex PUBLIC
+       $<$<CXX_COMPILER_ID:MSVC>:/Za;/bigobj;/experimental:preprocessor>)
 
    #
    # Setup OpenMP
    #
    if (ENABLE_OMP)
-      find_package(OpenMP REQUIRED CXX Fortran)
 
-      target_link_libraries(amrex
-         PUBLIC
-         OpenMP::OpenMP_CXX
-         OpenMP::OpenMP_Fortran)
+      find_package(OpenMP REQUIRED)
+      target_link_libraries(amrex PUBLIC OpenMP::OpenMP_CXX)
 
-      set_target_properties(
-         OpenMP::OpenMP_CXX OpenMP::OpenMP_Fortran
-         PROPERTIES
-         IMPORTED_GLOBAL True )
+      # Make imported target "global" so that it can be seen
+      # from other directories in the project.
+      # This is especially useful when get_target_properties_flattened()
+      # (see module AMReXTargetHelpers.cmake) is called to recover dependecy tree info
+      # in projects that use amrex directly in the build (via add_subdirectory()).
+      set_target_properties(OpenMP::OpenMP_CXX PROPERTIES IMPORTED_GLOBAL True )
+
+      if (ENABLE_FORTRAN_INTERFACES OR ENABLE_HYPRE)
+         target_link_libraries(amrex PUBLIC OpenMP::OpenMP_Fortran )
+         set_target_properties(OpenMP::OpenMP_Fortran PROPERTIES IMPORTED_GLOBAL True )
+      endif ()
 
       # We have to manually pass OpenMP flags to host compiler if CUDA is enabled
       # Since OpenMP imported targets are generated only for the Compiler ID in use, i.e.
-      # they do not provide flags for all possible compiler ids, we assume the same compiler used
+      # they do not provide flags for all possible compiler ids, we assume the same compiler use
       # for building amrex will be used to build the application code
       if (ENABLE_CUDA)
          get_target_property(_cxx_omp_flags OpenMP::OpenMP_CXX INTERFACE_COMPILE_OPTIONS)
@@ -99,12 +111,6 @@ function (configure_amrex)
          AMREX_NVCC_VERSION=${CMAKE_CUDA_COMPILER_VERSION}
          AMREX_NVCC_MAJOR_VERSION=${NVCC_VERSION_MAJOR}
          AMREX_NVCC_MINOR_VERSION=${NVCC_VERSION_MINOR} )
-
-      set_target_properties( amrex
-         PROPERTIES
-         CUDA_SEPARABLE_COMPILATION ON      # This adds -dc
-         CUDA_RESOLVE_DEVICE_SYMBOLS OFF
-         )
 
       #
       # Retrieve compile flags for the current configuration

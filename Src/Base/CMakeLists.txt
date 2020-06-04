@@ -54,6 +54,8 @@ target_sources( amrex
    AMReX_Functional.H
    AMReX_Utility.H
    AMReX_Utility.cpp
+   AMReX_FileSystem.H
+   AMReX_FileSystem.cpp
    AMReX_Reduce.H
    AMReX_Scan.H
    AMReX_Partition.H
@@ -76,6 +78,8 @@ target_sources( amrex
    AMReX_ParallelContext.cpp
    AMReX_VisMF.H
    AMReX_VisMF.cpp
+   AMReX_AsyncOut.H
+   AMReX_AsyncOut.cpp
    AMReX_Arena.H
    AMReX_Arena.cpp
    AMReX_BArena.H

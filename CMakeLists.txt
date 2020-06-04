@@ -69,10 +69,24 @@ set( CMAKE_MODULE_PATH ${AMREX_CMAKE_MODULES_PATH} )
 #
 # Provide a default install directory
 #
-if ( CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT )
-   set ( CMAKE_INSTALL_PREFIX "${PROJECT_SOURCE_DIR}/installdir"
-      CACHE PATH "AMReX installation directory" FORCE)
+if ( CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT )
+    set ( CMAKE_INSTALL_PREFIX "${PROJECT_SOURCE_DIR}/installdir"
+          CACHE PATH "AMReX installation directory" FORCE)
 endif ()
+
+message(STATUS "AMReX installation directory: ${CMAKE_INSTALL_PREFIX}")
+
+#
+# Check if CMAKE_BUILD_TYPE is given. If not, use default
+#
+if ( NOT CMAKE_BUILD_TYPE )
+   set(CMAKE_CONFIGURATION_TYPES "Release;Debug;MinSizeRel;RelWithDebInfo")
+   set(CMAKE_BUILD_TYPE Release
+       CACHE STRING
+       "Choose the build type, e.g. Release, Debug, or RelWithDebInfo." FORCE)
+else ()
+   message(STATUS "Build type set by user to '${CMAKE_BUILD_TYPE}'.")
+endif()
 
 #
 # Include options, utilities and other stuff we need

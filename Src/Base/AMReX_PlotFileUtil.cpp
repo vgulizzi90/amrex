@@ -3,6 +3,7 @@
 #include <iomanip>
 
 #include <AMReX_VisMF.H>
+#include <AMReX_AsyncOut.H>
 #include <AMReX_PlotFileUtil.H>
 
 #ifdef AMREX_USE_EB
@@ -83,7 +84,7 @@ WriteGenericPlotfileHeader (std::ostream &HeaderFile,
                             const std::string &levelPrefix,
                             const std::string &mfPrefix)
 {
-        BL_PROFILE("WriteGenericPlotfileHeader()");
+//        BL_PROFILE("WriteGenericPlotfileHeader()");
 
         BL_ASSERT(nlevels <= bArray.size());
         BL_ASSERT(nlevels <= geom.size());
@@ -156,7 +157,8 @@ void
 WriteMultiLevelPlotfile (const std::string& plotfilename, int nlevels,
                          const Vector<const MultiFab*>& mf,
                          const Vector<std::string>& varnames,
-                         const Vector<Geometry>& geom, Real time, const Vector<int>& level_steps,
+                         const Vector<Geometry>& geom, Real time,
+                         const Vector<int>& level_steps,
                          const Vector<IntVect>& ref_ratio,
                          const std::string &versionName,
                          const std::string &levelPrefix,
@@ -173,9 +175,6 @@ WriteMultiLevelPlotfile (const std::string& plotfilename, int nlevels,
 
     int finest_level = nlevels-1;
 
-//    int saveNFiles(VisMF::GetNOutFiles());
-//    VisMF::SetNOutFiles(std::max(1024,saveNFiles));
-
     bool callBarrier(false);
     PreBuildDirectorHierarchy(plotfilename, levelPrefix, nlevels, callBarrier);
     if (!extra_dirs.empty()) {
@@ -186,46 +185,55 @@ WriteMultiLevelPlotfile (const std::string& plotfilename, int nlevels,
     }
     ParallelDescriptor::Barrier();
 
-    if (ParallelDescriptor::IOProcessor()) {
-      VisMF::IO_Buffer io_buffer(VisMF::IO_Buffer_Size);
-      std::string HeaderFileName(plotfilename + "/Header");
-      std::ofstream HeaderFile;
-      HeaderFile.rdbuf()->pubsetbuf(io_buffer.dataPtr(), io_buffer.size());
-      HeaderFile.open(HeaderFileName.c_str(), std::ofstream::out   |
-	                                      std::ofstream::trunc |
-                                              std::ofstream::binary);
-      if( ! HeaderFile.good()) {
-        FileOpenFailed(HeaderFileName);
-      }
+    if (ParallelDescriptor::MyProc() == ParallelDescriptor::NProcs()-1) {
+        Vector<BoxArray> boxArrays(nlevels);
+        for(int level(0); level < boxArrays.size(); ++level) {
+            boxArrays[level] = mf[level]->boxArray();
+        }
 
-      Vector<BoxArray> boxArrays(nlevels);
-      for(int level(0); level < boxArrays.size(); ++level) {
-	boxArrays[level] = mf[level]->boxArray();
-      }
+        auto f = [=]() {
+            VisMF::IO_Buffer io_buffer(VisMF::IO_Buffer_Size);
+            std::string HeaderFileName(plotfilename + "/Header");
+            std::ofstream HeaderFile;
+            HeaderFile.rdbuf()->pubsetbuf(io_buffer.dataPtr(), io_buffer.size());
+            HeaderFile.open(HeaderFileName.c_str(), std::ofstream::out   |
+                                                    std::ofstream::trunc |
+                                                    std::ofstream::binary);
+            if( ! HeaderFile.good()) FileOpenFailed(HeaderFileName);
+            WriteGenericPlotfileHeader(HeaderFile, nlevels, boxArrays, varnames,
+                                       geom, time, level_steps, ref_ratio, versionName,
+                                       levelPrefix, mfPrefix);
+        };
 
-      WriteGenericPlotfileHeader(HeaderFile, nlevels, boxArrays, varnames,
-                                 geom, time, level_steps, ref_ratio, versionName, levelPrefix, mfPrefix);
+        if (AsyncOut::UseAsyncOut()) {
+            AsyncOut::Submit(std::move(f));
+        } else {
+            f();
+        }
     }
-
 
     for (int level = 0; level <= finest_level; ++level)
     {
-        const MultiFab* data;
-        std::unique_ptr<MultiFab> mf_tmp;
-        if (mf[level]->nGrow() > 0) {
-            mf_tmp.reset(new MultiFab(mf[level]->boxArray(),
-                                      mf[level]->DistributionMap(),
-                                      mf[level]->nComp(), 0, MFInfo().SetArena(The_Pinned_Arena()),
-                                      mf[level]->Factory()));
-            MultiFab::Copy(*mf_tmp, *mf[level], 0, 0, mf[level]->nComp(), 0);
-            data = mf_tmp.get();
+        if (AsyncOut::UseAsyncOut()) {
+            VisMF::AsyncWrite(*mf[level],
+                              MultiFabFileFullPrefix(level, plotfilename, levelPrefix, mfPrefix),
+                              true);
         } else {
-            data = mf[level];
+            const MultiFab* data;
+            std::unique_ptr<MultiFab> mf_tmp;
+            if (mf[level]->nGrowVect() != 0) {
+                mf_tmp.reset(new MultiFab(mf[level]->boxArray(),
+                                          mf[level]->DistributionMap(),
+                                          mf[level]->nComp(), 0, MFInfo(),
+                                          mf[level]->Factory()));
+                MultiFab::Copy(*mf_tmp, *mf[level], 0, 0, mf[level]->nComp(), 0);
+                data = mf_tmp.get();
+            } else {
+                data = mf[level];
+            }
+            VisMF::Write(*data, MultiFabFileFullPrefix(level, plotfilename, levelPrefix, mfPrefix));
         }
-	VisMF::Write(*data, MultiFabFileFullPrefix(level, plotfilename, levelPrefix, mfPrefix));
     }
-
-//    VisMF::SetNOutFiles(saveNFiles);
 }
 
 // write a plotfile to disk given:
@@ -325,8 +333,6 @@ WriteMultiLevelPlotfileHeaders (const std::string & plotfilename, int nlevels,
 
 }
 
-
-
 void
 WriteSingleLevelPlotfile (const std::string& plotfilename,
                           const MultiFab& mf, const Vector<std::string>& varnames,
@@ -344,6 +350,7 @@ WriteSingleLevelPlotfile (const std::string& plotfilename,
     WriteMultiLevelPlotfile(plotfilename, 1, mfarr, varnames, geomarr, time,
                             level_steps, ref_ratio, versionName, levelPrefix, mfPrefix, extra_dirs);
 }
+
 
 #ifdef AMREX_USE_EB
 void

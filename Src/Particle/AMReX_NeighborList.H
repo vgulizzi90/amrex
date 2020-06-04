@@ -108,9 +108,13 @@ public:
         m_bins.build(np_total, pstruct_ptr, bx,
                      [=] AMREX_GPU_HOST_DEVICE (const ParticleType& p) noexcept -> IntVect
                      {
-                         return IntVect(AMREX_D_DECL((p.pos(0)-plo[0])*dxi[0] - lo.x,
-                                                     (p.pos(1)-plo[1])*dxi[1] - lo.y,
-                                                     (p.pos(2)-plo[2])*dxi[2] - lo.z));
+                         AMREX_D_TERM(AMREX_ASSERT((p.pos(0)-plo[0])*dxi[0] - lo.x >= 0.0);,
+                                      AMREX_ASSERT((p.pos(1)-plo[1])*dxi[1] - lo.y >= 0.0);,
+                                      AMREX_ASSERT((p.pos(2)-plo[2])*dxi[2] - lo.z >= 0.0));
+                                      
+                         return IntVect(AMREX_D_DECL(static_cast<int>((p.pos(0)-plo[0])*dxi[0] - lo.x),
+                                                     static_cast<int>((p.pos(1)-plo[1])*dxi[1] - lo.y),
+                                                     static_cast<int>((p.pos(2)-plo[2])*dxi[2] - lo.z)));
                      });
 
         // first pass - count the number of neighbors for each particle
@@ -138,7 +142,7 @@ public:
                 for (int jj = amrex::max(iy-num_cells, 0); jj <= amrex::min(iy+num_cells, ny-1); ++jj) {
                     for (int kk = amrex::max(iz-num_cells, 0); kk <= amrex::min(iz+num_cells, nz-1); ++kk) {
                         int index = (ii * ny + jj) * nz + kk;
-                        for (int p = poffset[index]; p < poffset[index+1]; ++p) {
+                        for (auto p = poffset[index]; p < poffset[index+1]; ++p) {
                             if (pperm[p] == i) continue;
                             if (check_pair(pstruct_ptr[i], pstruct_ptr[pperm[p]]))
                                 count += 1;
@@ -179,7 +183,7 @@ public:
                 for (int jj = amrex::max(iy-num_cells, 0); jj <= amrex::min(iy+num_cells, ny-1); ++jj) {
                     for (int kk = amrex::max(iz-num_cells, 0); kk <= amrex::min(iz+num_cells, nz-1); ++kk) {
                         int index = (ii * ny + jj) * nz + kk;
-                        for (int p = poffset[index]; p < poffset[index+1]; ++p) {
+                        for (auto p = poffset[index]; p < poffset[index+1]; ++p) {
                             if (pperm[p] == i) continue;
                             if (check_pair(pstruct_ptr[i], pstruct_ptr[pperm[p]])) {
                                 pm_nbor_list[pnbor_offset[i] + n] = pperm[p]; 

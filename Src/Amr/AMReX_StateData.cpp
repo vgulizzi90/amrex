@@ -2,8 +2,6 @@
 #include <iostream>
 #include <algorithm>
 
-#include <unistd.h>
-
 #include <AMReX_RealBox.H>
 #include <AMReX_StateData.H>
 #include <AMReX_StateDescriptor.H>
@@ -820,13 +818,21 @@ StateData::checkPoint (const std::string& name,
     {
        BL_ASSERT(new_data);
        std::string mf_fullpath_new(fullpathname + NewSuffix);
-       VisMF::Write(*new_data,mf_fullpath_new,how);
+       if (AsyncOut::UseAsyncOut()) {
+           VisMF::AsyncWrite(*new_data,mf_fullpath_new);
+       } else {
+           VisMF::Write(*new_data,mf_fullpath_new,how);
+       }
 
        if (dump_old)
        {
            BL_ASSERT(old_data);
            std::string mf_fullpath_old(fullpathname + OldSuffix);
-           VisMF::Write(*old_data,mf_fullpath_old,how);
+           if (AsyncOut::UseAsyncOut()) {
+               VisMF::AsyncWrite(*old_data,mf_fullpath_old);
+           } else {
+               VisMF::Write(*old_data,mf_fullpath_old,how);
+           }
        }
     }
 }
@@ -853,10 +859,10 @@ StateDataPhysBCFunct::StateDataPhysBCFunct (StateData&sd, int sc, const Geometry
 { }
 
 void
-StateDataPhysBCFunct::FillBoundary (MultiFab& mf, int dest_comp, int num_comp, IntVect const& /* */,
-                                    Real time, int /*bccomp*/)
+StateDataPhysBCFunct::operator() (MultiFab& mf, int dest_comp, int num_comp, IntVect const& /* */,
+                                  Real time, int /*bccomp*/)
 {
-    BL_PROFILE("StateDataPhysBCFunct::FillBoundary");
+    BL_PROFILE("StateDataPhysBCFunct::()");
 
     const Box&     domain      = statedata->getDomain();
     const int*     domainlo    = domain.loVect();

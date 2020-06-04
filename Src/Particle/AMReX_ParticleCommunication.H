@@ -63,9 +63,10 @@ struct ParticleCopyOp
     void resize (const int gid, const int lev, const int size);
 
     int numCopies (const int gid, const int lev) const 
-    { 
+    {
         if (m_boxes.size() <= lev) return 0;
-        return m_boxes[lev].at(gid).size(); 
+        auto mit = m_boxes[lev].find(gid);
+        return mit == m_boxes[lev].end() ? 0 : mit->second.size();
     }
 };
     
@@ -327,8 +328,6 @@ void unpackBuffer (PC& pc, const ParticleCopyPlan& plan, const Buffer& snd_buffe
     using PTile = typename PC::ParticleTileType;
 
     int num_levels = pc.BufferMap().numLevels();
-    int num_buckets = pc.BufferMap().numBuckets();
-
     Long psize = pc.superParticleSize();
 
     // count how many particles we have to add to each tile
@@ -356,7 +355,6 @@ void unpackBuffer (PC& pc, const ParticleCopyPlan& plan, const Buffer& snd_buffe
 
     // local unpack
     int uindex = 0;
-    auto p_dst_box_counts = plan.m_box_counts.dataPtr();
     for (int lev = 0; lev < num_levels; ++lev)
     {       
         auto& plev  = pc.GetParticles(lev);
@@ -514,14 +512,13 @@ void unpackRemotes (PC& pc, const ParticleCopyPlan& plan, Buffer& rcv_buffer, co
     if (NProcs == 1) return;
 
     const int MyProc = ParallelDescriptor::MyProc();
+    amrex::ignore_unused(MyProc);
     using PTile = typename PC::ParticleTileType;
 
     if (plan.m_nrcvs > 0)
     {
         auto p_comm_real = pc.communicate_real_comp.dataPtr();
         auto p_comm_int  = pc.communicate_int_comp.dataPtr();
-
-	auto p_rcv_box_pids = plan.m_rcv_box_pids.dataPtr();
 	auto p_rcv_buffer = rcv_buffer.dataPtr();
 
         std::vector<int> sizes;

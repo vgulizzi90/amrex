@@ -231,12 +231,13 @@ void enforcePeriodic (P& p,
     }
 }
 
-#if defined(AMREX_USE_GPU) && !defined(AMREX_USE_DPCPP)
+#if defined(AMREX_USE_GPU)
 
 template <typename PTile, typename PLocator>
 int
 partitionParticlesByDest (PTile& ptile, const PLocator& ploc, const ParticleBufferMap& pmap,
-                          const Geometry& geom, int lev, int gid, int tid)
+                          const Geometry& geom, int lev, int gid, int tid,
+                          int lev_min, int lev_max, int nGrow)
 {
     const auto plo    = geom.ProbLoArray();
     const auto phi    = geom.ProbHiArray();
@@ -286,7 +287,7 @@ partitionParticlesByDest (PTile& ptile, const PLocator& ploc, const ParticleBuff
                 else
                 {
                     enforcePeriodic(p, plo, phi, is_per);
-                    auto tup = ploc(p);
+                    auto tup = ploc(p, lev_min, lev_max, nGrow);
                     assigned_grid = amrex::get<0>(tup);
                     assigned_lev  = amrex::get<1>(tup);
                 }

@@ -1,4 +1,3 @@
-
 template <int NStructReal, int NStructInt>
 bool NeighborParticleContainer<NStructReal, NStructInt>::use_mask = false;
 
@@ -352,7 +351,7 @@ NeighborParticleContainer<NStructReal, NStructInt>
                 auto& cache = buffer_tag_cache[lev][src_index][thread_num];
 
                 auto& particles = pti.GetArrayOfStructs();
-                for (unsigned i = 0; i < pti.numParticles(); ++i) {
+                for (int i = 0; i < pti.numParticles(); ++i) {
                     const ParticleType& p = particles[i];
 
                     getNeighborTags(tags, p, m_num_neighbor_cells, src_tag, pti);
@@ -615,7 +614,7 @@ template <int NStructReal, int NStructInt>
 void
 NeighborParticleContainer<NStructReal, NStructInt>
 ::fillNeighbors () {
-#ifdef AMREX_USE_CUDA
+#ifdef AMREX_USE_GPU
     fillNeighborsGPU();
 #else
     fillNeighborsCPU();
@@ -628,7 +627,7 @@ void
 NeighborParticleContainer<NStructReal, NStructInt>
 ::sumNeighbors (int real_start_comp, int real_num_comp,
                 int int_start_comp,  int int_num_comp) {
-#ifdef AMREX_USE_CUDA
+#ifdef AMREX_USE_GPU
     amrex::Abort("Not implemented.");
 #else
     sumNeighborsCPU(real_start_comp, real_num_comp, int_start_comp, int_num_comp);
@@ -643,7 +642,7 @@ NeighborParticleContainer<NStructReal, NStructInt>
 
   AMREX_ASSERT(hasNeighbors());
 
-#ifdef AMREX_USE_CUDA
+#ifdef AMREX_USE_GPU
     updateNeighborsGPU();
 #else
     updateNeighborsCPU(true);
@@ -656,7 +655,7 @@ void
 NeighborParticleContainer<NStructReal, NStructInt>
 ::clearNeighbors ()
 {
-#ifdef AMREX_USE_CUDA
+#ifdef AMREX_USE_GPU
     clearNeighborsGPU();
 #else
     clearNeighborsCPU();
@@ -722,7 +721,7 @@ buildNeighborList (CheckPair check_pair, bool sort)
             {
                 auto cnt = counts[i];
                 neighbor_list[lev][index].push_back(cnt);
-                for (int j = 0; j < cnt; ++j)
+                for (size_t j = 0; j < cnt; ++j)
                 {
                     neighbor_list[lev][index].push_back(list[li++]+1);
                 }
