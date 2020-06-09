@@ -55,10 +55,6 @@ function (configure_amrex)
        target_compile_features(amrex PUBLIC cuda_std_11)  # minimum: C++11
    endif()
 
-   # flags needed for MSVC on Windows
-   target_compile_options(amrex PUBLIC
-       $<$<CXX_COMPILER_ID:MSVC>:/Za;/bigobj;/experimental:preprocessor>)
-
    #
    # Setup OpenMP
    #
@@ -102,16 +98,6 @@ function (configure_amrex)
 
 
    if (ENABLE_CUDA)
-      # After we load the setups for ALL the supported compilers
-      # we can load the setup for NVCC if required
-      # This is necessary because we need to know the C++ flags
-      # to pass to the Xcompiler option.
-      target_compile_definitions( amrex
-         PUBLIC
-         AMREX_NVCC_VERSION=${CMAKE_CUDA_COMPILER_VERSION}
-         AMREX_NVCC_MAJOR_VERSION=${NVCC_VERSION_MAJOR}
-         AMREX_NVCC_MINOR_VERSION=${NVCC_VERSION_MINOR} )
-
       #
       # Retrieve compile flags for the current configuration
       # I haven't find a way to set host compiler flags for all the
@@ -121,7 +107,9 @@ function (configure_amrex)
 
       if (NOT CMAKE_CXX_FLAGS)
          get_target_property( _amrex_flags_2 Flags_CXX INTERFACE_COMPILE_OPTIONS)
-      endif ()
+      endif()
+
+      get_target_property( _amrex_flags_3 Flags_CXX_REQUIRED INTERFACE_COMPILE_OPTIONS)
 
       set(_amrex_flags)
       if (_amrex_flags_1)
@@ -129,6 +117,9 @@ function (configure_amrex)
       endif ()
       if (_amrex_flags_2)
          list(APPEND _amrex_flags ${_amrex_flags_2})
+      endif ()
+      if (_amrex_flags_3)
+         list(APPEND _amrex_flags ${_amrex_flags_3})
       endif ()
 
       evaluate_genex(_amrex_flags _amrex_cxx_flags
@@ -151,35 +142,6 @@ function (configure_amrex)
       endif ()
 
    endif ()
-
-   #
-   # Add compiler version defines
-   #
-   string( REPLACE "." ";" VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
-   list( GET VERSION_LIST 0 COMP_VERSION_MAJOR )
-   list( GET VERSION_LIST 1 COMP_VERSION_MINOR )
-
-   if ( ${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU" )
-
-      if ( CMAKE_CXX_COMPILER_VERSION VERSION_LESS "4.8" )
-         message( WARNING
-            " Your default GCC is version ${CMAKE_CXX_COMPILER_VERSION}. This might break during build. GCC>=4.8 is recommended.")
-      endif ()
-
-      target_compile_definitions( amrex PUBLIC $<BUILD_INTERFACE:
-          BL_GCC_VERSION=${CMAKE_CXX_COMPILER_VERSION}
-          BL_GCC_MAJOR_VERSION=${COMP_VERSION_MAJOR}
-          BL_GCC_MINOR_VERSION=${COMP_VERSION_MINOR}
-          >
-          )
-  elseif ( ${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang" )
-     target_compile_definitions( amrex PUBLIC $<BUILD_INTERFACE:
-          BL_CLANG_VERSION=${CMAKE_CXX_COMPILER_VERSION}
-          BL_CLANG_MAJOR_VERSION=${COMP_VERSION_MAJOR}
-          BL_CLANG_MINOR_VERSION=${COMP_VERSION_MINOR}
-          >
-          )
-  endif ()
 
    if ( ENABLE_PIC OR BUILD_SHARED_LIBS )
       set_target_properties ( amrex PROPERTIES POSITION_INDEPENDENT_CODE True )
