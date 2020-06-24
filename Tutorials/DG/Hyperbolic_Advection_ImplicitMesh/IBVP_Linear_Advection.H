@@ -101,6 +101,8 @@ public:
         {
             // dom = 0
             0, -1,
+
+            // dom = 1
             0, +1
         };
 
@@ -131,7 +133,10 @@ public:
     {
         const int DOM[N_U] =
         {
+            // sol = 0
             0,
+
+            // sol = 1
             1
         };
 
@@ -157,7 +162,10 @@ public:
     {
         const int NBRDOM[N_DOM] =
         {
+            // dom = 0
             1,
+
+            // dom = 1
             0
         };
         

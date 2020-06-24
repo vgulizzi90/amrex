@@ -3,7 +3,7 @@ AMREX_HOME ?= ../../..
 #######################################################################
 
 DEBUG = TRUE
-USE_MPI = FALSE
+USE_MPI = TRUE
 USE_CUDA = FALSE
 
 DIM = 2

@@ -64,7 +64,7 @@ public:
     AMREX_GPU_HOST_DEVICE
     amrex::Real F_U0(const int & u, const amrex::Real * x) const
     {
-        const amrex::Real xc[AMREX_SPACEDIM] = {AMREX_D_DECL(0.5, 0.75, 0.5)};
+        const amrex::Real xc[AMREX_SPACEDIM] = {AMREX_D_DECL(-0.5, 0.75, 0.5)};
 #if (AMREX_SPACEDIM == 2)
         amrex::Real r2 = 100.0*((x[0]-xc[0])*(x[0]-xc[0])+(x[1]-xc[1])*(x[1]-xc[1]));
 #endif
@@ -72,6 +72,7 @@ public:
         amrex::Real r2 = 100.0*((x[0]-xc[0])*(x[0]-xc[0])+(x[1]-xc[1])*(x[1]-xc[1])+(x[2]-xc[2])*(x[2]-xc[2]));
 #endif
         amrex::Real phi0 = std::exp(-r2);
+        //amrex::Real phi0 = std::sin(2.0*M_PI*x[0])*std::sin(2.0*M_PI*x[1]);
 
         return phi0;
     }
@@ -94,7 +95,11 @@ public:
     void F_EXACT(const amrex::Real & t, const amrex::Real * x,
                  amrex::Real * U) const
     {
-        U[0] = this->F_U0(0, x);
+        amrex::Real V[AMREX_SPACEDIM];
+        this->F_V(t, x, V);
+        const amrex::Real y[AMREX_SPACEDIM] = {AMREX_D_DECL(x[0]-V[0]*t, x[1]-V[1]*t, x[2]-V[2]*t)};
+        
+        U[0] = this->F_U0(0, y);
     }
     // ================================================================
 
@@ -237,7 +242,37 @@ public:
                   const amrex::Real * U,
                   AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
     {
+        amrex::Real Ue[N_U];
+        amrex::Real AMREX_D_DECL(F1[N_U], F2[N_U], F3[N_U]);
+        amrex::Real V[AMREX_SPACEDIM], V_dot_un, mu;
 
+        this->F_V(t, x, V);
+        V_dot_un = AMREX_D_PICK(V[0]*un[0], V[0]*un[0]+V[1]*un[1], V[0]*un[0]+V[1]*un[1]+V[2]*un[2]);
+        mu = std::abs(V_dot_un);
+
+        if (V_dot_un > 0.0)
+        {
+            this->F_F(t, x, U, AMREX_D_DECL(F1, F2, F3));
+
+            AMREX_D_TERM
+            (
+                NF1[0] = F1[0];,
+                NF2[0] = F2[0];,
+                NF3[0] = F3[0];
+            )
+        }
+        else
+        {
+            this->F_EXACT(t, x, Ue);
+            this->F_F(t, x, Ue, AMREX_D_DECL(F1, F2, F3));
+
+            AMREX_D_TERM
+            (
+                NF1[0] = F1[0]+mu*(U[0]-Ue[0])*un[0];,
+                NF2[0] = F2[0]+mu*(U[0]-Ue[0])*un[1];,
+                NF3[0] = F3[0]+mu*(U[0]-Ue[0])*un[2];
+            )
+        }
     }
 
     // INTERNAL BOUNDARY
@@ -269,9 +304,13 @@ public:
                amrex::Real * F) const
     {
         // PARAMETERS
+        amrex::Real Ue[N_U];
+
+        this->F_EXACT(t, x, Ue);
 
         // FIELD EXPRESSIONS
         F[0] = U[0];
+        F[1] = U[0]-Ue[0];
     }
     // ================================================================
 };
