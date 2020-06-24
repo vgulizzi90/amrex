@@ -311,8 +311,17 @@ amrex::Print() << "#############################################################
     std::string dst_folder;
 
     ics_type = "ICS_Gaussian";
-    bcs_type = "BCS_periodic";
+    bcs_type = "BCS_io";
     dst_folder = "./IBVP_"+std::to_string(AMREX_SPACEDIM)+"d_Linear_Advection/"+ics_type+"_"+bcs_type+"_"+dG_order+"/";
+
+    if (amrex::ParallelDescriptor::IOProcessor())
+    {
+        if (!amrex::UtilCreateDirectory(dst_folder, 0755))
+        {
+            amrex::CreateDirectoryFailed(dst_folder);
+        }
+    }
+    amrex::ParallelDescriptor::Barrier();
     // ================================================================
 
     // INIT IBVP DATA STRUCTURE =======================================
@@ -330,8 +339,8 @@ amrex::Print() << "#############################################################
     {
         int n = 0;
         amrex::Real time = 0.0;
-        std::vector<int> field_domains = {0};
-        std::vector<std::string> field_names = {"phi"};
+        std::vector<int> field_domains = {0, 0};
+        std::vector<std::string> field_names = {"phi", "err"};
 
         iGeom.Export_VTK_Mesh(dst_folder, "Mesh", n, inputs.mesh.n_time_steps);
         dG.Export_VTK(dst_folder, "Solution", n, inputs.mesh.n_time_steps, field_domains, field_names, time, iGeom, MatFactory, LinAdv);
@@ -356,16 +365,17 @@ amrex::Print() << "# START OF THE ANALYSIS                                      
     {
         // COMPUTE NEXT TIME STEP
         dt = dG.Compute_dt(time+0.5*dt, iGeom, MatFactory, LinAdv);
+        dt = std::min(time+dt, inputs.time.T)-time;
 
         // REPORT TO SCREEN
-amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt << ", time = " << std::min(time+dt, inputs.time.T) << std::endl;
+amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt << ", time = " << time+dt << std::endl;
 
         // TIME STEP
         dG.TakeTimeStep_Hyperbolic(dt, time, iGeom, MatFactory, LinAdv);
 
         // UPDATE TIME AND STEP
         n += 1;
-        time = std::min(time+dt, inputs.time.T);
+        time += dt;
 
         // COMPUTE ERROR
         if (std::abs(time/inputs.time.T-1.0) < 1.0e-12)
@@ -378,12 +388,11 @@ amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std:
         // WRITE TO OUTPUT
         if (inputs.plot_int > 0 && n%inputs.plot_int == 0)
         {
-            std::vector<int> field_domains = {0};
-            std::vector<std::string> field_names = {"phi"};
+            std::vector<int> field_domains = {0, 0};
+            std::vector<std::string> field_names = {"phi", "err"};
 
             dG.Export_VTK(dst_folder, "Solution", n, inputs.mesh.n_time_steps, field_domains, field_names, time, iGeom, MatFactory, LinAdv);
         }
-
     }
     // ----------------------------------------------------------------
 

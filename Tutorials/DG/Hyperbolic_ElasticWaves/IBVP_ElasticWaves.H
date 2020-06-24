@@ -37,7 +37,8 @@ private:
     // PARAMETERS
 
     // VARIABLES
-    amrex::Real C[N_S*N_S];
+    amrex::Real density;
+    amrex::Real C[N_S*N_S], S[N_S*N_S];
 #if (AMREX_SPACEDIM == 2)
     const amrex::Real I1[N_S*N_V] = {1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
     const amrex::Real I2[N_S*N_V] = {0.0, 0.0, 1.0, 0.0, 1.0, 0.0};
@@ -100,6 +101,10 @@ public:
             amrex::Real cI3[N_S*N_V];
         )
         // ------------------------------------------------------------
+
+        // DENSITY ---------
+        this->density = rho;
+        // -----------------
 
         // INITIALIZATION ---------------------------------------------
         std::fill(s3D, s3D+36, 0.0);
@@ -167,6 +172,14 @@ public:
         c2D[0+0*3] = c3D[0+0*6]; c2D[0+1*3] = c3D[0+1*6]; c2D[0+2*3] = c3D[0+5*6];
         c2D[1+0*3] = c3D[1+0*6]; c2D[1+1*3] = c3D[1+1*6]; c2D[1+2*3] = c3D[1+5*6];
         c2D[2+0*3] = c3D[5+0*6]; c2D[2+1*3] = c3D[5+1*6]; c2D[2+2*3] = c3D[5+5*6];
+#endif
+
+        // STORE THE MATRICES
+#if (AMREX_SPACEDIM == 2)
+        amrex::DG_utils::matinv(3, c2D, this->S);
+#endif
+#if (AMREX_SPACEDIM == 3)
+        std::copy(s3D, s3D+36, this->S);
 #endif
         // ------------------------------------------------------------
 
@@ -452,7 +465,7 @@ public:
 #define ICS_EIGEN_STATE 0
 #define ICS_INITIAL_STRAIN 1
 #define ICS_INITIAL_STRESS 2
-#define ICS 1
+#define ICS 0
 
     AMREX_GPU_HOST_DEVICE
     amrex::Real F_U0(const int & u, const amrex::Real * x) const
@@ -464,8 +477,7 @@ public:
 #if (ICS == ICS_EIGEN_STATE)
         const amrex::Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(this->ICs_un[0], this->ICs_un[1], this->ICs_un[2])};
         const amrex::Real x_dot_un = AMREX_D_PICK(x[0]*un[0], x[0]*un[0]+x[1]*un[1], x[0]*un[0]+x[1]*un[1]+x[2]*un[2]);
-        const amrex::Real d = 0.2;
-        const amrex::Real f0 = std::exp(-100.0*(x_dot_un-d)*(x_dot_un-d));
+        const amrex::Real f0 = std::sin(2.0*M_PI*x_dot_un);
         const int iv = 3;
         
         res = this->ICs_P_v[u+iv*N_U]*f0;
@@ -549,7 +561,85 @@ public:
     }
     // ================================================================
 
-    // EXACT SOLUTION =================================================
+    // EXACT SOLUTION/ERROR EVALUATION ================================
+    AMREX_GPU_HOST_DEVICE
+    void F_EXACT(const amrex::Real & t, const amrex::Real * x,
+                 amrex::Real * U) const
+    {
+#if (ICS == ICS_EIGEN_STATE)
+        const amrex::Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(this->ICs_un[0], this->ICs_un[1], this->ICs_un[2])};
+        const amrex::Real x_dot_un = AMREX_D_PICK(x[0]*un[0], x[0]*un[0]+x[1]*un[1], x[0]*un[0]+x[1]*un[1]+x[2]*un[2]);
+        const int iv = 3;
+        const amrex::Real w = this->ICs_P_w[iv];
+        const amrex::Real f0 = std::sin(2.0*M_PI*(x_dot_un-w*t));
+
+        for (int u = 0; u < N_U; ++u)
+        {
+            U[u] = this->ICs_P_v[u+iv*N_U]*f0;
+        }
+#else
+#if (!AMREX_USE_CUDA)
+amrex::Print() << "Hello! F_EXACT with ICS != ICS_EIGEN_STATE" << std::endl;
+exit(-1);
+#endif
+#endif
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void F_ERROR(const amrex::Real & t, const amrex::Real * x,
+                 const amrex::Real * U,
+                 amrex::Real & err_x,
+                 amrex::Real & norm_x) const
+    {
+#if (ICS == ICS_EIGEN_STATE)
+        const amrex::Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(this->ICs_un[0], this->ICs_un[1], this->ICs_un[2])};
+        const amrex::Real x_dot_un = AMREX_D_PICK(x[0]*un[0], x[0]*un[0]+x[1]*un[1], x[0]*un[0]+x[1]*un[1]+x[2]*un[2]);
+        const int iv = 3;
+        const amrex::Real w = this->ICs_P_w[iv];
+        const amrex::Real f0 = std::sin(2.0*M_PI*(x_dot_un-w*t));
+        amrex::Real Ue[N_U], V[N_U];
+
+        for (int u = 0; u < N_U; ++u)
+        {
+            Ue[u] = this->ICs_P_v[u+iv*N_U]*f0;
+        }
+        
+        AMREX_D_TERM
+        (
+            V[0] = this->density*Ue[0];,
+            V[1] = this->density*Ue[1];,
+            V[2] = this->density*Ue[2];
+        )
+        amrex::DG_utils::matmul(N_S, N_S, 1, this->S, &Ue[N_V], &V[N_V]);
+        norm_x = 0.0;
+        for (int u = 0; u < N_U; ++u)
+        {
+            norm_x += Ue[u]*V[u];
+        }
+
+        for (int u = 0; u < N_U; ++u)
+        {
+            Ue[u] -= U[u];
+        }
+        AMREX_D_TERM
+        (
+            V[0] = this->density*Ue[0];,
+            V[1] = this->density*Ue[1];,
+            V[2] = this->density*Ue[2];
+        )
+        amrex::DG_utils::matmul(N_S, N_S, 1, this->S, &Ue[N_V], &V[N_V]);
+        err_x = 0.0;
+        for (int u = 0; u < N_U; ++u)
+        {
+            err_x += Ue[u]*V[u];
+        }
+#else
+#if (!AMREX_USE_CUDA)
+amrex::Print() << "Hello! F_ERROR with ICS != ICS_EIGEN_STATE" << std::endl;
+exit(-1);
+#endif
+#endif
+    }
     // ================================================================
 
     // BOUNDARY CONDITIONS ============================================

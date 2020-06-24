@@ -133,16 +133,27 @@ amrex::Print() << "# START OF THE ANALYSIS                                      
     {
         // COMPUTE NEXT TIME STEP
         dt = dG.Compute_dt(time+0.5*dt, iGeom, MatFactory, Waves);
+        dt = std::min(time+dt, dG_inputs.time.T)-time;
 
         // REPORT TO SCREEN
-amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt << ", time = " << std::min(time+dt, dG_inputs.time.T) << std::endl;
+amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt << ", time = " << time+dt << std::endl;
 
         // TIME STEP
         dG.TakeTimeStep_Hyperbolic(dt, time, iGeom, MatFactory, Waves);
 
         // UPDATE TIME AND STEP
         n += 1;
-        time = std::min(time+dt, dG_inputs.time.T);
+        time += dt;
+
+#if (ICS == ICS_EIGEN_STATE)
+        // COMPUTE ERROR
+        if (std::abs(time/dG_inputs.time.T-1.0) < 1.0e-12)
+        {
+            amrex::Real err;
+            err = dG.EvalError(time, iGeom, MatFactory, Waves);
+amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std::setw(12) << err << std::endl;
+        }
+#endif
 
         // WRITE TO OUTPUT
         if (dG_inputs.plot_int > 0 && n%dG_inputs.plot_int == 0)
