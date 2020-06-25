@@ -381,7 +381,7 @@ amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt <
         if (std::abs(time/inputs.time.T-1.0) < 1.0e-12)
         {
             amrex::Real err;
-            err = dG.EvalErrorNorm(time, iGeom, MatFactory, LinAdv);
+            err = dG.EvalError(time, iGeom, MatFactory, LinAdv);
 amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std::setw(12) << err << std::endl;
         }
 

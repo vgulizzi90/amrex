@@ -2,6 +2,7 @@
 AMREX_HOME ?= ../../..
 #######################################################################
 
+COMP = gnu
 DEBUG = TRUE
 USE_MPI = TRUE
 USE_CUDA = FALSE
