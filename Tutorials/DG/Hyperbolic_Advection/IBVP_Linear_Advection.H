@@ -77,10 +77,10 @@ public:
 #if (AMREX_SPACEDIM == 3)
         amrex::Real r2 = 100.0*((x[0]-xc[0])*(x[0]-xc[0])+(x[1]-xc[1])*(x[1]-xc[1])+(x[2]-xc[2])*(x[2]-xc[2]));
 #endif
-        //amrex::Real phi0 = std::exp(-r2);
-        amrex::Real phi0 = std::sin(2.0*M_PI*x[0])*std::sin(2.0*M_PI*x[1]);
+        //amrex::Real rho0 = std::exp(-r2);
+        amrex::Real rho0 = std::sin(2.0*M_PI*x[0])*std::sin(2.0*M_PI*x[1]);
 
-        return phi0;
+        return rho0;
     }
     // ================================================================
     // RELATIONSHIP AMONG UNKNOWN FIELDS AND DOMAINS ==================
@@ -101,9 +101,9 @@ public:
     void F_EXACT(const amrex::Real & t, const amrex::Real * x,
                  amrex::Real * U) const
     {
-        amrex::Real V[AMREX_SPACEDIM];
-        this->F_V(t, x, V);
-        const amrex::Real y[AMREX_SPACEDIM] = {AMREX_D_DECL(x[0]-V[0]*t, x[1]-V[1]*t, x[2]-V[2]*t)};
+        amrex::Real a[AMREX_SPACEDIM];
+        this->F_a(t, x, a);
+        const amrex::Real y[AMREX_SPACEDIM] = {AMREX_D_DECL(x[0]-a[0]*t, x[1]-a[1]*t, x[2]-a[2]*t)};
         
         U[0] = this->F_U0(0, y);
     }
@@ -140,15 +140,15 @@ public:
 
     // PDES SYSTEM ====================================================
     AMREX_GPU_HOST_DEVICE
-    void F_V(const amrex::Real & t, const amrex::Real * x,
-             amrex::Real * V) const
+    void F_a(const amrex::Real & t, const amrex::Real * x,
+             amrex::Real * a) const
     {
 #if (VELOCITY_FIELD == CONSTANT_VELOCITY)
         AMREX_D_TERM
         (
-            V[0] = std::sqrt(2.0)/2.0;,
-            V[1] = std::sqrt(2.0)/2.0;,
-            V[2] = 0.0;
+            a[0] = std::sqrt(2.0)/2.0;,
+            a[1] = std::sqrt(2.0)/2.0;,
+            a[2] = 0.0;
         )
 #endif
 #if (VELOCITY_FIELD == SINGLE_VORTEX)
@@ -159,21 +159,21 @@ public:
         const amrex::Real s2y = std::sin(2.0*M_PI*x[1]);
         AMREX_D_TERM
         (
-            V[0] = -ct*sx*sx*s2y;,
-            V[1] = +ct*s2x*sy*sy;,
-            V[2] = 1.0;
+            a[0] = -ct*sx*sx*s2y;,
+            a[1] = +ct*s2x*sy*sy;,
+            a[2] = 1.0;
         )
 #endif
     }
 
     AMREX_GPU_HOST_DEVICE
-    amrex::Real F_aV(const amrex::Real & t, const amrex::Real * x) const
+    amrex::Real F_am(const amrex::Real & t, const amrex::Real * x) const
     {
-        amrex::Real aV, V[AMREX_SPACEDIM];
-        this->F_V(t, x, V);
+        amrex::Real am, a[AMREX_SPACEDIM];
+        this->F_a(t, x, a);
 
-        aV = std::sqrt(AMREX_D_PICK(V[0]*V[0], V[0]*V[0]+V[1]*V[1], V[0]*V[0]+V[1]*V[1]+V[2]*V[2]));
-        return aV;
+        am = std::sqrt(AMREX_D_PICK(a[0]*a[0], a[0]*a[0]+a[1]*a[1], a[0]*a[0]+a[1]*a[1]+a[2]*a[2]));
+        return am;
     }
     
     AMREX_GPU_HOST_DEVICE
@@ -181,7 +181,7 @@ public:
                      const amrex::Real & t, const amrex::Real * x,
                      const amrex::Real * U) const
     {
-        const amrex::Real aV = this->F_aV(t, x);
+        const amrex::Real am = this->F_am(t, x);
 #if (AMREX_SPACEDIM == 2)
         const amrex::Real h = std::min(dx[0], dx[1]);
 #endif
@@ -189,7 +189,7 @@ public:
 #endif
         amrex::Real dt;
         
-        dt = 0.5*h/aV;
+        dt = 0.5*h/am;
         
         return dt;
     }
@@ -199,14 +199,14 @@ public:
              const amrex::Real * U,
              AMREX_D_DECL(amrex::Real * F1, amrex::Real * F2, amrex::Real * F3)) const
     {
-        amrex::Real V[AMREX_SPACEDIM];
-        this->F_V(t, x, V);
+        amrex::Real a[AMREX_SPACEDIM];
+        this->F_a(t, x, a);
 
         AMREX_D_TERM
         (
-            F1[0] = V[0]*U[0];,
-            F2[0] = V[1]*U[0];,
-            F3[0] = V[2]*U[0];
+            F1[0] = a[0]*U[0];,
+            F2[0] = a[1]*U[0];,
+            F3[0] = a[2]*U[0];
         )
     }
     // ================================================================
@@ -220,18 +220,18 @@ public:
     {
         amrex::Real AMREX_D_DECL(F1[N_U], F2[N_U], F3[N_U]);
         amrex::Real AMREX_D_DECL(nbr_F1[N_U], nbr_F2[N_U], nbr_F3[N_U]);
-        amrex::Real aV;
+        amrex::Real am;
 
         this->F_F(t, x, U, AMREX_D_DECL(F1, F2, F3));
         this->F_F(t, x, nbr_U, AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3));
-        aV = this->F_aV(t, x);
+        am = this->F_am(t, x);
 
         // dom = 0
         AMREX_D_TERM
         (
-            NF1[0] = 0.5*(F1[0]+nbr_F1[0])+0.5*aV*(U[0]-nbr_U[0])*un[0];,
-            NF2[0] = 0.5*(F2[0]+nbr_F2[0])+0.5*aV*(U[0]-nbr_U[0])*un[1];,
-            NF3[0] = 0.5*(F3[0]+nbr_F3[0])+0.5*aV*(U[0]-nbr_U[0])*un[2];
+            NF1[0] = 0.5*(F1[0]+nbr_F1[0])+0.5*am*(U[0]-nbr_U[0])*un[0];,
+            NF2[0] = 0.5*(F2[0]+nbr_F2[0])+0.5*am*(U[0]-nbr_U[0])*un[1];,
+            NF3[0] = 0.5*(F3[0]+nbr_F3[0])+0.5*am*(U[0]-nbr_U[0])*un[2];
         )
     }
 
@@ -243,13 +243,13 @@ public:
         amrex::Real AMREX_D_DECL(F1[N_U], F2[N_U], F3[N_U]);
         amrex::Real AMREX_D_DECL(nbr_F1[N_U], nbr_F2[N_U], nbr_F3[N_U]);
 #if (DG_NUM_FLUX == DG_NUM_FLUX_LF)
-        const amrex::Real mu = this->F_aV(t, x);;
+        const amrex::Real mu = this->F_am(t, x);
 #endif
 #if (DG_NUM_FLUX == DG_NUM_FLUX_UPW)
-        amrex::Real V[AMREX_SPACEDIM];
-        this->F_V(t, x, V);
-        const amrex::Real V_dot_un = AMREX_D_PICK(V[0]*un[0], V[0]*un[0]+V[1]*un[1], V[0]*un[0]+V[1]*un[1]+V[2]*un[2]);
-        const amrex::Real mu = std::abs(V_dot_un);
+        amrex::Real a[AMREX_SPACEDIM];
+        this->F_a(t, x, a);
+        const amrex::Real a_dot_un = AMREX_D_PICK(a[0]*un[0], a[0]*un[0]+a[1]*un[1], a[0]*un[0]+a[1]*un[1]+a[2]*un[2]);
+        const amrex::Real mu = std::abs(a_dot_un);
 #endif
 
         this->F_F(t, x, U, AMREX_D_DECL(F1, F2, F3));
@@ -272,13 +272,13 @@ public:
     {
         amrex::Real Ue[N_U];
         amrex::Real AMREX_D_DECL(F1[N_U], F2[N_U], F3[N_U]);
-        amrex::Real V[AMREX_SPACEDIM], V_dot_un, mu;
+        amrex::Real a[AMREX_SPACEDIM], a_dot_un, mu;
 
-        this->F_V(t, x, V);
-        V_dot_un = AMREX_D_PICK(V[0]*un[0], V[0]*un[0]+V[1]*un[1], V[0]*un[0]+V[1]*un[1]+V[2]*un[2]);
-        mu = std::abs(V_dot_un);
+        this->F_a(t, x, a);
+        a_dot_un = AMREX_D_PICK(a[0]*un[0], a[0]*un[0]+a[1]*un[1], a[0]*un[0]+a[1]*un[1]+a[2]*un[2]);
+        mu = std::abs(a_dot_un);
 
-        if (V_dot_un > 0.0)
+        if (a_dot_un > 0.0)
         {
             this->F_F(t, x, U, AMREX_D_DECL(F1, F2, F3));
 
