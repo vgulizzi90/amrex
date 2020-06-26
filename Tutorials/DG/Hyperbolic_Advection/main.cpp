@@ -310,8 +310,9 @@ amrex::Print() << "#############################################################
     std::string bcs_type;
     std::string dst_folder;
 
-    ics_type = "ICS_Gaussian";
-    bcs_type = "BCS_io";
+    /*
+    ics_type = "ICS_periodic";
+    bcs_type = "BCS_periodic";
     dst_folder = "./IBVP_"+std::to_string(AMREX_SPACEDIM)+"d_Linear_Advection/"+ics_type+"_"+bcs_type+"_"+dG_order+"/";
 
     if (amrex::ParallelDescriptor::IOProcessor())
@@ -322,6 +323,7 @@ amrex::Print() << "#############################################################
         }
     }
     amrex::ParallelDescriptor::Barrier();
+    */
     // ================================================================
 
     // INIT IBVP DATA STRUCTURE =======================================
