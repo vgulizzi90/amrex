@@ -73,12 +73,14 @@ public:
         const amrex::Real xc[AMREX_SPACEDIM] = {AMREX_D_DECL(-0.5, 0.75, 0.5)};
 #if (AMREX_SPACEDIM == 2)
         amrex::Real r2 = 100.0*((x[0]-xc[0])*(x[0]-xc[0])+(x[1]-xc[1])*(x[1]-xc[1]));
+        //amrex::Real rho0 = std::exp(-r2);
+        amrex::Real rho0 = std::sin(2.0*M_PI*x[0])*std::sin(2.0*M_PI*x[1]);
 #endif
 #if (AMREX_SPACEDIM == 3)
         amrex::Real r2 = 100.0*((x[0]-xc[0])*(x[0]-xc[0])+(x[1]-xc[1])*(x[1]-xc[1])+(x[2]-xc[2])*(x[2]-xc[2]));
-#endif
         //amrex::Real rho0 = std::exp(-r2);
-        amrex::Real rho0 = std::sin(2.0*M_PI*x[0])*std::sin(2.0*M_PI*x[1]);
+        amrex::Real rho0 = std::sin(2.0*M_PI*x[0])*std::sin(2.0*M_PI*x[1])*std::sin(2.0*M_PI*x[2]);
+#endif
 
         return rho0;
     }
@@ -144,12 +146,15 @@ public:
              amrex::Real * a) const
     {
 #if (VELOCITY_FIELD == CONSTANT_VELOCITY)
-        AMREX_D_TERM
-        (
-            a[0] = std::sqrt(2.0)/2.0;,
-            a[1] = std::sqrt(2.0)/2.0;,
-            a[2] = 0.0;
-        )
+#if (AMREX_SPACEDIM == 2)
+        a[0] = std::sqrt(2.0)/2.0;
+        a[1] = std::sqrt(2.0)/2.0;
+#endif
+#if (AMREX_SPACEDIM == 3)
+        a[0] = std::sqrt(3.0)/3.0;
+        a[1] = std::sqrt(3.0)/3.0;
+        a[2] = std::sqrt(3.0)/3.0;
+#endif
 #endif
 #if (VELOCITY_FIELD == SINGLE_VORTEX)
         const amrex::Real ct = -std::cos(0.5*M_PI*t);
@@ -181,15 +186,17 @@ public:
                      const amrex::Real & t, const amrex::Real * x,
                      const amrex::Real * U) const
     {
+        amrex::Real dt;
         const amrex::Real am = this->F_am(t, x);
+
 #if (AMREX_SPACEDIM == 2)
         const amrex::Real h = std::min(dx[0], dx[1]);
+        dt = 0.5*h/am;
 #endif
 #if (AMREX_SPACEDIM == 3)
+        const amrex::Real h = std::min(dx[0], std::min(dx[1], dx[2]));
+        dt = 0.25*h/am;
 #endif
-        amrex::Real dt;
-        
-        dt = 0.5*h/am;
         
         return dt;
     }
