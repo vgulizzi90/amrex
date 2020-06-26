@@ -1,0 +1,26 @@
+HP-CONVERGENCE ANALYSIS
+p = 0
+Ne = 8, error =  8.46701e-01
+Ne = 16, error =  6.62962e-01
+Ne = 32, error =  4.48083e-01
+Ne = 64, error =  2.66944e-01
+Ne = 128, error =  1.46673e-01
+Ne = 256, error =  7.70122e-02
+p = 1
+Ne = 8, error =  8.17401e-02
+Ne = 16, error =  1.74582e-02
+Ne = 32, error =  4.10370e-03
+Ne = 64, error =  1.00764e-03
+Ne = 128, error =  2.50721e-04
+Ne = 256, error =  6.26048e-05
+p = 2
+Ne = 8, error =  3.39638e-03
+Ne = 16, error =  4.21112e-04
+Ne = 32, error =  5.25604e-05
+Ne = 64, error =  6.56785e-06
+Ne = 128, error =  8.20914e-07
+p = 3
+Ne = 8, error =  1.62240e-04
+Ne = 16, error =  1.00984e-05
+Ne = 32, error =  6.30447e-07
+Ne = 64, error =  3.94096e-08

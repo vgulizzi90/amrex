@@ -79,10 +79,10 @@ amrex::Print() << "#############################################################
     amrex::Vector<int> p_degrees = {0, 1, 2, 3};
     amrex::Vector<amrex::Vector<int>> n_mesh_elements = 
     {
-        {8, 16, 32},
-        {8},
-        {8},
-        {8}
+        {8, 16, 32, 64, 128, 256},
+        {8, 16, 32, 64, 128, 256},
+        {8, 16, 32, 64, 128},
+        {8, 16, 32, 64}
     };
     // ================================================================
 
@@ -191,7 +191,7 @@ amrex::Print() << "# - Initializing dG data structures " << std::endl;
                     // WRITE TO FILE
                     if (amrex::ParallelDescriptor::IOProcessor())
                     {
-                        fp << "Ne = " << Ne << ", error = " << std::scientific << std::setprecision(5) << std::setw(12) << err << "\n";
+                        fp << "Ne = " << Ne << ", error = " << std::scientific << std::setprecision(5) << std::setw(12) << std::sqrt(err) << "\n";
                     }
                     amrex::ParallelDescriptor::Barrier();
                 }
