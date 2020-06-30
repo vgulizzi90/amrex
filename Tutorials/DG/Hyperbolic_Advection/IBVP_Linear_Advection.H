@@ -16,7 +16,7 @@
 // DG-METHOD PARAMETERS -----------------------------------------------
 #define DG_NUM_FLUX_LF 0
 #define DG_NUM_FLUX_UPW 1
-#define DG_NUM_FLUX 0
+#define DG_NUM_FLUX 1
 // --------------------------------------------------------------------
 // ####################################################################
 
@@ -116,7 +116,7 @@ public:
                  amrex::Real & err_x,
                  amrex::Real & norm_x) const
     {
-        amrex::Real Ue[0];
+        amrex::Real Ue[N_U];
         
         this->F_EXACT(t, x, Ue);
 

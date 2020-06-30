@@ -50,10 +50,15 @@ amrex::Print() << "# AMREX_SPACEDIM = " << AMREX_SPACEDIM << std::endl;
 amrex::Print() << "#                                                                      " << std::endl;
 amrex::Print() << "#######################################################################" << std::endl;
     // ================================================================
+    
+    // GENERAL PARAMETERS =============================================
+    const int IOProc = amrex::ParallelDescriptor::IOProcessorNumber();
+    // ================================================================
 
-    // GENERAL VARIABLES =============
+    // GENERAL VARIABLES ==============================================
     amrex::Real start_time, stop_time;
-    // ===============================
+    amrex::Real start_time_per_step, stop_time_per_step, time_per_step;
+    // ================================================================
 
     // INPUTS DATA STRUCTURE
     inputs_struct inputs;
@@ -80,18 +85,6 @@ amrex::Print() << "#############################################################
     // ================================================================
 
     // GEOMETRY =======================================================
-    for (int d = 0; d < AMREX_SPACEDIM; ++d)
-    {
-        if ((inputs.space.bc_lo[d] == amrex::BCType::int_dir) && (inputs.space.bc_hi[d] == amrex::BCType::int_dir))
-        {
-            inputs.space.is_periodic[d] = 1;
-        }
-        else if ((inputs.space.bc_lo[d] != amrex::BCType::int_dir) && (inputs.space.bc_hi[d] != amrex::BCType::int_dir))
-        {
-            inputs.space.is_periodic[d] = 0;
-        }
-    }
-
     amrex::Geometry geom;
     geom.define(indices_box, &real_box, inputs.space.coord_sys, inputs.space.is_periodic.data());
     // ================================================================
@@ -113,7 +106,6 @@ amrex::Print() << "#############################################################
     std::string bcs_type;
     std::string dst_folder;
 
-    /*
     ics_type = "ICS_periodic";
     bcs_type = "BCS_periodic";
     dst_folder = "./IBVP_"+std::to_string(AMREX_SPACEDIM)+"d_Linear_Advection/"+ics_type+"_"+bcs_type+"_"+dG_order+"/";
@@ -126,7 +118,6 @@ amrex::Print() << "#############################################################
         }
     }
     amrex::ParallelDescriptor::Barrier();
-    */
     // ================================================================
 
     // INIT IBVP DATA STRUCTURE =======================================
@@ -152,9 +143,6 @@ amrex::Print() << "#############################################################
     }
     // ================================================================
 
-    // BOUNDARY CONDITIONS ============================================
-    // ================================================================
-
     // START THE ANALYSIS (ADVANCE IN TIME) ===========================
 amrex::Print() << "# START OF THE ANALYSIS                                                " << std::endl;
     
@@ -162,6 +150,10 @@ amrex::Print() << "# START OF THE ANALYSIS                                      
     int n;
     amrex::Real time, dt;
     // ------------------
+
+    // TIME MARCHING TIC -----------------
+    start_time_per_step = amrex::second();
+    // -----------------------------------
 
     // ADVANCE IN TIME ------------------------------------------------
     n = 0;
@@ -173,7 +165,7 @@ amrex::Print() << "# START OF THE ANALYSIS                                      
         dt = std::min(time+dt, inputs.time.T)-time;
 
         // REPORT TO SCREEN
-amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt << ", time = " << time+dt << std::endl;
+//amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt << ", time = " << time+dt << std::endl;
 
         // TIME STEP
         dG.TakeTimeStep_Hyperbolic(dt, time, iGeom, MatFactory, LinAdv);
@@ -187,7 +179,7 @@ amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt <
         {
             amrex::Real err;
             err = dG.EvalError(time, iGeom, MatFactory, LinAdv);
-amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std::setw(12) << err << std::endl;
+amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std::setw(12) << std::sqrt(err) << std::endl;
         }
 
         // WRITE TO OUTPUT
@@ -200,20 +192,27 @@ amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std:
         }
     }
     // ----------------------------------------------------------------
+    
+    // TIME MARCHING TOC ----------------------------------------------
+    stop_time_per_step = amrex::second();
+    amrex::ParallelDescriptor::ReduceRealMax(stop_time_per_step, IOProc);
+    time_per_step = (stop_time_per_step-start_time_per_step)/n;
+    // ----------------------------------------------------------------
 
 amrex::Print() << "# END OF THE ANALYSIS                                                  " << std::endl;
     // ================================================================
 
     // TOC ============================================================
     stop_time = amrex::second();
-    const int IOProc = amrex::ParallelDescriptor::IOProcessorNumber();
     amrex::ParallelDescriptor::ReduceRealMax(stop_time, IOProc);
     // ================================================================
 
     // CLOSING ========================================================
 amrex::Print() << "#######################################################################" << std::endl;
 amrex::Print() << "# END OF TUTORIAL                                                      " << std::endl;
-amrex::Print() << "# Time = " << stop_time-start_time << " s" << std::endl;
+amrex::Print() << "# Number of steps = " << n << std::endl;
+amrex::Print() << "# Time          = " << std::scientific << std::setprecision(5) << std::setw(12) << (stop_time-start_time) << " s" << std::endl;
+amrex::Print() << "# Time per step = " << std::scientific << std::setprecision(5) << std::setw(12) << time_per_step << " s" << std::endl;
 amrex::Print() << "#######################################################################" << std::endl;
     // ================================================================
 

@@ -1,3 +1,3 @@
 CEXE_headers += inputs_reader.H IBVP_Linear_Advection.H
 
-CEXE_sources += main_hp.cpp
+CEXE_sources += main.cpp
