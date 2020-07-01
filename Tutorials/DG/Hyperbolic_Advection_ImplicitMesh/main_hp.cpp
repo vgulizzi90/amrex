@@ -80,10 +80,10 @@ amrex::Print() << "#############################################################
     // ================================================================
 
     // RANGE OF DG DEGREES p AND NUMBER OF MESH ELEMENTS ==============
-    amrex::Vector<int> p_degrees = {0};
+    amrex::Vector<int> p_degrees = {3};
     amrex::Vector<amrex::Vector<int>> n_mesh_elements = 
     {
-        {16, 32}
+        {16, 32, 64, 128}
     };
     // ================================================================
 
@@ -203,6 +203,7 @@ amrex::Print() << "# - Initializing dG data structures " << std::endl;
             amrex::Print() << std::endl;
             // --------------------------------------------------------
 
+            amrex::ParallelDescriptor::Barrier();
         }
 amrex::Print() << "# =====================================================================" << std::endl;
     }
