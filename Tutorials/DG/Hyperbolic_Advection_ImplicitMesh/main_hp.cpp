@@ -83,7 +83,7 @@ amrex::Print() << "#############################################################
     amrex::Vector<int> p_degrees = {0};
     amrex::Vector<amrex::Vector<int>> n_mesh_elements = 
     {
-        {8, 16, 32, 64, 128, 256}
+        {16, 32}
     };
     // ================================================================
 
@@ -101,7 +101,7 @@ amrex::Print() << "#############################################################
     const int n_p_degrees = p_degrees.size();
     for (int ip = 0; ip < n_p_degrees; ++ip)
     {
-        const int phi_space_p = 1;
+        const int phi_space_p = 3;
         const int space_p = p_degrees[ip];
         const int space_q = std::max(phi_space_p+2, space_p+2);
         const int time_p = space_p;
@@ -152,7 +152,7 @@ amrex::Print() << "# - Initializing dG data structures " << std::endl;
 
             // INIT FIELDS' DATA WITH INITIAL CONDITIONS --------------
             iGeom.ProjectDistanceFunctions(LinAdv);
-            iGeom.EvalImplicitMesh(LinAdv, false);
+            iGeom.EvalImplicitMesh(LinAdv);
             MatFactory.Eval(iGeom);
             dG.SetICs(iGeom, MatFactory, LinAdv);
             // --------------------------------------------------------

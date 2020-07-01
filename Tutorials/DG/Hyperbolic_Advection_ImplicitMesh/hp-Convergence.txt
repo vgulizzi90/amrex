@@ -1,0 +1,4 @@
+HP-CONVERGENCE ANALYSIS
+p = 0
+Ne = 16, error =  7.87114e-01
+Ne = 32, error =  5.33371e-01
