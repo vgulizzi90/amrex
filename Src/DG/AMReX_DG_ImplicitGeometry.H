@@ -1443,6 +1443,20 @@ struct ImplicitGeometry
             Real const * dom_XI3g_ptr = this->uHyperrect.dom_XI3g.data();
         )
 
+        // STANDARD ELEMENT BOUNDARY
+        const int cell_bou_Ng = this->uHyperrect.bou_Ng;
+        const int cell_bou_Ne = AMREX_D_PICK(1, cell_e, cell_e*cell_e);
+        const int bou_cell_conn_len = AMREX_D_PICK(1, 2*cell_bou_Ne, 4*cell_bou_Ne);
+        const Gpu::ManagedVector<int> bou_cell_base_conn = Get_VTK_BaseBouCell_Connectivity(cell_e);
+        const int * bou_cell_base_conn_ptr = bou_cell_base_conn.data();
+        
+        AMREX_D_TERM
+        (
+            ,
+            Real const * bou_XI1g_ptr = this->uHyperrect.bou_XI1g.data();,
+            Real const * bou_XI2g_ptr = this->uHyperrect.bou_XI2g.data();
+        )
+
         // DG
         const int p = this->uHyperrect.p;
         
@@ -1453,12 +1467,21 @@ struct ImplicitGeometry
         // Element id (per each domain)
         const int n_cell_fields = 1+1+N_DOM+N_DOM;
 
+        // BOUNDARY CELL-DATA
+        // Element type (per each domain)
+        const int n_bou_cell_fields = N_DOM;
+
         // NODAL-DATA
         // Distance functions
         const int n_nodal_fields = N_PHI;
 
+        // BOUNDARY NODAL-DATA
+        // Distance functions
+        const int n_bou_nodal_fields = N_PHI;
+
         // VTK
         const int VTK_cell_id = AMREX_D_PICK(3, 9, 12);
+        const int VTK_bou_cell_id = AMREX_D_PICK(1, 3, 9);
         // ============================================================
 
         // VARIABLES ==================================================
@@ -1471,6 +1494,17 @@ struct ImplicitGeometry
 
         Gpu::ManagedVector<long> conn;
         Gpu::ManagedVector<Real> nodes, cell_fields, nodal_fields;
+
+        long n_base_bou_cells, n_bou_nodes, n_bou_cells;
+        long bou_nodes_pos, bou_conn_pos, bou_cell_fields_pos, bou_nodal_fields_pos;
+        amrex::Vector<longMultiFab> output_bou_data_info(AMREX_SPACEDIM);
+        for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+        {
+            output_bou_data_info[dim].define(this->fc_ba[dim], this->dm, 4, this->bou_data_ngr);
+        }
+
+        Gpu::ManagedVector<long> bou_conn;
+        Gpu::ManagedVector<Real> bou_nodes, bou_cell_fields, bou_nodal_fields;
         // ============================================================
 
         // COUNT THE AMOUNT OF MEMORY REQUIRED BY THE OUTPUT DATA =====
@@ -1524,6 +1558,62 @@ struct ImplicitGeometry
         long * conn_ptr = conn.data();
         Real * cell_fields_ptr = cell_fields.data();
         Real * nodal_fields_ptr = nodal_fields.data();
+        // ============================================================
+
+        // COUNT THE AMOUNT OF MEMORY REQUIRED BY THE OUTPUT BOU DATA =
+        n_base_bou_cells = 0L;
+        
+        bou_nodes_pos = 0L;
+        bou_conn_pos = 0L;
+        bou_cell_fields_pos = 0L;
+        bou_nodal_fields_pos = 0L;
+
+        for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+        {
+            for (MFIter mfi(output_bou_data_info[dim]); mfi.isValid(); ++mfi)
+            {
+                const Box& bx = mfi.validbox();
+                const auto lo = lbound(bx);
+                const auto hi = ubound(bx);
+                const auto len = length(bx);
+
+                Array4<long> const & output_bou_data_info_fab = output_bou_data_info[dim].array(mfi);
+
+                for (int fk = lo.z; fk <= hi.z; ++fk)
+                for (int fj = lo.y; fj <= hi.y; ++fj)
+                for (int fi = lo.x; fi <= hi.x; ++fi)
+                {
+                    // UPDATE INFO
+                    output_bou_data_info_fab(fi,fj,fk,0) = bou_nodes_pos;
+                    output_bou_data_info_fab(fi,fj,fk,1) = bou_conn_pos;
+                    output_bou_data_info_fab(fi,fj,fk,2) = bou_cell_fields_pos;
+                    output_bou_data_info_fab(fi,fj,fk,3) = bou_nodal_fields_pos;
+
+                    bou_nodes_pos += cell_bou_Ng*AMREX_SPACEDIM;
+                    bou_conn_pos += bou_cell_conn_len;
+                    bou_cell_fields_pos += cell_bou_Ne*n_bou_cell_fields;
+                    bou_nodal_fields_pos += cell_bou_Ng*n_bou_nodal_fields;
+                }
+
+                n_base_bou_cells += len.x*len.y*len.z;
+            }
+        }
+
+        n_bou_nodes = bou_nodes_pos/AMREX_SPACEDIM;
+        bou_nodes.resize(bou_nodes_pos);
+
+        n_bou_cells = n_base_bou_cells*cell_bou_Ne;
+        bou_conn.resize(bou_conn_pos);
+
+        bou_cell_fields.resize(bou_cell_fields_pos);
+
+        bou_nodal_fields.resize(bou_nodal_fields_pos);
+
+        // SET POINTERS TO MEMORY
+        Real * bou_nodes_ptr = bou_nodes.data();
+        long * bou_conn_ptr = bou_conn.data();
+        Real * bou_cell_fields_ptr = bou_cell_fields.data();
+        Real * bou_nodal_fields_ptr = bou_nodal_fields.data();
         // ============================================================
 
         // POPULATE THE ELEMENT ID (RANDOM COLORING) ==================
@@ -1631,6 +1721,146 @@ struct ImplicitGeometry
             Gpu::synchronize();
 
             bx_id += 1;   
+        }
+        // ============================================================
+
+        // POPULATE OUTPUT BOU DATA ===================================
+        for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+        {
+            // A few auxiliary constants to avoid a bunch of ifs
+#if (AMREX_SPACEDIM == 3)
+            const int ci = ((1-dim)*(2-dim))/2;
+            const int cj = (dim*dim-3*dim+4)/2;
+#endif
+            const Real d0 = 0.5*(dim-1.0)*(dim-2.0);
+            const Real d1 = dim*(2.0-dim);
+            const Real d2 = 0.5*dim*(dim-1);
+            const Real nd0 = 1.0-d0;
+            const Real nd1 = 1.0-d1;
+            const Real nd2 = 1.0-d2;
+
+            for (MFIter mfi(output_bou_data_info[dim]); mfi.isValid(); ++mfi)
+            {
+                const Box& bx = mfi.validbox();
+
+                Array4<long> const & output_bou_data_info_fab = output_bou_data_info[dim].array(mfi);
+                Array4<int const> const & eType_fab = this->eType.array(mfi);
+                Array4<Real const> const & PHI_fab = this->PHI.array(mfi);
+
+                ParallelFor(bx,
+                [=] AMREX_GPU_DEVICE (int fi, int fj, int fk) noexcept
+                {
+                    // LOCAL PARAMETERS
+                    const Real face_m[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(fi+0.5*nd0)*dx[0], prob_lo[1]+(fj+0.5*nd1)*dx[1], prob_lo[2]+(fk+0.5*nd2)*dx[2])};
+                    const long bou_nodes_offset = output_bou_data_info_fab(fi,fj,fk,0);
+                    const long bou_conn_offset = output_bou_data_info_fab(fi,fj,fk,1);
+                    const long bou_cell_fields_offset = output_bou_data_info_fab(fi,fj,fk,2);
+                    const long bou_nodal_fields_offset = output_bou_data_info_fab(fi,fj,fk,3);
+
+                    // LOCAL VARIABLES
+                    int mi, mj, mk, pi, pj, pk;
+                    Real m_cell_lo[AMREX_SPACEDIM], m_cell_hi[AMREX_SPACEDIM];
+                    Real p_cell_lo[AMREX_SPACEDIM], p_cell_hi[AMREX_SPACEDIM];
+                    int m_etype, p_etype;
+                    bool m_elm_is_small, p_elm_is_small, cells_are_merged;
+                    int m_merged_b, p_merged_b;
+                    Real x[AMREX_SPACEDIM];
+
+                    // PAIRED CELLS SHARING THE FACE fi,fj,fk
+                    FACE_2_NBRS(fi, fj, fk, dim, mi, mj, mk, pi, pj, pk);
+
+                    AMREX_D_TERM
+                    (
+                        m_cell_lo[0] = prob_lo[0]+mi*dx[0];,
+                        m_cell_lo[1] = prob_lo[1]+mj*dx[1];,
+                        m_cell_lo[2] = prob_lo[2]+mk*dx[2];
+                    )
+                    AMREX_D_TERM
+                    (
+                        m_cell_hi[0] = prob_lo[0]+(mi+1)*dx[0];,
+                        m_cell_hi[1] = prob_lo[1]+(mj+1)*dx[1];,
+                        m_cell_hi[2] = prob_lo[2]+(mk+1)*dx[2];
+                    )
+                    AMREX_D_TERM
+                    (
+                        p_cell_lo[0] = prob_lo[0]+pi*dx[0];,
+                        p_cell_lo[1] = prob_lo[1]+pj*dx[1];,
+                        p_cell_lo[2] = prob_lo[2]+pk*dx[2];
+                    )
+                    AMREX_D_TERM
+                    (
+                        p_cell_hi[0] = prob_lo[0]+(pi+1)*dx[0];,
+                        p_cell_hi[1] = prob_lo[1]+(pj+1)*dx[1];,
+                        p_cell_hi[2] = prob_lo[2]+(pk+1)*dx[2];
+                    )
+
+                    // Data structures used to compute the distance
+                    // functions
+                    DG_phi_space_BFX m_phi(m_cell_lo, m_cell_hi, PHI_fab, p, mi, mj, mk, -1);
+                    DG_phi_space_BFX p_phi(p_cell_lo, p_cell_hi, PHI_fab, p, pi, pj, pk, -1);
+
+                    // UPDATE INFO: NODES AND NODAL FIELDS
+                    for (int n = 0; n < cell_bou_Ng; ++n)
+                    {                        
+                        // NODES
+#if (AMREX_SPACEDIM == 1)
+                        x[0] = face_m[0];
+#endif
+#if (AMREX_SPACEDIM == 2)
+                        x[dim] = face_m[dim];
+                        x[1-dim] = J[1-dim]*bou_XI1g_ptr[n]+face_m[1-dim];
+#endif
+#if (AMREX_SPACEDIM == 3)
+                        x[dim] = face_m[dim];
+                        x[ci] = J[ci]*bou_XI1g_ptr[n]+face_m[ci];
+                        x[cj] = J[cj]*bou_XI2g_ptr[n]+face_m[cj];
+#endif
+                        AMREX_D_TERM
+                        (
+                            bou_nodes_ptr[bou_nodes_offset+AMREX_SPACEDIM*n+0] = x[0];,
+                            bou_nodes_ptr[bou_nodes_offset+AMREX_SPACEDIM*n+1] = x[1];,
+                            bou_nodes_ptr[bou_nodes_offset+AMREX_SPACEDIM*n+2] = x[2];
+                        )
+
+                        m_phi._eval_BF_table_(x);
+                        p_phi._eval_BF_table_(x);
+                        for (int rph = 0; rph < N_PHI; ++rph)
+                        {
+                            m_phi.set_fab_ptrs(mi, mj, mk, rph);
+                            p_phi.set_fab_ptrs(pi, pj, pk, rph);
+
+                            bou_nodal_fields_ptr[bou_nodal_fields_offset+n_bou_nodal_fields*n+rph] = 0.5*(m_phi._eval_unsafe_()+p_phi._eval_unsafe_());
+                        }
+                    }
+
+                    // UPDATE INFO: CONNECTIVITY
+                    for (int c = 0; c < bou_cell_conn_len; ++c)
+                    {
+                        bou_conn_ptr[bou_conn_offset+c] = bou_cell_base_conn_ptr[c]+bou_nodes_offset/AMREX_SPACEDIM;
+                    }
+
+                    // UPDATE INFO: CELL FIELDS
+                    for (int c = 0; c < cell_bou_Ne; ++c)
+                    {
+                        for (int dom = 0; dom < N_DOM; ++dom)
+                        {
+                            m_etype = eType_fab(mi,mj,mk,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
+                            p_etype = eType_fab(pi,pj,pk,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
+
+                            m_elm_is_small = (m_etype%10 == DG_ELM_TYPE_SMALL);
+                            p_elm_is_small = (p_etype%10 == DG_ELM_TYPE_SMALL);
+
+                            m_merged_b = (m_elm_is_small) ? (m_etype/10) : -1;
+                            p_merged_b = (p_elm_is_small) ? (p_etype/10) : -1;
+
+                            cells_are_merged = ((m_merged_b == 2*dim+1) || (p_merged_b == 2*dim));
+              
+                            bou_cell_fields_ptr[bou_cell_fields_offset+c*n_bou_cell_fields+dom] = cells_are_merged ? 1.0 : 0.0;
+                        }
+                    }
+                });
+                Gpu::synchronize();
+            }
         }
         // ============================================================
 
@@ -1834,6 +2064,110 @@ struct ImplicitGeometry
             VTK::PrintUnstructuredGridData_VTU(filepath,
                                                n_nodes,
                                                n_cells,
+                                               VTK_nodes,
+                                               VTK_cell_conn,
+                                               VTK_cell_offset,
+                                               VTK_cell_type,
+                                               VTK_cell_field,
+                                               VTK_cell_field_name,
+                                               VTK_nodal_field,
+                                               VTK_nodal_field_name,
+                                               "binary");
+            // --------------------------------------------------------
+        }
+
+        if (vtk_xml_format)
+        {
+            // VARIABLES ----------------------------------------------
+            Vector<VTK::Float_t> VTK_nodes;
+            Vector<VTK::Cell_conn_t> VTK_cell_conn;
+            Vector<VTK::Cell_offs_t> VTK_cell_offset;
+            Vector<VTK::Cell_type_t> VTK_cell_type;
+            Vector<Vector<VTK::Int_t>> VTK_cell_field(n_bou_cell_fields);
+            Vector<std::string> VTK_cell_field_name(n_bou_cell_fields);
+            Vector<Vector<VTK::Float_t>> VTK_nodal_field(n_bou_nodal_fields);
+            Vector<std::string> VTK_nodal_field_name(n_bou_nodal_fields);
+            // --------------------------------------------------------
+
+            // RESIZE MEMORY ------------------------------------------
+            VTK_nodes.resize(3*n_bou_nodes);
+            VTK_cell_conn.resize(AMREX_D_PICK(1, 2, 4)*n_bou_cells);
+            VTK_cell_offset.resize(n_bou_cells+1);
+            VTK_cell_type.resize(n_bou_cells);
+            for (int f = 0; f < n_bou_cell_fields; ++f)
+            {
+                VTK_cell_field[f].resize(n_bou_cells);
+            }
+            for (int f = 0; f < n_bou_nodal_fields; ++f)
+            {
+                VTK_nodal_field[f].resize(n_bou_nodes);
+            }
+            // --------------------------------------------------------
+
+            // FILL IN DATA -------------------------------------------
+            for (int n = 0; n < n_bou_nodes; ++n)
+            {
+#if (AMREX_SPACEDIM == 2)
+                VTK_nodes[3*n+0] = bou_nodes[AMREX_SPACEDIM*n+0];
+                VTK_nodes[3*n+1] = bou_nodes[AMREX_SPACEDIM*n+1];
+                VTK_nodes[3*n+2] = 0.0;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                VTK_nodes[3*n+0] = bou_nodes[AMREX_SPACEDIM*n+0];
+                VTK_nodes[3*n+1] = bou_nodes[AMREX_SPACEDIM*n+1];
+                VTK_nodes[3*n+2] = bou_nodes[AMREX_SPACEDIM*n+2];
+#endif
+            }
+
+            for (int k = 0; k < bou_conn.size(); ++k)
+            {
+                VTK_cell_conn[k] = bou_conn[k];
+            }
+            
+            VTK_cell_offset[0];
+            for (int k = 1; k < (n_bou_cells+1); ++k)
+            {
+                VTK_cell_offset[k] = VTK_cell_offset[k-1]+AMREX_D_PICK(1, 2, 4);
+            }
+
+            for (int k = 0; k < n_bou_cells; ++k)
+            {
+                VTK_cell_type[k] = VTK_bou_cell_id;
+            }
+
+            for (int dom = 0; dom < N_DOM; ++dom) VTK_cell_field_name[dom] = "ELM_BOU_TYPE_DOM_"+std::to_string(dom);
+            for (int f = 0; f < n_bou_cell_fields; ++f)
+            {
+                for (int n = 0; n < n_bou_cells; ++n)
+                {
+                    VTK_cell_field[f][n] = (VTK::Int_t) bou_cell_fields[n_bou_cell_fields*n+f];
+                }
+            }
+            
+            for (int rph = 0; rph < N_PHI; ++rph) VTK_nodal_field_name[rph] = "PHI_"+std::to_string(rph);
+
+            for (int f = 0; f < n_bou_nodal_fields; ++f)
+            {
+                for (int n = 0; n < n_bou_nodes; ++n)
+                {
+                    VTK_nodal_field[f][n] = bou_nodal_fields[n_bou_nodal_fields*n+f];
+                }
+            }
+            // --------------------------------------------------------
+
+            // DUMP HEADER FILE ---------------------------------------
+            if (amrex::ParallelDescriptor::IOProcessor())
+            {
+                VTK::PrintHeaderFile_VTU(dst_folder, filename_root+"Bou", time_id, time_id_max, VTK_cell_field_name, VTK_nodal_field_name);
+            }
+            // --------------------------------------------------------
+
+            // DUMP DATA FILE -----------------------------------------
+            filepath = GetOutputFilepath(dst_folder, filename_root+"Bou", time_id, time_id_max)+".vtu";
+
+            VTK::PrintUnstructuredGridData_VTU(filepath,
+                                               n_bou_nodes,
+                                               n_bou_cells,
                                                VTK_nodes,
                                                VTK_cell_conn,
                                                VTK_cell_offset,

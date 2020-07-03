@@ -169,7 +169,7 @@ struct UnitHyperrectangle
     // PARAMETERS
     const int p, Np;
     const int q, dom_Nq, bou_Nq;
-    const int g, dom_Ng;
+    const int g, dom_Ng, bou_Ng;
 
     // VARIABLES
     // Quadrature abscissae and weights
@@ -201,6 +201,8 @@ struct UnitHyperrectangle
     Gpu::ManagedVector<Real> dom_XI1g;
     Gpu::ManagedVector<Real> dom_XI2g;
     Gpu::ManagedVector<Real> dom_XI3g;
+    Gpu::ManagedVector<Real> bou_XI1g;
+    Gpu::ManagedVector<Real> bou_XI2g;
 
     // Basis functions evaluated at the uniformly-spaced grid
     Gpu::ManagedVector<Real> grid_BF;
@@ -214,7 +216,8 @@ struct UnitHyperrectangle
     dom_Nq((DIM == 1) ? (1+iq) : ((DIM == 2) ? ((1+iq)*(1+iq)) : ((1+iq)*(1+iq)*(1+iq)))),
     bou_Nq((DIM == 1) ? 1 : ((DIM == 2) ? (1+iq) : ((1+iq)*(1+iq)))),
     g(std::max(2, iq)),
-    dom_Ng((DIM == 1) ? (1+this->g) : ((DIM == 2) ? ((1+this->g)*(1+this->g)) : ((1+this->g)*(1+this->g)*(1+this->g))))
+    dom_Ng((DIM == 1) ? (1+this->g) : ((DIM == 2) ? ((1+this->g)*(1+this->g)) : ((1+this->g)*(1+this->g)*(1+this->g)))),
+    bou_Ng((DIM == 1) ? (1) : ((DIM == 2) ? (1+this->g) : ((1+this->g)*(1+this->g))))
     {
         // ALLOCATE MEMORY: QUADRATURE INFORMATION ====================
         // DOMAIN
@@ -617,6 +620,10 @@ struct UnitHyperrectangle
         if (DIM > 0) this->dom_XI1g.resize(this->dom_Ng);
         if (DIM > 1) this->dom_XI2g.resize(this->dom_Ng);
         if (DIM > 2) this->dom_XI3g.resize(this->dom_Ng);
+
+        // BOUNDARY
+        if (DIM > 1) this->bou_XI1g.resize(this->bou_Ng);
+        if (DIM > 2) this->bou_XI2g.resize(this->bou_Ng);
         // ============================================================
 
         // POINTERS TO 1D GRID POINTS =================================
@@ -676,6 +683,14 @@ struct UnitHyperrectangle
                 this->dom_XI2g[pos] = Xg_1d[g2];
             }
             // --------------------------------------------------------
+
+            // BOUNDARY -----------------------------------------------
+            for (g1 = 0; g1 < (1+this->g); ++g1)
+            {
+                pos = g1;
+                this->bou_XI1g[pos] = Xg_1d[g1];
+            }
+            // --------------------------------------------------------
             
         }
         else if (DIM == 3)
@@ -693,6 +708,16 @@ struct UnitHyperrectangle
                 this->dom_XI1g[pos] = Xg_1d[g1];
                 this->dom_XI2g[pos] = Xg_1d[g2];
                 this->dom_XI3g[pos] = Xg_1d[g3];
+            }
+            // --------------------------------------------------------
+
+            // BOUNDARY -----------------------------------------------
+            for (g2 = 0; g2 < (1+this->g); ++g2)
+            for (g1 = 0; g1 < (1+this->g); ++g1)
+            {
+                pos = g1+g2*(1+this->g);
+                this->bou_XI1g[pos] = Xg_1d[g1];
+                this->bou_XI2g[pos] = Xg_1d[g2];
             }
             // --------------------------------------------------------
         }
@@ -1538,6 +1563,7 @@ std::string GetOutputFilepath(const std::string & dst_folder,
                               const int & time_id_max);
 
 Gpu::ManagedVector<int> Get_VTK_BaseCell_Connectivity(const int & ne);
+Gpu::ManagedVector<int> Get_VTK_BaseBouCell_Connectivity(const int & ne);
 // ####################################################################
 // ####################################################################
 

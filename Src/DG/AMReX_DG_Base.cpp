@@ -116,6 +116,46 @@ Gpu::ManagedVector<int> Get_VTK_BaseCell_Connectivity(const int & ne)
 #endif
     return cell_conn;
 }
+
+Gpu::ManagedVector<int> Get_VTK_BaseBouCell_Connectivity(const int & ne)
+{
+    // PARAMETERS -----------------------------------------------------
+#if (AMREX_SPACEDIM == 3)
+    const int nn = ne+1;
+#endif
+    const int cell_n_hyperrects = AMREX_D_PICK(1, ne, ne*ne);
+    const int cell_bou_conn_len = AMREX_D_PICK(1, 2*cell_n_hyperrects, 4*cell_n_hyperrects);
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    Gpu::ManagedVector<int> bou_cell_conn(cell_bou_conn_len);
+    // ----------------------------------------------------------------
+
+#if (AMREX_SPACEDIM == 1)
+    bou_cell_conn[0] = 0;
+#endif
+#if (AMREX_SPACEDIM == 2)
+    for (int i = 0; i < ne; ++i)
+    {
+        bou_cell_conn[2*i] = i;
+        bou_cell_conn[2*i+1] = i+1;
+    }
+#endif
+#if (AMREX_SPACEDIM == 3)
+    int c;
+    for (int j = 0; j < ne; ++j)
+    for (int i = 0; i < ne; ++i)
+    {
+        c = i+j*ne;
+        bou_cell_conn[4*c+0] = i+j*nn;
+        bou_cell_conn[4*c+1] = (i+1)+j*nn;
+        bou_cell_conn[4*c+2] = (i+1)+(j+1)*nn;
+        bou_cell_conn[4*c+3] = i+(j+1)*nn;
+    }
+#endif
+
+    return bou_cell_conn;
+}
 // ====================================================================
 // ####################################################################
 // ####################################################################
