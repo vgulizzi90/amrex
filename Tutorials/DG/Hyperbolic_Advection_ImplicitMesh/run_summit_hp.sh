@@ -2,8 +2,8 @@
 
 #BSUB -P CSC308
 #BSUB -J ICS_periodic_BCS_periodic
-#BSUB -W 1:00
-#BSUB -nnodes 4
+#BSUB -W 0:25
+#BSUB -nnodes 1
 
 RACE_PATH="RACE/Projects/2020/amrex/Tutorials/DG/Hyperbolic_Advection_ImplicitMesh/"
 HOME_DIR="$HOME/$RACE_PATH"
@@ -18,7 +18,7 @@ cp $EXE $WORK_DIR
 cd $WORK_DIR
 
 date
-jsrun --nrs 4 -a 4 -c 4 $EXE $INPUT
+jsrun --nrs 1 -a 16 -c 16 $EXE $INPUT
 
 cp $OUTPUT $HOME_DIR
 

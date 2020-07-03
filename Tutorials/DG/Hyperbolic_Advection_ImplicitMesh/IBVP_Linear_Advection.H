@@ -242,7 +242,7 @@ public:
 
 #if (AMREX_SPACEDIM == 2)
         const amrex::Real h = std::min(dx[0], dx[1]);
-        dt = 0.5*h/am;
+        dt = 0.3*h/am;
 #endif
 #if (AMREX_SPACEDIM == 3)
         const amrex::Real h = std::min(dx[0], std::min(dx[1], dx[2]));
