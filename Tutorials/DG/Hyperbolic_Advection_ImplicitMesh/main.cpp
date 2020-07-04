@@ -141,6 +141,7 @@ amrex::Print() << "#############################################################
         iGeom.Export_VTK_Mesh(dst_folder, "Mesh", n, inputs.mesh.n_time_steps);
         dG.Export_VTK(dst_folder, "Solution", n, inputs.mesh.n_time_steps, field_domains, field_names, time, iGeom, MatFactory, LinAdv);
     }
+exit(-1);
     // ================================================================
 
     // START THE ANALYSIS (ADVANCE IN TIME) ===========================

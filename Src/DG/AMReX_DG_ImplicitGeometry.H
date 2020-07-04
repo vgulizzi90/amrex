@@ -1030,6 +1030,7 @@ struct ImplicitGeometry
                         printf("\n");
                         printf("ERROR: AMReX_DG_ImplicitGeometry.H - ImplicitGeometry::EvalImplicitMesh\n");
                         printf("| Could not find a neighboring cell suitable for merging:\n");
+                        printf("| dom: %d\n", dom);
                         printf("| i,j,k: %d,%d,%d\n", i, j, k);
                         printf("| Volume fraction: %f\n", vf);
                         for (int b = 0; b < DG_CELL_N_SPACE_BOUNDARIES; ++b)
@@ -1730,7 +1731,7 @@ struct ImplicitGeometry
             // A few auxiliary constants to avoid a bunch of ifs
 #if (AMREX_SPACEDIM == 3)
             const int ci = ((1-dim)*(2-dim))/2;
-            const int cj = (dim*dim-3*dim+4)/2;
+            const int cj = (-dim*dim+dim+4)/2;
 #endif
             const Real d0 = 0.5*(dim-1.0)*(dim-2.0);
             const Real d1 = dim*(2.0-dim);

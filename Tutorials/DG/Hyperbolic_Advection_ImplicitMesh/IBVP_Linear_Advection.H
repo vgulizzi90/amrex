@@ -63,21 +63,9 @@ public:
         };
 #endif
 #if (AMREX_SPACEDIM == 3)
-        const int n_holes = 3;
-        const amrex::Real r[n_holes] = {0.13, 0.11, 0.08};
-        const amrex::Real c0[n_holes] = {0.28, 0.67, 0.32};
-        const amrex::Real c1[n_holes] = {0.7, 0.45, 0.4};
-        const amrex::Real c2[n_holes] = {0.3, 0.7, 0.5};
-        amrex::Real phi;
-        phi = r[0]*r[0]-(x[0]-c0[0])*(x[0]-c0[0])-(x[1]-c1[0])*(x[1]-c1[0])-(x[2]-c2[0])*(x[2]-c2[0]);
-        for (int h = 1; h < n_holes; ++h)
-        {
-            phi = std::max(phi, r[h]*r[h]-(x[0]-c0[h])*(x[0]-c0[h])-(x[1]-c1[h])*(x[1]-c1[h])-(x[2]-c2[h])*(x[2]-c2[h]));
-        }
-
         const amrex::Real PHI[N_PHI] =
         {
-            phi,
+            x[2]-0.5-0.125*std::sin(2.0*M_PI*(x[0]-0.4))*std::sin(2.0*M_PI*(x[1]-0.13)),
             (x[0]+0.1*x[2]-0.41)*(0.67-x[0]+0.1*x[2]),
             -1.0
         };
