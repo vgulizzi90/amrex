@@ -1738,7 +1738,9 @@ struct ImplicitGeometry
             const Real d2 = 0.5*dim*(dim-1);
             const Real nd0 = 1.0-d0;
             const Real nd1 = 1.0-d1;
+#if (AMREX_SPACEDIM == 3)
             const Real nd2 = 1.0-d2;
+#endif
 
             for (MFIter mfi(output_bou_data_info[dim]); mfi.isValid(); ++mfi)
             {
