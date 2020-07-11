@@ -12,8 +12,10 @@
 #define PHI_TYPE_TWO_PHASES_PARTICLES 2
 #define PHI_TYPE_TWO_PHASES_WOVEN_COMPOSITE 3
 #define PHI_TYPE_TWO_PHASES_AMREX 100
+#define PHI_TYPE_ONE_PHASE_LATTICE_BCC 233
+#define PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ 20
 
-#define PHI_TYPE 3
+#define PHI_TYPE 233
 // --------------------------------------------------------------------
 
 // NUMBER OF DISTANCE FUNCTIONS/DOMAINS/UNKNOWN FIELDS ----------------
@@ -32,6 +34,13 @@
 #define N_PHI 1
 #define N_DOM 2
 #define N_U 2
+
+#elif ((PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_BCC) || \
+       (PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ))
+
+#define N_PHI 1
+#define N_DOM 1
+#define N_U 1
 
 #endif
 // --------------------------------------------------------------------
@@ -65,6 +74,36 @@ public:
     // ================================================================
 
     // DISTRUCTOR =====================================================
+    // ================================================================
+
+    // AUXILIARY METHODS ==============================================
+#if (AMREX_SPACEDIM == 3)
+    // res = (A-O) x (B-O)
+    AMREX_GPU_HOST_DEVICE
+    void cross(const amrex::Real * O, const amrex::Real * A, const amrex::Real * B, amrex::Real * res) const
+    {
+        res[0] = -O[2]*A[1]+O[1]*A[2]+O[2]*B[1]-A[2]*B[1]-O[1]*B[2]+A[1]*B[2];
+        res[1] = +O[2]*A[0]-O[0]*A[2]-O[2]*B[0]+A[2]*B[0]+O[0]*B[2]-A[0]*B[2];
+        res[2] = -O[1]*A[0]+O[0]*A[1]+O[1]*B[0]-A[1]*B[0]-O[0]*B[1]+A[0]*B[1];
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    amrex::Real dPL(const amrex::Real * A, const amrex::Real * B, const amrex::Real * x) const
+    {
+        amrex::Real AB[3], C[3];
+        amrex::Real d;
+
+        AB[0] = B[0]-A[0];
+        AB[1] = B[1]-A[1];
+        AB[2] = B[2]-A[2];
+
+        this->cross(x, A, B, C);
+        
+        d = std::sqrt(C[0]*C[0]+C[1]*C[1]+C[2]*C[2])/std::sqrt(AB[0]*AB[0]+AB[1]*AB[1]+AB[2]*AB[2]);
+
+        return d;
+    }
+#endif
     // ================================================================
 
     // DISTANCE FUNCTION ==============================================
@@ -631,6 +670,51 @@ public:
         {
             phi-150.0
         };
+
+#elif ((PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_BCC) && (AMREX_SPACEDIM == 3))
+
+        const amrex::Real r = 0.3, alpha = 4.0, beta = 0.1; 
+        
+        const amrex::Real f1 = -r+std::sqrt(std::sin(M_PI*(x[0]-x[1]))*std::sin(M_PI*(x[0]-x[1]))+
+                                            std::sin(M_PI*(x[1]-x[2]))*std::sin(M_PI*(x[1]-x[2]))+
+                                            std::sin(M_PI*(x[2]-x[0]))*std::sin(M_PI*(x[2]-x[0])))/std::sqrt(3.0);
+        
+        const amrex::Real f2 = -r+std::sqrt(std::sin(M_PI*(x[0]+x[1]-1.0))*std::sin(M_PI*(x[0]+x[1]-1.0))+
+                                            std::sin(M_PI*(x[1]-x[2]))*std::sin(M_PI*(x[1]-x[2]))+
+                                            std::sin(M_PI*(x[2]+x[0]-1.0))*std::sin(M_PI*(x[2]+x[0]-1.0)))/std::sqrt(3.0);
+        
+        const amrex::Real f3 = -r+std::sqrt(std::sin(M_PI*(x[0]+x[1]-1.0))*std::sin(M_PI*(x[0]+x[1]-1.0))+
+                                            std::sin(M_PI*(x[1]+x[2]-1.0))*std::sin(M_PI*(x[1]+x[2]-1.0))+
+                                            std::sin(M_PI*(x[2]-x[0]))*std::sin(M_PI*(x[2]-x[0])))/std::sqrt(3.0);
+        
+        const amrex::Real f4 = -r+std::sqrt(std::sin(M_PI*(x[0]-x[1]))*std::sin(M_PI*(x[0]-x[1]))+
+                                            std::sin(M_PI*(x[1]+x[2]-1.0))*std::sin(M_PI*(x[1]+x[2]-1.0))+
+                                            std::sin(M_PI*(x[2]+x[0]-1.0))*std::sin(M_PI*(x[2]+x[0]-1.0)))/std::sqrt(3.0);
+        
+        amrex::Real phi;
+
+        phi = 1.0;
+        phi -= std::pow(std::max(0.0, 1.0-f1/beta), alpha);
+        phi -= std::pow(std::max(0.0, 1.0-f2/beta), alpha);
+        phi -= std::pow(std::max(0.0, 1.0-f3/beta), alpha);
+        phi -= std::pow(std::max(0.0, 1.0-f4/beta), alpha);
+
+        const amrex::Real PHI[N_PHI] =
+        {
+            phi
+        };
+
+#elif ((PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ) && (AMREX_SPACEDIM == 3))
+
+        const amrex::Real cx = std::cos(2.0*M_PI*x[0]), cy = std::cos(2.0*M_PI*x[1]), cz = std::cos(2.0*M_PI*x[2]);
+        const amrex::Real sx = std::sin(2.0*M_PI*x[0]), sy = std::sin(2.0*M_PI*x[1]), sz = std::sin(2.0*M_PI*x[2]);
+        const amrex::Real f = sx*sy*sz+sx*cy*cz+cx*sy*cz+cx*cy*cz;
+
+        const amrex::Real PHI[N_PHI] =
+        {
+            (f-0.5)*(f+0.5)
+        };
+
 #else
         amrex::Print() << "ERROR: IBVP_Linear_Advection.H - LINADV::F_PHI" << std::endl;
         amrex::Print() << "| Unexpected distance function(s)." << std::endl;
@@ -665,6 +749,15 @@ public:
 
             // dom = 1
             0, +1
+        };
+
+#elif ((PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_BCC) || \
+       (PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ))
+
+        const int PHI_INFO[2*N_DOM] =
+        {
+            // dom = 0
+            0, -1,
         };
 
 #else
@@ -722,6 +815,15 @@ public:
 
             // sol = 1
             1
+        };
+
+#elif ((PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_BCC) || \
+       (PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ))
+
+        const int DOM[N_U] =
+        {
+            // sol = 0
+            0,
         };
 
 #else
@@ -792,6 +894,15 @@ public:
 
             // dom = 1
             0
+        };
+
+#elif ((PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_BCC) || \
+       (PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ))
+
+        const int NBRDOM[N_DOM] =
+        {
+            // dom = 0
+            -1,
         };
 
 #else
