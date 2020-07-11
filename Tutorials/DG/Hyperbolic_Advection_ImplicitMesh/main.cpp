@@ -139,7 +139,7 @@ amrex::Print() << "#############################################################
         std::vector<std::string> field_names = {"rho_a", "err_a", "rho_b", "err_b"};
 
         iGeom.Export_VTK_Mesh(dst_folder, "Mesh", n, inputs.mesh.n_time_steps);
-        dG.Export_VTK(dst_folder, "Solution", n, inputs.mesh.n_time_steps, field_domains, field_names, time, iGeom, MatFactory, LinAdv);
+        //dG.Export_VTK(dst_folder, "Solution", n, inputs.mesh.n_time_steps, field_domains, field_names, time, iGeom, MatFactory, LinAdv);
     }
 exit(-1);
     // ================================================================
