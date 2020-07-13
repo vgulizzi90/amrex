@@ -5,7 +5,7 @@
 #define PHI_TYPE_ONE_PHASE -1
 #define PHI_TYPE_TWO_PHASES_PERIODIC 0
 
-#define PHI_TYPE 0
+#define PHI_TYPE -1
 // --------------------------------------------------------------------
 
 // NUMBER OF DISTANCE FUNCTIONS/DOMAINS/UNKNOWN FIELDS ----------------
@@ -34,15 +34,13 @@
 #define N_S 6
 #endif
 
-#define N_VS (N_V+N_S)
-
 #if (PHI_TYPE == PHI_TYPE_ONE_PHASE)
 
-#define N_U N_VS
+#define N_U (N_V+N_S)
 
 #elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
 
-#define N_U (2*N_VS)
+#define N_U (2*(N_V+N_S))
 
 #endif
 // --------------------------------------------------------------------
@@ -84,16 +82,16 @@ private:
                                      0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
                                      0.0, 0.0, 1.0, 0.0, 0.0, 0.0};
 #endif
-    amrex::Real AMREX_D_DECL(A1[N_VS*N_VS], A2[N_VS*N_VS], A3[N_VS*N_VS]);
-    amrex::Real AMREX_D_DECL(A1_w[N_VS], A2_w[N_VS], A3_w[N_VS]);
-    amrex::Real AMREX_D_DECL(A1_v[N_VS*N_VS], A2_v[N_VS*N_VS], A3_v[N_VS*N_VS]);
-    amrex::Real AMREX_D_DECL(iA1_v[N_VS*N_VS], iA2_v[N_VS*N_VS], iA3_v[N_VS*N_VS]);
+    amrex::Real AMREX_D_DECL(A1[N_U*N_U], A2[N_U*N_U], A3[N_U*N_U]);
+    amrex::Real AMREX_D_DECL(A1_w[N_U], A2_w[N_U], A3_w[N_U]);
+    amrex::Real AMREX_D_DECL(A1_v[N_U*N_U], A2_v[N_U*N_U], A3_v[N_U*N_U]);
+    amrex::Real AMREX_D_DECL(iA1_v[N_U*N_U], iA2_v[N_U*N_U], iA3_v[N_U*N_U]);
 
     // VARIABLES FOR INITIAL CONDITIONS
     amrex::Real ICs_un[AMREX_SPACEDIM];
-    amrex::Real ICs_P[N_VS*N_VS];
-    amrex::Real ICs_P_w[N_VS];
-    amrex::Real ICs_P_v[N_VS*N_VS];
+    amrex::Real ICs_P[N_U*N_U];
+    amrex::Real ICs_P_w[N_U];
+    amrex::Real ICs_P_v[N_U*N_U];
 
     // LARGEST WAVE SPEED
     amrex::Real max_wave_speed;
@@ -152,9 +150,9 @@ public:
 
         AMREX_D_TERM
         (
-            std::fill(A1, A1+N_VS*N_VS, 0.0);,
-            std::fill(A2, A2+N_VS*N_VS, 0.0);,
-            std::fill(A3, A3+N_VS*N_VS, 0.0);
+            std::fill(A1, A1+N_U*N_U, 0.0);,
+            std::fill(A2, A2+N_U*N_U, 0.0);,
+            std::fill(A3, A3+N_U*N_U, 0.0);
         )
         // ------------------------------------------------------------
 
@@ -231,9 +229,9 @@ public:
         {
             AMREX_D_TERM
             (
-                this->A1[r+c*N_VS] = -inv_rho*I1T[r+(c-N_V)*N_V];,
-                this->A2[r+c*N_VS] = -inv_rho*I2T[r+(c-N_V)*N_V];,
-                this->A3[r+c*N_VS] = -inv_rho*I3T[r+(c-N_V)*N_V];
+                this->A1[r+c*N_U] = -inv_rho*I1T[r+(c-N_V)*N_V];,
+                this->A2[r+c*N_U] = -inv_rho*I2T[r+(c-N_V)*N_V];,
+                this->A3[r+c*N_U] = -inv_rho*I3T[r+(c-N_V)*N_V];
             )
         }
 
@@ -242,27 +240,27 @@ public:
         {
             AMREX_D_TERM
             (
-                this->A1[r+c*N_VS] = -cI1[r-N_V+c*N_S];,
-                this->A2[r+c*N_VS] = -cI2[r-N_V+c*N_S];,
-                this->A3[r+c*N_VS] = -cI3[r-N_V+c*N_S];
+                this->A1[r+c*N_U] = -cI1[r-N_V+c*N_S];,
+                this->A2[r+c*N_U] = -cI2[r-N_V+c*N_S];,
+                this->A3[r+c*N_U] = -cI3[r-N_V+c*N_S];
             )
         }
 
         // AND THEIR EIGENVALUES
         {
-            amrex::Real wIm[N_VS];
+            amrex::Real wIm[N_U];
 
             AMREX_D_TERM
             (
-                amrex::DG_utils::eig(false, true, N_VS, this->A1, this->A1_w, wIm, nullptr, this->A1_v);,
-                amrex::DG_utils::eig(false, true, N_VS, this->A2, this->A2_w, wIm, nullptr, this->A2_v);,
-                amrex::DG_utils::eig(false, true, N_VS, this->A3, this->A3_w, wIm, nullptr, this->A3_v);
+                amrex::DG_utils::eig(false, true, N_U, this->A1, this->A1_w, wIm, nullptr, this->A1_v);,
+                amrex::DG_utils::eig(false, true, N_U, this->A2, this->A2_w, wIm, nullptr, this->A2_v);,
+                amrex::DG_utils::eig(false, true, N_U, this->A3, this->A3_w, wIm, nullptr, this->A3_v);
             )
             AMREX_D_TERM
             (
-                amrex::DG_utils::matinv(N_VS, this->A1_v, this->iA1_v);,
-                amrex::DG_utils::matinv(N_VS, this->A2_v, this->iA2_v);,
-                amrex::DG_utils::matinv(N_VS, this->A3_v, this->iA3_v);
+                amrex::DG_utils::matinv(N_U, this->A1_v, this->iA1_v);,
+                amrex::DG_utils::matinv(N_U, this->A2_v, this->iA2_v);,
+                amrex::DG_utils::matinv(N_U, this->A3_v, this->iA3_v);
             )
         }
         // ------------------------------------------------------------
@@ -288,14 +286,14 @@ public:
             )
         }
 
-        for (int c = 0; c < N_VS; ++c)
-        for (int r = 0; r < N_VS; ++r)
+        for (int c = 0; c < N_U; ++c)
+        for (int r = 0; r < N_U; ++r)
         {
             AMREX_D_TERM
             (
-                this->ICs_P[r+c*N_VS]  = this->A1[r+c*N_VS]*this->ICs_un[0];,
-                this->ICs_P[r+c*N_VS] += this->A2[r+c*N_VS]*this->ICs_un[1];,
-                this->ICs_P[r+c*N_VS] += this->A3[r+c*N_VS]*this->ICs_un[2];
+                this->ICs_P[r+c*N_U]  = this->A1[r+c*N_U]*this->ICs_un[0];,
+                this->ICs_P[r+c*N_U] += this->A2[r+c*N_U]*this->ICs_un[1];,
+                this->ICs_P[r+c*N_U] += this->A3[r+c*N_U]*this->ICs_un[2];
             )
         }
 
@@ -303,9 +301,9 @@ public:
         // The i-th eigenvector will be stored in the i-th column of
         // the array ICs_P_v. Remember that we use row-major format.
         {
-            amrex::Real wIm[N_VS];
+            amrex::Real wIm[N_U];
 
-            amrex::DG_utils::eig(false, true, N_VS, this->ICs_P, this->ICs_P_w, wIm, nullptr, this->ICs_P_v);
+            amrex::DG_utils::eig(false, true, N_U, this->ICs_P, this->ICs_P_w, wIm, nullptr, this->ICs_P_v);
         }
         // ------------------------------------------------------------
 
@@ -329,6 +327,52 @@ public:
             amrex::Print() << "| Unexpected material type: " << material_type << std::endl;
             exit(-1);
         }
+/*
+        {
+            this->max_wave_speed = 0.0;
+
+            amrex::Real un[AMREX_SPACEDIM], P[N_U*N_U], wRe[N_U], wIm[N_U];
+            const int n_theta = 180;
+            const amrex::Real dtheta = 2.0*M_PI/n_theta;
+            amrex::Real theta;
+#if (AMREX_SPACEDIM == 3)
+            const int n_phi = n_theta/2;
+            const amrex::Real dphi = M_PI/n_phi;
+            amrex::Real phi;
+#endif
+#if (AMREX_SPACEDIM == 2)
+            for (int i = 0; i < n_theta; ++i)
+            {
+                theta = i*dtheta;
+                un[0] = std::cos(theta);
+                un[1] = std::sin(theta);
+                this->_eval_P_(un, P);
+                amrex::DG_utils::eig(N_U, P, wRe, wIm);
+                for (int u = 0; u < N_U; ++u) wRe[u] = std::abs(wRe[u]);
+
+                this->max_wave_speed = std::max(*std::max_element(wRe, wRe+N_U), this->max_wave_speed);
+
+            }
+#endif
+#if (AMREX_SPACEDIM == 3)
+            for (int j = 0; j < n_phi; ++j)
+            for (int i = 0; i < n_theta; ++i)
+            {
+                theta = i*dtheta;
+                phi = j*dphi;
+                un[0] = std::cos(theta)*std::sin(phi);
+                un[1] = std::sin(theta)*std::sin(phi);
+                un[2] = std::cos(phi);
+
+                this->_eval_P_(un, P);
+                amrex::DG_utils::eig(N_U, P, wRe, wIm);
+                for (int u = 0; u < N_U; ++u) wRe[u] = std::abs(wRe[u]);
+
+                this->max_wave_speed = std::max(*std::max_element(wRe, wRe+N_U), this->max_wave_speed);
+            }
+#endif
+        }
+*/
         // ------------------------------------------------------------
     }
 
@@ -348,56 +392,56 @@ public:
     AMREX_GPU_HOST_DEVICE
     void _eval_T_(const amrex::Real * un, amrex::Real * T) const
     {
-        for (int k = 0; k < N_VS*N_VS; ++k)
+        for (int k = 0; k < N_U*N_U; ++k)
         {
             T[k] = 0.0;
         }
 #if (AMREX_SPACEDIM == 2)
-        T[0+0*N_VS] =  un[0]; T[0+1*N_VS] = un[1];
-        T[1+0*N_VS] = -un[1]; T[1+1*N_VS] = un[0];
+        T[0+0*N_U] =  un[0]; T[0+1*N_U] = un[1];
+        T[1+0*N_U] = -un[1]; T[1+1*N_U] = un[0];
         
-        T[2+2*N_VS] = un[0]*un[0]; T[2+3*N_VS] = un[1]*un[1]; T[2+4*N_VS] = 2.0*un[0]*un[1];
-        T[3+2*N_VS] = un[1]*un[1]; T[3+3*N_VS] = un[0]*un[0]; T[3+4*N_VS] = -2.0*un[0]*un[1];
-        T[4+2*N_VS] = -un[0]*un[1]; T[4+3*N_VS] = un[0]*un[1]; T[4+4*N_VS] = un[0]*un[0]-un[1]*un[1];
+        T[2+2*N_U] = un[0]*un[0]; T[2+3*N_U] = un[1]*un[1]; T[2+4*N_U] = 2.0*un[0]*un[1];
+        T[3+2*N_U] = un[1]*un[1]; T[3+3*N_U] = un[0]*un[0]; T[3+4*N_U] = -2.0*un[0]*un[1];
+        T[4+2*N_U] = -un[0]*un[1]; T[4+3*N_U] = un[0]*un[1]; T[4+4*N_U] = un[0]*un[0]-un[1]*un[1];
 #endif
     }
     
     AMREX_GPU_HOST_DEVICE
     void _eval_T_(const amrex::Real * un, amrex::Real * T, amrex::Real * iT) const
     {
-        for (int k = 0; k < N_VS*N_VS; ++k)
+        for (int k = 0; k < N_U*N_U; ++k)
         {
             T[k] = 0.0;
             iT[k] = 0.0;
         }
 #if (AMREX_SPACEDIM == 2)
-        T[0+0*N_VS] =  un[0]; T[0+1*N_VS] = un[1];
-        T[1+0*N_VS] = -un[1]; T[1+1*N_VS] = un[0];
+        T[0+0*N_U] =  un[0]; T[0+1*N_U] = un[1];
+        T[1+0*N_U] = -un[1]; T[1+1*N_U] = un[0];
         
-        T[2+2*N_VS] = un[0]*un[0]; T[2+3*N_VS] = un[1]*un[1]; T[2+4*N_VS] = 2.0*un[0]*un[1];
-        T[3+2*N_VS] = un[1]*un[1]; T[3+3*N_VS] = un[0]*un[0]; T[3+4*N_VS] = -2.0*un[0]*un[1];
-        T[4+2*N_VS] = -un[0]*un[1]; T[4+3*N_VS] = un[0]*un[1]; T[4+4*N_VS] = un[0]*un[0]-un[1]*un[1];
+        T[2+2*N_U] = un[0]*un[0]; T[2+3*N_U] = un[1]*un[1]; T[2+4*N_U] = 2.0*un[0]*un[1];
+        T[3+2*N_U] = un[1]*un[1]; T[3+3*N_U] = un[0]*un[0]; T[3+4*N_U] = -2.0*un[0]*un[1];
+        T[4+2*N_U] = -un[0]*un[1]; T[4+3*N_U] = un[0]*un[1]; T[4+4*N_U] = un[0]*un[0]-un[1]*un[1];
 
-        iT[0+0*N_VS] = un[0]; iT[0+1*N_VS] = -un[1];
-        iT[1+0*N_VS] = un[1]; iT[1+1*N_VS] = un[0];
+        iT[0+0*N_U] = un[0]; iT[0+1*N_U] = -un[1];
+        iT[1+0*N_U] = un[1]; iT[1+1*N_U] = un[0];
         
-        iT[2+2*N_VS] = un[0]*un[0]; iT[2+3*N_VS] = un[1]*un[1]; iT[2+4*N_VS] = -2.0*un[0]*un[1];
-        iT[3+2*N_VS] = un[1]*un[1]; iT[3+3*N_VS] = un[0]*un[0]; iT[3+4*N_VS] = 2.0*un[0]*un[1];
-        iT[4+2*N_VS] = un[0]*un[1]; iT[4+3*N_VS] = -un[0]*un[1]; iT[4+4*N_VS] = un[0]*un[0]-un[1]*un[1];
+        iT[2+2*N_U] = un[0]*un[0]; iT[2+3*N_U] = un[1]*un[1]; iT[2+4*N_U] = -2.0*un[0]*un[1];
+        iT[3+2*N_U] = un[1]*un[1]; iT[3+3*N_U] = un[0]*un[0]; iT[3+4*N_U] = 2.0*un[0]*un[1];
+        iT[4+2*N_U] = un[0]*un[1]; iT[4+3*N_U] = -un[0]*un[1]; iT[4+4*N_U] = un[0]*un[0]-un[1]*un[1];
 #endif
     }
     
     AMREX_GPU_HOST_DEVICE
     void _eval_P_(const amrex::Real * un, amrex::Real * P) const
     {
-        for (int c = 0; c < N_VS; ++c)
-        for (int r = 0; r < N_VS; ++r)
+        for (int c = 0; c < N_U; ++c)
+        for (int r = 0; r < N_U; ++r)
         {
             AMREX_D_TERM
             (
-                P[r+c*N_VS]  = this->A1[r+c*N_VS]*un[0];,
-                P[r+c*N_VS] += this->A2[r+c*N_VS]*un[1];,
-                P[r+c*N_VS] += this->A3[r+c*N_VS]*un[2];
+                P[r+c*N_U]  = this->A1[r+c*N_U]*un[0];,
+                P[r+c*N_U] += this->A2[r+c*N_U]*un[1];,
+                P[r+c*N_U] += this->A3[r+c*N_U]*un[2];
             )
         }
     }
@@ -405,12 +449,12 @@ public:
     AMREX_GPU_HOST_DEVICE
     void _eval_Pn_(const amrex::Real * un, amrex::Real * Pn) const
     {
-        amrex::Real P[N_VS*N_VS], T[N_VS*N_VS], iT[N_VS*N_VS];
+        amrex::Real P[N_U*N_U], T[N_U*N_U], iT[N_U*N_U];
         this->_eval_P_(un, Pn);
         this->_eval_T_(un, T, iT);
 
-        amrex::DG_utils::matmul(N_VS, N_VS, N_VS, Pn, iT, P);
-        amrex::DG_utils::matmul(N_VS, N_VS, N_VS, T, P, Pn);
+        amrex::DG_utils::matmul(N_U, N_U, N_U, Pn, iT, P);
+        amrex::DG_utils::matmul(N_U, N_U, N_U, T, P, Pn);
     }
     // ================================================================
 
@@ -499,6 +543,8 @@ public:
     // INITIAL CONDITIONS: UNKNOWN FIELDS =============================
 #define ICS_ZERO -1
 #define ICS_EIGEN_STATE 0
+#define ICS_INITIAL_STRAIN 1
+#define ICS_INITIAL_STRESS 2
 #define ICS 0
 
     AMREX_GPU_HOST_DEVICE
@@ -512,24 +558,73 @@ public:
         const amrex::Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(this->ICs_un[0], this->ICs_un[1], this->ICs_un[2])};
         const amrex::Real x_dot_un = AMREX_D_PICK(x[0]*un[0], x[0]*un[0]+x[1]*un[1], x[0]*un[0]+x[1]*un[1]+x[2]*un[2]);
         const amrex::Real f0 = std::sin(2.0*M_PI*x_dot_un);
-#if (AMREX_SPACEDIM == 2)
         const int iv = 3;
-#endif
-#if (AMREX_SPACEDIM == 3)
-        const int iv = 4;
-#endif
         
-#if (PHI_TYPE == PHI_TYPE_ONE_PHASE)
+        res = this->ICs_P_v[u+iv*N_U]*f0;
+#endif
+#if (ICS == ICS_INITIAL_STRAIN)
+        const amrex::Real xc[AMREX_SPACEDIM] = {AMREX_D_DECL(0.5, 0.5, 0.5)};
+#if (AMREX_SPACEDIM == 2)
+        const amrex::Real r2 = 500.0*((x[0]-xc[0])*(x[0]-xc[0])+(x[1]-xc[1])*(x[1]-xc[1]));
+#endif
+        //const amrex::Real f0 = std::exp(-r2);
+        AMREX_D_TERM
+        (
+            const amrex::Real df0dx1 = -1000.0*(x[0]-xc[0])*std::exp(-r2);,
+            const amrex::Real df0dx2 = -1000.0*(x[1]-xc[1])*std::exp(-r2);,
+            const amrex::Real df0dx3 = -1000.0*(x[2]-xc[2])*std::exp(-r2);
+        )
+        const amrex::Real a[N_V] = {AMREX_D_DECL(1.0, 0.0, 0.0)};
+        amrex::Real AMREX_D_DECL(dudx1[N_V], dudx2[N_V], dudx3[N_V]);
+        amrex::Real AMREX_D_DECL(s1[N_S], s2[N_S], s3[N_S]);
+        for (int r = 0; r < N_V; ++r)
+        {
+            AMREX_D_TERM
+            (
+                dudx1[r] = a[r]*df0dx1;,
+                dudx2[r] = a[r]*df0dx2;,
+                dudx3[r] = a[r]*df0dx3;
+            )
+        }
 
-        res = this->ICs_P_v[u+iv*N_VS]*f0;
+        for (int r = 0; r < N_S; ++r)
+        {
+            AMREX_D_TERM
+            (
+                s1[r] = 0.0;,
+                s2[r] = 0.0;,
+                s3[r] = 0.0;
+            )
+        }
 
-#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
+        for (int c = 0; c < N_V; ++c)
+        for (int r = 0; r < N_S; ++r)
+        {
+            AMREX_D_TERM
+            (
+                s1[r] -= this->A1[r+N_V+c*N_U]*dudx1[c];,
+                s2[r] -= this->A2[r+N_V+c*N_U]*dudx2[c];,
+                s3[r] -= this->A3[r+N_V+c*N_U]*dudx3[c];
+            )
+        }
 
-        res = (u < N_VS) ? (this->ICs_P_v[u+iv*N_VS]*f0) : (this->ICs_P_v[u-N_VS+iv*N_VS]*f0);
+        amrex::Real U0[N_U];
 
+        for (int r = 0; r < N_V; ++r) U0[r] = 0.0;
+
+        for (int r = 0; r < N_S; ++r)
+        {
+            AMREX_D_TERM
+            (
+                U0[r+N_V]  = s1[r];,
+                U0[r+N_V] += s2[r];,
+                U0[r+N_V] += s3[r];
+            )
+        }
+
+        res = U0[u];
 #endif
 
-#endif
         return res;
     }
     // ================================================================
@@ -538,36 +633,18 @@ public:
     int F_U2DOM(const int & u) const
     {
 #if (PHI_TYPE == PHI_TYPE_ONE_PHASE)
-
-#if (AMREX_SPACEDIM == 2)
         const int DOM[N_U] =
         {
             0, 0, 0, 0, 0
         };
-#endif
-#if (AMREX_SPACEDIM == 3)
-        const int DOM[N_U] =
-        {
-            0, 0, 0, 0, 0, 0, 0, 0, 0
-        };
-#endif
 
 #elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
 
-#if (AMREX_SPACEDIM == 2)
         const int DOM[N_U] =
         {
             0, 0, 0, 0, 0,
             1, 1, 1, 1, 1
         };
-#endif
-#if (AMREX_SPACEDIM == 3)
-        const int DOM[N_U] =
-        {
-            0, 0, 0, 0, 0, 0, 0, 0, 0,
-            1, 1, 1, 1, 1, 1, 1, 1, 1
-        };
-#endif
 
 #else
         amrex::Print() << "ERROR: IBVP_ElasticWaves.H - ELASTIC_WAVES::F_U2DOM" << std::endl;
@@ -587,36 +664,19 @@ public:
 #if (ICS == ICS_EIGEN_STATE)
         const amrex::Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(this->ICs_un[0], this->ICs_un[1], this->ICs_un[2])};
         const amrex::Real x_dot_un = AMREX_D_PICK(x[0]*un[0], x[0]*un[0]+x[1]*un[1], x[0]*un[0]+x[1]*un[1]+x[2]*un[2]);
-#if (AMREX_SPACEDIM == 2)
         const int iv = 3;
-#endif
-#if (AMREX_SPACEDIM == 3)
-        const int iv = 4;
-#endif
         const amrex::Real w = this->ICs_P_w[iv];
         const amrex::Real f0 = std::sin(2.0*M_PI*(x_dot_un-w*t));
 
-#if (PHI_TYPE == PHI_TYPE_ONE_PHASE)
-
-        for (int u = 0; u < N_VS; ++u)
+        for (int u = 0; u < N_U; ++u)
         {
-            U[u] = this->ICs_P_v[u+iv*N_VS]*f0;
+            U[u] = this->ICs_P_v[u+iv*N_U]*f0;
         }
-
-#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
-
-        for (int u = 0; u < N_VS; ++u)
-        {
-            U[u] = this->ICs_P_v[u+iv*N_VS]*f0;
-        }
-
-        for (int u = N_VS; u < (2*N_VS); ++u)
-        {
-            U[u] = this->ICs_P_v[u-N_VS+iv*N_VS]*f0;
-        }
-
+#else
+#if (!AMREX_USE_CUDA)
+amrex::Print() << "Hello! F_EXACT with ICS != ICS_EIGEN_STATE" << std::endl;
+exit(-1);
 #endif
-
 #endif
     }
 
@@ -626,27 +686,17 @@ public:
                  amrex::Real & err_x,
                  amrex::Real & norm_x) const
     {
-#if (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
-        const int ph = 0;
-        const amrex::Real phi = this->F_PHI(ph, t, x);
-#endif
-        
 #if (ICS == ICS_EIGEN_STATE)
         const amrex::Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(this->ICs_un[0], this->ICs_un[1], this->ICs_un[2])};
         const amrex::Real x_dot_un = AMREX_D_PICK(x[0]*un[0], x[0]*un[0]+x[1]*un[1], x[0]*un[0]+x[1]*un[1]+x[2]*un[2]);
-#if (AMREX_SPACEDIM == 2)
         const int iv = 3;
-#endif
-#if (AMREX_SPACEDIM == 3)
-        const int iv = 4;
-#endif
         const amrex::Real w = this->ICs_P_w[iv];
         const amrex::Real f0 = std::sin(2.0*M_PI*(x_dot_un-w*t));
-        amrex::Real Ue[N_VS], V[N_VS];
+        amrex::Real Ue[N_U], V[N_U];
 
-        for (int u = 0; u < N_VS; ++u)
+        for (int u = 0; u < N_U; ++u)
         {
-            Ue[u] = this->ICs_P_v[u+iv*N_VS]*f0;
+            Ue[u] = this->ICs_P_v[u+iv*N_U]*f0;
         }
         
         AMREX_D_TERM
@@ -657,22 +707,15 @@ public:
         )
         amrex::DG_utils::matmul(N_S, N_S, 1, this->S, &Ue[N_V], &V[N_V]);
         norm_x = 0.0;
-        for (int u = 0; u < N_VS; ++u)
+        for (int u = 0; u < N_U; ++u)
         {
             norm_x += Ue[u]*V[u];
         }
 
-#if (PHI_TYPE == PHI_TYPE_ONE_PHASE)
-        for (int u = 0; u < N_VS; ++u)
+        for (int u = 0; u < N_U; ++u)
         {
             Ue[u] -= U[u];
         }
-#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
-        for (int u = 0; u < N_VS; ++u)
-        {
-            Ue[u] -= (phi < 0.0) ? U[u] : U[u+N_VS];
-        }
-#endif
         AMREX_D_TERM
         (
             V[0] = this->density*Ue[0];,
@@ -681,7 +724,7 @@ public:
         )
         amrex::DG_utils::matmul(N_S, N_S, 1, this->S, &Ue[N_V], &V[N_V]);
         err_x = 0.0;
-        for (int u = 0; u < N_VS; ++u)
+        for (int u = 0; u < N_U; ++u)
         {
             err_x += Ue[u]*V[u];
         }
@@ -750,29 +793,12 @@ exit(-1);
              const amrex::Real * U,
              AMREX_D_DECL(amrex::Real * F1, amrex::Real * F2, amrex::Real * F3)) const
     {
-#if (PHI_TYPE == PHI_TYPE_ONE_PHASE)
         AMREX_D_TERM
         (
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1, U, F1);,
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A2, U, F2);,
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A3, U, F3);
+            amrex::DG_utils::matmul(N_U, N_U, 1, this->A1, U, F1);,
+            amrex::DG_utils::matmul(N_U, N_U, 1, this->A2, U, F2);,
+            amrex::DG_utils::matmul(N_U, N_U, 1, this->A3, U, F3);
         )
-
-#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
-        AMREX_D_TERM
-        (
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1, U, F1);,
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A2, U, F2);,
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A3, U, F3);
-        )
-
-        AMREX_D_TERM
-        (
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1, &U[N_VS], &F1[N_VS]);,
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A2, &U[N_VS], &F2[N_VS]);,
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A3, &U[N_VS], &F3[N_VS]);
-        )
-#endif
     }
     // ================================================================
 
@@ -791,6 +817,7 @@ exit(-1);
     {
         const amrex::Real mu = this->max_wave_speed;
 
+        // dom = 0
         for (int u = 0; u < N_U; ++u)
         {
             AMREX_D_TERM
@@ -809,37 +836,6 @@ exit(-1);
                        AMREX_D_DECL(const amrex::Real * nbr_F1, const amrex::Real * nbr_F2, const amrex::Real * nbr_F3),
                        AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
     {
-        const amrex::Real mu = this->max_wave_speed;
-
-#if (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
-        for (int u = 0; u < (N_VS); ++u)
-        {
-            AMREX_D_TERM
-            (
-                NF1[u] = 0.5*(F1[u]+nbr_F1[u+N_VS])+0.5*mu*(U[u]-nbr_U[u+N_VS])*un[0];,
-                NF2[u] = 0.5*(F2[u]+nbr_F2[u+N_VS])+0.5*mu*(U[u]-nbr_U[u+N_VS])*un[1];,
-                NF3[u] = 0.5*(F3[u]+nbr_F3[u+N_VS])+0.5*mu*(U[u]-nbr_U[u+N_VS])*un[2];
-            )
-        }
-
-        for (int u = (N_VS); u < (2*N_VS); ++u)
-        {
-            AMREX_D_TERM
-            (
-                NF1[u] = 0.5*(F1[u]+nbr_F1[u-N_VS])+0.5*mu*(U[u]-nbr_U[u-N_VS])*un[0];,
-                NF2[u] = 0.5*(F2[u]+nbr_F2[u-N_VS])+0.5*mu*(U[u]-nbr_U[u-N_VS])*un[1];,
-                NF3[u] = 0.5*(F3[u]+nbr_F3[u-N_VS])+0.5*mu*(U[u]-nbr_U[u-N_VS])*un[2];
-            )
-        }
-
-#else
-
-#if (!AMREX_USE_CUDA)
-amrex::Print() << "Hello! _NF_PHI_base_" << std::endl;
-exit(-1);
-#endif
-
-#endif
     }
     
     // INTRAPHASE
@@ -863,11 +859,67 @@ exit(-1);
                   const amrex::Real * U,
                   AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
     {
-#if (!AMREX_USE_CUDA)
-amrex::Print() << "Hello! F_NF_BCS" << std::endl;
-exit(-1);
+        amrex::Real AMREX_D_DECL(F1[N_U], F2[N_U], F3[N_U]);
+        amrex::Real AMREX_D_DECL(nbr_F1[N_U], nbr_F2[N_U], nbr_F3[N_U]);
+
+#if (GRID_BCS == GRID_BCS_ABSORBING)
+        amrex::Real cv[N_U], nbr_U[N_U];
+        
+        if (std::abs(un[0]) > 0.5)
+        {
+            amrex::DG_utils::matmul(N_U, N_U, 1, this->iA1_v, U, cv);
+            for (int u = 0; u < N_U; ++u)
+                if (this->A1_w[u]*un[0] < 0.0) cv[u] = 0.0;
+            amrex::DG_utils::matmul(N_U, N_U, 1, this->A1_v, cv, nbr_U);
+            
+        }
+        else if (std::abs(un[1]) > 0.5)
+        {
+            amrex::DG_utils::matmul(N_U, N_U, 1, this->iA2_v, U, cv);
+            for (int u = 0; u < N_U; ++u)
+                if (this->A2_w[u]*un[1] < 0.0) cv[u] = 0.0;
+            amrex::DG_utils::matmul(N_U, N_U, 1, this->A2_v, cv, nbr_U);
+        }
+#if (AMREX_SPACEDIM > 2)
+        else if (std::abs(un[2]) > 0.5)
+        {
+
+        }
 #endif
+#endif
+
+#if (GRID_BCS == GRID_BCS_ENCASTRE)
+        amrex::Real nbr_U[N_U];
+        for (int u = 0; u < N_V; ++u) nbr_U[u] = -U[u];
+        for (int u = N_V; u < (N_V+N_S); ++u) nbr_U[u] = +U[u];
+#endif
+
+#if (GRID_BCS == GRID_BCS_TRACTION_FREE)
+        amrex::Real T[N_U*N_U], iT[N_U*N_U];
+        amrex::Real nbr_U[N_U], Un[N_U];
+
+        this->_eval_T_(un, T, iT);
+        amrex::DG_utils::matmul(N_U, N_U, 1, T, U, Un);
+#if (AMREX_SPACEDIM == 2)
+        Un[2] = -Un[2]; // Snn
+        Un[4] = -Un[4]; // Sns
+#endif
+#if (AMREX_SPACEDIM == 3)
+        Un[3] = -Un[3]; // Snn
+        Un[7] = -Un[7]; // Sns
+        Un[8] = -Un[8]; // Snt
+#endif
+        amrex::DG_utils::matmul(N_U, N_U, 1, iT, Un, nbr_U);
+#endif
+    
+        this->F_F(t, x, U, AMREX_D_DECL(F1, F2, F3));
+        this->F_F(t, x, nbr_U, AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3));
+
+        this->_NF_base_(un, U, nbr_U, AMREX_D_DECL(F1, F2, F3), AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3), AMREX_D_DECL(NF1, NF2, NF3));
     }
+
+#define PHI_BCS_TRACTION_FREE 2
+#define PHI_BCS 2
 
     // INTERNAL BOUNDARY
     AMREX_GPU_HOST_DEVICE
@@ -876,10 +928,31 @@ exit(-1);
                       const amrex::Real * U,
                       AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
     {
-#if (!AMREX_USE_CUDA)
-amrex::Print() << "Hello! F_NF_PHI_BCS" << std::endl;
-exit(-1);
+        amrex::Real AMREX_D_DECL(F1[N_U], F2[N_U], F3[N_U]);
+        amrex::Real AMREX_D_DECL(nbr_F1[N_U], nbr_F2[N_U], nbr_F3[N_U]);
+        
+#if (PHI_BCS == PHI_BCS_TRACTION_FREE)
+        amrex::Real T[N_U*N_U], iT[N_U*N_U];
+        amrex::Real nbr_U[N_U], Un[N_U];
+
+        this->_eval_T_(un, T, iT);
+        amrex::DG_utils::matmul(N_U, N_U, 1, T, U, Un);
+#if (AMREX_SPACEDIM == 2)
+        Un[2] = -Un[2]; // Snn
+        Un[4] = -Un[4]; // Sns
 #endif
+#if (AMREX_SPACEDIM == 3)
+        Un[3] = -Un[3]; // Snn
+        Un[7] = -Un[7]; // Sns
+        Un[8] = -Un[8]; // Snt
+#endif
+        amrex::DG_utils::matmul(N_U, N_U, 1, iT, Un, nbr_U);
+#endif
+
+        this->F_F(t, x, U, AMREX_D_DECL(F1, F2, F3));
+        this->F_F(t, x, nbr_U, AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3));
+
+        this->_NF_base_(un, U, nbr_U, AMREX_D_DECL(F1, F2, F3), AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3), AMREX_D_DECL(NF1, NF2, NF3));
     }
 
     // INTERNAL INTERFACE
@@ -889,13 +962,10 @@ exit(-1);
                       const amrex::Real * U, const amrex::Real * nbr_U,
                       AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
     {
-        amrex::Real AMREX_D_DECL(F1[N_U], F2[N_U], F3[N_U]);
-        amrex::Real AMREX_D_DECL(nbr_F1[N_U], nbr_F2[N_U], nbr_F3[N_U]);
-
-        this->F_F(t, x, U, AMREX_D_DECL(F1, F2, F3));
-        this->F_F(t, x, nbr_U, AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3));
-
-        this->_NF_PHI_base_(un, U, nbr_U, AMREX_D_DECL(F1, F2, F3), AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3), AMREX_D_DECL(NF1, NF2, NF3));
+#if (!AMREX_USE_CUDA)
+amrex::Print() << "Hello! F_NF_PHI_ICS" << std::endl;
+exit(-1);
+#endif
     }
     // ================================================================
 
@@ -907,86 +977,13 @@ exit(-1);
                amrex::Real * F) const
     {
         // PARAMETERS
-        
-        // VARIABLES
-        amrex::Real Ue[N_U];
-
-        this->F_EXACT(t, x, Ue);
 
         // FIELD EXPRESSIONS
-#if (PHI_TYPE == PHI_TYPE_ONE_PHASE)
-
-#if (AMREX_SPACEDIM == 2)
         F[0] = U[0];
         F[1] = U[1];
         F[2] = U[2];
         F[3] = U[3];
         F[4] = U[4];
-#endif
-#if (AMREX_SPACEDIM == 3)
-        F[0] = U[0];
-        F[1] = U[1];
-        F[2] = U[2];
-        F[3] = U[3];
-        F[4] = U[4];
-        F[5] = U[5];
-        F[6] = U[6];
-        F[7] = U[7];
-        F[8] = U[8];
-#endif
-
-#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
-
-#if (AMREX_SPACEDIM == 2)
-        F[0] = U[0];
-        F[1] = U[1];
-        F[2] = U[2];
-        F[3] = U[3];
-        F[4] = U[4];
-
-        F[5] = U[0+N_VS];
-        F[6] = U[1+N_VS];
-        F[7] = U[2+N_VS];
-        F[8] = U[3+N_VS];
-        F[9] = U[4+N_VS];
-
-        F[10] = U[0]-Ue[0];
-        F[11] = U[2]-Ue[2];
-        F[12] = U[3]-Ue[3];
-
-        F[13] = U[0+N_VS]-Ue[0];
-        F[14] = U[2+N_VS]-Ue[2];
-        F[15] = U[3+N_VS]-Ue[3];
-#endif
-#if (AMREX_SPACEDIM == 3)
-        F[0] = U[0];
-        F[1] = U[1];
-        F[2] = U[2];
-        F[3] = U[3];
-        F[4] = U[4];
-        F[5] = U[5];
-        F[6] = U[6];
-        F[7] = U[7];
-        F[8] = U[8];
-
-        F[9] = U[0+N_VS];
-        F[10] = U[1+N_VS];
-        F[11] = U[2+N_VS];
-        F[12] = U[3+N_VS];
-        F[13] = U[4+N_VS];
-        F[14] = U[5+N_VS];
-        F[15] = U[6+N_VS];
-        F[16] = U[7+N_VS];
-        F[17] = U[8+N_VS];
-
-        F[18] = U[0]-Ue[0];
-        F[19] = U[3]-Ue[3];
-
-        F[20] = U[0+N_VS]-Ue[0];
-        F[21] = U[3+N_VS]-Ue[3];
-#endif
-
-#endif
     }
     // ================================================================
 };
