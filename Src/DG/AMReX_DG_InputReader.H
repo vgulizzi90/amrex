@@ -263,6 +263,8 @@ struct InputReader
 
             this->dG[p].space_q = std::max(this->dG[p].phi_space_p+2, this->dG[p].space_p+2);
             //this->dG[p].space_q = ?
+
+            pp_dG.query("space_q", this->dG[p].space_q);
         }
         // ============================================================
 

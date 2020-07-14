@@ -1361,14 +1361,10 @@ struct ImplicitGeometry
 #if (DG_VERBOSITY == 1)
         // PRINT A BRIEF REPORT ---------------------------------------
         {
-            Real exact_volume[N_DOM] = {400.0};
-            Real exact_surface[N_DOM] = {M_PI*8.0};
-            
-            //Real exact_volume[N_DOM] = {400.0-M_PI*16.0, M_PI*16.0};
-            //Real exact_surface[N_DOM] = {M_PI*8.0, M_PI*8.0};
+            const Real aux = 4.0*0.04834860386154459;
 
-            //Real exact_volume[N_DOM] = {8000.0-4.0/3.0*M_PI*64.0, 4.0/3.0*M_PI*64.0};
-            //Real exact_surface[N_DOM] = {4.0*M_PI*16.0, 4.0*M_PI*16.0};
+            Real exact_volume[N_DOM] = {1.0-2.0*aux, 2.0*aux};
+            Real exact_surface[N_DOM] = {1.0, 1.0};
 
             Real error_in_volume[N_DOM];
             Real error_in_volume_from_bou_quadrature[N_DOM];
@@ -1396,6 +1392,7 @@ struct ImplicitGeometry
         }
         // ------------------------------------------------------------
 #endif
+exit(-1);
         // ============================================================
     }
     // ################################################################
