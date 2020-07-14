@@ -38,20 +38,22 @@ amrex::Print() << "#                                                            
 amrex::Print() << "#######################################################################" << std::endl;
     // ================================================================
 
-    // GENERAL VARIABLES =============
+    // GENERAL PARAMETERS =============================================
+    const int IOProc = amrex::ParallelDescriptor::IOProcessorNumber();
+    // ================================================================
+
+    // GENERAL VARIABLES ==============================================
     amrex::Real start_time, stop_time;
-    // ===============================
+    amrex::Real start_time_per_step, stop_time_per_step, time_per_step;
+    // ================================================================
 
     // DG MODEL =======================================================
     amrex::DG::InputReader dG_inputs;
     // ================================================================
 
-    // REPORT TO SCREEN ===============================================
-    // ================================================================
-
-    // TIC ==========================================
+    // TIC ======================
     start_time = amrex::second();
-    // ==============================================
+    // ==========================
 
     // PHYSICAL BOX ===================================================
     amrex::RealBox real_box(dG_inputs.space[0].prob_lo.data(),
@@ -169,6 +171,10 @@ amrex::Print() << "# START OF THE ANALYSIS                                      
     amrex::Real time, dt;
     // ------------------
 
+    // TIME MARCHING TIC -----------------
+    start_time_per_step = amrex::second();
+    // -----------------------------------
+
     // ADVANCE IN TIME ------------------------------------------------
     n = 0;
     time = 0.0;
@@ -241,19 +247,26 @@ amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std:
     }
     // ----------------------------------------------------------------
 
+    // TIME MARCHING TOC ----------------------------------------------
+    stop_time_per_step = amrex::second();
+    amrex::ParallelDescriptor::ReduceRealMax(stop_time_per_step, IOProc);
+    time_per_step = (stop_time_per_step-start_time_per_step)/n;
+    // ----------------------------------------------------------------
+
 amrex::Print() << "# END OF THE ANALYSIS                                                  " << std::endl;
     // ================================================================
 
     // TOC ============================================================
     stop_time = amrex::second();
-    const int IOProc = amrex::ParallelDescriptor::IOProcessorNumber();
     amrex::ParallelDescriptor::ReduceRealMax(stop_time, IOProc);
     // ================================================================
 
     // CLOSING ========================================================
 amrex::Print() << "#######################################################################" << std::endl;
 amrex::Print() << "# END OF TUTORIAL                                                      " << std::endl;
-amrex::Print() << "# Time = " << stop_time-start_time << " s" << std::endl;
+amrex::Print() << "# Number of steps = " << n << std::endl;
+amrex::Print() << "# Time          = " << std::scientific << std::setprecision(5) << std::setw(12) << (stop_time-start_time) << " s" << std::endl;
+amrex::Print() << "# Time per step = " << std::scientific << std::setprecision(5) << std::setw(12) << time_per_step << " s" << std::endl;
 amrex::Print() << "#######################################################################" << std::endl;
     // ================================================================
 
