@@ -1363,8 +1363,8 @@ struct ImplicitGeometry
         {
             const Real aux = 4.0*0.04834860386154459;
 
-            Real exact_volume[N_DOM] = {1.0-2.0*aux, 2.0*aux};
-            Real exact_surface[N_DOM] = {1.0, 1.0};
+            Real exact_volume[N_DOM] = {2.4};
+            Real exact_surface[N_DOM] = {1.0};
 
             Real error_in_volume[N_DOM];
             Real error_in_volume_from_bou_quadrature[N_DOM];

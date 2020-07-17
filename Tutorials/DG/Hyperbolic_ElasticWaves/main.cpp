@@ -90,8 +90,15 @@ amrex::Print() << "#############################################################
     std::string bcs_type;
     std::string dst_folder;
 
+#if ((PROBLEM == PROBLEM_SHM_PARTICLES_REF) || \
+     (PROBLEM == PROBLEM_SHM_PARTICLES))
+    ics_type = "SHM_ICS_zero";
+    bcs_type = "BCS_slab";
+#else
     ics_type = "ICS_periodic";
     bcs_type = "BCS_periodic";
+#endif
+
     dst_folder = "./IBVP_"+std::to_string(AMREX_SPACEDIM)+"d/"+ics_type+"_"+bcs_type+"_"+dG_order+"/";
 
     if (amrex::ParallelDescriptor::IOProcessor())
@@ -156,11 +163,18 @@ amrex::Print() << "#############################################################
                                                 "err_V0_b", "err_S11_b"};
 #endif
 
+#elif (PHI_TYPE == PHI_TYPE_PARTICLES)
+        std::vector<int> field_domains = {0, 0, 0, 0, 0,
+                                          1, 1, 1, 1, 1};
+        std::vector<std::string> field_names = {"Vx_a", "Vy_a", "Sxx_a", "Syy_a", "Sxy_a",
+                                                "Vx_b", "Vy_b", "Sxx_b", "Syy_b", "Sxy_b"};
+
 #endif
 
         iGeom.Export_VTK_Mesh(dst_folder, "Mesh", n, dG_inputs.time.n_steps);
         dG.Export_VTK(dst_folder, "Solution", n, dG_inputs.time.n_steps, field_domains, field_names, time, iGeom, MatFactory, Waves);
     }
+exit(-1);
     // ================================================================
 
     // START THE ANALYSIS (ADVANCE IN TIME) ===========================
@@ -185,7 +199,7 @@ amrex::Print() << "# START OF THE ANALYSIS                                      
         dt = std::min(time+dt, dG_inputs.time.T)-time;
 
         // REPORT TO SCREEN
-//amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt << ", time = " << time+dt << std::endl;
+amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt << ", time = " << time+dt << std::endl;
 
         // TIME STEP
         dG.TakeTimeStep_Hyperbolic(dt, time, iGeom, MatFactory, Waves);
@@ -240,6 +254,12 @@ amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std:
                                                     "err_V0_a", "err_S11_a",
                                                     "err_V0_b", "err_S11_b"};
 #endif
+
+#elif (PHI_TYPE == PHI_TYPE_PARTICLES)
+            std::vector<int> field_domains = {0, 0, 0, 0, 0,
+                                              1, 1, 1, 1, 1};
+            std::vector<std::string> field_names = {"Vx_a", "Vy_a", "Sxx_a", "Syy_a", "Sxy_a",
+                                                    "Vx_b", "Vy_b", "Sxx_b", "Syy_b", "Sxy_b"};
 
 #endif
             dG.Export_VTK(dst_folder, "Solution", n, dG_inputs.time.n_steps, field_domains, field_names, time, iGeom, MatFactory, Waves);

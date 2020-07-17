@@ -1,11 +1,31 @@
 /* ELASTIC WAVE EQUATION */
 
 // IBVP PARAMETERS ####################################################
+// PROBLEM ------------------------------------------------------------
+#define PROBLEM_SHM_PARTICLES_REF 1
+#define PROBLEM_SHM_PARTICLES 11
+
+#define PROBLEM 11
+// --------------------------------------------------------------------
+
 // DISTANCE FUNCTIONS DESCRIPTION -------------------------------------
 #define PHI_TYPE_ONE_PHASE -1
 #define PHI_TYPE_TWO_PHASES_PERIODIC 0
+#define PHI_TYPE_PARTICLES 2
+
+#if (PROBLEM == PROBLEM_SHM_PARTICLES_REF)
+
+#define PHI_TYPE -1
+
+#elif (PROBLEM == PROBLEM_SHM_PARTICLES)
+
+#define PHI_TYPE 2
+
+#else
 
 #define PHI_TYPE 0
+
+#endif
 // --------------------------------------------------------------------
 
 // NUMBER OF DISTANCE FUNCTIONS/DOMAINS/UNKNOWN FIELDS ----------------
@@ -14,7 +34,8 @@
 #define N_PHI 1
 #define N_DOM 1
 
-#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
+#elif ((PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC) || \
+       (PHI_TYPE == PHI_TYPE_PARTICLES))
 
 #define N_PHI 1
 #define N_DOM 2
@@ -40,7 +61,8 @@
 
 #define N_U N_VS
 
-#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
+#elif ((PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC) || \
+       (PHI_TYPE == PHI_TYPE_PARTICLES))
 
 #define N_U (2*N_VS)
 
@@ -451,6 +473,27 @@ public:
             -phi
         };
 
+#elif (PHI_TYPE == PHI_TYPE_PARTICLES)
+        const int Np = 6;
+        const amrex::Real rp[Np] = {0.02, 0.03, 0.026, 0.018, 0.022, 0.024};
+        const amrex::Real x0[Np] = {0.07, 0.15, 0.03, 0.04, 0.17, 0.1};
+        const amrex::Real x1[Np] = {-0.48, -0.45, -0.425, -0.55, -0.527, -0.57};
+        const amrex::Real xi = x[0]-std::floor(5.0*x[0])*0.2;
+        const amrex::Real eta = x[1];
+
+        amrex::Real phi;
+
+        phi = rp[0]*rp[0]-(xi-x0[0])*(xi-x0[0])-(eta-x1[0])*(eta-x1[0]);
+        for (int p = 1; p < Np; ++p)
+        {
+            phi = std::max(phi, rp[p]*rp[p]-(xi-x0[p])*(xi-x0[p])-(eta-x1[p])*(eta-x1[p]));
+        }
+
+        const amrex::Real PHI[N_PHI] =
+        {
+            phi
+        };
+
 #else
         amrex::Print() << "ERROR: IBVP_ElasticWaves.H - ELASTIC_WAVES::F_PHI" << std::endl;
         amrex::Print() << "| Unexpected distance function(s)." << std::endl;
@@ -474,7 +517,8 @@ public:
             0, -1
         };
 
-#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
+#elif ((PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC) || \
+       (PHI_TYPE == PHI_TYPE_PARTICLES))
 
         const int PHI_INFO[2*N_DOM] =
         {
@@ -499,7 +543,17 @@ public:
     // INITIAL CONDITIONS: UNKNOWN FIELDS =============================
 #define ICS_ZERO -1
 #define ICS_EIGEN_STATE 0
+
+#if ((PROBLEM == PROBLEM_SHM_PARTICLES_REF) || \
+     (PROBLEM == PROBLEM_SHM_PARTICLES))
+
+#define ICS -1
+
+#else
+
 #define ICS 0
+
+#endif
 
     AMREX_GPU_HOST_DEVICE
     amrex::Real F_U0(const int & u, const amrex::Real * x) const
@@ -552,7 +606,8 @@ public:
         };
 #endif
 
-#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
+#elif ((PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC) || \
+       (PHI_TYPE == PHI_TYPE_PARTICLES))
 
 #if (AMREX_SPACEDIM == 2)
         const int DOM[N_U] =
@@ -704,7 +759,8 @@ exit(-1);
             -1
         };
 
-#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
+#elif ((PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC) || \
+       (PHI_TYPE == PHI_TYPE_PARTICLES))
 
         const int NBRDOM[N_DOM] =
         {
@@ -758,7 +814,8 @@ exit(-1);
             amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A3, U, F3);
         )
 
-#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
+#elif ((PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC) || \
+       (PHI_TYPE == PHI_TYPE_PARTICLES))
         AMREX_D_TERM
         (
             amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1, U, F1);,
@@ -811,7 +868,8 @@ exit(-1);
     {
         const amrex::Real mu = this->max_wave_speed;
 
-#if (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
+#if ((PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC) || \
+     (PHI_TYPE == PHI_TYPE_PARTICLES))
         for (int u = 0; u < (N_VS); ++u)
         {
             AMREX_D_TERM
@@ -863,11 +921,70 @@ exit(-1);
                   const amrex::Real * U,
                   AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
     {
-#if (!AMREX_USE_CUDA)
+        amrex::Real AMREX_D_DECL(F1[N_U], F2[N_U], F3[N_U]);
+        amrex::Real AMREX_D_DECL(nbr_F1[N_U], nbr_F2[N_U], nbr_F3[N_U]);
+
+#if ((PROBLEM == PROBLEM_SHM_PARTICLES_REF) || \
+     (PROBLEM == PROBLEM_SHM_PARTICLES))
+        amrex::Real cv[N_VS], nbr_U[N_VS];
+
+        // ABSORBING BCS
+        if (std::abs(un[0]) > 0.5)
+        {
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->iA1_v, U, cv);
+            for (int u = 0; u < N_VS; ++u)
+            {
+                if (this->A1_w[u]*un[0] < 0.0) cv[u] = 0.0;
+            }
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1_v, cv, nbr_U);
+        }
+        // PRESCRIBED (ZERO) TRACTIONS
+        else if (un[1] < -0.5)
+        {
+            const amrex::Real t1 = 0.0;
+            const amrex::Real t2 = 0.0;
+            
+            nbr_U[0] = U[0];
+            nbr_U[1] = U[1];
+            nbr_U[2] = U[2];
+            nbr_U[3] = 2.0*t2-U[3];
+            nbr_U[4] = 2.0*t1-U[4];
+        }
+        // PRESCRIBED TRACTIONS
+        else if (un[1] > 0.5)
+        {
+            const amrex::Real X = std::exp(-500.0*x[0]*x[0]);
+            const amrex::Real f = 25.0;
+            const amrex::Real T = std::exp(-1000.0*(t-0.1)*(t-0.1))*std::sin(f*2.0*M_PI*t);
+            const amrex::Real t1 = 0.0;
+            const amrex::Real t2 = X*T;
+
+            nbr_U[0] = U[0];
+            nbr_U[1] = U[1];
+            nbr_U[2] = U[2];
+            nbr_U[3] = 2.0*t2-U[3];
+            nbr_U[4] = 2.0*t1-U[4];
+        }
+
+        this->F_F(t, x, U, AMREX_D_DECL(F1, F2, F3));
+        this->F_F(t, x, nbr_U, AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3));
+
+        this->_NF_base_(un, U, nbr_U, AMREX_D_DECL(F1, F2, F3), AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3), AMREX_D_DECL(NF1, NF2, NF3));
+#else
 amrex::Print() << "Hello! F_NF_BCS" << std::endl;
 exit(-1);
 #endif
     }
+    /*
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_BCS(const amrex::Real & t, const amrex::Real * x, const amrex::Real * un,
+                  const amrex::Real * U,
+                  AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
+    {
+amrex::Print() << "Hello! F_NF_BCS" << std::endl;
+exit(-1);
+    }
+    */
 
     // INTERNAL BOUNDARY
     AMREX_GPU_HOST_DEVICE
@@ -985,6 +1102,20 @@ exit(-1);
         F[20] = U[0+N_VS]-Ue[0];
         F[21] = U[3+N_VS]-Ue[3];
 #endif
+
+#elif (PHI_TYPE == PHI_TYPE_PARTICLES)
+
+        F[0] = U[0];
+        F[1] = U[1];
+        F[2] = U[2];
+        F[3] = U[3];
+        F[4] = U[4];
+
+        F[5] = U[0+N_VS];
+        F[6] = U[1+N_VS];
+        F[7] = U[2+N_VS];
+        F[8] = U[3+N_VS];
+        F[9] = U[4+N_VS];
 
 #endif
     }
