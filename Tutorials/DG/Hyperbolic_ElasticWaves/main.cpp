@@ -86,12 +86,16 @@ amrex::Print() << "#############################################################
 
     // DESTINATION FOLDER =============================================
     const std::string dG_order = "p"+std::to_string(dG_inputs.dG[0].space_p);
-    std::string ics_type;
-    std::string bcs_type;
     std::string dst_folder;
 
-#if ((PROBLEM == PROBLEM_SHM_PARTICLES_REF) || \
-     (PROBLEM == PROBLEM_SHM_PARTICLES))
+#if ((PROBLEM == PROBLEM_ONE_LAYER) || \
+     (PROBLEM == PROBLEM_TWO_LAYERS))
+    const std::string problem = "One_layer";
+    const std::string ics_type = "ICS_zero";
+    const std::string bcs_type = "BCS_slab";
+
+#elif ((PROBLEM == PROBLEM_SHM_PARTICLES_REF) || \
+       (PROBLEM == PROBLEM_SHM_PARTICLES))
     ics_type = "SHM_ICS_zero";
     bcs_type = "BCS_slab";
 #else
@@ -99,7 +103,7 @@ amrex::Print() << "#############################################################
     bcs_type = "BCS_periodic";
 #endif
 
-    dst_folder = "./IBVP_"+std::to_string(AMREX_SPACEDIM)+"d/"+ics_type+"_"+bcs_type+"_"+dG_order+"/";
+    dst_folder = "./IBVP_"+std::to_string(AMREX_SPACEDIM)+"d/"+problem+"_"+ics_type+"_"+bcs_type+"_"+dG_order+"/";
 
     if (amrex::ParallelDescriptor::IOProcessor())
     {
@@ -129,11 +133,12 @@ amrex::Print() << "#############################################################
         int n = 0;
         amrex::Real time = 0.0;
 
-#if (PHI_TYPE == PHI_TYPE_ONE_PHASE)
+#if ((PHI_TYPE == PHI_TYPE_ONE_PHASE) || \
+     (PHI_TYPE == PHI_TYPE_ONE_LAYER))
 
 #if (AMREX_SPACEDIM == 2)
         std::vector<int> field_domains = {0, 0, 0, 0, 0};
-        std::vector<std::string> field_names = {"V0", "V1", "S11", "S22", "S12"};
+        std::vector<std::string> field_names = {"Vx", "Vy", "Sxx", "Syy", "Sxy"};
 #endif
 #if (AMREX_SPACEDIM == 3)
         std::vector<int> field_domains = {0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -163,7 +168,8 @@ amrex::Print() << "#############################################################
                                                 "err_V0_b", "err_S11_b"};
 #endif
 
-#elif (PHI_TYPE == PHI_TYPE_PARTICLES)
+#elif ((PHI_TYPE == PHI_TYPE_TWO_LAYERS) || \
+       (PHI_TYPE == PHI_TYPE_PARTICLES))
         std::vector<int> field_domains = {0, 0, 0, 0, 0,
                                           1, 1, 1, 1, 1};
         std::vector<std::string> field_names = {"Vx_a", "Vy_a", "Sxx_a", "Syy_a", "Sxy_a",
@@ -174,7 +180,6 @@ amrex::Print() << "#############################################################
         iGeom.Export_VTK_Mesh(dst_folder, "Mesh", n, dG_inputs.time.n_steps);
         dG.Export_VTK(dst_folder, "Solution", n, dG_inputs.time.n_steps, field_domains, field_names, time, iGeom, MatFactory, Waves);
     }
-exit(-1);
     // ================================================================
 
     // START THE ANALYSIS (ADVANCE IN TIME) ===========================
@@ -221,11 +226,12 @@ amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std:
         // WRITE TO OUTPUT
         if (dG_inputs.plot_int > 0 && n%dG_inputs.plot_int == 0)
         {
-#if (PHI_TYPE == PHI_TYPE_ONE_PHASE)
+#if ((PHI_TYPE == PHI_TYPE_ONE_PHASE) || \
+     (PHI_TYPE == PHI_TYPE_ONE_LAYER))
 
 #if (AMREX_SPACEDIM == 2)
             std::vector<int> field_domains = {0, 0, 0, 0, 0};
-            std::vector<std::string> field_names = {"V0", "V1", "S11", "S22", "S12"};
+            std::vector<std::string> field_names = {"Vx", "Vy", "Sxx", "Syy", "Sxy"};
 #endif
 #if (AMREX_SPACEDIM == 3)
             std::vector<int> field_domains = {0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -255,7 +261,8 @@ amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std:
                                                     "err_V0_b", "err_S11_b"};
 #endif
 
-#elif (PHI_TYPE == PHI_TYPE_PARTICLES)
+#elif ((PHI_TYPE == PHI_TYPE_TWO_LAYERS) || \
+       (PHI_TYPE == PHI_TYPE_PARTICLES))
             std::vector<int> field_domains = {0, 0, 0, 0, 0,
                                               1, 1, 1, 1, 1};
             std::vector<std::string> field_names = {"Vx_a", "Vy_a", "Sxx_a", "Syy_a", "Sxy_a",
