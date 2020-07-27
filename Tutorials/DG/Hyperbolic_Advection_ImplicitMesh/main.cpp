@@ -101,14 +101,14 @@ amrex::Print() << "#############################################################
     // ================================================================
 
     // DESTINATION FOLDER =============================================
-    const std::string dG_order = "p"+std::to_string(inputs.dG.space_p);
-    std::string ics_type;
-    std::string bcs_type;
     std::string dst_folder;
-
-    ics_type = "ICS_periodic";
-    bcs_type = "BCS_periodic";
-    dst_folder = "./IBVP_"+std::to_string(AMREX_SPACEDIM)+"d_Linear_Advection/"+ics_type+"_"+bcs_type+"_"+dG_order+"/";
+    const std::string dG_order = "p"+std::to_string(inputs.dG.space_p);
+    
+    const std::string problem = "PROBLEM_two_phases";
+    const std::string ics_type = "ICS_periodic";
+    const std::string bcs_type = "BCS_periodic";
+    
+    dst_folder = "./IBVP_"+std::to_string(AMREX_SPACEDIM)+"d/"+problem+"_"+ics_type+"_"+bcs_type+"_"+dG_order+"/";
 
     if (amrex::ParallelDescriptor::IOProcessor())
     {
@@ -139,9 +139,8 @@ amrex::Print() << "#############################################################
         std::vector<std::string> field_names = {"rho_a", "err_a", "rho_b", "err_b"};
 
         iGeom.Export_VTK_Mesh(dst_folder, "Mesh", n, inputs.mesh.n_time_steps);
-        //dG.Export_VTK(dst_folder, "Solution", n, inputs.mesh.n_time_steps, field_domains, field_names, time, iGeom, MatFactory, LinAdv);
+        dG.Export_VTK(dst_folder, "Solution", n, inputs.mesh.n_time_steps, field_domains, field_names, time, iGeom, MatFactory, LinAdv);
     }
-exit(-1);
     // ================================================================
 
     // START THE ANALYSIS (ADVANCE IN TIME) ===========================

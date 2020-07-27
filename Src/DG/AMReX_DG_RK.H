@@ -299,6 +299,9 @@ struct RungeKutta
         // DG
         const int sp = MatFactory.space_p;
         const int sNp = MatFactory.space_Np;
+
+// AUXILIARY VARIABLES FOR CONCENTRATED FORCE
+const Real xS[2] = {-2.0, 0.0};
         // ============================================================
 
         // ============================================================
@@ -402,6 +405,29 @@ struct RungeKutta
                         dXdt_fab(i,j,k,rs+ru*sNp) += integrand*w;
                     }
                 }
+
+if ((ru == 1) && (dom == 0) &&
+    (xS[0] > prob_lo[0]+i*dx[0]) && (xS[0] < prob_lo[0]+(i+1)*dx[0]) && 
+    (xS[1] > prob_lo[1]+j*dx[1]) && (xS[1] < prob_lo[1]+(j+1)*dx[1]))
+{
+const Real f = 0.17;
+const Real omega = 2.0*M_PI*f;
+const Real tc = 6.0;
+const Real tau = t-tc;
+const Real s = omega*omega*tau*tau;
+const Real fT = (1.0-0.5*s)*std::exp(-0.25*s);
+
+const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0], prob_lo[1]+j*dx[1], prob_lo[2]+k*dx[2])};
+const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+1)*dx[0], prob_lo[1]+(j+1)*dx[1], prob_lo[2]+(k+1)*dx[2])};
+DG_sol_space_BFX sol_(cell_lo, cell_hi, X_fab, sp, i, j, k, -1);
+sol_._eval_BF_table_(xS);
+
+for (int rs = 0; rs < sNp; ++rs)
+{
+    dXdt_fab(i,j,k,rs+ru*sNp) += sol_.BF[rs]*fT;
+}
+
+}
             });
             Gpu::synchronize();
         }
@@ -742,21 +768,34 @@ struct RungeKutta
                                 );
                             }
 
-                            // NUMERICAL FLUX FOR INTRAPHASE
-                            IBVP.F_NF_ICS(t, x, un, Uh, nbr_Uh, AMREX_D_DECL(NF1, NF2, NF3));
+/*
+// NUMERICAL FLUX FOR INTRAPHASE
+IBVP.F_NF_ICS(t, x, un, Uh, nbr_Uh, AMREX_D_DECL(NF1, NF2, NF3));
 
-                            // DG CONTRIBUTION
-                            for (int rs = 0; rs < sNp; ++rs)
-                            {
-                                AMREX_D_TERM
-                                (
-                                    integrand  = sol.BF[rs]*NF1[ru]*un[0];,
-                                    integrand += sol.BF[rs]*NF2[ru]*un[1];,
-                                    integrand += sol.BF[rs]*NF3[ru]*un[2];
-                                )
+// DG CONTRIBUTION
+for (int rs = 0; rs < sNp; ++rs)
+{
+    AMREX_D_TERM
+    (
+        integrand  = sol.BF[rs]*NF1[ru]*un[0];,
+        integrand += sol.BF[rs]*NF2[ru]*un[1];,
+        integrand += sol.BF[rs]*NF3[ru]*un[2];
+    )
 
-                                dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
-                            }
+    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+}
+*/
+
+// NUMERICAL FLUX FOR INTRAPHASE
+IBVP.F_NF_ICS(t, x, un, Uh, nbr_Uh, NF1);
+
+// DG CONTRIBUTION
+for (int rs = 0; rs < sNp; ++rs)
+{
+    integrand = sol.BF[rs]*NF1[ru];
+    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+}
+
                         }
                     }
                     // GRID BOUNDARY
@@ -792,22 +831,34 @@ struct RungeKutta
                                     dUhdx3[cu] = grad[2];
                                 );
                             }
+/*
+// NUMERICAL FLUX FOR INTRAPHASE
+IBVP.F_NF_BCS(t, x, un, Uh, AMREX_D_DECL(NF1, NF2, NF3));
 
-                            // NUMERICAL FLUX FOR INTRAPHASE
-                            IBVP.F_NF_BCS(t, x, un, Uh, AMREX_D_DECL(NF1, NF2, NF3));
+// DG CONTRIBUTION
+for (int rs = 0; rs < sNp; ++rs)
+{
+    AMREX_D_TERM
+    (
+        integrand  = sol.BF[rs]*NF1[ru]*un[0];,
+        integrand += sol.BF[rs]*NF2[ru]*un[1];,
+        integrand += sol.BF[rs]*NF3[ru]*un[2];
+    )
 
-                            // DG CONTRIBUTION
-                            for (int rs = 0; rs < sNp; ++rs)
-                            {
-                                AMREX_D_TERM
-                                (
-                                    integrand  = sol.BF[rs]*NF1[ru]*un[0];,
-                                    integrand += sol.BF[rs]*NF2[ru]*un[1];,
-                                    integrand += sol.BF[rs]*NF3[ru]*un[2];
-                                )
+    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+}
+*/
 
-                                dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
-                            }
+// NUMERICAL FLUX FOR INTRAPHASE
+IBVP.F_NF_BCS(t, x, un, Uh, NF1);
+
+// DG CONTRIBUTION
+for (int rs = 0; rs < sNp; ++rs)
+{
+    integrand = sol.BF[rs]*NF1[ru];
+
+    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+}
                         }
                     }
                 }
@@ -969,21 +1020,34 @@ struct RungeKutta
                                 );
                             }
 
-                            // NUMERICAL FLUX FOR INTERNAL INTERFACE
-                            IBVP.F_NF_PHI_ICS(dom, t, x, un, Uh, nbr_Uh, AMREX_D_DECL(NF1, NF2, NF3));
+/*
+// NUMERICAL FLUX FOR INTERNAL INTERFACE
+IBVP.F_NF_PHI_ICS(dom, t, x, un, Uh, nbr_Uh, AMREX_D_DECL(NF1, NF2, NF3));
 
-                            // DG CONTRIBUTION
-                            for (int rs = 0; rs < sNp; ++rs)
-                            {
-                                AMREX_D_TERM
-                                (
-                                    integrand  = sol.BF[rs]*NF1[ru]*un[0];,
-                                    integrand += sol.BF[rs]*NF2[ru]*un[1];,
-                                    integrand += sol.BF[rs]*NF3[ru]*un[2];
-                                )
+// DG CONTRIBUTION
+for (int rs = 0; rs < sNp; ++rs)
+{
+    AMREX_D_TERM
+    (
+        integrand  = sol.BF[rs]*NF1[ru]*un[0];,
+        integrand += sol.BF[rs]*NF2[ru]*un[1];,
+        integrand += sol.BF[rs]*NF3[ru]*un[2];
+    )
 
-                                dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
-                            }
+    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+}
+*/
+// NUMERICAL FLUX FOR INTERNAL INTERFACE
+IBVP.F_NF_PHI_ICS(dom, t, x, un, Uh, nbr_Uh, NF1);
+
+// DG CONTRIBUTION
+for (int rs = 0; rs < sNp; ++rs)
+{
+    integrand = sol.BF[rs]*NF1[ru];
+
+    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+}
+
                         }
                     }
                 }

@@ -15,7 +15,20 @@
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
-#include <IBVP_ElasticWaves.H>
+#define PROBLEM_ONE_PHASE 0
+#define PROBLEM_ONE_INTERFACE 1
+#define PROBLEM_BCC_LATTICE 233
+
+#define PROBLEM 1
+
+#if (PROBLEM == PROBLEM_ONE_PHASE)
+#include <IBVP_WavesInSolids_OnePhase.H>
+#elif (PROBLEM == PROBLEM_ONE_INTERFACE)
+#include <IBVP_WavesInSolids_OneInterface.H>
+#elif (PROBLEM == PROBLEM_BCC_LATTICE)
+#include <IBVP_WavesInSolids_BCC_lattice.H>
+#endif
+
 // ====================================================================
 // ####################################################################
 
@@ -84,28 +97,23 @@ amrex::Print() << "#############################################################
     dG.InitData(iGeom, MatFactory);
     // ================================================================
 
-    // DESTINATION FOLDER =============================================
+    // DESTINATION FOLDER AND OUTPUT DATA =============================
     std::string dst_folder;
     
     const std::string dG_order = "p"+std::to_string(dG_inputs.dG[0].space_p);
+    const std::string dG_mesh = AMREX_D_TERM(std::to_string(dG_inputs.mesh[0].n_cells[0]),+"x"+
+                                             std::to_string(dG_inputs.mesh[0].n_cells[1]),+"x"+
+                                             std::to_string(dG_inputs.mesh[0].n_cells[2]));
 
-#if ((PROBLEM == PROBLEM_ONE_LAYER) || \
-     (PROBLEM == PROBLEM_TWO_LAYERS))
-    const std::string problem = "PROBLEM_one_layer";
-    const std::string ics_type = "ICS_zero";
-    const std::string bcs_type = "BCS_slab";
-
-#elif ((PROBLEM == PROBLEM_SHM_PARTICLES_REF) || \
-       (PROBLEM == PROBLEM_SHM_PARTICLES))
-    const std::string ics_type = "SHM_ICS_zero";
-    const std::string bcs_type = "BCS_slab";
-#else
-    const std::string problem = "PROBLEM_two_phases";
-    const std::string ics_type = "ICS_periodic";
-    const std::string bcs_type = "BCS_periodic";
+#if (PROBLEM == PROBLEM_ONE_PHASE)
+    const std::string problem = "PROBLEM_OnePhase";
+#elif (PROBLEM == PROBLEM_ONE_INTERFACE)
+    const std::string problem = "PROBLEM_OneInterface";
+#elif (PROBLEM == PROBLEM_BCC_LATTICE)
+    const std::string problem = "PROBLEM_BCC_lattice";
 #endif
 
-    dst_folder = "./IBVP_"+std::to_string(AMREX_SPACEDIM)+"d/"+problem+"_"+ics_type+"_"+bcs_type+"_"+dG_order+"/";
+    dst_folder = "./IBVP_"+std::to_string(AMREX_SPACEDIM)+"d/"+problem+"_"+dG_mesh+"_"+dG_order+"/";
 
     if (amrex::ParallelDescriptor::IOProcessor())
     {
@@ -118,9 +126,21 @@ amrex::Print() << "#############################################################
     // ================================================================
 
     // INIT IBVP DATA STRUCTURE =======================================
-    ELASTIC_WAVES IsotropicWaves("Isotropic", {1.0, 1.0, 0.33});
+#if ((PROBLEM == PROBLEM_ONE_PHASE) || \
+     (PROBLEM == PROBLEM_BCC_LATTICE))
+    const amrex::Vector<std::string> material_type = {"Isotropic"};
+    const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}};
+#elif (PROBLEM == PROBLEM_ONE_INTERFACE)
+    const amrex::Vector<std::string> material_type = {"Hexagonal-2D", "Hexagonal-2D"};
+    const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{71.0, 16.5, 6.2, 3.69, 5.00},
+                                                                           {71.0, 16.5, 16.5, 3.69, 8.58}};
+#endif
 
-    ELASTIC_WAVES const & Waves = IsotropicWaves;
+    ELASTIC_WAVES Waves(material_type, material_properties);
+    // ================================================================
+
+    // INIT OUTPUT DATA INFORMATION ===================================
+    dG.SetOutput(dst_folder, "PointSolution", iGeom, Waves);
     // ================================================================
 
     // INIT FIELDS' DATA WITH INITIAL CONDITIONS ======================
@@ -130,57 +150,15 @@ amrex::Print() << "#############################################################
     dG.SetICs(iGeom, MatFactory, Waves);
     
     // WRITE TO OUTPUT
+    dG.PrintPointSolution(0, 0.0, iGeom, MatFactory, Waves);
+
     if (dG_inputs.plot_int > 0)
     {
         int n = 0;
         amrex::Real time = 0.0;
 
-#if ((PHI_TYPE == PHI_TYPE_ONE_PHASE) || \
-     (PHI_TYPE == PHI_TYPE_ONE_LAYER))
-
-#if (AMREX_SPACEDIM == 2)
-        std::vector<int> field_domains = {0, 0, 0, 0, 0};
-        std::vector<std::string> field_names = {"Vx", "Vy", "Sxx", "Syy", "Sxy"};
-#endif
-#if (AMREX_SPACEDIM == 3)
-        std::vector<int> field_domains = {0, 0, 0, 0, 0, 0, 0, 0, 0};
-        std::vector<std::string> field_names = {"V0", "V1", "V2", "S11", "S22", "S33", "S23", "S13", "S12"};
-#endif
-
-#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
-
-#if (AMREX_SPACEDIM == 2)
-        std::vector<int> field_domains = {0, 0, 0, 0, 0,
-                                          1, 1, 1, 1, 1,
-                                          0, 0, 0,
-                                          1, 1, 1};
-        std::vector<std::string> field_names = {"V0_a", "V1_a", "S11_a", "S22_a", "S12_a",
-                                                "V0_b", "V1_b", "S11_b", "S22_b", "S12_b",
-                                                "err_V0_a", "err_S11_a", "err_S22_a",
-                                                "err_V0_b", "err_S11_b", "err_S22_b"};
-#endif
-#if (AMREX_SPACEDIM == 3)
-        std::vector<int> field_domains = {0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                          1, 1, 1, 1, 1, 1, 1, 1, 1,
-                                          0, 0,
-                                          1, 1};
-        std::vector<std::string> field_names = {"V0_a", "V1_a", "V2_a", "S11_a", "S22_a", "S33_a", "S23_a", "S13_a", "S12_a",
-                                                "V0_b", "V1_b", "V2_b", "S11_b", "S22_b", "S33_b", "S23_b", "S13_b", "S12_b",
-                                                "err_V0_a", "err_S11_a",
-                                                "err_V0_b", "err_S11_b"};
-#endif
-
-#elif ((PHI_TYPE == PHI_TYPE_TWO_LAYERS) || \
-       (PHI_TYPE == PHI_TYPE_PARTICLES))
-        std::vector<int> field_domains = {0, 0, 0, 0, 0,
-                                          1, 1, 1, 1, 1};
-        std::vector<std::string> field_names = {"Vx_a", "Vy_a", "Sxx_a", "Syy_a", "Sxy_a",
-                                                "Vx_b", "Vy_b", "Sxx_b", "Syy_b", "Sxy_b"};
-
-#endif
-
         iGeom.Export_VTK_Mesh(dst_folder, "Mesh", n, dG_inputs.time.n_steps);
-        dG.Export_VTK(dst_folder, "Solution", n, dG_inputs.time.n_steps, field_domains, field_names, time, iGeom, MatFactory, Waves);
+        dG.Export_VTK(dst_folder, "Solution", n, dG_inputs.time.n_steps, time, iGeom, MatFactory, Waves);
     }
     // ================================================================
 
@@ -215,63 +193,12 @@ amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt <
         n += 1;
         time += dt;
 
-#if (ICS == ICS_EIGEN_STATE)
-        // COMPUTE ERROR
-        if (std::abs(time/dG_inputs.time.T-1.0) < 1.0e-12)
-        {
-            amrex::Real err;
-            err = dG.EvalError(time, iGeom, MatFactory, Waves);
-amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std::setw(12) << std::sqrt(err) << std::endl;
-        }
-#endif
-
         // WRITE TO OUTPUT
-        if (dG_inputs.plot_int > 0 && n%dG_inputs.plot_int == 0)
+        dG.PrintPointSolution(n, time, iGeom, MatFactory, Waves);
+
+        if ((dG_inputs.plot_int > 0) && (n%dG_inputs.plot_int == 0))
         {
-#if ((PHI_TYPE == PHI_TYPE_ONE_PHASE) || \
-     (PHI_TYPE == PHI_TYPE_ONE_LAYER))
-
-#if (AMREX_SPACEDIM == 2)
-            std::vector<int> field_domains = {0, 0, 0, 0, 0};
-            std::vector<std::string> field_names = {"Vx", "Vy", "Sxx", "Syy", "Sxy"};
-#endif
-#if (AMREX_SPACEDIM == 3)
-            std::vector<int> field_domains = {0, 0, 0, 0, 0, 0, 0, 0, 0};
-            std::vector<std::string> field_names = {"V0", "V1", "V2", "S11", "S22", "S33", "S23", "S13", "S12"};
-#endif
-
-#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
-
-#if (AMREX_SPACEDIM == 2)
-            std::vector<int> field_domains = {0, 0, 0, 0, 0,
-                                              1, 1, 1, 1, 1,
-                                              0, 0, 0,
-                                              1, 1, 1};
-            std::vector<std::string> field_names = {"V0_a", "V1_a", "S11_a", "S22_a", "S12_a",
-                                                    "V0_b", "V1_b", "S11_b", "S22_b", "S12_b",
-                                                    "err_V0_a", "err_S11_a", "err_S22_a",
-                                                    "err_V0_b", "err_S11_b", "err_S22_b"};
-#endif
-#if (AMREX_SPACEDIM == 3)
-            std::vector<int> field_domains = {0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                              1, 1, 1, 1, 1, 1, 1, 1, 1,
-                                              0, 0,
-                                              1, 1};
-            std::vector<std::string> field_names = {"V0_a", "V1_a", "V2_a", "S11_a", "S22_a", "S33_a", "S23_a", "S13_a", "S12_a",
-                                                    "V0_b", "V1_b", "V2_b", "S11_b", "S22_b", "S33_b", "S23_b", "S13_b", "S12_b",
-                                                    "err_V0_a", "err_S11_a",
-                                                    "err_V0_b", "err_S11_b"};
-#endif
-
-#elif ((PHI_TYPE == PHI_TYPE_TWO_LAYERS) || \
-       (PHI_TYPE == PHI_TYPE_PARTICLES))
-            std::vector<int> field_domains = {0, 0, 0, 0, 0,
-                                              1, 1, 1, 1, 1};
-            std::vector<std::string> field_names = {"Vx_a", "Vy_a", "Sxx_a", "Syy_a", "Sxy_a",
-                                                    "Vx_b", "Vy_b", "Sxx_b", "Syy_b", "Sxy_b"};
-
-#endif
-            dG.Export_VTK(dst_folder, "Solution", n, dG_inputs.time.n_steps, field_domains, field_names, time, iGeom, MatFactory, Waves);
+            dG.Export_VTK(dst_folder, "Solution", n, dG_inputs.time.n_steps, time, iGeom, MatFactory, Waves);
         }
     }
     // ----------------------------------------------------------------

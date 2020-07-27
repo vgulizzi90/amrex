@@ -224,6 +224,22 @@ public:
             s3D[0][4+4*6] = 1.0/G;
             s3D[0][5+5*6] = 1.0/G;
 
+#elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
+            // Input properties
+            const amrex::Real E = material_properties[1];
+            const amrex::Real nu = material_properties[2];
+            const amrex::Real G = 0.5*E/(1.0+nu);
+
+            for (int d = 0; d < N_DOM; ++d)
+            {
+                s3D[d][0+0*6] = 1.0/E; s3D[d][0+1*6] = -nu/E; s3D[d][0+2*6] = -nu/E;
+                s3D[d][1+0*6] = -nu/E; s3D[d][1+1*6] = 1.0/E; s3D[d][1+2*6] = -nu/E;
+                s3D[d][2+0*6] = -nu/E; s3D[d][2+1*6] = -nu/E; s3D[d][2+2*6] = 1.0/E;
+                s3D[d][3+3*6] = 1.0/G;
+                s3D[d][4+4*6] = 1.0/G;
+                s3D[d][5+5*6] = 1.0/G;
+            }
+
 #elif (PHI_TYPE == PHI_TYPE_TWO_LAYERS)
             // Input properties
             amrex::Real E = material_properties[1];
@@ -237,7 +253,7 @@ public:
             s3D[0][4+4*6] = 1.0/G;
             s3D[0][5+5*6] = 1.0/G;
 
-            E = 0.1*E;
+            E = E*0.1;
             nu = nu;
             G = 0.5*E/(1.0+nu);
 
@@ -422,11 +438,8 @@ public:
                 const amrex::Real G = c3D[d][5+5*6];
                 const amrex::Real lam = c3D[d][0+1*6];
 #endif
-
-//amrex::Print() << "std::sqrt((2.0*G+lam)/rho): " << std::sqrt((2.0*G+lam)/rho) << std::endl;
                 this->max_wave_speed = std::max(this->max_wave_speed, std::sqrt((2.0*G+lam)/rho));
             }
-
         }
         else
         {
@@ -541,7 +554,7 @@ public:
        (PHI_TYPE == PHI_TYPE_TWO_LAYERS))
         //const amrex::Real alpha = 10.0*M_PI/180.0;
         //const amrex::Real PHI[N_PHI] = {x[1]-0.999999-std::tan(alpha)*x[0]};
-        const amrex::Real PHI[N_PHI] = {x[1]-0.5-(1.0/512.0)*std::sin(2.0*M_PI*x[0])};
+        const amrex::Real PHI[N_PHI] = {x[1]-0.5-(1.0/16.0)*std::sin(2.0*M_PI*(x[0]-M_PI/4.0))};
 
 #elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
 
@@ -674,7 +687,7 @@ public:
 
 #elif (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC)
 
-        res = (u < N_VS) ? (this->ICs_P_v[u+iv*N_VS]*f0) : (this->ICs_P_v[u-N_VS+iv*N_VS]*f0);
+        res = (u < N_VS) ? (this->ICs_P_v[0][u+iv*N_VS]*f0) : (this->ICs_P_v[0][u-N_VS+iv*N_VS]*f0);
 
 #endif
 
@@ -971,7 +984,8 @@ exit(-1);
     {
         const amrex::Real mu = this->max_wave_speed;
 
-#if ((PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC) || \
+#if ((PHI_TYPE == PHI_TYPE_TWO_LAYERS) || \
+     (PHI_TYPE == PHI_TYPE_TWO_PHASES_PERIODIC) || \
      (PHI_TYPE == PHI_TYPE_PARTICLES))
         for (int u = 0; u < (N_VS); ++u)
         {
@@ -992,7 +1006,6 @@ exit(-1);
                 NF3[u] = 0.5*(F3[u]+nbr_F3[u-N_VS])+0.5*mu*(U[u]-nbr_U[u-N_VS])*un[2];
             )
         }
-
 #else
 
 #if (!AMREX_USE_CUDA)
@@ -1029,7 +1042,7 @@ exit(-1);
 
 #if ((PROBLEM == PROBLEM_ONE_LAYER) || \
      (PROBLEM == PROBLEM_TWO_LAYERS))
-        amrex::Real cv[N_VS], nbr_U[N_VS];
+        amrex::Real nbr_U[N_VS];
 
         // ABSORBING BCS
         if (un[1] < -0.5)
@@ -1051,11 +1064,11 @@ exit(-1);
             const amrex::Real t1 = 0.0;
             const amrex::Real t2 = 0.0;
 
-            nbr_U[0] = U[0];
-            nbr_U[1] = U[1];
-            nbr_U[2] = U[2];
-            nbr_U[3] = 2.0*t2-U[3];
-            nbr_U[4] = 2.0*t1-U[4];
+            nbr_U[0+N_VS] = U[0+N_VS];
+            nbr_U[1+N_VS] = U[1+N_VS];
+            nbr_U[2+N_VS] = U[2+N_VS];
+            nbr_U[3+N_VS] = 2.0*t2-U[3+N_VS];
+            nbr_U[4+N_VS] = 2.0*t1-U[4+N_VS];
 //amrex::Print() << "U: " << U[0] << " " << U[1] << " " << U[2] << " " << U[3] << " " << U[4] << std::endl;
         }
         else
@@ -1128,10 +1141,10 @@ exit(-1);
                       const amrex::Real * U,
                       AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
     {
+#if (PROBLEM == PROBLEM_ONE_LAYER)
         amrex::Real AMREX_D_DECL(F1[N_U], F2[N_U], F3[N_U]);
         amrex::Real AMREX_D_DECL(nbr_F1[N_U], nbr_F2[N_U], nbr_F3[N_U]);
-
-#if (PROBLEM == PROBLEM_ONE_LAYER)
+        
         amrex::Real T[N_VS*N_VS], iT[N_VS*N_VS];
         amrex::Real nbr_U[N_VS], Un[N_VS];
 

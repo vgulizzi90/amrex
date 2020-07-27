@@ -14,18 +14,18 @@ time.T = 1.0
 
 
 # SPACE AND TIME DISCRETIZATION #######################################
-mesh.n_cells       = 16 16 16
+mesh.n_cells       = 8 8 8
 mesh.max_grid_size = 4 4 4
 mesh.n_time_steps  = 100000
 
 # DISCONTINUOUS GALERKIN METHOD INFO
 dG.phi_space_p       = 3
-dG.space_p           = 0
-dG.time_p            = 0
+dG.space_p           = 3
+dG.time_p            = 3
 # ----------------------------------
 #######################################################################
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 1
+plot_int = 10
 #######################################################################

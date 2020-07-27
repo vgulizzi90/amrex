@@ -15,7 +15,7 @@
 #define PHI_TYPE_ONE_PHASE_LATTICE_BCC 233
 #define PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ 20
 
-#define PHI_TYPE 233
+#define PHI_TYPE 0
 // --------------------------------------------------------------------
 
 // NUMBER OF DISTANCE FUNCTIONS/DOMAINS/UNKNOWN FIELDS ----------------

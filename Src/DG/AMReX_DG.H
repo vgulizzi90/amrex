@@ -32,15 +32,28 @@ private:
 
     // Solution
     MultiFab X_old, X_new;
+
+    // Post-processing
+    Vector<int> fields_domain;
+    Vector<std::string> fields_name;
+    
+    Vector<Array<Real, AMREX_SPACEDIM>> point_fields_location;
+    Vector<Array<int, 3>> point_fields_ijk;
+    Vector<int> point_fields_domain;
+    Vector<Vector<std::string>> point_fields_name;
+    Vector<int> point_fields_rank;
+    bool print_point_fields;
+    Vector<std::string> point_fields_filepath;
     // ################################################################
 
 public:
     // CONSTRUCTOR ####################################################
-    DG(const std::string& PDEs_info_,
-       const std::string& time_stepping_info_)
+    DG(const std::string & PDEs_info_,
+       const std::string & time_stepping_info_)
     :
     PDEs_info(PDEs_info_),
-    time_stepping_info(time_stepping_info_)
+    time_stepping_info(time_stepping_info_),
+    print_point_fields(false)
     {}
     // ################################################################
 
@@ -774,14 +787,296 @@ Print() << "(error.sum(1)): " << (error.sum(1)) << std::endl;
     }
     // ################################################################
 
-    // EXPORT DG SOLUTION FOR VTK #####################################
+    // EXPORT DG SOLUTION #############################################
+    template<typename IBVP_CLASS>
+    void SetOutput(const std::string & dst_folder,
+                   const std::string & filename_root,
+                   const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
+                   const IBVP_CLASS & IBVP)
+    {
+        // PARAMETERS =================================================
+        // GRID
+        const GpuArray<Real, AMREX_SPACEDIM> dx = iGeom._dx;
+        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = iGeom._prob_lo;
+        const Box & domain = iGeom.geom.Domain();
+        // ============================================================
+
+        // SET THE OUTPUT FIELDS ======================================
+        IBVP.F_SOL_DESCRIPTION(this->fields_domain,
+                               this->fields_name);
+
+        // CONSISTENCY CHECK
+        if (this->fields_domain.size() != this->fields_name.size())
+        {
+            Print() << std::endl;
+            Print() << "ERROR: AMReX_DG.H - DG::SetOutput" << std::endl;
+            Print() << "| The size of this->fields_domain is not equal to the size of this->fields_name:" << std::endl;
+            Print() << "| this->fields_domain.size() = " << this->fields_domain.size() << std::endl;
+            Print() << "| this->fields_name.size() = " << this->fields_name.size() << std::endl;
+            Print() << std::endl;
+            exit(-1);
+        }
+        // ============================================================
+
+        // SET THE OUTPUT POINT FIELDS ================================
+        IBVP.F_POINT_SOL_DESCRIPTION(this->point_fields_location,
+                                     this->point_fields_domain,
+                                     this->point_fields_name);
+
+        this->print_point_fields = (this->point_fields_location.size() > 0);
+
+        // CONSISTENCY CHECK
+        if (this->point_fields_location.size() != this->point_fields_domain.size())
+        {
+            Print() << std::endl;
+            Print() << "ERROR: AMReX_DG.H - DG::SetOutput" << std::endl;
+            Print() << "| The size of this->point_fields_location is not equal to the size of this->point_fields_domain:" << std::endl;
+            Print() << "| this->point_fields_location.size() = " << this->point_fields_location.size() << std::endl;
+            Print() << "| this->point_fields_domain.size() = " << this->point_fields_domain.size() << std::endl;
+            Print() << std::endl;
+            exit(-1);
+        }
+
+        if (this->point_fields_location.size() != this->point_fields_name.size())
+        {
+            Print() << std::endl;
+            Print() << "ERROR: AMReX_DG.H - DG::SetOutput" << std::endl;
+            Print() << "| The size of this->point_fields_location is not equal to the size of this->point_fields_name:" << std::endl;
+            Print() << "| this->point_fields_location.size() = " << this->point_fields_location.size() << std::endl;
+            Print() << "| this->point_fields_name.size() = " << this->point_fields_name.size() << std::endl;
+            Print() << std::endl;
+            exit(-1);
+        }
+
+        // FIND THE CELLS THAT CONTAIN THE POINT LOCATIONS
+        const int n_point_locations = this->point_fields_location.size();
+        this->point_fields_ijk.resize(n_point_locations);
+
+        for (int p = 0; p < n_point_locations; ++p)
+        {
+            this->point_fields_ijk[p] = {0, 0, 0};
+
+            AMREX_D_TERM
+            (
+                this->point_fields_ijk[p][0] = (int) std::floor((this->point_fields_location[p][0]-prob_lo[0])/dx[0]);,
+                this->point_fields_ijk[p][1] = (int) std::floor((this->point_fields_location[p][1]-prob_lo[1])/dx[1]);,
+                this->point_fields_ijk[p][2] = (int) std::floor((this->point_fields_location[p][2]-prob_lo[2])/dx[2]);
+            )
+
+            AMREX_D_TERM
+            (
+                this->point_fields_ijk[p][0] = std::max(domain.smallEnd(0), std::min(domain.bigEnd(0), this->point_fields_ijk[p][0]));,
+                this->point_fields_ijk[p][1] = std::max(domain.smallEnd(1), std::min(domain.bigEnd(1), this->point_fields_ijk[p][1]));,
+                this->point_fields_ijk[p][2] = std::max(domain.smallEnd(2), std::min(domain.bigEnd(2), this->point_fields_ijk[p][2]));
+            )
+        }
+
+        // STORE WHICH RANK WILL TAKE CARE OF EACH POINT LOCATION
+        this->point_fields_rank.resize(n_point_locations);
+
+        for (int p = 0; p < n_point_locations; ++p)
+        {
+            this->point_fields_rank[p] = -1;
+            
+            for (MFIter mfi(this->X_new); mfi.isValid(); ++mfi)
+            {
+                const Box & bx = mfi.validbox();
+                const auto lo = lbound(bx);
+                const auto hi = ubound(bx);
+
+                for (int k = lo.z; k <= hi.z; ++k)
+                for (int j = lo.y; j <= hi.y; ++j)
+                for (int i = lo.x; i <= hi.x; ++i)
+                {
+                    if ((i == this->point_fields_ijk[p][0]) &&
+                        (j == this->point_fields_ijk[p][1]) &&
+                        (k == this->point_fields_ijk[p][2]))
+                    {
+                        this->point_fields_rank[p] = ParallelDescriptor::MyProc();
+                    }
+                }
+            }
+        }
+
+        // OPEN THE FILES WHERE TO STORE THE POINT FIELDS
+        this->point_fields_filepath.resize(n_point_locations);
+
+        for (int p = 0; p < n_point_locations; ++p)
+        {
+            if (this->point_fields_rank[p] == ParallelDescriptor::MyProc())
+            {
+                this->point_fields_filepath[p] = dst_folder+"/"+filename_root+"_loc_"+std::to_string(p)+".txt";
+
+                std::ofstream fp;
+                fp.open(this->point_fields_filepath[p].c_str(), std::ofstream::out);
+                if (!fp.good())
+                {
+                    FileOpenFailed(this->point_fields_filepath[p]);
+                }
+
+                fp << "Point solution at location: " << AMREX_D_TERM(this->point_fields_location[p][0] << " " <<,
+                                                                     this->point_fields_location[p][1] << " " <<,
+                                                                     this->point_fields_location[p][2] <<) "\n";
+                
+                const int n_fields = this->point_fields_name[p].size();
+                fp << "t ";
+                for (int f = 0; f < (n_fields-1); ++f)
+                {
+                    fp << this->point_fields_name[p][f]+" ";
+                }
+                fp << this->point_fields_name[p][n_fields-1]+"\n";
+
+                fp.close();
+            }
+        }
+        // ============================================================
+    }
+
+    template<typename IBVP_CLASS>
+    void PrintPointSolution(const int & time_id,
+                            const Real & t,
+                            const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
+                            const MatrixFactory<N_PHI, N_DOM> & MatFactory,
+                            const IBVP_CLASS & IBVP) const
+    {
+        // PARAMETERS =================================================
+        // GRID
+        const GpuArray<Real, AMREX_SPACEDIM> dx = iGeom._dx;
+        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = iGeom._prob_lo;
+        const GpuArray<Real, AMREX_SPACEDIM> J = iGeom._J;
+
+        // DG
+        const int phi_p = iGeom.uHyperrect.p;
+        const int space_sol_p = MatFactory.space_p;
+        
+        const int n_point_locations = this->point_fields_location.size();
+        // ============================================================
+        
+        // VARIABLES ==================================================
+        // ============================================================
+
+        // CYCLE OVER THE QUERY POINTS ================================
+        for (int p = 0; p < n_point_locations; ++p)
+        {
+            if (this->point_fields_rank[p] == ParallelDescriptor::MyProc())
+            {
+                std::ofstream fp;
+                fp.open(this->point_fields_filepath[p].c_str(), std::ofstream::out | std::ofstream::app);
+                if (!fp.good())
+                {
+                    FileOpenFailed(this->point_fields_filepath[p]);
+                }
+                
+                const amrex::Real x[AMREX_SPACEDIM] = {AMREX_D_DECL
+                (
+                    this->point_fields_location[p][0],
+                    this->point_fields_location[p][1],
+                    this->point_fields_location[p][2]
+                )};
+                const int pi = this->point_fields_ijk[p][0];
+                const int pj = this->point_fields_ijk[p][1];
+                const int pk = this->point_fields_ijk[p][2];
+                const int dom = this->point_fields_domain[p];
+                const int n_fields = this->point_fields_name[p].size();
+                Gpu::ManagedVector<Real> point_fields;
+                point_fields.resize(n_fields);
+                Real * point_fields_ptr = point_fields.data();
+
+                for (MFIter mfi(this->X_new); mfi.isValid(); ++mfi)
+                {
+                    const Box& bx = mfi.validbox();
+
+                    Array4<Real const> const & PHI_fab = iGeom.PHI.array(mfi);
+                    Array4<int const> const & eType_fab = iGeom.eType.array(mfi);
+                    Array4<Real const> const & X_fab = this->X_new.array(mfi);
+
+                    ParallelFor(bx,
+                    [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+                    {
+                        if ((i == pi) && (j == pj) && (k == pk))
+                        {
+                            // LOCAL PARAMETERS
+                            const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0], prob_lo[1]+j*dx[1], prob_lo[2]+k*dx[2])};
+                            const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+1)*dx[0], prob_lo[1]+(j+1)*dx[1], prob_lo[2]+(k+1)*dx[2])};
+                            const int etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
+
+                            // LOCAL VARIABLES
+                            Real grad[AMREX_SPACEDIM];
+                            Real PHIh[N_PHI], Uh[N_U];
+                            Real AMREX_D_DECL(dPHIhdx1[N_PHI], dPHIhdx2[N_PHI], dPHIhdx3[N_PHI]);
+                            Real AMREX_D_DECL(dUhdx1[N_U], dUhdx2[N_U], dUhdx3[N_U]);
+                            int BF_i, BF_j, BF_k;
+                            Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
+
+                            // Get the support of the basis functions
+                            BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
+
+                            // Data structures used to compute the distance
+                            // functions and the dG solution
+                            DG_phi_space_BFX phi(cell_lo, cell_hi, PHI_fab, phi_p, i, j, k, -1);
+                            DG_sol_space_BFX sol(BF_lo, BF_hi, X_fab, space_sol_p, BF_i, BF_j, BF_k, -1);
+
+                            // FIELDS (DISTANCE FUNCTIONS)
+                            phi._eval_BF_table_(x);
+                            for (int rph = 0; rph < N_PHI; ++rph)
+                            {
+                                phi.set_fab_ptrs(i, j, k, rph);
+
+                                PHIh[rph] = phi._eval_unsafe_();
+
+                                phi._eval_grad_unsafe_(grad);
+                                AMREX_D_TERM
+                                (
+                                    dPHIhdx1[rph] = grad[0];,
+                                    dPHIhdx2[rph] = grad[1];,
+                                    dPHIhdx3[rph] = grad[2];
+                                );
+                            }
+
+                            // FIELDS
+                            sol._eval_BF_table_(x);
+                            for (int ru = 0; ru < N_U; ++ru)
+                            {
+                                sol.set_fab_ptrs(BF_i, BF_j, BF_k, ru);
+
+                                Uh[ru] = sol._eval_unsafe_();
+                        
+                                sol._eval_grad_unsafe_(grad);
+                                AMREX_D_TERM
+                                (
+                                    dUhdx1[ru] = grad[0];,
+                                    dUhdx2[ru] = grad[1];,
+                                    dUhdx3[ru] = grad[2];
+                                );
+                            }
+
+                            IBVP.F_POINT_SOL(p,
+                                             PHIh, AMREX_D_DECL(dPHIhdx1, dPHIhdx2, dPHIhdx3),
+                                             Uh, AMREX_D_DECL(dUhdx1, dUhdx2, dUhdx3),
+                                             point_fields_ptr);
+                        }
+                    });
+                    Gpu::synchronize();
+                }
+
+                fp << std::scientific << std::setprecision(5) << std::setw(12) << t << " ";
+                for (int f = 0; f < (n_fields-1); ++f)
+                {
+                    fp << std::scientific << std::setprecision(5) << std::setw(12) << point_fields_ptr[f] << " ";
+                }
+                fp << std::scientific << std::setprecision(5) << std::setw(12) << point_fields_ptr[n_fields-1] << "\n";
+
+                fp.close();
+            }
+        }
+        // ============================================================
+    }
+
     template<typename IBVP_CLASS>
     void Export_VTK(const std::string & dst_folder,
                     const std::string & filename_root,
                     const int & time_id,
                     const int & time_id_max,
-                    const std::vector<int> & field_domains,
-                    const std::vector<std::string> & field_names,
                     const Real & t,
                     const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
                     const MatrixFactory<N_PHI, N_DOM> & MatFactory,
@@ -823,11 +1118,11 @@ Print() << "(error.sum(1)): " << (error.sum(1)) << std::endl;
         const int space_sol_p = MatFactory.space_p;
 
         // DOMAINS AND FIELDS
-        const int n_requested_fields = field_domains.size();
+        const int n_requested_fields = this->fields_domain.size();
         const int n_total_fields = n_requested_fields+N_PHI;
         Gpu::ManagedVector<int> Gpu_field_domains;
         Gpu_field_domains.resize(n_requested_fields);
-        for (int f = 0; f < n_requested_fields; ++f) Gpu_field_domains[f] = field_domains[f];
+        for (int f = 0; f < n_requested_fields; ++f) Gpu_field_domains[f] = this->fields_domain[f];
         const int * field_domains_ptr = Gpu_field_domains.data();
 
         // VTK
@@ -1031,7 +1326,7 @@ Print() << "(error.sum(1)): " << (error.sum(1)) << std::endl;
                     conn_ptr[cell_conn_pos+c] = cell_base_conn_ptr[c]+cell_conn_offset;
                 }
             });
-            Gpu::synchronize();   
+            Gpu::synchronize();
         }
         // ============================================================
 
@@ -1116,7 +1411,7 @@ Print() << "(error.sum(1)): " << (error.sum(1)) << std::endl;
             }
             for (int rf = 0; rf < n_requested_fields; ++rf)
             {
-                fprintf(fp, "SCALARS %s float 1\n", field_names[rf].c_str());
+                fprintf(fp, "SCALARS %s float 1\n", this->fields_name[rf].c_str());
                 fprintf(fp, "LOOKUP_TABLE default\n");
                 for (int n = 0; n < grid_n_nodes; ++n)
                 {
@@ -1193,7 +1488,7 @@ Print() << "(error.sum(1)): " << (error.sum(1)) << std::endl;
             }
             for (int rf = 0; rf < n_requested_fields; ++rf)
             {
-                VTK_nodal_field_name[N_PHI+rf] = field_names[rf];
+                VTK_nodal_field_name[N_PHI+rf] = this->fields_name[rf];
             }
 
             for (int f = 0; f < n_nodal_fields; ++f)
@@ -1206,7 +1501,7 @@ Print() << "(error.sum(1)): " << (error.sum(1)) << std::endl;
             // --------------------------------------------------------
 
             // DUMP HEADER FILE ---------------------------------------
-            if (amrex::ParallelDescriptor::IOProcessor())
+            if (ParallelDescriptor::IOProcessor())
             {
                 VTK::PrintHeaderFile_VTU(dst_folder, filename_root, time_id, time_id_max, {}, VTK_nodal_field_name);
             }
