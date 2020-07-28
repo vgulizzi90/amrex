@@ -301,7 +301,8 @@ struct RungeKutta
         const int sNp = MatFactory.space_Np;
 
 // AUXILIARY VARIABLES FOR CONCENTRATED FORCE
-const Real xS[2] = {-2.0, 0.0};
+//const Real xS[2] = {-2.0, 0.0}; // OneInterface problem
+const Real xS[2] = {0.0, 0.0}; // OneAnisotropicPhase problem
         // ============================================================
 
         // ============================================================
@@ -410,7 +411,8 @@ if ((ru == 1) && (dom == 0) &&
     (xS[0] > prob_lo[0]+i*dx[0]) && (xS[0] < prob_lo[0]+(i+1)*dx[0]) && 
     (xS[1] > prob_lo[1]+j*dx[1]) && (xS[1] < prob_lo[1]+(j+1)*dx[1]))
 {
-const Real f = 0.17;
+//const Real f = 0.17; // OneInterface problem
+const Real f = 0.30; // OneAnisotropicPhase problem
 const Real omega = 2.0*M_PI*f;
 const Real tc = 6.0;
 const Real tau = t-tc;
