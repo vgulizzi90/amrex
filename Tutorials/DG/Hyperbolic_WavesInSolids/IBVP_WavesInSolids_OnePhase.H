@@ -102,6 +102,34 @@ public:
     }
     // ================================================================
 
+    // BODY LOAD ======================================================
+    AMREX_GPU_HOST_DEVICE
+    void F_B(const amrex::Real & t, const amrex::Real * x,
+             amrex::Real * B) const
+    {
+        const int m = 1, n = 1;
+        const amrex::Real f = 1.0;
+        const amrex::Real omega = 2.0*M_PI*f;
+        const amrex::Real tc = 2.0;
+        const amrex::Real tau = t-tc;
+        const amrex::Real s = (omega*tau)*(omega*tau);
+        const amrex::Real ft = (1-0.5*s)*std::exp(-0.25*s);
+        const amrex::Real b = ft*std::sin(m*M_PI*x[0])*std::cos(n*M_PI*x[1]);
+
+        B[0] = 0.0;
+        B[1] = b;
+        B[2] = 0.0;
+        B[3] = 0.0;
+        B[4] = 0.0;
+
+#if (AMREX_SPACEDIM == 3)
+amrex::Print() << "Hello! F_B" << std::endl;
+exit(-1);
+#endif
+
+    }
+    // ================================================================
+
     // DG-RELATED AUXILIARY FUNCTIONS: NUMERICAL FLUXES ===============
     // INTRAPHASE -----------------------------------------------------
     AMREX_GPU_HOST_DEVICE
@@ -202,20 +230,16 @@ for (int u = 0; u < N_U; ++u)
     {
         const amrex::Real mu = this->max_wave_speed;
 
-        amrex::Real AMREX_D_DECL(t1, t2, t3);
         amrex::Real bcs_U[N_VS];
 
-        // PRESCRIBED ZERO TRACTIONS
+        // SIMPLY-SUPPORTED BOUNDARY CONDITIONS
         if (std::abs(un[0]) > 0.5)
         {
-            t1 = 0.0;
-            t2 = 0.0;
-
             bcs_U[0] = U[0];
-            bcs_U[1] = U[1];
-            bcs_U[2] = t1;
+            bcs_U[1] = 0.0;
+            bcs_U[2] = 0.0;
             bcs_U[3] = U[3];
-            bcs_U[4] = t2;
+            bcs_U[4] = U[4];
 
             amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1[0], bcs_U, NFn);
 
@@ -225,20 +249,16 @@ for (int u = 0; u < N_U; ++u)
             NFn[3] *= un[0];
             NFn[4] *= un[0];
 
+            NFn[1] += mu*(U[1]-bcs_U[1]);
             NFn[2] += mu*(U[2]-bcs_U[2]);
-            NFn[4] += mu*(U[4]-bcs_U[4]);
         }
-        // PRESCRIBED ZERO TRACTIONS
-        else if (un[1] > 0.5)
+        else if (std::abs(un[1]) > 0.5)
         {
-            t1 = 0.0;
-            t2 = 0.0;
-
-            bcs_U[0] = U[0];
+            bcs_U[0] = 0.0;
             bcs_U[1] = U[1];
             bcs_U[2] = U[2];
-            bcs_U[3] = t2;
-            bcs_U[4] = t1;
+            bcs_U[3] = 0.0;
+            bcs_U[4] = U[4];
 
             amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A2[0], bcs_U, NFn);
 
@@ -248,34 +268,8 @@ for (int u = 0; u < N_U; ++u)
             NFn[3] *= un[1];
             NFn[4] *= un[1];
 
+            NFn[0] += mu*(U[0]-bcs_U[0]);
             NFn[3] += mu*(U[3]-bcs_U[3]);
-            NFn[4] += mu*(U[4]-bcs_U[4]);
-        }
-        // PRESCRIBED TRACTIONS
-        else if (un[1] < -0.5)
-        {
-            const amrex::Real f = 10.0;
-            const amrex::Real tc = 0.1;
-            const amrex::Real T = std::exp(-1000.0*(t-tc)*(t-tc))*std::sin(f*2.0*M_PI*t);
-            t1 = 0.0;
-            t2 = T;
-
-            bcs_U[0] = U[0];
-            bcs_U[1] = U[1];
-            bcs_U[2] = U[2];
-            bcs_U[3] = t2;
-            bcs_U[4] = t1;
-
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A2[0], bcs_U, NFn);
-
-            NFn[0] *= un[1];
-            NFn[1] *= un[1];
-            NFn[2] *= un[1];
-            NFn[3] *= un[1];
-            NFn[4] *= un[1];
-            
-            NFn[3] += mu*(U[3]-bcs_U[3]);
-            NFn[4] += mu*(U[4]-bcs_U[4]);
         }
 
 #if (AMREX_SPACEDIM == 3)
@@ -319,16 +313,22 @@ exit(-1);
 #if (AMREX_SPACEDIM == 2)
         point_fields_location = 
         {
+            {0.0, 0.5},
             {0.5, 0.0},
-            {0.5, 1.0}
+            {0.5, 0.5},
+            {0.0, 0.0}
         };
         point_fields_domain =
         {
+            0,
+            0,
             0,
             0
         };
         point_fields_name =
         {
+            {"Vx", "Vy", "Sxx", "Syy", "Sxy"},
+            {"Vx", "Vy", "Sxx", "Syy", "Sxy"},
             {"Vx", "Vy", "Sxx", "Syy", "Sxy"},
             {"Vx", "Vy", "Sxx", "Syy", "Sxy"}
         };

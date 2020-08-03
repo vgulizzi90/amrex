@@ -16,21 +16,24 @@
 // ####################################################################
 // SELECT SET OF PDES =================================================
 #define PROBLEM_ONE_PHASE 0
-#define PROBLEM_ONE_ANISOTROPIC_PHASE 10
 #define PROBLEM_ONE_INTERFACE 1
 #define PROBLEM_HP_CONVERGENCE 23
+#define PROBLEM_KOMATITSCH 2000
+#define PROBLEM_LAYERED 12
 #define PROBLEM_BCC_LATTICE 233
 
-#define PROBLEM 10
+#define PROBLEM 23
 
 #if (PROBLEM == PROBLEM_ONE_PHASE)
 #include <IBVP_WavesInSolids_OnePhase.H>
-#elif (PROBLEM == PROBLEM_ONE_ANISOTROPIC_PHASE)
-#include <IBVP_WavesInSolids_OneAnisotropicPhase.H>
 #elif (PROBLEM == PROBLEM_ONE_INTERFACE)
 #include <IBVP_WavesInSolids_OneInterface.H>
 #elif (PROBLEM == PROBLEM_HP_CONVERGENCE)
 #include <IBVP_WavesInSolids_hp_Convergence.H>
+#elif (PROBLEM == PROBLEM_KOMATITSCH)
+#include <IBVP_WavesInSolids_Komatitsch.H>
+#elif (PROBLEM == PROBLEM_LAYERED)
+#include <IBVP_WavesInSolids_Layered.H>
 #elif (PROBLEM == PROBLEM_BCC_LATTICE)
 #include <IBVP_WavesInSolids_BCC_lattice.H>
 #endif
@@ -113,12 +116,14 @@ amrex::Print() << "#############################################################
 
 #if (PROBLEM == PROBLEM_ONE_PHASE)
     const std::string problem = "PROBLEM_OnePhase";
-#elif (PROBLEM == PROBLEM_ONE_ANISOTROPIC_PHASE)
-    const std::string problem = "PROBLEM_OneAnisotropicPhase";
 #elif (PROBLEM == PROBLEM_ONE_INTERFACE)
     const std::string problem = "PROBLEM_OneInterface";
 #elif (PROBLEM == PROBLEM_HP_CONVERGENCE)
     const std::string problem = "PROBLEM_hp_Convergence";
+#elif (PROBLEM == PROBLEM_KOMATITSCH)
+    const std::string problem = "PROBLEM_Komatitsch";
+#elif (PROBLEM == PROBLEM_LAYERED)
+    const std::string problem = "PROBLEM_Layered";
 #elif (PROBLEM == PROBLEM_BCC_LATTICE)
     const std::string problem = "PROBLEM_BCC_lattice";
 #endif
@@ -138,18 +143,23 @@ amrex::Print() << "#############################################################
     // INIT IBVP DATA STRUCTURE =======================================
 #if ((PROBLEM == PROBLEM_ONE_PHASE) || \
      (PROBLEM == PROBLEM_BCC_LATTICE))
-    const amrex::Vector<std::string> material_type = {"Isotropic"};
-    const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}};
-#elif (PROBLEM == PROBLEM_ONE_ANISOTROPIC_PHASE)
+    //const amrex::Vector<std::string> material_type = {"Isotropic"};
+    //const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}};
     const amrex::Vector<std::string> material_type = {"Hexagonal-2D"};
     const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{32.0, 16.7, 14.0, 6.63, 6.6}};
+#elif (PROBLEM == PROBLEM_ONE_INTERFACE)
+    const amrex::Vector<std::string> material_type = {"Isotropic", "Isotropic"};
+    const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}, {1.0, 4.0, 0.33}};
 #elif (PROBLEM == PROBLEM_HP_CONVERGENCE)
     const amrex::Vector<std::string> material_type = {"Isotropic", "Isotropic"};
     const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}, {1.0, 1.0, 0.33}};
-#elif (PROBLEM == PROBLEM_ONE_INTERFACE)
+#elif (PROBLEM == PROBLEM_KOMATITSCH)
     const amrex::Vector<std::string> material_type = {"Hexagonal-2D", "Hexagonal-2D"};
     const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{71.0, 16.5, 6.2, 3.96, 5.00},
                                                                            {71.0, 16.5, 16.5, 3.96, 8.58}};
+#elif (PROBLEM == PROBLEM_LAYERED)
+    const amrex::Vector<std::string> material_type = {"Isotropic", "Isotropic"};
+    const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}, {1.0, 1.0, 0.33}};
 #endif
 
     ELASTIC_WAVES Waves(material_type, material_properties);

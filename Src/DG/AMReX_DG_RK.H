@@ -299,15 +299,11 @@ struct RungeKutta
         // DG
         const int sp = MatFactory.space_p;
         const int sNp = MatFactory.space_Np;
-
-// AUXILIARY VARIABLES FOR CONCENTRATED FORCE
-//const Real xS[2] = {-2.0, 0.0}; // OneInterface problem
-const Real xS[2] = {0.0, 0.0}; // OneAnisotropicPhase problem
         // ============================================================
 
         // ============================================================
         //
-        // int_{Vh} V_{,i}.T F_i
+        // int_{Vh} V_{,i}.T F_i + int_{Vh} V.T B
         //
         // ============================================================
         for (MFIter mfi(_X_); mfi.isValid(); ++mfi)
@@ -350,7 +346,7 @@ const Real xS[2] = {0.0, 0.0}; // OneAnisotropicPhase problem
                 Real x[AMREX_SPACEDIM], w, grad[AMREX_SPACEDIM];
                 Real Uh[N_U];
                 Real AMREX_D_DECL(dUhdx1[N_U], dUhdx2[N_U], dUhdx3[N_U]);
-                Real AMREX_D_DECL(F1h[N_U], F2h[N_U], F3h[N_U]);
+                Real AMREX_D_DECL(F1h[N_U], F2h[N_U], F3h[N_U]), B[N_U];
                 Real integrand;
 
                 // Get the support of the basis functions
@@ -393,6 +389,9 @@ const Real xS[2] = {0.0, 0.0}; // OneAnisotropicPhase problem
                     // FLUX
                     IBVP.F_F(t, x, Uh, AMREX_D_DECL(F1h, F2h, F3h));
                     
+                    // BODY LOAD
+                    IBVP.F_B(t, x, B);
+                    
                     // DG CONTRIBUTION
                     for (int rs = 0; rs < sNp; ++rs)
                     {
@@ -403,33 +402,11 @@ const Real xS[2] = {0.0, 0.0}; // OneAnisotropicPhase problem
                             integrand += sol.dBFdx3[rs]*F3h[ru];
                         )
 
+                        integrand += sol.BF[rs]*B[ru];
+
                         dXdt_fab(i,j,k,rs+ru*sNp) += integrand*w;
                     }
                 }
-
-if ((ru == 1) && (dom == 0) &&
-    (xS[0] > prob_lo[0]+i*dx[0]) && (xS[0] < prob_lo[0]+(i+1)*dx[0]) && 
-    (xS[1] > prob_lo[1]+j*dx[1]) && (xS[1] < prob_lo[1]+(j+1)*dx[1]))
-{
-//const Real f = 0.17; // OneInterface problem
-const Real f = 0.30; // OneAnisotropicPhase problem
-const Real omega = 2.0*M_PI*f;
-const Real tc = 6.0;
-const Real tau = t-tc;
-const Real s = omega*omega*tau*tau;
-const Real fT = (1.0-0.5*s)*std::exp(-0.25*s);
-
-const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0], prob_lo[1]+j*dx[1], prob_lo[2]+k*dx[2])};
-const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+1)*dx[0], prob_lo[1]+(j+1)*dx[1], prob_lo[2]+(k+1)*dx[2])};
-DG_sol_space_BFX sol_(cell_lo, cell_hi, X_fab, sp, i, j, k, -1);
-sol_._eval_BF_table_(xS);
-
-for (int rs = 0; rs < sNp; ++rs)
-{
-    dXdt_fab(i,j,k,rs+ru*sNp) += sol_.BF[rs]*fT;
-}
-
-}
             });
             Gpu::synchronize();
         }

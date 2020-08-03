@@ -187,7 +187,7 @@ public:
                 )
             }
 
-            // EIGENVALUES
+            // EIGENVALUES AND EIGENVECTORS
             {
                 amrex::Real wIm[N_VS];
 
@@ -329,6 +329,61 @@ exit(-1);
             InTcIn[k] *= inv_rho;
         }
     }
+
+    AMREX_GPU_HOST_DEVICE
+    void _eval_AnU_(const int dom, const amrex::Real * un, const amrex::Real * U, amrex::Real * AnU) const
+    {
+        
+#if (AMREX_SPACEDIM == 2)
+        AnU[0] = 0.0;
+        AnU[1] = 0.0;
+        AnU[2] = 0.0;
+        AnU[3] = 0.0;
+        AnU[4] = 0.0;
+
+        for (int j = 0; j < N_VS; ++j)
+        for (int i = 0; i < N_VS; ++i)
+        {
+            AnU[i] += this->A1[dom][i+j*N_VS]*U[j]*un[0];
+            AnU[i] += this->A2[dom][i+j*N_VS]*U[j]*un[1];
+        }
+#endif
+#if (AMREX_SPACEDIM == 3)
+        AnU[0] = 0.0;
+        AnU[1] = 0.0;
+        AnU[2] = 0.0;
+        AnU[3] = 0.0;
+        AnU[4] = 0.0;
+        AnU[5] = 0.0;
+        AnU[6] = 0.0;
+        AnU[7] = 0.0;
+        AnU[8] = 0.0;
+
+        for (int j = 0; j < N_VS; ++j)
+        for (int i = 0; i < N_VS; ++i)
+        {
+            AnU[i] += this->A1[dom][i+j*N_VS]*U[j]*un[0];
+            AnU[i] += this->A2[dom][i+j*N_VS]*U[j]*un[1];
+            AnU[i] += this->A3[dom][i+j*N_VS]*U[j]*un[2];
+        }
+#endif
+    }
+    AMREX_GPU_HOST_DEVICE
+    void _eval_InU_(const amrex::Real * un, const amrex::Real * U, amrex::Real * InU) const
+    {
+        
+#if (AMREX_SPACEDIM == 2)
+        InU[0] = un[0]*U[2]+un[1]*U[4];
+        InU[1] = un[0]*U[4]+un[1]*U[3];
+        InU[2] = un[0]*U[0];
+        InU[3] = un[1]*U[1];
+        InU[4] = un[0]*U[1]+un[1]*U[0];
+#endif
+#if (AMREX_SPACEDIM == 3)
+amrex::Print() << "Hello! _eval_InU_" << std::endl;
+exit(-1);
+#endif
+    }
     // ================================================================
 
     // TIME STEP ======================================================
@@ -341,7 +396,7 @@ exit(-1);
 
 #if (AMREX_SPACEDIM == 2)
         const amrex::Real h = std::min(dx[0], dx[1]);
-        dt = 0.3*h/(this->max_wave_speed);
+        dt = 0.25*h/(this->max_wave_speed);
 #endif
 #if (AMREX_SPACEDIM == 3)
         const amrex::Real h = std::min(dx[0], std::min(dx[1], dx[2]));
@@ -365,6 +420,18 @@ exit(-1);
                 amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A2[d], &U[d*N_VS], &F2[d*N_VS]);,
                 amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A3[d], &U[d*N_VS], &F3[d*N_VS]);
             )
+        }
+    }
+    // ================================================================
+
+    // BODY LOAD ======================================================
+    AMREX_GPU_HOST_DEVICE
+    void F_B(const amrex::Real & t, const amrex::Real * x,
+             amrex::Real * B) const
+    {
+        for (int u = 0; u < (N_DOM*N_VS); ++u)
+        {
+            B[u] = 0.0;
         }
     }
     // ================================================================

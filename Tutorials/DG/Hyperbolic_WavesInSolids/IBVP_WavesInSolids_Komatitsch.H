@@ -8,9 +8,8 @@
 #define N_DOM 2
 #define N_U (2*N_VS)
 // --------------------------------------------------------------------
-
-#define DELTA (1.0/1000.0)
 // ####################################################################
+
 
 
 // IBVP CLASS #########################################################
@@ -42,7 +41,7 @@ public:
     amrex::Real F_PHI(const int & ph,
                       const amrex::Real & t, const amrex::Real * x) const
     {
-        return x[0]-0.5-DELTA;
+        return x[0];
     }
     // ================================================================
 
@@ -106,6 +105,34 @@ public:
         
         return res;
     }
+    // ================================================================
+
+    // THIS PART SHOULD BE ADDED TO THE VOLUME CONTRIBUTION TO ACCOUNT
+    // FOR THE LOCALIZED POINT FORCE ==================================
+    /*
+    const Real xS[2] = {-2.0, 0.0};
+    if ((ru == 1) && (dom == 0) &&
+        (xS[0] > prob_lo[0]+i*dx[0]) && (xS[0] < prob_lo[0]+(i+1)*dx[0]) && 
+        (xS[1] > prob_lo[1]+j*dx[1]) && (xS[1] < prob_lo[1]+(j+1)*dx[1]))
+    {
+        const Real f = 0.17; // OneInterface problem
+        const Real omega = 2.0*M_PI*f;
+        const Real tc = 6.0;
+        const Real tau = t-tc;
+        const Real s = omega*omega*tau*tau;
+        const Real fT = (1.0-0.5*s)*std::exp(-0.25*s);
+
+        const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0], prob_lo[1]+j*dx[1], prob_lo[2]+k*dx[2])};
+        const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+1)*dx[0], prob_lo[1]+(j+1)*dx[1], prob_lo[2]+(k+1)*dx[2])};
+        DG_sol_space_BFX sol_(cell_lo, cell_hi, X_fab, sp, i, j, k, -1);
+        sol_._eval_BF_table_(xS);
+
+        for (int rs = 0; rs < sNp; ++rs)
+        {
+            dXdt_fab(i,j,k,rs+ru*sNp) += sol_.BF[rs]*fT;
+        }
+    }
+    */
     // ================================================================
 
     // DG-RELATED AUXILIARY FUNCTIONS: NUMERICAL FLUXES ===============
@@ -206,19 +233,26 @@ public:
     {
         const amrex::Real mu = this->max_wave_speed;
 
-        amrex::Real bcs_U[N_VS];
+        amrex::Real aux_U[N_VS], bcs_U[N_VS];
 
+        // ABSORBING BCS
         if (un[0] > +0.5)
         {
             const int dom = 1;
 
-            bcs_U[0] = 0.0;
-            bcs_U[1] = U[1+N_VS];
-            bcs_U[2] = U[2+N_VS];
-            bcs_U[3] = U[3+N_VS];
-            bcs_U[4] = 0.0;
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->iA1_v[dom], &U[1*N_VS], aux_U);
+            for (int u = 0; u < N_VS; ++u)
+            {
+                if (this->A1_w[dom][u]*un[0] < 0.0) aux_U[u] = 0.0;
+            }
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1_v[dom], aux_U, bcs_U);
 
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1[dom], bcs_U, &NFn[dom*N_VS]);
+            aux_U[0] = 0.5*(U[0+N_VS]+bcs_U[0]);
+            aux_U[1] = 0.5*(U[1+N_VS]+bcs_U[1]);
+            aux_U[2] = 0.5*(U[2+N_VS]+bcs_U[2]);
+            aux_U[3] = 0.5*(U[3+N_VS]+bcs_U[3]);
+            aux_U[4] = 0.5*(U[4+N_VS]+bcs_U[4]);
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1[dom], aux_U, &NFn[1*N_VS]);
 
             NFn[0+N_VS] *= un[0];
             NFn[1+N_VS] *= un[0];
@@ -226,36 +260,100 @@ public:
             NFn[3+N_VS] *= un[0];
             NFn[4+N_VS] *= un[0];
 
-            NFn[0+N_VS] += mu*(U[0+N_VS]-bcs_U[0]);
-            NFn[4+N_VS] += mu*(U[4+N_VS]-bcs_U[4]);
+            NFn[0+N_VS] += 0.5*mu*(U[0+N_VS]-bcs_U[0]);
+            NFn[1+N_VS] += 0.5*mu*(U[1+N_VS]-bcs_U[1]);
+            NFn[2+N_VS] += 0.5*mu*(U[2+N_VS]-bcs_U[2]);
+            NFn[3+N_VS] += 0.5*mu*(U[3+N_VS]-bcs_U[3]);
+            NFn[4+N_VS] += 0.5*mu*(U[4+N_VS]-bcs_U[4]);
         }
         else if (un[0] < -0.5)
         {
             const int dom = 0;
 
-            const amrex::Real f = 5.0;
-            const amrex::Real omega = 2.0*M_PI*f;
-            const amrex::Real tc = 0.5;
-            const amrex::Real tau = t-tc;
-            const amrex::Real s = omega*omega*tau*tau;
-            const amrex::Real t1 = (1.0-0.5*s)*std::exp(-0.25*s);
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->iA1_v[dom], U, aux_U);
+            for (int u = 0; u < N_VS; ++u)
+            {
+                if (this->A1_w[dom][u]*un[0] < 0.0) aux_U[u] = 0.0;
+            }
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1_v[dom], aux_U, bcs_U);
 
-            bcs_U[0] = U[0];
-            bcs_U[1] = U[1];
-            bcs_U[2] = t1;
-            bcs_U[3] = U[3];
-            bcs_U[4] = 0.0;
+            aux_U[0] = 0.5*(U[0]+bcs_U[0]);
+            aux_U[1] = 0.5*(U[1]+bcs_U[1]);
+            aux_U[2] = 0.5*(U[2]+bcs_U[2]);
+            aux_U[3] = 0.5*(U[3]+bcs_U[3]);
+            aux_U[4] = 0.5*(U[4]+bcs_U[4]);
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1[dom], aux_U, NFn);
 
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1[dom], bcs_U, &NFn[dom*N_VS]);
-            
             NFn[0] *= un[0];
             NFn[1] *= un[0];
             NFn[2] *= un[0];
             NFn[3] *= un[0];
             NFn[4] *= un[0];
 
+            NFn[0] += 0.5*mu*(U[0]-bcs_U[0]);
+            NFn[1] += 0.5*mu*(U[1]-bcs_U[1]);
             NFn[2] += 0.5*mu*(U[2]-bcs_U[2]);
+            NFn[3] += 0.5*mu*(U[3]-bcs_U[3]);
             NFn[4] += 0.5*mu*(U[4]-bcs_U[4]);
+        }
+        else if (std::abs(un[1]) > +0.5)
+        {
+            int dom = 0;
+
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->iA2_v[dom], U, aux_U);
+            for (int u = 0; u < N_VS; ++u)
+            {
+                if (this->A2_w[dom][u]*un[1] < 0.0) aux_U[u] = 0.0;
+            }
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A2_v[dom], aux_U, bcs_U);
+
+            aux_U[0] = 0.5*(U[0]+bcs_U[0]);
+            aux_U[1] = 0.5*(U[1]+bcs_U[1]);
+            aux_U[2] = 0.5*(U[2]+bcs_U[2]);
+            aux_U[3] = 0.5*(U[3]+bcs_U[3]);
+            aux_U[4] = 0.5*(U[4]+bcs_U[4]);
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A2[dom], aux_U, NFn);
+
+            NFn[0] *= un[1];
+            NFn[1] *= un[1];
+            NFn[2] *= un[1];
+            NFn[3] *= un[1];
+            NFn[4] *= un[1];
+
+            NFn[0] += 0.5*mu*(U[0]-bcs_U[0]);
+            NFn[1] += 0.5*mu*(U[1]-bcs_U[1]);
+            NFn[2] += 0.5*mu*(U[2]-bcs_U[2]);
+            NFn[3] += 0.5*mu*(U[3]-bcs_U[3]);
+            NFn[4] += 0.5*mu*(U[4]-bcs_U[4]);
+
+
+            dom = 1;
+
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->iA2_v[dom], &U[1*N_VS], aux_U);
+            for (int u = 0; u < N_VS; ++u)
+            {
+                if (this->A2_w[dom][u]*un[1] < 0.0) aux_U[u] = 0.0;
+            }
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A2_v[dom], aux_U, bcs_U);
+
+            aux_U[0] = 0.5*(U[0+N_VS]+bcs_U[0]);
+            aux_U[1] = 0.5*(U[1+N_VS]+bcs_U[1]);
+            aux_U[2] = 0.5*(U[2+N_VS]+bcs_U[2]);
+            aux_U[3] = 0.5*(U[3+N_VS]+bcs_U[3]);
+            aux_U[4] = 0.5*(U[4+N_VS]+bcs_U[4]);
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A2[dom], aux_U, &NFn[1*N_VS]);
+
+            NFn[0+N_VS] *= un[1];
+            NFn[1+N_VS] *= un[1];
+            NFn[2+N_VS] *= un[1];
+            NFn[3+N_VS] *= un[1];
+            NFn[4+N_VS] *= un[1];
+
+            NFn[0+N_VS] += 0.5*mu*(U[0+N_VS]-bcs_U[0]);
+            NFn[1+N_VS] += 0.5*mu*(U[1+N_VS]-bcs_U[1]);
+            NFn[2+N_VS] += 0.5*mu*(U[2+N_VS]-bcs_U[2]);
+            NFn[3+N_VS] += 0.5*mu*(U[3+N_VS]-bcs_U[3]);
+            NFn[4+N_VS] += 0.5*mu*(U[4+N_VS]-bcs_U[4]);
         }
     }
     // ----------------------------------------------------------------
@@ -321,16 +419,22 @@ exit(-1);
 #if (AMREX_SPACEDIM == 2)
         point_fields_location = 
         {
-            {0.5+DELTA, 0.5},
-            {0.5+DELTA, 0.5}
+            {-10.5, -8.0},
+            {-3.5, -8.0},
+            {-1.0, -8.0},
+            {+10.5, -8.0},
         };
         point_fields_domain =
         {
+            0,
+            0,
             0,
             1
         };
         point_fields_name =
         {
+            {"Vx", "Vy", "Sxx", "Syy", "Sxy"},
+            {"Vx", "Vy", "Sxx", "Syy", "Sxy"},
             {"Vx", "Vy", "Sxx", "Syy", "Sxy"},
             {"Vx", "Vy", "Sxx", "Syy", "Sxy"}
         };
@@ -343,7 +447,7 @@ exit(-1);
                      const amrex::Real * U, AMREX_D_DECL(const amrex::Real * dUdx1, const amrex::Real * dUdx2, const amrex::Real * dUdx3),
                      amrex::Real * F) const
     {
-        if (p == 0)
+        if (p < 3)
         {
             F[0] = U[0];
             F[1] = U[1];

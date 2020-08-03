@@ -261,18 +261,29 @@ public:
 
         amrex::Real avg_U[N_U];
 
-#if (AMREX_SPACEDIM == 2)
         avg_U[0] = 0.5*(U[0]+nbr_U[0]);
         avg_U[1] = 0.5*(U[1]+nbr_U[1]);
         avg_U[2] = 0.5*(U[2]+nbr_U[2]);
         avg_U[3] = 0.5*(U[3]+nbr_U[3]);
         avg_U[4] = 0.5*(U[4]+nbr_U[4]);
+#if (AMREX_SPACEDIM == 3)
+        avg_U[5] = 0.5*(U[5]+nbr_U[5]);
+        avg_U[6] = 0.5*(U[6]+nbr_U[6]);
+        avg_U[7] = 0.5*(U[7]+nbr_U[7]);
+        avg_U[8] = 0.5*(U[8]+nbr_U[8]);
+#endif
         
         avg_U[0+N_VS] = 0.5*(U[0+N_VS]+nbr_U[0+N_VS]);
         avg_U[1+N_VS] = 0.5*(U[1+N_VS]+nbr_U[1+N_VS]);
         avg_U[2+N_VS] = 0.5*(U[2+N_VS]+nbr_U[2+N_VS]);
         avg_U[3+N_VS] = 0.5*(U[3+N_VS]+nbr_U[3+N_VS]);
         avg_U[4+N_VS] = 0.5*(U[4+N_VS]+nbr_U[4+N_VS]);
+#if (AMREX_SPACEDIM == 3)
+        avg_U[5+N_VS] = 0.5*(U[5+N_VS]+nbr_U[5+N_VS]);
+        avg_U[6+N_VS] = 0.5*(U[6+N_VS]+nbr_U[6+N_VS]);
+        avg_U[7+N_VS] = 0.5*(U[7+N_VS]+nbr_U[7+N_VS]);
+        avg_U[8+N_VS] = 0.5*(U[8+N_VS]+nbr_U[8+N_VS]);
+#endif
 
         if (std::abs(un[0]) > 0.5)
         {
@@ -284,12 +295,24 @@ public:
             NFn[2] *= un[0];
             NFn[3] *= un[0];
             NFn[4] *= un[0];
+#if (AMREX_SPACEDIM == 3)
+            NFn[5] *= un[0];
+            NFn[6] *= un[0];
+            NFn[7] *= un[0];
+            NFn[8] *= un[0];
+#endif
 
             NFn[0] += 0.5*mu*(U[0]-nbr_U[0]);
             NFn[1] += 0.5*mu*(U[1]-nbr_U[1]);
             NFn[2] += 0.5*mu*(U[2]-nbr_U[2]);
             NFn[3] += 0.5*mu*(U[3]-nbr_U[3]);
             NFn[4] += 0.5*mu*(U[4]-nbr_U[4]);
+#if (AMREX_SPACEDIM == 3)
+            NFn[5] += 0.5*mu*(U[5]-nbr_U[5]);
+            NFn[6] += 0.5*mu*(U[6]-nbr_U[6]);
+            NFn[7] += 0.5*mu*(U[7]-nbr_U[7]);
+            NFn[8] += 0.5*mu*(U[8]-nbr_U[8]);
+#endif
 
             // DOMAIN 1
             amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1[1], &avg_U[1*N_VS], &NFn[1*N_VS]);
@@ -299,12 +322,24 @@ public:
             NFn[2+N_VS] *= un[0];
             NFn[3+N_VS] *= un[0];
             NFn[4+N_VS] *= un[0];
+#if (AMREX_SPACEDIM == 3)
+            NFn[5+N_VS] *= un[0];
+            NFn[6+N_VS] *= un[0];
+            NFn[7+N_VS] *= un[0];
+            NFn[8+N_VS] *= un[0];
+#endif
 
             NFn[0+N_VS] += 0.5*mu*(U[0+N_VS]-nbr_U[0+N_VS]);
             NFn[1+N_VS] += 0.5*mu*(U[1+N_VS]-nbr_U[1+N_VS]);
             NFn[2+N_VS] += 0.5*mu*(U[2+N_VS]-nbr_U[2+N_VS]);
             NFn[3+N_VS] += 0.5*mu*(U[3+N_VS]-nbr_U[3+N_VS]);
             NFn[4+N_VS] += 0.5*mu*(U[4+N_VS]-nbr_U[4+N_VS]);
+#if (AMREX_SPACEDIM == 3)
+            NFn[5+N_VS] += 0.5*mu*(U[5+N_VS]-nbr_U[5+N_VS]);
+            NFn[6+N_VS] += 0.5*mu*(U[6+N_VS]-nbr_U[6+N_VS]);
+            NFn[7+N_VS] += 0.5*mu*(U[7+N_VS]-nbr_U[7+N_VS]);
+            NFn[8+N_VS] += 0.5*mu*(U[8+N_VS]-nbr_U[8+N_VS]);
+#endif
         }
         else if (std::abs(un[1]) > 0.5)
         {
@@ -316,12 +351,24 @@ public:
             NFn[2] *= un[1];
             NFn[3] *= un[1];
             NFn[4] *= un[1];
+#if (AMREX_SPACEDIM == 3)
+            NFn[5] *= un[1];
+            NFn[6] *= un[1];
+            NFn[7] *= un[1];
+            NFn[8] *= un[1];
+#endif
 
             NFn[0] += 0.5*mu*(U[0]-nbr_U[0]);
             NFn[1] += 0.5*mu*(U[1]-nbr_U[1]);
             NFn[2] += 0.5*mu*(U[2]-nbr_U[2]);
             NFn[3] += 0.5*mu*(U[3]-nbr_U[3]);
             NFn[4] += 0.5*mu*(U[4]-nbr_U[4]);
+#if (AMREX_SPACEDIM == 3)
+            NFn[5] += 0.5*mu*(U[5]-nbr_U[5]);
+            NFn[6] += 0.5*mu*(U[6]-nbr_U[6]);
+            NFn[7] += 0.5*mu*(U[7]-nbr_U[7]);
+            NFn[8] += 0.5*mu*(U[8]-nbr_U[8]);
+#endif
 
             // DOMAIN 1
             amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A2[1], &avg_U[1*N_VS], &NFn[1*N_VS]);
@@ -331,17 +378,74 @@ public:
             NFn[2+N_VS] *= un[1];
             NFn[3+N_VS] *= un[1];
             NFn[4+N_VS] *= un[1];
+#if (AMREX_SPACEDIM == 3)
+            NFn[5+N_VS] *= un[1];
+            NFn[6+N_VS] *= un[1];
+            NFn[7+N_VS] *= un[1];
+            NFn[8+N_VS] *= un[1];
+#endif
 
             NFn[0+N_VS] += 0.5*mu*(U[0+N_VS]-nbr_U[0+N_VS]);
             NFn[1+N_VS] += 0.5*mu*(U[1+N_VS]-nbr_U[1+N_VS]);
             NFn[2+N_VS] += 0.5*mu*(U[2+N_VS]-nbr_U[2+N_VS]);
             NFn[3+N_VS] += 0.5*mu*(U[3+N_VS]-nbr_U[3+N_VS]);
             NFn[4+N_VS] += 0.5*mu*(U[4+N_VS]-nbr_U[4+N_VS]);
-        }
-#endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "Hello! F_NF_ICS" << std::endl;
-exit(-1);
+            NFn[5+N_VS] += 0.5*mu*(U[5+N_VS]-nbr_U[5+N_VS]);
+            NFn[6+N_VS] += 0.5*mu*(U[6+N_VS]-nbr_U[6+N_VS]);
+            NFn[7+N_VS] += 0.5*mu*(U[7+N_VS]-nbr_U[7+N_VS]);
+            NFn[8+N_VS] += 0.5*mu*(U[8+N_VS]-nbr_U[8+N_VS]);
+#endif
+        }
+#if (AMREX_SPACEDIM == 3)
+        else if (std::abs(un[2]) > 0.5)
+        {
+            // DOMAIN 0
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A3[0], avg_U, NFn);
+
+            NFn[0] *= un[2];
+            NFn[1] *= un[2];
+            NFn[2] *= un[2];
+            NFn[3] *= un[2];
+            NFn[4] *= un[2];
+            NFn[5] *= un[2];
+            NFn[6] *= un[2];
+            NFn[7] *= un[2];
+            NFn[8] *= un[2];
+
+            NFn[0] += 0.5*mu*(U[0]-nbr_U[0]);
+            NFn[1] += 0.5*mu*(U[1]-nbr_U[1]);
+            NFn[2] += 0.5*mu*(U[2]-nbr_U[2]);
+            NFn[3] += 0.5*mu*(U[3]-nbr_U[3]);
+            NFn[4] += 0.5*mu*(U[4]-nbr_U[4]);
+            NFn[5] += 0.5*mu*(U[5]-nbr_U[5]);
+            NFn[6] += 0.5*mu*(U[6]-nbr_U[6]);
+            NFn[7] += 0.5*mu*(U[7]-nbr_U[7]);
+            NFn[8] += 0.5*mu*(U[8]-nbr_U[8]);
+
+            // DOMAIN 1
+            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A3[1], &avg_U[1*N_VS], &NFn[1*N_VS]);
+
+            NFn[0+N_VS] *= un[2];
+            NFn[1+N_VS] *= un[2];
+            NFn[2+N_VS] *= un[2];
+            NFn[3+N_VS] *= un[2];
+            NFn[4+N_VS] *= un[2];
+            NFn[5+N_VS] *= un[2];
+            NFn[6+N_VS] *= un[2];
+            NFn[7+N_VS] *= un[2];
+            NFn[8+N_VS] *= un[2];
+
+            NFn[0+N_VS] += 0.5*mu*(U[0+N_VS]-nbr_U[0+N_VS]);
+            NFn[1+N_VS] += 0.5*mu*(U[1+N_VS]-nbr_U[1+N_VS]);
+            NFn[2+N_VS] += 0.5*mu*(U[2+N_VS]-nbr_U[2+N_VS]);
+            NFn[3+N_VS] += 0.5*mu*(U[3+N_VS]-nbr_U[3+N_VS]);
+            NFn[4+N_VS] += 0.5*mu*(U[4+N_VS]-nbr_U[4+N_VS]);
+            NFn[5+N_VS] += 0.5*mu*(U[5+N_VS]-nbr_U[5+N_VS]);
+            NFn[6+N_VS] += 0.5*mu*(U[6+N_VS]-nbr_U[6+N_VS]);
+            NFn[7+N_VS] += 0.5*mu*(U[7+N_VS]-nbr_U[7+N_VS]);
+            NFn[8+N_VS] += 0.5*mu*(U[8+N_VS]-nbr_U[8+N_VS]);
+        }
 #endif
     }
     // ----------------------------------------------------------------
@@ -379,9 +483,86 @@ exit(-1);
         const amrex::Real mu = this->max_wave_speed;
 
         amrex::Real avg_U[N_U];
+        amrex::Real InU[N_VS], nbr_InU[N_VS];
 
-amrex::Print() << "Hello! F_NF_PHI_ICS" << std::endl;
-exit(-1);
+        avg_U[0] = 0.5*(U[0]+nbr_U[0+N_VS]);
+        avg_U[1] = 0.5*(U[1]+nbr_U[1+N_VS]);
+        avg_U[2] = 0.5*(U[2]+nbr_U[2+N_VS]);
+        avg_U[3] = 0.5*(U[3]+nbr_U[3+N_VS]);
+        avg_U[4] = 0.5*(U[4]+nbr_U[4+N_VS]);
+#if (AMREX_SPACEDIM == 3)
+        avg_U[5] = 0.5*(U[5]+nbr_U[5+N_VS]);
+        avg_U[6] = 0.5*(U[6]+nbr_U[6+N_VS]);
+        avg_U[7] = 0.5*(U[7]+nbr_U[7+N_VS]);
+        avg_U[8] = 0.5*(U[8]+nbr_U[8+N_VS]);
+#endif
+        
+        avg_U[0+N_VS] = 0.5*(U[0+N_VS]+nbr_U[0]);
+        avg_U[1+N_VS] = 0.5*(U[1+N_VS]+nbr_U[1]);
+        avg_U[2+N_VS] = 0.5*(U[2+N_VS]+nbr_U[2]);
+        avg_U[3+N_VS] = 0.5*(U[3+N_VS]+nbr_U[3]);
+        avg_U[4+N_VS] = 0.5*(U[4+N_VS]+nbr_U[4]);
+#if (AMREX_SPACEDIM == 3)
+        avg_U[5+N_VS] = 0.5*(U[5+N_VS]+nbr_U[5]);
+        avg_U[6+N_VS] = 0.5*(U[6+N_VS]+nbr_U[6]);
+        avg_U[7+N_VS] = 0.5*(U[7+N_VS]+nbr_U[7]);
+        avg_U[8+N_VS] = 0.5*(U[8+N_VS]+nbr_U[8]);
+#endif
+
+        if (dom == 0)
+        {
+            this->_eval_AnU_(dom, un, &avg_U[dom*N_VS], &NFn[dom*N_VS]);
+            //this->_eval_InU_(un, &U[dom*N_VS], InU);
+            //this->_eval_InU_(un, &nbr_U[(1-dom)*N_VS], nbr_InU);
+
+            /*
+            NFn[0] += 0.5*mu*(InU[0]-nbr_InU[0]);
+            NFn[1] += 0.5*mu*(InU[1]-nbr_InU[1]);
+            NFn[2] += 0.5*mu*(InU[2]-nbr_InU[2]);
+            NFn[3] += 0.5*mu*(InU[3]-nbr_InU[3]);
+            NFn[4] += 0.5*mu*(InU[4]-nbr_InU[4]);
+            */
+            /**/
+            NFn[0] += 0.5*mu*(U[0]-nbr_U[0+N_VS]);
+            NFn[1] += 0.5*mu*(U[1]-nbr_U[1+N_VS]);
+            NFn[2] += 0.5*mu*(U[2]-nbr_U[2+N_VS]);
+            NFn[3] += 0.5*mu*(U[3]-nbr_U[3+N_VS]);
+            NFn[4] += 0.5*mu*(U[4]-nbr_U[4+N_VS]);
+#if (AMREX_SPACEDIM == 3)
+            NFn[5] += 0.5*mu*(U[5]-nbr_U[5+N_VS]);
+            NFn[6] += 0.5*mu*(U[6]-nbr_U[6+N_VS]);
+            NFn[7] += 0.5*mu*(U[7]-nbr_U[7+N_VS]);
+            NFn[8] += 0.5*mu*(U[8]-nbr_U[8+N_VS]);
+#endif
+            /**/
+        }
+        else if (dom == 1)
+        {
+            this->_eval_AnU_(dom, un, &avg_U[dom*N_VS], &NFn[dom*N_VS]);
+            //this->_eval_InU_(un, &U[dom*N_VS], InU);
+            //this->_eval_InU_(un, &nbr_U[(1-dom)*N_VS], nbr_InU);
+
+            /*
+            NFn[0+N_VS] += 0.5*mu*(InU[0]-nbr_InU[0]);
+            NFn[1+N_VS] += 0.5*mu*(InU[1]-nbr_InU[1]);
+            NFn[2+N_VS] += 0.5*mu*(InU[2]-nbr_InU[2]);
+            NFn[3+N_VS] += 0.5*mu*(InU[3]-nbr_InU[3]);
+            NFn[4+N_VS] += 0.5*mu*(InU[4]-nbr_InU[4]);
+            */
+            /**/
+            NFn[0+N_VS] += 0.5*mu*(U[0+N_VS]-nbr_U[0]);
+            NFn[1+N_VS] += 0.5*mu*(U[1+N_VS]-nbr_U[1]);
+            NFn[2+N_VS] += 0.5*mu*(U[2+N_VS]-nbr_U[2]);
+            NFn[3+N_VS] += 0.5*mu*(U[3+N_VS]-nbr_U[3]);
+            NFn[4+N_VS] += 0.5*mu*(U[4+N_VS]-nbr_U[4]);
+#if (AMREX_SPACEDIM == 3)
+            NFn[5+N_VS] += 0.5*mu*(U[5+N_VS]-nbr_U[5]);
+            NFn[6+N_VS] += 0.5*mu*(U[6+N_VS]-nbr_U[6]);
+            NFn[7+N_VS] += 0.5*mu*(U[7+N_VS]-nbr_U[7]);
+            NFn[8+N_VS] += 0.5*mu*(U[8+N_VS]-nbr_U[8]);
+#endif
+            /**/
+        }
     }
     // ----------------------------------------------------------------
     // ================================================================
