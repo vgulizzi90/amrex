@@ -14,8 +14,9 @@
 #define PHI_TYPE_TWO_PHASES_AMREX 100
 #define PHI_TYPE_ONE_PHASE_LATTICE_BCC 233
 #define PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ 20
+#define PHI_TYPE_ONE_PHASE_DUCT 200
 
-#define PHI_TYPE 0
+#define PHI_TYPE 200
 // --------------------------------------------------------------------
 
 // NUMBER OF DISTANCE FUNCTIONS/DOMAINS/UNKNOWN FIELDS ----------------
@@ -36,7 +37,8 @@
 #define N_U 2
 
 #elif ((PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_BCC) || \
-       (PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ))
+       (PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ) || \
+       (PHI_TYPE == PHI_TYPE_ONE_PHASE_DUCT))
 
 #define N_PHI 1
 #define N_DOM 1
@@ -715,6 +717,23 @@ public:
             (f-0.5)*(f+0.5)
         };
 
+#elif (PHI_TYPE == PHI_TYPE_ONE_PHASE_DUCT)
+        const amrex::Real r = (x[2] > 0.5) ? 0.3 : ((x[2] > 0.3) ? (0.5*x[2]+0.05) : 0.2);
+        const amrex::Real D = -r*r+(x[0]-0.5)*(x[0]-0.5)+(x[1]-0.5)*(x[1]-0.5);
+        const amrex::Real d = (x[1] < 0.5) ? 1.0 : (-0.1*0.1+(x[0]-0.5)*(x[0]-0.5)+(x[2]-0.75)*(x[2]-0.75));
+
+        const amrex::Real alpha = 4.0, beta = 0.1;
+        amrex::Real phi;
+
+        phi = 1.0;
+        phi -= std::pow(std::max(0.0, 1.0-D/beta), alpha);
+        phi -= std::pow(std::max(0.0, 1.0-d/beta), alpha);
+
+        const amrex::Real PHI[N_PHI] =
+        {
+            phi
+        };
+
 #else
         amrex::Print() << "ERROR: IBVP_Linear_Advection.H - LINADV::F_PHI" << std::endl;
         amrex::Print() << "| Unexpected distance function(s)." << std::endl;
@@ -752,7 +771,8 @@ public:
         };
 
 #elif ((PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_BCC) || \
-       (PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ))
+       (PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ) || \
+       (PHI_TYPE == PHI_TYPE_ONE_PHASE_DUCT))
 
         const int PHI_INFO[2*N_DOM] =
         {
@@ -768,6 +788,18 @@ public:
 
         phi_info[0] = PHI_INFO[2*dom];
         phi_info[1] = PHI_INFO[2*dom+1];
+    }
+    // ================================================================
+
+    // BODY LOAD ======================================================
+    AMREX_GPU_HOST_DEVICE
+    void F_B(const amrex::Real & t, const amrex::Real * x,
+             amrex::Real * B) const
+    {
+        for (int u = 0; u < N_U; ++u)
+        {
+            B[u] = 0.0;
+        }
     }
     // ================================================================
 
@@ -818,7 +850,8 @@ public:
         };
 
 #elif ((PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_BCC) || \
-       (PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ))
+       (PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ) || \
+       (PHI_TYPE == PHI_TYPE_ONE_PHASE_DUCT))
 
         const int DOM[N_U] =
         {
@@ -897,7 +930,8 @@ public:
         };
 
 #elif ((PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_BCC) || \
-       (PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ))
+       (PHI_TYPE == PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ) || \
+       (PHI_TYPE == PHI_TYPE_ONE_PHASE_DUCT))
 
         const int NBRDOM[N_DOM] =
         {
@@ -1082,6 +1116,14 @@ public:
 
         this->F_NF_BASE(t, x, un, U, nbr_U, AMREX_D_DECL(F1, F2, F3), AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3), AMREX_D_DECL(NF1, NF2, NF3));
     }
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_ICS(const amrex::Real & t, const amrex::Real * x, const amrex::Real * un,
+                  const amrex::Real * U, const amrex::Real * nbr_U,
+                  amrex::Real * NFn) const
+    {
+amrex::Print() << "Hello! F_NF_ICS" << std::endl;
+exit(-1);
+    }
 
     // GRID BOUNDARY
     AMREX_GPU_HOST_DEVICE
@@ -1137,6 +1179,14 @@ public:
                 NF3[1] = F3[1];
             )
         }
+    }
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_BCS(const amrex::Real & t, const amrex::Real * x, const amrex::Real * un,
+                  const amrex::Real * U,
+                  amrex::Real * NFn) const
+    {
+amrex::Print() << "Hello! F_NF_BCS" << std::endl;
+exit(-1);
     }
 
     // INTERNAL BOUNDARY
@@ -1235,27 +1285,48 @@ public:
             )
         }
     }
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_PHI_ICS(const int & dom,
+                      const amrex::Real & t, const amrex::Real * x, const amrex::Real * un,
+                      const amrex::Real * U, const amrex::Real * nbr_U,
+                      amrex::Real * NFn) const
+    {
+amrex::Print() << "Hello! F_NF_PHI_ICS" << std::endl;
+exit(-1);
+    }
     // ================================================================
 
     // ADDITIONAL FUNCTIONS FOR POST-PROCESSING =======================
+    void F_POINT_SOL_DESCRIPTION(amrex::Vector<amrex::Array<amrex::Real, AMREX_SPACEDIM>> & point_fields_location,
+                                 amrex::Vector<int> & point_fields_domain,
+                                 amrex::Vector<amrex::Vector<std::string>> & point_fields_name) const
+    {
+        point_fields_location.clear();
+    }
+    
+    AMREX_GPU_HOST_DEVICE
+    void F_POINT_SOL(const int p,
+                     const amrex::Real * PHI, AMREX_D_DECL(const amrex::Real * dPHIdx1, const amrex::Real * dPHIdx2, const amrex::Real * dPHIdx3),
+                     const amrex::Real * U, AMREX_D_DECL(const amrex::Real * dUdx1, const amrex::Real * dUdx2, const amrex::Real * dUdx3),
+                     amrex::Real * F) const
+    {
+amrex::Print() << "Hello! F_POINT_SOL (We should not end up here)" << std::endl;
+exit(-1);
+    }
+
+    void F_SOL_DESCRIPTION(amrex::Vector<int> & fields_domain, amrex::Vector<std::string> & fields_name) const
+    {
+        fields_domain = {0};
+        fields_name = {"rho_a"};
+    }
+    
     AMREX_GPU_HOST_DEVICE
     void F_SOL(const amrex::Real & t, const amrex::Real * x,
                const amrex::Real * PHI, AMREX_D_DECL(const amrex::Real * dPHIdx1, const amrex::Real * dPHIdx2, const amrex::Real * dPHIdx3),
                const amrex::Real * U, AMREX_D_DECL(const amrex::Real * dUdx1, const amrex::Real * dUdx2, const amrex::Real * dUdx3),
                amrex::Real * F) const
     {
-        // PARAMETERS
-
-        // EXACT SOLUTION
-        amrex::Real Ue[N_U];
-
-        this->F_EXACT(t, x, Ue);
-
-        // FIELD EXPRESSIONS
         F[0] = U[0];
-        F[1] = U[0]-Ue[0];
-        F[2] = U[1];
-        F[3] = U[1]-Ue[1];
     }
     // ================================================================
 };

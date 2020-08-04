@@ -400,7 +400,7 @@ exit(-1);
 #endif
 #if (AMREX_SPACEDIM == 3)
         const amrex::Real h = std::min(dx[0], std::min(dx[1], dx[2]));
-        dt = h/(this->max_wave_speed);
+        dt = 0.25*h/(this->max_wave_speed);
 #endif
         return dt;
     }

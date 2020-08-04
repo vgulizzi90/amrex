@@ -22,7 +22,7 @@
 #define PROBLEM_LAYERED 12
 #define PROBLEM_BCC_LATTICE 233
 
-#define PROBLEM 23
+#define PROBLEM 12
 
 #if (PROBLEM == PROBLEM_ONE_PHASE)
 #include <IBVP_WavesInSolids_OnePhase.H>
@@ -159,7 +159,7 @@ amrex::Print() << "#############################################################
                                                                            {71.0, 16.5, 16.5, 3.96, 8.58}};
 #elif (PROBLEM == PROBLEM_LAYERED)
     const amrex::Vector<std::string> material_type = {"Isotropic", "Isotropic"};
-    const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}, {1.0, 1.0, 0.33}};
+    const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}, {3.0, 12.0, 0.33}};
 #endif
 
     ELASTIC_WAVES Waves(material_type, material_properties);
@@ -221,7 +221,7 @@ amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt <
 
 #if (PROBLEM == PROBLEM_HP_CONVERGENCE)
         // COMPUTE ERROR
-        if (std::abs(time/dG_inputs.time.T-1.0) < 1.0e-12)
+        //if (std::abs(time/dG_inputs.time.T-1.0) < 1.0e-12)
         {
             amrex::Real err;
             err = dG.EvalError(time, iGeom, MatFactory, Waves);

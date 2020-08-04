@@ -1,10 +1,10 @@
 # SPACE ###############################################################
-space.is_periodic = 1 1 1 
+space.is_periodic = 0 0 0
 space.coord_sys   = 0
 space.prob_lo     = 0.0 0.0 0.0
 space.prob_hi     = +1.0 +1.0 +1.0
-space.bc_lo       = 0 0 0
-space.bc_hi       = 0 0 0
+space.bc_lo       = 1 1 1
+space.bc_hi       = 1 1 1
 #######################################################################
 
 
@@ -14,8 +14,8 @@ time.T = 1.0
 
 
 # SPACE AND TIME DISCRETIZATION #######################################
-mesh.n_cells       = 8 8 8
-mesh.max_grid_size = 4 4 4
+mesh.n_cells       = 10 10 10
+mesh.max_grid_size = 5 5 5
 mesh.n_time_steps  = 100000
 
 # DISCONTINUOUS GALERKIN METHOD INFO

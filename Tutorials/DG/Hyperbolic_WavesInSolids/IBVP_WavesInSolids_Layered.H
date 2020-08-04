@@ -18,6 +18,11 @@ public ELASTIC_WAVES_BASE<N_DOM>
 {
 private:
     // DATA MEMBERS ===================================================
+    // EIGEN STATE INITIAL CONDITIONS
+    const int ICs_dir, ICs_iv;
+    amrex::Real ICs_un[AMREX_SPACEDIM];
+    amrex::Real * ICs_An_w;
+    amrex::Real * ICs_An_v;
     // ================================================================
 
 public:
@@ -25,12 +30,52 @@ public:
     ELASTIC_WAVES(const amrex::Vector<std::string> & material_type,
                   const amrex::Vector<amrex::Vector<amrex::Real>> material_properties)
     :
-    ELASTIC_WAVES_BASE(material_type, material_properties)
+    ELASTIC_WAVES_BASE(material_type, material_properties),
+    ICs_dir{0},
+    ICs_iv{AMREX_D_PICK(-1, 3, 4)}
     {
         // PARAMETERS -------------------------------------------------
         // ------------------------------------------------------------
 
         // VARIABLES --------------------------------------------------
+        // ------------------------------------------------------------
+
+        // EIGEN STATE INITIAL CONDITIONS -----------------------------
+        if (this->ICs_dir == 0)
+        {
+            AMREX_D_TERM
+            (
+                this->ICs_un[0] = 1.0;,
+                this->ICs_un[1] = 0.0;,
+                this->ICs_un[2] = 0.0;
+            )
+            this->ICs_An_w = this->A1_w[0];
+            this->ICs_An_v = this->A1_v[0];
+        }
+        else if (this->ICs_dir == 1)
+        {
+            AMREX_D_TERM
+            (
+                this->ICs_un[0] = 0.0;,
+                this->ICs_un[1] = 1.0;,
+                this->ICs_un[2] = 0.0;
+            )
+            this->ICs_An_w = this->A2_w[0];
+            this->ICs_An_v = this->A2_v[0];
+        }
+#if (AMREX_SPACEDIM == 3)
+        else if (this->ICs_dir == 2)
+        {
+            AMREX_D_TERM
+            (
+                this->ICs_un[0] = 0.0;,
+                this->ICs_un[1] = 0.0;,
+                this->ICs_un[2] = 1.0;
+            )
+            this->ICs_An_w = this->A3_w[0];
+            this->ICs_An_v = this->A3_v[0];
+        }
+#endif
         // ------------------------------------------------------------
     }
     // ================================================================
@@ -41,11 +86,11 @@ public:
                       const amrex::Real & t, const amrex::Real * x) const
     {
         amrex::Real res;
-        res  = -(x[0]-5.0)*(x[0]-5.8);
-        res *= +(x[0]-6.0)*(x[0]-6.8);
-        res *= +(x[0]-7.0)*(x[0]-7.8);
-        res *= +(x[0]-8.0)*(x[0]-8.8);
-        res *= +(x[0]-9.0)*(x[0]-9.8);
+        res  = -(x[0]-0.001-5.0)*(x[0]-0.001-5.8);
+        res *= +(x[0]-0.001-6.0)*(x[0]-0.001-6.8);
+        res *= +(x[0]-0.001-7.0)*(x[0]-0.001-7.8);
+        res *= +(x[0]-0.001-8.0)*(x[0]-0.001-8.8);
+        res *= +(x[0]-0.001-9.0)*(x[0]-0.001-9.8);
 
         return res;
     }
@@ -107,8 +152,23 @@ public:
     AMREX_GPU_HOST_DEVICE
     amrex::Real F_U0(const int & u, const amrex::Real * x) const
     {
-        const amrex::Real res = 0.0;
+        const amrex::Real * un = this->ICs_un;
+        const amrex::Real xi[AMREX_SPACEDIM] = {x[0]-2.0, x[1]};
+        const amrex::Real xi_dot_un = AMREX_D_PICK(xi[0]*un[0], xi[0]*un[0]+xi[1]*un[1], xi[0]*un[0]+xi[1]*un[1]+xi[2]*un[2]);
+        const amrex::Real f0 = std::exp(-16.0*xi_dot_un*xi_dot_un);
+
+        amrex::Real res;
         
+        if (u < N_VS)
+        {
+            const int pos = u+(this->ICs_iv)*N_VS;
+            res = this->ICs_An_v[pos]*f0;
+        }
+        else
+        {
+            res = 0.0;
+        }
+
         return res;
     }
     // ================================================================
@@ -214,7 +274,7 @@ public:
         amrex::Real aux_U[N_VS], bcs_U[N_VS];
 
         // ABSORBING BCS
-        if (un[0] > +0.5)
+        if (std::abs(un[0]) > +0.5)
         {
             const int dom = 0;
 
@@ -243,31 +303,6 @@ public:
             NFn[2] += 0.5*mu*(U[2]-bcs_U[2]);
             NFn[3] += 0.5*mu*(U[3]-bcs_U[3]);
             NFn[4] += 0.5*mu*(U[4]-bcs_U[4]);
-        }
-        else if (un[0] < -0.5)
-        {
-            const int dom = 0;
-
-            const amrex::Real fc = 1.4;
-            const amrex::Real v1 = std::sin(2.0*M_PI*(0.5*fc*t*t))*std::exp(-t*t);
-            const amrex::Real v2 = 0.0;
-
-            bcs_U[0] = v1;
-            bcs_U[1] = v2;
-            bcs_U[2] = U[2];
-            bcs_U[3] = U[3];
-            bcs_U[4] = U[4];
-
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A1[dom], bcs_U, &NFn[dom*N_VS]);
-
-            NFn[0] *= un[0];
-            NFn[1] *= un[0];
-            NFn[2] *= un[0];
-            NFn[3] *= un[0];
-            NFn[4] *= un[0];
-
-            NFn[0] += 0.5*mu*(U[0]-bcs_U[0]);
-            NFn[1] += 0.5*mu*(U[1]-bcs_U[1]);
         }
     }
     // ----------------------------------------------------------------
@@ -334,15 +369,18 @@ exit(-1);
         point_fields_location = 
         {
             {0.0, 1.5},
+            {3.0, 1.5},
             {15.0, 1.5}
         };
         point_fields_domain =
         {
             0,
+            0,
             0
         };
         point_fields_name =
         {
+            {"Vx", "Vy", "Sxx", "Syy", "Sxy"},
             {"Vx", "Vy", "Sxx", "Syy", "Sxy"},
             {"Vx", "Vy", "Sxx", "Syy", "Sxy"}
         };

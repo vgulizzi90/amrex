@@ -124,6 +124,10 @@ amrex::Print() << "#############################################################
     LINADV LinAdv;
     // ================================================================
 
+    // INIT OUTPUT DATA INFORMATION ===================================
+    dG.SetOutput(dst_folder, "PointSolution", iGeom, LinAdv);
+    // ================================================================
+
     // INIT FIELDS' DATA WITH INITIAL CONDITIONS ======================
     iGeom.ProjectDistanceFunctions(LinAdv);
     iGeom.EvalImplicitMesh(LinAdv);
@@ -135,12 +139,11 @@ amrex::Print() << "#############################################################
     {
         int n = 0;
         amrex::Real time = 0.0;
-        std::vector<int> field_domains = {0, 0, 1, 1};
-        std::vector<std::string> field_names = {"rho_a", "err_a", "rho_b", "err_b"};
 
         iGeom.Export_VTK_Mesh(dst_folder, "Mesh", n, inputs.mesh.n_time_steps);
-        dG.Export_VTK(dst_folder, "Solution", n, inputs.mesh.n_time_steps, field_domains, field_names, time, iGeom, MatFactory, LinAdv);
+        dG.Export_VTK(dst_folder, "Solution", n, inputs.mesh.n_time_steps, time, iGeom, MatFactory, LinAdv);
     }
+exit(-1);
     // ================================================================
 
     // START THE ANALYSIS (ADVANCE IN TIME) ===========================
@@ -185,10 +188,7 @@ amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std:
         // WRITE TO OUTPUT
         if (inputs.plot_int > 0 && n%inputs.plot_int == 0)
         {
-            std::vector<int> field_domains = {0, 0, 1, 1};
-            std::vector<std::string> field_names = {"rho_a", "err_a", "rho_b", "err_b"};
-
-            dG.Export_VTK(dst_folder, "Solution", n, inputs.mesh.n_time_steps, field_domains, field_names, time, iGeom, MatFactory, LinAdv);
+            dG.Export_VTK(dst_folder, "Solution", n, inputs.mesh.n_time_steps, time, iGeom, MatFactory, LinAdv);
         }
     }
     // ----------------------------------------------------------------

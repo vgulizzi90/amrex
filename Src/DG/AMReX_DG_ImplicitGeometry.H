@@ -393,11 +393,13 @@ struct ImplicitGeometry
 
         // PARAMETERS =================================================
         // GRID
+        const Box & domain = this->geom.Domain();
         const GpuArray<Real, AMREX_SPACEDIM> dx = this->_dx;
         const GpuArray<Real, AMREX_SPACEDIM> prob_lo = this->_prob_lo;
         const GpuArray<Real, AMREX_SPACEDIM> J = this->_J;
         const Real aJ = this->_aJ;
         const GpuArray<Real, AMREX_SPACEDIM> bou_aJ = this->_bou_aJ;
+        const GpuArray<int, AMREX_SPACEDIM> is_periodic = this->_is_periodic;
         const Real tol = this->_tol;
 
         // STANDARD ELEMENT
@@ -562,7 +564,7 @@ struct ImplicitGeometry
                     else
                     {
                         volume_fraction = 1.0;
-                    } 
+                    }
 
                     // EMPTY ELEMENTS ---------------------------------
                     if (volume_fraction < tol)
@@ -994,7 +996,7 @@ struct ImplicitGeometry
                 // LOCAL VARIABLES
                 int nbr_i, nbr_j, nbr_k, nbr_b;
                 Real nbr_vf, best_nbr_vf;
-                bool elm_has_been_merged;
+                bool elm_has_been_merged, nbr_is_valid;
 
                 if (elm_is_partial && (vf < DG_SMALL_ELM_VF_THRESHOLD))
                 {
@@ -1009,8 +1011,22 @@ struct ImplicitGeometry
                         // Neighboring cell id and boundary
                         NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
 
+                        nbr_is_valid = true;
+                        if ((b/2 == 0) && (is_periodic[0] == 0))
+                        {
+                            if (nbr_i < domain.smallEnd(0) || nbr_i >= domain.bigEnd(0)) nbr_is_valid = false;
+                        }
+                        else if ((b/2 == 1) && (is_periodic[1] == 0))
+                        {
+                            if (nbr_j < domain.smallEnd(1) || nbr_j >= domain.bigEnd(1)) nbr_is_valid = false;
+                        }
+                        else if ((b/2 == 2) && (is_periodic[2] == 0))
+                        {
+                            if (nbr_k < domain.smallEnd(2) || nbr_k >= domain.bigEnd(2)) nbr_is_valid = false;
+                        }
+
                         nbr_vf = eInfo_fab(nbr_i,nbr_j,nbr_k,DG_ELM_INFO_N_COMP_PER_DOM*dom);
-                        if (nbr_vf > best_nbr_vf)
+                        if ((nbr_vf > best_nbr_vf) && nbr_is_valid)
                         {
                             eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom) = DG_ELM_TYPE_SMALL+b*10;
                             elm_has_been_merged = true;

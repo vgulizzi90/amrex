@@ -568,7 +568,6 @@ exit(-1);
     // ================================================================
 
     // ADDITIONAL FUNCTIONS FOR POST-PROCESSING =======================
-    AMREX_GPU_HOST_DEVICE
     void F_POINT_SOL_DESCRIPTION(amrex::Vector<amrex::Array<amrex::Real, AMREX_SPACEDIM>> & point_fields_location,
                                  amrex::Vector<int> & point_fields_domain,
                                  amrex::Vector<amrex::Vector<std::string>> & point_fields_name) const
@@ -586,7 +585,6 @@ amrex::Print() << "Hello! F_POINT_SOL (We should not end up here)" << std::endl;
 exit(-1);
     }
 
-    AMREX_GPU_HOST_DEVICE
     void F_SOL_DESCRIPTION(amrex::Vector<int> & fields_domain, amrex::Vector<std::string> & fields_name) const
     {
 #if (AMREX_SPACEDIM == 2)
