@@ -1012,6 +1012,7 @@ struct ImplicitGeometry
                         NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
 
                         nbr_is_valid = true;
+                        /*
                         if ((b/2 == 0) && (is_periodic[0] == 0))
                         {
                             if (nbr_i < domain.smallEnd(0) || nbr_i >= domain.bigEnd(0)) nbr_is_valid = false;
@@ -1024,6 +1025,7 @@ struct ImplicitGeometry
                         {
                             if (nbr_k < domain.smallEnd(2) || nbr_k >= domain.bigEnd(2)) nbr_is_valid = false;
                         }
+                        */
 
                         nbr_vf = eInfo_fab(nbr_i,nbr_j,nbr_k,DG_ELM_INFO_N_COMP_PER_DOM*dom);
                         if ((nbr_vf > best_nbr_vf) && nbr_is_valid)
@@ -1314,7 +1316,7 @@ struct ImplicitGeometry
                             integrand = 0.0;
                             dst_fab(i,j,k,QUAD_CHECK_N_COMP_PER_DOM*dom+2) += integrand*w;
 
-                            integrand = x[1]*un[1];
+                            integrand = x[2]*un[2];
                             cell_volume_from_bou_quadrature += integrand*w;
                             
                             integrand = 0.0;
@@ -1377,10 +1379,14 @@ struct ImplicitGeometry
 #if (DG_VERBOSITY == 1)
         // PRINT A BRIEF REPORT ---------------------------------------
         {
-            const Real aux = 4.0*0.04834860386154459;
+            Real exact_volume[N_DOM];
+            Real exact_surface[N_DOM];
 
-            Real exact_volume[N_DOM] = {2.4};
-            Real exact_surface[N_DOM] = {1.0};
+            for (int dom = 0; dom < N_DOM; ++dom)
+            {
+                exact_volume[dom] = IBVP.F_EXACT_VOLUME(dom);
+                exact_surface[dom] = IBVP.F_EXACT_SURFACE(dom);
+            }
 
             Real error_in_volume[N_DOM];
             Real error_in_volume_from_bou_quadrature[N_DOM];

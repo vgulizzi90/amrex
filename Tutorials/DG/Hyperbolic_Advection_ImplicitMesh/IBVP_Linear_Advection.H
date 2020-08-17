@@ -15,8 +15,10 @@
 #define PHI_TYPE_ONE_PHASE_LATTICE_BCC 233
 #define PHI_TYPE_ONE_PHASE_LATTICE_D_SCHWARTZ 20
 #define PHI_TYPE_ONE_PHASE_DUCT 200
+#define PHI_TYPE_TWO_PHASE_DUCT 201
+#define PHI_TYPE_TWO_PHASE_SPHERE 101
 
-#define PHI_TYPE 200
+#define PHI_TYPE 0
 // --------------------------------------------------------------------
 
 // NUMBER OF DISTANCE FUNCTIONS/DOMAINS/UNKNOWN FIELDS ----------------
@@ -30,7 +32,9 @@
        (PHI_TYPE == PHI_TYPE_TWO_PHASES_NI_SUPER_ALLOY) || \
        (PHI_TYPE == PHI_TYPE_TWO_PHASES_PARTICLES) || \
        (PHI_TYPE == PHI_TYPE_TWO_PHASES_WOVEN_COMPOSITE) || \
-       (PHI_TYPE == PHI_TYPE_TWO_PHASES_AMREX))
+       (PHI_TYPE == PHI_TYPE_TWO_PHASES_AMREX) || \
+       (PHI_TYPE == PHI_TYPE_TWO_PHASE_SPHERE) || \
+       (PHI_TYPE == PHI_TYPE_TWO_PHASE_DUCT))
 
 #define N_PHI 1
 #define N_DOM 2
@@ -134,6 +138,28 @@ public:
         const amrex::Real PHI[N_PHI] =
         {
             -phi
+        };
+
+#elif (PHI_TYPE == PHI_TYPE_TWO_PHASE_SPHERE)
+
+#if (AMREX_SPACEDIM == 2)
+        const amrex::Real r = 0.25;
+        const amrex::Real x1 = x[0];
+        const amrex::Real x2 = x[1];
+        const amrex::Real phi = r*r-(x1-0.5)*(x1-0.5)-(x2-0.5)*(x2-0.5);
+#endif
+
+#if (AMREX_SPACEDIM == 3)
+        const amrex::Real r = 0.25;
+        const amrex::Real x1 = x[0];
+        const amrex::Real x2 = x[1];
+        const amrex::Real x3 = x[2];
+        const amrex::Real phi = r*r-(x1-0.5)*(x1-0.5)-(x2-0.5)*(x2-0.5)-(x3-0.5)*(x3-0.5);
+#endif
+
+        const amrex::Real PHI[N_PHI] =
+        {
+            phi
         };
 
 #elif ((PHI_TYPE == PHI_TYPE_TWO_PHASES_NI_SUPER_ALLOY) && (AMREX_SPACEDIM == 2))
@@ -717,7 +743,7 @@ public:
             (f-0.5)*(f+0.5)
         };
 
-#elif (PHI_TYPE == PHI_TYPE_ONE_PHASE_DUCT)
+#elif ((PHI_TYPE == PHI_TYPE_ONE_PHASE_DUCT) || (PHI_TYPE == PHI_TYPE_TWO_PHASE_DUCT))
         const amrex::Real r = (x[2] > 0.5) ? 0.3 : ((x[2] > 0.3) ? (0.5*x[2]+0.05) : 0.2);
         const amrex::Real D = -r*r+(x[0]-0.5)*(x[0]-0.5)+(x[1]-0.5)*(x[1]-0.5);
         const amrex::Real d = (x[1] < 0.5) ? 1.0 : (-0.1*0.1+(x[0]-0.5)*(x[0]-0.5)+(x[2]-0.75)*(x[2]-0.75));
@@ -759,7 +785,9 @@ public:
        (PHI_TYPE == PHI_TYPE_TWO_PHASES_NI_SUPER_ALLOY) || \
        (PHI_TYPE == PHI_TYPE_TWO_PHASES_PARTICLES) || \
        (PHI_TYPE == PHI_TYPE_TWO_PHASES_WOVEN_COMPOSITE) || \
-       (PHI_TYPE == PHI_TYPE_TWO_PHASES_AMREX))
+       (PHI_TYPE == PHI_TYPE_TWO_PHASES_AMREX) || \
+       (PHI_TYPE == PHI_TYPE_TWO_PHASE_SPHERE) || \
+       (PHI_TYPE == PHI_TYPE_TWO_PHASE_DUCT))
 
         const int PHI_INFO[2*N_DOM] =
         {
@@ -777,7 +805,7 @@ public:
         const int PHI_INFO[2*N_DOM] =
         {
             // dom = 0
-            0, -1,
+            0, -1
         };
 
 #else
@@ -838,7 +866,9 @@ public:
        (PHI_TYPE == PHI_TYPE_TWO_PHASES_NI_SUPER_ALLOY) || \
        (PHI_TYPE == PHI_TYPE_TWO_PHASES_PARTICLES) || \
        (PHI_TYPE == PHI_TYPE_TWO_PHASES_WOVEN_COMPOSITE) || \
-       (PHI_TYPE == PHI_TYPE_TWO_PHASES_AMREX))
+       (PHI_TYPE == PHI_TYPE_TWO_PHASES_AMREX) || \
+       (PHI_TYPE == PHI_TYPE_TWO_PHASE_SPHERE) || \
+       (PHI_TYPE == PHI_TYPE_TWO_PHASE_DUCT))
 
         const int DOM[N_U] =
         {
@@ -856,7 +886,7 @@ public:
         const int DOM[N_U] =
         {
             // sol = 0
-            0,
+            0
         };
 
 #else
@@ -918,7 +948,9 @@ public:
        (PHI_TYPE == PHI_TYPE_TWO_PHASES_NI_SUPER_ALLOY) || \
        (PHI_TYPE == PHI_TYPE_TWO_PHASES_PARTICLES) || \
        (PHI_TYPE == PHI_TYPE_TWO_PHASES_WOVEN_COMPOSITE) || \
-       (PHI_TYPE == PHI_TYPE_TWO_PHASES_AMREX))
+       (PHI_TYPE == PHI_TYPE_TWO_PHASES_AMREX) || \
+       (PHI_TYPE == PHI_TYPE_TWO_PHASE_SPHERE) || \
+       (PHI_TYPE == PHI_TYPE_TWO_PHASE_DUCT))
 
         const int NBRDOM[N_DOM] =
         {
@@ -936,7 +968,7 @@ public:
         const int NBRDOM[N_DOM] =
         {
             // dom = 0
-            -1,
+            -1
         };
 
 #else

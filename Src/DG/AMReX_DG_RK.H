@@ -368,7 +368,7 @@ struct RungeKutta
                         x[2] = xptr[qi_pos+2]; x[2] = J[2]*x[2]+cell_m[2];
                     )
                     w = xptr[qi_pos+AMREX_SPACEDIM]; w = w*aJ;
-                    
+
                     // SOLUTION
                     sol._eval_BF_table_(qi);
                     for (int cu = 0; cu < N_U; ++cu)
@@ -775,6 +775,15 @@ for (int rs = 0; rs < sNp; ++rs)
     dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
 }
 
+/*
+if ((std::abs(x[0]-0.02544604383) < 1.0e-8) && (std::abs(x[1]-0.02544604383) < 1.0e-8) && (std::abs(x[2]-0.25) < 1.0e-8))
+{
+    std::ofstream fp;
+    fp.open("interface_no.txt", std::ios::app);
+    if (un[2] > 0.5) fp << un[2] << " " << Uh[1] << " " << nbr_Uh[1] << " " << Uh[6] << "\n";
+    fp.close();
+}
+*/
                         }
                     }
                     // GRID BOUNDARY
@@ -811,7 +820,7 @@ for (int rs = 0; rs < sNp; ++rs)
                                 );
                             }
 /*
-// NUMERICAL FLUX FOR INTRAPHASE
+// NUMERICAL FLUX FOR GRID BOUNDARY CONDITIONS
 IBVP.F_NF_BCS(t, x, un, Uh, AMREX_D_DECL(NF1, NF2, NF3));
 
 // DG CONTRIBUTION
@@ -828,7 +837,7 @@ for (int rs = 0; rs < sNp; ++rs)
 }
 */
 
-// NUMERICAL FLUX FOR INTRAPHASE
+// NUMERICAL FLUX FOR GRID BOUNDARY CONDITIONS
 IBVP.F_NF_BCS(t, x, un, Uh, NF1);
 
 // DG CONTRIBUTION
@@ -1027,6 +1036,15 @@ for (int rs = 0; rs < sNp; ++rs)
     dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
 }
 
+/*
+if ((std::abs(x[0]-0.02544604383) < 1.0e-8) && (std::abs(x[1]-0.02544604383) < 1.0e-8) && (std::abs(x[2]-0.24999) < 1.0e-8))
+{
+    std::ofstream fp;
+    fp.open("interface_yes.txt", std::ios::app);
+    if (un[2] > 0.5) fp << un[2] << " " << Uh[1] << " " << nbr_Uh[1+9] << " " << Uh[6] << "\n";
+    fp.close();
+}
+*/
                         }
                     }
                 }

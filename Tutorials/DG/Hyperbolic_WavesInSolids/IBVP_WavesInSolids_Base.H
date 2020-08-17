@@ -15,6 +15,16 @@
 #endif
 
 #define N_VS (N_V+N_S)
+
+#define VX 0
+#define VY 1
+#define VZ 2
+#define SXX 3
+#define SYY 4
+#define SZZ 5
+#define SYZ 6
+#define SXZ 7
+#define SXY 8
 // --------------------------------------------------------------------
 
 // PDES PARAMETERS ----------------------------------------------------
@@ -66,6 +76,13 @@ public:
     {
         // PARAMETERS -------------------------------------------------
         // ------------------------------------------------------------
+
+#if (AMREX_SPACEDIM == 1)
+        amrex::Print() << std::endl;
+        amrex::Print() << "ERROR: IBVP_WavesInSolids.H - ELASTIC_WAVES_BASE::ELASTIC_WAVES_BASE" << std::endl;
+        amrex::Print() << "| ELASTIC_WAVES_BASE must be double-checked step-by-step when dimension " << AMREX_SPACEDIM << "." << std::endl;
+        exit(-1);
+#endif
 
         // VARIABLES --------------------------------------------------
         amrex::Real AMREX_D_DECL(I1T[N_V*N_S], I2T[N_V*N_S], I3T[N_V*N_S]);

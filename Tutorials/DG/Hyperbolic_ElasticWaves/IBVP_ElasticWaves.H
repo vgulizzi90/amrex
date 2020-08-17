@@ -463,6 +463,18 @@ public:
     // DISTRUCTOR =====================================================
     // ================================================================
 
+    // BODY LOAD ======================================================
+    AMREX_GPU_HOST_DEVICE
+    void F_B(const amrex::Real & t, const amrex::Real * x,
+             amrex::Real * B) const
+    {
+        for (int u = 0; u < (N_DOM*N_VS); ++u)
+        {
+            B[u] = 0.0;
+        }
+    }
+    // ================================================================
+
     // AUXILIARY FUNCTIONS ============================================
     AMREX_GPU_HOST_DEVICE
     void _eval_T_(const amrex::Real * un, amrex::Real * T) const
@@ -1020,8 +1032,9 @@ exit(-1);
     AMREX_GPU_HOST_DEVICE
     void F_NF_ICS(const amrex::Real & t, const amrex::Real * x, const amrex::Real * un,
                   const amrex::Real * U, const amrex::Real * nbr_U,
-                  AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
+                  amrex::Real * NFn) const
     {
+        /*
         amrex::Real AMREX_D_DECL(F1[N_U], F2[N_U], F3[N_U]);
         amrex::Real AMREX_D_DECL(nbr_F1[N_U], nbr_F2[N_U], nbr_F3[N_U]);
 
@@ -1029,14 +1042,16 @@ exit(-1);
         this->F_F(t, x, nbr_U, AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3));
 
         this->_NF_base_(un, U, nbr_U, AMREX_D_DECL(F1, F2, F3), AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3), AMREX_D_DECL(NF1, NF2, NF3));
+        */
     }
 
     // GRID BOUNDARY
     AMREX_GPU_HOST_DEVICE
     void F_NF_BCS(const amrex::Real & t, const amrex::Real * x, const amrex::Real * un,
                   const amrex::Real * U,
-                  AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
+                  amrex::Real * NFn) const
     {
+        /*
         amrex::Real AMREX_D_DECL(F1[N_U], F2[N_U], F3[N_U]);
         amrex::Real AMREX_D_DECL(nbr_F1[N_U], nbr_F2[N_U], nbr_F3[N_U]);
 
@@ -1132,6 +1147,7 @@ exit(-1);
 amrex::Print() << "Hello! F_NF_BCS" << std::endl;
 exit(-1);
 #endif
+        */
     }
 
     // INTERNAL BOUNDARY
@@ -1141,6 +1157,7 @@ exit(-1);
                       const amrex::Real * U,
                       AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
     {
+        /*
 #if (PROBLEM == PROBLEM_ONE_LAYER)
         amrex::Real AMREX_D_DECL(F1[N_U], F2[N_U], F3[N_U]);
         amrex::Real AMREX_D_DECL(nbr_F1[N_U], nbr_F2[N_U], nbr_F3[N_U]);
@@ -1167,6 +1184,7 @@ amrex::Print() << "Hello! F_NF_PHI_BCS" << std::endl;
 exit(-1);
 
 #endif
+        */
     }
 
     // INTERNAL INTERFACE
@@ -1174,8 +1192,9 @@ exit(-1);
     void F_NF_PHI_ICS(const int & dom,
                       const amrex::Real & t, const amrex::Real * x, const amrex::Real * un,
                       const amrex::Real * U, const amrex::Real * nbr_U,
-                      AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
+                      amrex::Real * NFn) const
     {
+        /*
         amrex::Real AMREX_D_DECL(F1[N_U], F2[N_U], F3[N_U]);
         amrex::Real AMREX_D_DECL(nbr_F1[N_U], nbr_F2[N_U], nbr_F3[N_U]);
 
@@ -1183,6 +1202,7 @@ exit(-1);
         this->F_F(t, x, nbr_U, AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3));
 
         this->_NF_PHI_base_(un, U, nbr_U, AMREX_D_DECL(F1, F2, F3), AMREX_D_DECL(nbr_F1, nbr_F2, nbr_F3), AMREX_D_DECL(NF1, NF2, NF3));
+        */
     }
     // ================================================================
 

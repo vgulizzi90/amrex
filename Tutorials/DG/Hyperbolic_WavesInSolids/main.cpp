@@ -22,7 +22,7 @@
 #define PROBLEM_LAYERED 12
 #define PROBLEM_BCC_LATTICE 233
 
-#define PROBLEM 12
+#define PROBLEM 23
 
 #if (PROBLEM == PROBLEM_ONE_PHASE)
 #include <IBVP_WavesInSolids_OnePhase.H>
@@ -174,6 +174,14 @@ amrex::Print() << "#############################################################
     iGeom.EvalImplicitMesh(Waves);
     MatFactory.Eval(iGeom);
     dG.SetICs(iGeom, MatFactory, Waves);
+
+#if (PROBLEM == PROBLEM_HP_CONVERGENCE)
+    {
+        amrex::Real err;
+        err = dG.EvalError(0.0, iGeom, MatFactory, Waves);
+amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std::setw(12) << std::sqrt(err) << std::endl;
+    }
+#endif
     
     // WRITE TO OUTPUT
     dG.PrintPointSolution(0, 0.0, iGeom, MatFactory, Waves);

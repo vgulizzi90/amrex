@@ -482,7 +482,7 @@ struct MatrixFactory
                                 (
                                     this->space_Dom_dBFdXI1_host_mem[space_Dom_BF_mem_pos+rs+qi*sNp] = bf.dBFdx1[rs]*J[0];,
                                     this->space_Dom_dBFdXI2_host_mem[space_Dom_BF_mem_pos+rs+qi*sNp] = bf.dBFdx2[rs]*J[1];,
-                                    this->space_Dom_dBFdXI3_host_mem[space_Dom_BF_mem_pos+rs+qi*sNp] = bf.dBFdx3[rs]*J[3];
+                                    this->space_Dom_dBFdXI3_host_mem[space_Dom_BF_mem_pos+rs+qi*sNp] = bf.dBFdx3[rs]*J[2];
                                 )
                             }
                         }
