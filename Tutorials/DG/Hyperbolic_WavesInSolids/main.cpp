@@ -229,7 +229,7 @@ amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt <
 
 #if (PROBLEM == PROBLEM_HP_CONVERGENCE)
         // COMPUTE ERROR
-        //if (std::abs(time/dG_inputs.time.T-1.0) < 1.0e-12)
+        if (std::abs(time/dG_inputs.time.T-1.0) < 1.0e-12)
         {
             amrex::Real err;
             err = dG.EvalError(time, iGeom, MatFactory, Waves);

@@ -10,7 +10,7 @@
 // --------------------------------------------------------------------
 
 // SOME PARAMETERS ----------------------------------------------------
-#define R 0.24999
+#define R 0.40
 // --------------------------------------------------------------------
 // ####################################################################
 
@@ -102,11 +102,11 @@ public:
         const amrex::Real x2 = x[1];
         const amrex::Real x3 = x[2];
         const amrex::Real phi = 0.125+std::cos(2.0*M_PI*x1)*std::cos(2.0*M_PI*x2)*std::cos(2.0*M_PI*x3);
-        //const amrex::Real phi = -R*R-(x1-0.5)*(x1-0.5)-(x2-0.5)*(x2-0.5)-(x3-0.5)*(x3-0.5);
+        //const amrex::Real phi = R*R-(x1-0.5)*(x1-0.5)-(x2-0.5)*(x2-0.5)-(x3-0.5)*(x3-0.5);
         //const amrex::Real z = 0.5;
         //const amrex::Real phi = R-std::abs(x1-z);
 #endif
-        return phi;
+        return -phi;
     }
     // ================================================================
 
@@ -130,25 +130,25 @@ public:
     amrex::Real F_EXACT_VOLUME(const int & dom) const
     {
 #if (AMREX_SPACEDIM == 2)
+        const amrex::Real val = 0.3867888308923567;
         const amrex::Real EXACT_VOLUME[N_DOM] =
         {
             // dom = 0
-            1.0-M_PI*R*R,
+            1.0-val,
 
             // dom = 1
-            M_PI*R*R,
+            val
         };
 #endif
 #if (AMREX_SPACEDIM == 3)
+        const amrex::Real val = 0.3867888308923567;
         const amrex::Real EXACT_VOLUME[N_DOM] =
         {
             // dom = 0
-            //1.0-(4.0/3.0)*M_PI*R*R*R,
-            1.0-2.0*R,
+            1.0-val,
 
             // dom = 1
-            //(4.0/3.0)*M_PI*R*R*R
-            2.0*R
+            val
         };
 #endif
 
@@ -157,13 +157,14 @@ public:
     amrex::Real F_EXACT_SURFACE(const int & dom) const
     {
 #if (AMREX_SPACEDIM == 2)
+        const amrex::Real val = 3.201999313783625;
         const amrex::Real EXACT_SURFACE[N_DOM] =
         {
             // dom = 0
-            2.0*M_PI*R,
+            val,
 
             // dom = 1
-            2.0*M_PI*R
+            val
         };
 #endif
 #if (AMREX_SPACEDIM == 3)
@@ -639,86 +640,6 @@ exit(-1);
             NFn[8+N_VS] += 0.5*mu*(U[8+N_VS]-nbr_U[8]);
 #endif
             /**/
-        }
-    }
-
-    AMREX_GPU_HOST_DEVICE
-    void F_NF_PHI_ICS_un3(const int & dom,
-                      const amrex::Real & t, const amrex::Real * x, const amrex::Real * un,
-                      const amrex::Real * U, const amrex::Real * nbr_U,
-                      amrex::Real * NFn) const
-    {
-        const amrex::Real mu = this->max_wave_speed;
-
-        amrex::Real avg_U[N_U];
-
-        avg_U[0] = 0.5*(U[0]+nbr_U[0+N_VS]);
-        avg_U[1] = 0.5*(U[1]+nbr_U[1+N_VS]);
-        avg_U[2] = 0.5*(U[2]+nbr_U[2+N_VS]);
-        avg_U[3] = 0.5*(U[3]+nbr_U[3+N_VS]);
-        avg_U[4] = 0.5*(U[4]+nbr_U[4+N_VS]);
-        avg_U[5] = 0.5*(U[5]+nbr_U[5+N_VS]);
-        avg_U[6] = 0.5*(U[6]+nbr_U[6+N_VS]);
-        avg_U[7] = 0.5*(U[7]+nbr_U[7+N_VS]);
-        avg_U[8] = 0.5*(U[8]+nbr_U[8+N_VS]);
-        
-        avg_U[0+N_VS] = 0.5*(U[0+N_VS]+nbr_U[0]);
-        avg_U[1+N_VS] = 0.5*(U[1+N_VS]+nbr_U[1]);
-        avg_U[2+N_VS] = 0.5*(U[2+N_VS]+nbr_U[2]);
-        avg_U[3+N_VS] = 0.5*(U[3+N_VS]+nbr_U[3]);
-        avg_U[4+N_VS] = 0.5*(U[4+N_VS]+nbr_U[4]);
-        avg_U[5+N_VS] = 0.5*(U[5+N_VS]+nbr_U[5]);
-        avg_U[6+N_VS] = 0.5*(U[6+N_VS]+nbr_U[6]);
-        avg_U[7+N_VS] = 0.5*(U[7+N_VS]+nbr_U[7]);
-        avg_U[8+N_VS] = 0.5*(U[8+N_VS]+nbr_U[8]);
-
-        if (dom == 0)
-        {
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A3[dom], &avg_U[dom*N_VS], &NFn[dom*N_VS]);
-
-            NFn[0] *= un[2];
-            NFn[1] *= un[2];
-            NFn[2] *= un[2];
-            NFn[3] *= un[2];
-            NFn[4] *= un[2];
-            NFn[5] *= un[2];
-            NFn[6] *= un[2];
-            NFn[7] *= un[2];
-            NFn[8] *= un[2];
-            
-            NFn[0] += 0.5*mu*(U[0]-nbr_U[0+N_VS]);
-            NFn[1] += 0.5*mu*(U[1]-nbr_U[1+N_VS]);
-            NFn[2] += 0.5*mu*(U[2]-nbr_U[2+N_VS]);
-            NFn[3] += 0.5*mu*(U[3]-nbr_U[3+N_VS]);
-            NFn[4] += 0.5*mu*(U[4]-nbr_U[4+N_VS]);
-            NFn[5] += 0.5*mu*(U[5]-nbr_U[5+N_VS]);
-            NFn[6] += 0.5*mu*(U[6]-nbr_U[6+N_VS]);
-            NFn[7] += 0.5*mu*(U[7]-nbr_U[7+N_VS]);
-            NFn[8] += 0.5*mu*(U[8]-nbr_U[8+N_VS]);
-        }
-        else if (dom == 1)
-        {
-            amrex::DG_utils::matmul(N_VS, N_VS, 1, this->A3[dom], &avg_U[dom*N_VS], &NFn[dom*N_VS]);
-
-            NFn[0+N_VS] *= un[2];
-            NFn[1+N_VS] *= un[2];
-            NFn[2+N_VS] *= un[2];
-            NFn[3+N_VS] *= un[2];
-            NFn[4+N_VS] *= un[2];
-            NFn[5+N_VS] *= un[2];
-            NFn[6+N_VS] *= un[2];
-            NFn[7+N_VS] *= un[2];
-            NFn[8+N_VS] *= un[2];
-            
-            NFn[0+N_VS] += 0.5*mu*(U[0+N_VS]-nbr_U[0]);
-            NFn[1+N_VS] += 0.5*mu*(U[1+N_VS]-nbr_U[1]);
-            NFn[2+N_VS] += 0.5*mu*(U[2+N_VS]-nbr_U[2]);
-            NFn[3+N_VS] += 0.5*mu*(U[3+N_VS]-nbr_U[3]);
-            NFn[4+N_VS] += 0.5*mu*(U[4+N_VS]-nbr_U[4]);
-            NFn[5+N_VS] += 0.5*mu*(U[5+N_VS]-nbr_U[5]);
-            NFn[6+N_VS] += 0.5*mu*(U[6+N_VS]-nbr_U[6]);
-            NFn[7+N_VS] += 0.5*mu*(U[7+N_VS]-nbr_U[7]);
-            NFn[8+N_VS] += 0.5*mu*(U[8+N_VS]-nbr_U[8]);
         }
     }
     // ----------------------------------------------------------------
