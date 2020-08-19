@@ -532,7 +532,7 @@ struct RungeKutta
                 Real x[AMREX_SPACEDIM], w, un[AMREX_SPACEDIM], grad[AMREX_SPACEDIM];
                 Real Uh[N_U];
                 Real AMREX_D_DECL(dUhdx1[N_U], dUhdx2[N_U], dUhdx3[N_U]);
-                Real AMREX_D_DECL(NF1[N_U], NF2[N_U], NF3[N_U]);
+                Real NFn[N_U];
                 Real integrand;
 
                 // LOCAL VARIABLES (NEIGHBORING CELL)
@@ -766,12 +766,12 @@ for (int rs = 0; rs < sNp; ++rs)
 */
 
 // NUMERICAL FLUX FOR INTRAPHASE
-IBVP.F_NF_ICS(t, x, un, Uh, nbr_Uh, NF1);
+IBVP.F_NF_ICS(t, x, un, Uh, nbr_Uh, NFn);
 
 // DG CONTRIBUTION
 for (int rs = 0; rs < sNp; ++rs)
 {
-    integrand = sol.BF[rs]*NF1[ru];
+    integrand = sol.BF[rs]*NFn[ru];
     dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
 }
 
@@ -838,12 +838,12 @@ for (int rs = 0; rs < sNp; ++rs)
 */
 
 // NUMERICAL FLUX FOR GRID BOUNDARY CONDITIONS
-IBVP.F_NF_BCS(t, x, un, Uh, NF1);
+IBVP.F_NF_BCS(t, x, un, Uh, NFn);
 
 // DG CONTRIBUTION
 for (int rs = 0; rs < sNp; ++rs)
 {
-    integrand = sol.BF[rs]*NF1[ru];
+    integrand = sol.BF[rs]*NFn[ru];
 
     dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
 }
@@ -915,22 +915,33 @@ for (int rs = 0; rs < sNp; ++rs)
                                     dUhdx3[cu] = grad[2];
                                 );
                             }
+/*
+// NUMERICAL FLUX FOR INTERNAL BOUNDARY
+IBVP.F_NF_PHI_BCS(dom, t, x, un, Uh, AMREX_D_DECL(NF1, NF2, NF3));
 
-                            // NUMERICAL FLUX FOR INTERNAL BOUNDARY
-                            IBVP.F_NF_PHI_BCS(dom, t, x, un, Uh, AMREX_D_DECL(NF1, NF2, NF3));
+// DG CONTRIBUTION
+for (int rs = 0; rs < sNp; ++rs)
+{
+    AMREX_D_TERM
+    (
+        integrand  = sol.BF[rs]*NF1[ru]*un[0];,
+        integrand += sol.BF[rs]*NF2[ru]*un[1];,
+        integrand += sol.BF[rs]*NF3[ru]*un[2];
+    )
 
-                            // DG CONTRIBUTION
-                            for (int rs = 0; rs < sNp; ++rs)
-                            {
-                                AMREX_D_TERM
-                                (
-                                    integrand  = sol.BF[rs]*NF1[ru]*un[0];,
-                                    integrand += sol.BF[rs]*NF2[ru]*un[1];,
-                                    integrand += sol.BF[rs]*NF3[ru]*un[2];
-                                )
+    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+}
+*/
+// NUMERICAL FLUX FOR INTERNAL BOUNDARY
+IBVP.F_NF_PHI_ICS(dom, t, x, un, Uh, nbr_Uh, NFn);
 
-                                dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
-                            }
+// DG CONTRIBUTION
+for (int rs = 0; rs < sNp; ++rs)
+{
+    integrand = sol.BF[rs]*NFn[ru];
+
+    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+}
                         }
                     }
                     // VALID NEIGHBORING DOMAIN
@@ -1026,12 +1037,12 @@ for (int rs = 0; rs < sNp; ++rs)
 }
 */
 // NUMERICAL FLUX FOR INTERNAL INTERFACE
-IBVP.F_NF_PHI_ICS(dom, t, x, un, Uh, nbr_Uh, NF1);
+IBVP.F_NF_PHI_ICS(dom, t, x, un, Uh, nbr_Uh, NFn);
 
 // DG CONTRIBUTION
 for (int rs = 0; rs < sNp; ++rs)
 {
-    integrand = sol.BF[rs]*NF1[ru];
+    integrand = sol.BF[rs]*NFn[ru];
 
     dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
 }

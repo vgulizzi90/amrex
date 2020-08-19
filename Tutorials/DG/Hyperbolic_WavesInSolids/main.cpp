@@ -240,7 +240,7 @@ amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std:
         // WRITE TO OUTPUT
         dG.PrintPointSolution(n, time, iGeom, MatFactory, Waves);
 
-        if ((dG_inputs.plot_int > 0) && (n%dG_inputs.plot_int == 0))
+        if ((dG_inputs.plot_int > 0) && ((n%dG_inputs.plot_int == 0) || (std::abs(time/dG_inputs.time.T-1.0) < 1.0e-12)))
         {
             dG.Export_VTK(dst_folder, "Solution", n, dG_inputs.time.n_steps, time, iGeom, MatFactory, Waves);
         }

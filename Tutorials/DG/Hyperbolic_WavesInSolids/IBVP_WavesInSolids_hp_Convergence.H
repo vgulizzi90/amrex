@@ -544,7 +544,7 @@ exit(-1);
     void F_NF_PHI_BCS(const int & dom,
                       const amrex::Real & t, const amrex::Real * x, const amrex::Real * un,
                       const amrex::Real * U,
-                      AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
+                      amrex::Real * NFn) const
     {
 amrex::Print() << "Hello! F_NF_PHI_BCS (We should not end up here)" << std::endl;
 exit(-1);
@@ -561,7 +561,7 @@ exit(-1);
         const amrex::Real mu = this->max_wave_speed;
 
         amrex::Real avg_U[N_U];
-        amrex::Real InU[N_VS], nbr_InU[N_VS];
+        //amrex::Real InU[N_VS], nbr_InU[N_VS];
 
         avg_U[0] = 0.5*(U[0]+nbr_U[0+N_VS]);
         avg_U[1] = 0.5*(U[1]+nbr_U[1+N_VS]);

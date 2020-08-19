@@ -393,7 +393,7 @@ struct ImplicitGeometry
 
         // PARAMETERS =================================================
         // GRID
-        const Box & domain = this->geom.Domain();
+        //const Box & domain = this->geom.Domain();
         const GpuArray<Real, AMREX_SPACEDIM> dx = this->_dx;
         const GpuArray<Real, AMREX_SPACEDIM> prob_lo = this->_prob_lo;
         const GpuArray<Real, AMREX_SPACEDIM> J = this->_J;
@@ -1753,10 +1753,10 @@ struct ImplicitGeometry
 #endif
             const Real d0 = 0.5*(dim-1.0)*(dim-2.0);
             const Real d1 = dim*(2.0-dim);
-            const Real d2 = 0.5*dim*(dim-1);
             const Real nd0 = 1.0-d0;
             const Real nd1 = 1.0-d1;
 #if (AMREX_SPACEDIM == 3)
+            const Real d2 = 0.5*dim*(dim-1);
             const Real nd2 = 1.0-d2;
 #endif
 
