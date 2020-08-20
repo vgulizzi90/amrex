@@ -37,14 +37,9 @@
 template <int N_DOM>
 class ELASTIC_WAVES_BASE
 {
-protected:
+public:
     // DATA MEMBERS ===================================================
     // PARAMETERS
-
-    // VARIABLES
-    amrex::Real density[N_DOM];
-    amrex::Real cSE[N_DOM][N_S*N_S], sES[N_DOM][N_S*N_S];
-
 #if (AMREX_SPACEDIM == 2)
     const amrex::Real I1[N_S*N_V] = {1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
     const amrex::Real I2[N_S*N_V] = {0.0, 0.0, 1.0, 0.0, 1.0, 0.0};
@@ -60,6 +55,11 @@ protected:
                                      0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
                                      0.0, 0.0, 1.0, 0.0, 0.0, 0.0};
 #endif
+
+    // VARIABLES
+    amrex::Real density[N_DOM];
+    amrex::Real cSE[N_DOM][N_S*N_S], sES[N_DOM][N_S*N_S];
+
     amrex::Real AMREX_D_DECL(A1[N_DOM][N_VS*N_VS], A2[N_DOM][N_VS*N_VS], A3[N_DOM][N_VS*N_VS]);
     amrex::Real AMREX_D_DECL(A1_w[N_DOM][N_VS], A2_w[N_DOM][N_VS], A3_w[N_DOM][N_VS]);
     amrex::Real AMREX_D_DECL(A1_v[N_DOM][N_VS*N_VS], A2_v[N_DOM][N_VS*N_VS], A3_v[N_DOM][N_VS*N_VS]);
@@ -78,10 +78,11 @@ public:
         // ------------------------------------------------------------
 
 #if (AMREX_SPACEDIM == 1)
-        amrex::Print() << std::endl;
-        amrex::Print() << "ERROR: IBVP_WavesInSolids.H - ELASTIC_WAVES_BASE::ELASTIC_WAVES_BASE" << std::endl;
-        amrex::Print() << "| ELASTIC_WAVES_BASE must be double-checked step-by-step when dimension " << AMREX_SPACEDIM << "." << std::endl;
-        exit(-1);
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: IBVP_WavesInSolids.H - ELASTIC_WAVES_BASE::ELASTIC_WAVES_BASE\n";
+        msg += "| ELASTIC_WAVES_BASE must be double-checked step-by-step when dimension is "+std::to_string(AMREX_SPACEDIM)+".\n";
+        amrex::Abort(msg);
 #endif
 
         // VARIABLES --------------------------------------------------
@@ -155,10 +156,11 @@ public:
             }
             else
             {
-                amrex::Print() << std::endl;
-                amrex::Print() << "ERROR: IBVP_WavesInSolids.H - ELASTIC_WAVES_BASE::ELASTIC_WAVES_BASE" << std::endl;
-                amrex::Print() << "| Unexpected material type: " << m_type << " with dimension " << AMREX_SPACEDIM << "." << std::endl;
-                exit(-1);
+                std::string msg;
+                msg  = "\n";
+                msg += "ERROR: IBVP_WavesInSolids.H - ELASTIC_WAVES_BASE::ELASTIC_WAVES_BASE\n";
+                msg += "| Unexpected material type: "+m_type+" with dimension: "+std::to_string(AMREX_SPACEDIM)+".\n";
+                amrex::Abort(msg);
             }
 
             // AUXILIARY MATRICES
@@ -274,10 +276,11 @@ public:
             }
             else
             {
-                amrex::Print() << std::endl;
-                amrex::Print() << "ERROR: IBVP_WavesInSolids.H - ELASTIC_WAVES_BASE::ELASTIC_WAVES_BASE" << std::endl;
-                amrex::Print() << "| Unexpected material type: " << m_type << " with dimension " << AMREX_SPACEDIM << "." << std::endl;
-                exit(-1);
+                std::string msg;
+                msg  = "\n";
+                msg += "ERROR: IBVP_WavesInSolids.H - ELASTIC_WAVES_BASE::ELASTIC_WAVES_BASE\n";
+                msg += "| Unexpected material type: "+m_type+" with dimension: "+std::to_string(AMREX_SPACEDIM)+".\n";
+                amrex::Abort(msg);
             }
         }
         // ------------------------------------------------------------
@@ -309,8 +312,7 @@ public:
         iT[4+2*N_VS] = un[0]*un[1]; iT[4+3*N_VS] = -un[0]*un[1]; iT[4+4*N_VS] = un[0]*un[0]-un[1]*un[1];
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "Hello! _eval_T_" << std::endl;
-exit(-1);
+amrex::Abort("Hello! _eval_T_");
 #endif
     }
 
@@ -350,7 +352,6 @@ exit(-1);
     AMREX_GPU_HOST_DEVICE
     void _eval_AnU_(const int dom, const amrex::Real * un, const amrex::Real * U, amrex::Real * AnU) const
     {
-        
 #if (AMREX_SPACEDIM == 2)
         AnU[0] = 0.0;
         AnU[1] = 0.0;
@@ -387,8 +388,7 @@ exit(-1);
     }
     AMREX_GPU_HOST_DEVICE
     void _eval_InU_(const amrex::Real * un, const amrex::Real * U, amrex::Real * InU) const
-    {
-        
+    {   
 #if (AMREX_SPACEDIM == 2)
         InU[0] = un[0]*U[2]+un[1]*U[4];
         InU[1] = un[0]*U[4]+un[1]*U[3];
@@ -397,8 +397,7 @@ exit(-1);
         InU[4] = un[0]*U[1]+un[1]*U[0];
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "Hello! _eval_InU_" << std::endl;
-exit(-1);
+amrex::Abort("Hello! _eval_InU_");
 #endif
     }
     // ================================================================

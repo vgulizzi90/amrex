@@ -3,7 +3,7 @@
 #include <IBVP_WavesInSolids_Base.H>
 
 // IBVP PARAMETERS ####################################################
-// NUMBER OF DISTANCE FUNCTIONS/DOMAINS/UNKNOWN FIELDS ----------------
+// NUMBER OF LEVEL SET FUNCTIONS/DOMAINS/UNKNOWN FIELDS ---------------
 #define N_PHI 1
 #define N_DOM 1
 #define N_U N_VS
@@ -81,7 +81,7 @@ public:
     }
     // ================================================================
 
-    // DISTANCE FUNCTION ==============================================
+    // LEVEL SET FUNCTION =============================================
     AMREX_GPU_HOST_DEVICE
     amrex::Real F_PHI(const int & ph,
                       const amrex::Real & t, const amrex::Real * x) const
@@ -102,7 +102,7 @@ public:
     }
     // ================================================================
 
-    // RELATIONSHIP AMONG DISTANCE FUNCTIONS AND DOMAINS ==============
+    // RELATIONSHIP AMONG LEVEL SET FUNCTIONS AND DOMAINS =============
     AMREX_GPU_HOST_DEVICE
     void F_DOM2PHI(const int & dom, int * phi_info) const
     {
@@ -260,8 +260,7 @@ public:
             NFn[4] += 0.5*mu*(U[4]-bcs_U[4]);
         }
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "Hello! F_NF_BCS" << std::endl;
-exit(-1);
+amrex::Abort("Hello! F_NF_BCS");
 #endif
     }
     // ----------------------------------------------------------------
@@ -290,8 +289,7 @@ const amrex::Real mu = this->max_wave_speed;
         Un[4] = -Un[4]; // Sns
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "Hello! F_NF_PHI_BCS" << std::endl;
-exit(-1);
+amrex::Abort("Hello! F_NF_PHI_BCS");
 #endif
 
         amrex::DG_utils::matmul(N_VS, N_VS, 1, iT, Un, bcs_U);
@@ -318,8 +316,7 @@ exit(-1);
                       const amrex::Real * U, const amrex::Real * nbr_U,
                       amrex::Real * NFn) const
     {
-amrex::Print() << "Hello! F_NF_PHI_ICS (We should not end up here)" << std::endl;
-exit(-1);
+amrex::Abort("Hello! F_NF_PHI_ICS (We should not end up here)");
     }
     // ----------------------------------------------------------------
     // ================================================================

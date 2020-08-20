@@ -21,6 +21,7 @@
 #define PROBLEM_KOMATITSCH 2000
 #define PROBLEM_LAYERED 12
 #define PROBLEM_BCC_LATTICE 233
+#define PROBLEM_MULTIPLE_LEVELSETS -10
 
 #define PROBLEM 23
 
@@ -36,6 +37,8 @@
 #include <IBVP_WavesInSolids_Layered.H>
 #elif (PROBLEM == PROBLEM_BCC_LATTICE)
 #include <IBVP_WavesInSolids_BCC_lattice.H>
+#elif (PROBLEM == PROBLEM_MULTIPLE_LEVELSETS)
+#include <IBVP_WavesInSolids_Multiple_Levelsets.H>
 #endif
 
 // ====================================================================
@@ -126,6 +129,8 @@ amrex::Print() << "#############################################################
     const std::string problem = "PROBLEM_Layered";
 #elif (PROBLEM == PROBLEM_BCC_LATTICE)
     const std::string problem = "PROBLEM_BCC_lattice";
+#elif (PROBLEM == PROBLEM_MULTIPLE_LEVELSETS)
+    const std::string problem = "PROBLEM_Multiple_Levelsets";
 #endif
 
     dst_folder = "./IBVP_"+std::to_string(AMREX_SPACEDIM)+"d/"+problem+"_"+dG_mesh+"_"+dG_order+"/";
@@ -147,17 +152,24 @@ amrex::Print() << "#############################################################
     //const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}};
     const amrex::Vector<std::string> material_type = {"Hexagonal-2D"};
     const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{32.0, 16.7, 14.0, 6.63, 6.6}};
+
 #elif (PROBLEM == PROBLEM_ONE_INTERFACE)
     const amrex::Vector<std::string> material_type = {"Isotropic", "Isotropic"};
     const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}, {1.0, 4.0, 0.33}};
+
 #elif (PROBLEM == PROBLEM_HP_CONVERGENCE)
     const amrex::Vector<std::string> material_type = {"Isotropic", "Isotropic"};
     const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}, {1.0, 1.0, 0.33}};
+
 #elif (PROBLEM == PROBLEM_KOMATITSCH)
     const amrex::Vector<std::string> material_type = {"Hexagonal-2D", "Hexagonal-2D"};
     const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{71.0, 16.5, 6.2, 3.96, 5.00},
                                                                            {71.0, 16.5, 16.5, 3.96, 8.58}};
 #elif (PROBLEM == PROBLEM_LAYERED)
+    const amrex::Vector<std::string> material_type = {"Isotropic", "Isotropic"};
+    const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}, {3.0, 12.0, 0.33}};
+
+#elif (PROBLEM == PROBLEM_MULTIPLE_LEVELSETS)
     const amrex::Vector<std::string> material_type = {"Isotropic", "Isotropic"};
     const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}, {3.0, 12.0, 0.33}};
 #endif
@@ -170,7 +182,7 @@ amrex::Print() << "#############################################################
     // ================================================================
 
     // INIT FIELDS' DATA WITH INITIAL CONDITIONS ======================
-    iGeom.ProjectDistanceFunctions(Waves);
+    iGeom.ProjectLevelsetFunctions(Waves);
     iGeom.EvalImplicitMesh(Waves);
     MatFactory.Eval(iGeom);
     dG.SetICs(iGeom, MatFactory, Waves);

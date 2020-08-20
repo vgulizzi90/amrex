@@ -3,7 +3,7 @@
 #include <IBVP_WavesInSolids_Base.H>
 
 // IBVP PARAMETERS ####################################################
-// NUMBER OF DISTANCE FUNCTIONS/DOMAINS/UNKNOWN FIELDS ----------------
+// NUMBER OF LEVEL SET FUNCTIONS/DOMAINS/UNKNOWN FIELDS ---------------
 #define N_PHI 1
 #define N_DOM 2
 #define N_U (2*N_VS)
@@ -36,7 +36,7 @@ public:
     }
     // ================================================================
 
-    // DISTANCE FUNCTION ==============================================
+    // LEVEL SET FUNCTION =============================================
     AMREX_GPU_HOST_DEVICE
     amrex::Real F_PHI(const int & ph,
                       const amrex::Real & t, const amrex::Real * x) const
@@ -45,7 +45,7 @@ public:
     }
     // ================================================================
 
-    // RELATIONSHIP AMONG DISTANCE FUNCTIONS AND DOMAINS ==============
+    // RELATIONSHIP AMONG LEVEL SET FUNCTIONS AND DOMAINS =============
     AMREX_GPU_HOST_DEVICE
     void F_DOM2PHI(const int & dom, int * phi_info) const
     {
@@ -365,8 +365,7 @@ public:
                       const amrex::Real * U,
                       AMREX_D_DECL(amrex::Real * NF1, amrex::Real * NF2, amrex::Real * NF3)) const
     {
-amrex::Print() << "Hello! F_NF_PHI_BCS (We should not end up here)" << std::endl;
-exit(-1);
+amrex::Abort("Hello! F_NF_PHI_BCS (We should not end up here)");
     }
     // ----------------------------------------------------------------
 

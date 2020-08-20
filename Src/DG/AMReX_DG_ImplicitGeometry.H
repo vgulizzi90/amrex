@@ -221,7 +221,7 @@ struct ImplicitGeometry
         // ============================================================
 
         // STORE MEMORY FOR THE MULTIFABS =============================
-        // DISTANCE FUNCTIONS -----------------------------------------
+        // LEVEL SET FUNCTIONS ----------------------------------------
         this->PHI.define(this->cc_ba, this->dm, this->PHI_n_comp, this->dom_data_ngr);
         
         this->PHI = 0.0;
@@ -287,12 +287,12 @@ struct ImplicitGeometry
     {}
     // ################################################################
 
-    // PROJECT DISTANCE FUNCTIONS #####################################
+    // PROJECT LEVEL SET FUNCTIONS ####################################
     template<typename IBVP_CLASS>
-    void ProjectDistanceFunctions(const IBVP_CLASS & IBVP)
+    void ProjectLevelsetFunctions(const IBVP_CLASS & IBVP)
     {
         // PROFILING --------------------------------------------------
-        BL_PROFILE("ImplicitGeometry::ProjectDistanceFunctions(const IBVP_CLASS &)");
+        BL_PROFILE("ImplicitGeometry::ProjectLevelsetFunctions(const IBVP_CLASS &)");
         // ------------------------------------------------------------
 
         // PARAMETERS =================================================
@@ -543,7 +543,7 @@ struct ImplicitGeometry
                 int phi_info[2];
                 algoim_DG_phi_space_BFX phi(cell_lo, cell_hi, PHI_fab, p, i, j, k, -1);
 
-                // Get info about the distance function associated to
+                // Get info about the level set function associated to
                 // the domain
                 IBVP.F_DOM2PHI(dom, phi_info);
                 phi.set_fab_ptrs(i, j, k, phi_info[0]);
@@ -829,8 +829,8 @@ struct ImplicitGeometry
                     int phi_info[2];
                     algoim_DG_phi_space_BFX phi(cell_lo, cell_hi, PHI_fab, p, i, j, k, -1);
 
-                    // Get info about the distance function associated to
-                    // the domain
+                    // Get info about the level set function associated
+                    // to the domain
                     IBVP.F_DOM2PHI(dom, phi_info);
                     phi.set_fab_ptrs(i, j, k, phi_info[0]);
                     phi.set_sign(phi_info[1]);
@@ -1491,11 +1491,11 @@ struct ImplicitGeometry
         const int n_bou_cell_fields = N_DOM;
 
         // NODAL-DATA
-        // Distance functions
+        // Level set functions
         const int n_nodal_fields = N_PHI;
 
         // BOUNDARY NODAL-DATA
-        // Distance functions
+        // Level set functions
         const int n_bou_nodal_fields = N_PHI;
 
         // VTK
@@ -1685,7 +1685,7 @@ struct ImplicitGeometry
                 int BF_i, BF_j, BF_k;
                 Real x[AMREX_SPACEDIM];
 
-                // Data structures used to compute the distance
+                // Data structures used to compute the level set
                 // functions
                 DG_phi_space_BFX phi(cell_lo, cell_hi, PHI_fab, p, i, j, k, -1);
 
@@ -1815,7 +1815,7 @@ struct ImplicitGeometry
                         p_cell_hi[2] = prob_lo[2]+(pk+1)*dx[2];
                     )
 
-                    // Data structures used to compute the distance
+                    // Data structures used to compute the level set
                     // functions
                     DG_phi_space_BFX m_phi(m_cell_lo, m_cell_hi, PHI_fab, p, mi, mj, mk, -1);
                     DG_phi_space_BFX p_phi(p_cell_lo, p_cell_hi, PHI_fab, p, pi, pj, pk, -1);
@@ -2232,7 +2232,7 @@ struct ImplicitGeometry
         this->pp_PHI = 0.0;
         // ============================================================
 
-        // PROJECT THE DISTANCE FUNCTIONS INTO THE FINER GRID =========
+        // PROJECT THE LEVEL SET FUNCTIONS INTO THE FINER GRID ========
         {
             // FINE GRID PARAMETERS -----------------------------------
             // GRID

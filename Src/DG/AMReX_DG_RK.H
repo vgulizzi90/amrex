@@ -596,7 +596,7 @@ struct RungeKutta
                     //     neighboring cell extends into it;
                     // iii) the neighboring cell is empty (it means
                     //      that the cells must be separated by the
-                    //      zero level set of a distance function;
+                    //      zero level set of a function;
                     //      this case is handled in the INTERPHASE
                     //      case
                     //

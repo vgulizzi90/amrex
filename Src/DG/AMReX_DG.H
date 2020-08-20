@@ -383,7 +383,7 @@ public:
 
                 // LOCAL VARIABLES
                 int etype;
-                bool elm_is_empty, elm_is_large, elm_is_small, elm_is_partial;
+                bool elm_is_empty, elm_is_large, elm_is_small;
                 Real vf;
                 int BF_i, BF_j, BF_k;
                 Real x[AMREX_SPACEDIM];
@@ -408,7 +408,6 @@ public:
                     elm_is_empty = (etype == DG_ELM_TYPE_EMPTY);
                     elm_is_large = (etype%10 == DG_ELM_TYPE_LARGE);
                     elm_is_small = (etype%10 == DG_ELM_TYPE_SMALL);
-                    elm_is_partial = (elm_is_large || elm_is_small);
                     vf = eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom);
 
                     if (!elm_is_empty)
@@ -943,7 +942,6 @@ Print() << "(error.sum(1)): " << (error.sum(1)) << std::endl;
         // GRID
         const GpuArray<Real, AMREX_SPACEDIM> dx = iGeom._dx;
         const GpuArray<Real, AMREX_SPACEDIM> prob_lo = iGeom._prob_lo;
-        const GpuArray<Real, AMREX_SPACEDIM> J = iGeom._J;
 
         // DG
         const int phi_p = iGeom.uHyperrect.p;
@@ -1011,12 +1009,13 @@ Print() << "(error.sum(1)): " << (error.sum(1)) << std::endl;
                             // Get the support of the basis functions
                             BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
 
-                            // Data structures used to compute the distance
-                            // functions and the dG solution
+                            // Data structures used to compute the
+                            // level set functions and the dG
+                            // solution
                             DG_phi_space_BFX phi(cell_lo, cell_hi, PHI_fab, phi_p, i, j, k, -1);
                             DG_sol_space_BFX sol(BF_lo, BF_hi, X_fab, space_sol_p, BF_i, BF_j, BF_k, -1);
 
-                            // FIELDS (DISTANCE FUNCTIONS)
+                            // FIELDS (LEVEL SET FUNCTIONS)
                             phi._eval_BF_table_(x);
                             for (int rph = 0; rph < N_PHI; ++rph)
                             {
@@ -1245,7 +1244,7 @@ Print() << "(error.sum(1)): " << (error.sum(1)) << std::endl;
                 int BF_i, BF_j, BF_k;
                 Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
 
-                // Data structures used to compute the distance
+                // Data structures used to compute the level set
                 // functions and the dG solution
                 DG_phi_space_BFX phi(cell_lo, cell_hi, PHI_fab, phi_p, i, j, k, -1);
                 DG_sol_space_BFX sol(X_fab, space_sol_p);
@@ -1267,7 +1266,7 @@ Print() << "(error.sum(1)): " << (error.sum(1)) << std::endl;
                         nodes_ptr[cell_nodes_pos+AMREX_SPACEDIM*n+2] = x[2];
                     )
 
-                    // FIELDS (DISTANCE FUNCTIONS)
+                    // FIELDS (LEVEL SET FUNCTIONS)
                     phi._eval_BF_table_(x);
                     for (int rph = 0; rph < N_PHI; ++rph)
                     {

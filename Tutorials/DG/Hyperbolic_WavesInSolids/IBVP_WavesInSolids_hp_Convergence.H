@@ -3,7 +3,7 @@
 #include <IBVP_WavesInSolids_Base.H>
 
 // IBVP PARAMETERS ####################################################
-// NUMBER OF DISTANCE FUNCTIONS/DOMAINS/UNKNOWN FIELDS ----------------
+// NUMBER OF LEVEL SET FUNCTIONS/DOMAINS/UNKNOWN FIELDS ---------------
 #define N_PHI 1
 #define N_DOM 2
 #define N_U (2*N_VS)
@@ -21,7 +21,7 @@ class ELASTIC_WAVES
 :
 public ELASTIC_WAVES_BASE<N_DOM>
 {
-private:
+public:
     // DATA MEMBERS ===================================================
 
     // EIGEN STATE INITIAL CONDITIONS
@@ -86,7 +86,7 @@ public:
     }
     // ================================================================
 
-    // DISTANCE FUNCTION ==============================================
+    // LEVEL SET FUNCTION =============================================
     AMREX_GPU_HOST_DEVICE
     amrex::Real F_PHI(const int & ph,
                       const amrex::Real & t, const amrex::Real * x) const
@@ -110,7 +110,7 @@ public:
     }
     // ================================================================
 
-    // RELATIONSHIP AMONG DISTANCE FUNCTIONS AND DOMAINS ==============
+    // RELATIONSHIP AMONG LEVEL SET FUNCTIONS AND DOMAINS =============
     AMREX_GPU_HOST_DEVICE
     void F_DOM2PHI(const int & dom, int * phi_info) const
     {
@@ -534,8 +534,7 @@ public:
                   const amrex::Real * U,
                   amrex::Real * NFn) const
     {
-amrex::Print() << "Hello! F_NF_BCS (We should not end up here)" << std::endl;
-exit(-1);
+amrex::Abort("Hello! F_NF_BCS (We should not end up here)");
     }
     // ----------------------------------------------------------------
 
@@ -546,8 +545,7 @@ exit(-1);
                       const amrex::Real * U,
                       amrex::Real * NFn) const
     {
-amrex::Print() << "Hello! F_NF_PHI_BCS (We should not end up here)" << std::endl;
-exit(-1);
+amrex::Abort("Hello! F_NF_PHI_BCS (We should not end up here)");
     }
     // ----------------------------------------------------------------
 
@@ -659,19 +657,7 @@ exit(-1);
                      const amrex::Real * U, AMREX_D_DECL(const amrex::Real * dUdx1, const amrex::Real * dUdx2, const amrex::Real * dUdx3),
                      amrex::Real * F) const
     {
-amrex::Print() << "Hello! F_POINT_SOL (We should not end up here)" << std::endl;
-exit(-1);
-#if (AMREX_SPACEDIM == 3)
-        F[0] = U[0+N_VS];
-        F[1] = U[1+N_VS];
-        F[2] = U[2+N_VS];
-        F[3] = U[3+N_VS];
-        F[4] = U[4+N_VS];
-        F[5] = U[5+N_VS];
-        F[6] = U[6+N_VS];
-        F[7] = U[7+N_VS];
-        F[8] = U[8+N_VS];
-#endif
+amrex::Abort("Hello! F_POINT_SOL (We should not end up here)");
     }
 
     void F_SOL_DESCRIPTION(amrex::Vector<int> & fields_domain, amrex::Vector<std::string> & fields_name) const
