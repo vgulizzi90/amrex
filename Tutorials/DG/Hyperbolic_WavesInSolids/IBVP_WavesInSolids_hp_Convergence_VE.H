@@ -644,6 +644,51 @@ amrex::Abort("Hello! F_POINT_SOL (We should not end up here)");
         F[4+N_VE+N_VE+N_VE] = S[2]-Se[2];
 #endif
 #if (AMREX_SPACEDIM == 3)
+        // DOMAIN 0
+        this->_eval_S_(0, &U[N_V], S);
+        
+        F[0] = U[0];
+        F[1] = U[1];
+        F[2] = U[2];
+        F[3] = S[0];
+        F[4] = S[1];
+        F[5] = S[2];
+        F[6] = S[3];
+        F[7] = S[4];
+        F[8] = S[5];
+
+        F[0+N_VE+N_VE] = U[0]-Ue[0];
+        F[1+N_VE+N_VE] = U[1]-Ue[1];
+        F[2+N_VE+N_VE] = U[2]-Ue[2];
+        F[3+N_VE+N_VE] = S[0]-Se[0];
+        F[4+N_VE+N_VE] = S[1]-Se[1];
+        F[5+N_VE+N_VE] = S[2]-Se[2];
+        F[6+N_VE+N_VE] = S[3]-Se[3];
+        F[7+N_VE+N_VE] = S[4]-Se[4];
+        F[8+N_VE+N_VE] = S[5]-Se[5];
+        
+        // DOMAIN 1
+        this->_eval_S_(1, &U[N_V+N_VE], S);
+
+        F[0+N_VE] = U[0+N_VE];
+        F[1+N_VE] = U[1+N_VE];
+        F[2+N_VE] = U[2+N_VE];
+        F[3+N_VE] = S[0];
+        F[4+N_VE] = S[1];
+        F[5+N_VE] = S[2];
+        F[6+N_VE] = S[3];
+        F[7+N_VE] = S[4];
+        F[8+N_VE] = S[5];
+
+        F[0+N_VE+N_VE+N_VE] = U[0+N_VE]-Ue[0];
+        F[1+N_VE+N_VE+N_VE] = U[1+N_VE]-Ue[1];
+        F[2+N_VE+N_VE+N_VE] = U[2+N_VE]-Ue[2];
+        F[3+N_VE+N_VE+N_VE] = S[0]-Se[0];
+        F[4+N_VE+N_VE+N_VE] = S[1]-Se[1];
+        F[5+N_VE+N_VE+N_VE] = S[2]-Se[2];
+        F[6+N_VE+N_VE+N_VE] = S[3]-Se[3];
+        F[7+N_VE+N_VE+N_VE] = S[4]-Se[4];
+        F[8+N_VE+N_VE+N_VE] = S[5]-Se[5];
 #endif
     }
     // ================================================================
