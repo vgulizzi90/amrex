@@ -766,7 +766,7 @@ for (int rs = 0; rs < sNp; ++rs)
 */
 
 // NUMERICAL FLUX FOR INTRAPHASE
-IBVP.F_NF_ICS(t, x, un, Uh, nbr_Uh, NFn);
+IBVP.F_NF_ICS(dom, t, x, un, Uh, nbr_Uh, NFn);
 
 // DG CONTRIBUTION
 for (int rs = 0; rs < sNp; ++rs)
@@ -933,7 +933,7 @@ for (int rs = 0; rs < sNp; ++rs)
 }
 */
 // NUMERICAL FLUX FOR INTERNAL BOUNDARY
-IBVP.F_NF_PHI_ICS(dom, t, x, un, Uh, nbr_Uh, NFn);
+IBVP.F_NF_PHI_BCS(dom, t, x, un, Uh, NFn);
 
 // DG CONTRIBUTION
 for (int rs = 0; rs < sNp; ++rs)
@@ -1037,7 +1037,7 @@ for (int rs = 0; rs < sNp; ++rs)
 }
 */
 // NUMERICAL FLUX FOR INTERNAL INTERFACE
-IBVP.F_NF_PHI_ICS(dom, t, x, un, Uh, nbr_Uh, NFn);
+IBVP.F_NF_PHI_ICS(dom, nbr_dom, t, x, un, Uh, nbr_Uh, NFn);
 
 // DG CONTRIBUTION
 for (int rs = 0; rs < sNp; ++rs)

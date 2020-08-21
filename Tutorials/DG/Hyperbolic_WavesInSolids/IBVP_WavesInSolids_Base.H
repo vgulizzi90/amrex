@@ -27,7 +27,22 @@
 #define SXY 8
 // --------------------------------------------------------------------
 
-// PDES PARAMETERS ----------------------------------------------------
+// PDES PARAMETERS AND CONSTANT OPERATORS -----------------------------
+#if (AMREX_SPACEDIM == 2)
+const amrex::Real I1[N_S*N_V] = {1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+const amrex::Real I2[N_S*N_V] = {0.0, 0.0, 1.0, 0.0, 1.0, 0.0};
+#endif
+#if (AMREX_SPACEDIM == 3)
+const amrex::Real I1[N_S*N_V] = {1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                                 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                                 0.0, 0.0, 0.0, 0.0, 1.0, 0.0};
+const amrex::Real I2[N_S*N_V] = {0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                                 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+                                 0.0, 0.0, 0.0, 1.0, 0.0, 0.0};
+const amrex::Real I3[N_S*N_V] = {0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+                                 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+                                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0};
+#endif
 // --------------------------------------------------------------------
 // ####################################################################
 
@@ -40,21 +55,6 @@ class ELASTIC_WAVES_BASE
 public:
     // DATA MEMBERS ===================================================
     // PARAMETERS
-#if (AMREX_SPACEDIM == 2)
-    const amrex::Real I1[N_S*N_V] = {1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
-    const amrex::Real I2[N_S*N_V] = {0.0, 0.0, 1.0, 0.0, 1.0, 0.0};
-#endif
-#if (AMREX_SPACEDIM == 3)
-    const amrex::Real I1[N_S*N_V] = {1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                     0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-                                     0.0, 0.0, 0.0, 0.0, 1.0, 0.0};
-    const amrex::Real I2[N_S*N_V] = {0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-                                     0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                                     0.0, 0.0, 0.0, 1.0, 0.0, 0.0};
-    const amrex::Real I3[N_S*N_V] = {0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
-                                     0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
-                                     0.0, 0.0, 1.0, 0.0, 0.0, 0.0};
-#endif
 
     // VARIABLES
     amrex::Real density[N_DOM];
@@ -80,7 +80,7 @@ public:
 #if (AMREX_SPACEDIM == 1)
         std::string msg;
         msg  = "\n";
-        msg += "ERROR: IBVP_WavesInSolids.H - ELASTIC_WAVES_BASE::ELASTIC_WAVES_BASE\n";
+        msg += "ERROR: IBVP_WavesInSolids_Base.H - ELASTIC_WAVES_BASE::ELASTIC_WAVES_BASE\n";
         msg += "| ELASTIC_WAVES_BASE must be double-checked step-by-step when dimension is "+std::to_string(AMREX_SPACEDIM)+".\n";
         amrex::Abort(msg);
 #endif
@@ -92,9 +92,9 @@ public:
         // AUXILIARY MATRICES
         AMREX_D_TERM
         (
-            amrex::DG_utils::transpose(N_S, N_V, this->I1, I1T);,
-            amrex::DG_utils::transpose(N_S, N_V, this->I2, I2T);,
-            amrex::DG_utils::transpose(N_S, N_V, this->I3, I3T);
+            amrex::DG_utils::transpose(N_S, N_V, I1, I1T);,
+            amrex::DG_utils::transpose(N_S, N_V, I2, I2T);,
+            amrex::DG_utils::transpose(N_S, N_V, I3, I3T);
         )
 
         // STORE THE MATERIAL PROPERTIES ------------------------------
@@ -158,7 +158,7 @@ public:
             {
                 std::string msg;
                 msg  = "\n";
-                msg += "ERROR: IBVP_WavesInSolids.H - ELASTIC_WAVES_BASE::ELASTIC_WAVES_BASE\n";
+                msg += "ERROR: IBVP_WavesInSolids_Base.H - ELASTIC_WAVES_BASE::ELASTIC_WAVES_BASE\n";
                 msg += "| Unexpected material type: "+m_type+" with dimension: "+std::to_string(AMREX_SPACEDIM)+".\n";
                 amrex::Abort(msg);
             }
@@ -172,9 +172,9 @@ public:
             )
             AMREX_D_TERM
             (
-                amrex::DG_utils::matmul(N_S, N_S, N_V, this->cSE[d], this->I1, cI1);,
-                amrex::DG_utils::matmul(N_S, N_S, N_V, this->cSE[d], this->I2, cI2);,
-                amrex::DG_utils::matmul(N_S, N_S, N_V, this->cSE[d], this->I3, cI3);
+                amrex::DG_utils::matmul(N_S, N_S, N_V, this->cSE[d], I1, cI1);,
+                amrex::DG_utils::matmul(N_S, N_S, N_V, this->cSE[d], I2, cI2);,
+                amrex::DG_utils::matmul(N_S, N_S, N_V, this->cSE[d], I3, cI3);
             )
 
             // OPERATORS
@@ -278,7 +278,7 @@ public:
             {
                 std::string msg;
                 msg  = "\n";
-                msg += "ERROR: IBVP_WavesInSolids.H - ELASTIC_WAVES_BASE::ELASTIC_WAVES_BASE\n";
+                msg += "ERROR: IBVP_WavesInSolids_Base.H - ELASTIC_WAVES_BASE::ELASTIC_WAVES_BASE\n";
                 msg += "| Unexpected material type: "+m_type+" with dimension: "+std::to_string(AMREX_SPACEDIM)+".\n";
                 amrex::Abort(msg);
             }
@@ -327,16 +327,16 @@ amrex::Abort("Hello! _eval_T_");
         {
             AMREX_D_TERM
             (
-                In[r+c*N_S]  = this->I1[r+c*N_S]*un[0];,
-                In[r+c*N_S] += this->I2[r+c*N_S]*un[1];,
-                In[r+c*N_S] += this->I3[r+c*N_S]*un[2];
+                In[r+c*N_S]  = I1[r+c*N_S]*un[0];,
+                In[r+c*N_S] += I2[r+c*N_S]*un[1];,
+                In[r+c*N_S] += I3[r+c*N_S]*un[2];
             )
 
             AMREX_D_TERM
             (
-                InT[c+r*N_V]  = this->I1[r+c*N_S]*un[0];,
-                InT[c+r*N_V] += this->I2[r+c*N_S]*un[1];,
-                InT[c+r*N_V] += this->I3[r+c*N_S]*un[2];
+                InT[c+r*N_V]  = I1[r+c*N_S]*un[0];,
+                InT[c+r*N_V] += I2[r+c*N_S]*un[1];,
+                InT[c+r*N_V] += I3[r+c*N_S]*un[2];
             )
         }
 

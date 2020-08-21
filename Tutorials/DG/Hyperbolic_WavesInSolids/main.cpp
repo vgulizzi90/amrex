@@ -18,12 +18,13 @@
 #define PROBLEM_ONE_PHASE 0
 #define PROBLEM_ONE_INTERFACE 1
 #define PROBLEM_HP_CONVERGENCE 23
+#define PROBLEM_HP_CONVERGENCE_VE 230
 #define PROBLEM_KOMATITSCH 2000
 #define PROBLEM_LAYERED 12
 #define PROBLEM_BCC_LATTICE 233
 #define PROBLEM_MULTIPLE_LEVELSETS -10
 
-#define PROBLEM 23
+#define PROBLEM 230
 
 #if (PROBLEM == PROBLEM_ONE_PHASE)
 #include <IBVP_WavesInSolids_OnePhase.H>
@@ -31,6 +32,8 @@
 #include <IBVP_WavesInSolids_OneInterface.H>
 #elif (PROBLEM == PROBLEM_HP_CONVERGENCE)
 #include <IBVP_WavesInSolids_hp_Convergence.H>
+#elif (PROBLEM == PROBLEM_HP_CONVERGENCE_VE)
+#include <IBVP_WavesInSolids_hp_Convergence_VE.H>
 #elif (PROBLEM == PROBLEM_KOMATITSCH)
 #include <IBVP_WavesInSolids_Komatitsch.H>
 #elif (PROBLEM == PROBLEM_LAYERED)
@@ -123,6 +126,8 @@ amrex::Print() << "#############################################################
     const std::string problem = "PROBLEM_OneInterface";
 #elif (PROBLEM == PROBLEM_HP_CONVERGENCE)
     const std::string problem = "PROBLEM_hp_Convergence";
+#elif (PROBLEM == PROBLEM_HP_CONVERGENCE_VE)
+    const std::string problem = "PROBLEM_hp_Convergence_VE";
 #elif (PROBLEM == PROBLEM_KOMATITSCH)
     const std::string problem = "PROBLEM_Komatitsch";
 #elif (PROBLEM == PROBLEM_LAYERED)
@@ -157,7 +162,7 @@ amrex::Print() << "#############################################################
     const amrex::Vector<std::string> material_type = {"Isotropic", "Isotropic"};
     const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}, {1.0, 4.0, 0.33}};
 
-#elif (PROBLEM == PROBLEM_HP_CONVERGENCE)
+#elif ((PROBLEM == PROBLEM_HP_CONVERGENCE) || (PROBLEM == PROBLEM_HP_CONVERGENCE_VE))
     const amrex::Vector<std::string> material_type = {"Isotropic", "Isotropic"};
     const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}, {1.0, 1.0, 0.33}};
 
@@ -187,7 +192,7 @@ amrex::Print() << "#############################################################
     MatFactory.Eval(iGeom);
     dG.SetICs(iGeom, MatFactory, Waves);
 
-#if (PROBLEM == PROBLEM_HP_CONVERGENCE)
+#if ((PROBLEM == PROBLEM_HP_CONVERGENCE) || (PROBLEM == PROBLEM_HP_CONVERGENCE_VE))
     {
         amrex::Real err;
         err = dG.EvalError(0.0, iGeom, MatFactory, Waves);
@@ -239,7 +244,7 @@ amrex::Print() << "| COMPUTING TIME STEP: n = " << n+1 << " time step: " << dt <
         n += 1;
         time += dt;
 
-#if (PROBLEM == PROBLEM_HP_CONVERGENCE)
+#if ((PROBLEM == PROBLEM_HP_CONVERGENCE) || (PROBLEM == PROBLEM_HP_CONVERGENCE_VE))
         // COMPUTE ERROR
         if (std::abs(time/dG_inputs.time.T-1.0) < 1.0e-12)
         {
