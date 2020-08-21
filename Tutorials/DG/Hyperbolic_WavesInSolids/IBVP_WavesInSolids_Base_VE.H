@@ -76,21 +76,6 @@
 // --------------------------------------------------------------------
 
 // PDES PARAMETERS AND CONSTANT OPERATORS -----------------------------
-#if (AMREX_SPACEDIM == 2)
-const amrex::Real I1[N_E*N_V] = {1.0, 0.0, 0.0, 0.0, 0.0, 1.0};
-const amrex::Real I2[N_E*N_V] = {0.0, 0.0, 1.0, 0.0, 1.0, 0.0};
-#endif
-#if (AMREX_SPACEDIM == 3)
-const amrex::Real I1[N_E*N_V] = {1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-                                 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-                                 0.0, 0.0, 0.0, 0.0, 1.0, 0.0};
-const amrex::Real I2[N_E*N_V] = {0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-                                 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                                 0.0, 0.0, 0.0, 1.0, 0.0, 0.0};
-const amrex::Real I3[N_E*N_V] = {0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
-                                 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
-                                 0.0, 0.0, 1.0, 0.0, 0.0, 0.0};
-#endif
 // --------------------------------------------------------------------
 // ####################################################################
 
@@ -117,9 +102,6 @@ public:
     ELASTIC_WAVES_BASE(const amrex::Vector<std::string> & material_type,
                        const amrex::Vector<amrex::Vector<amrex::Real>> material_properties)
     {
-        // PARAMETERS -------------------------------------------------
-        // ------------------------------------------------------------
-
 #if (AMREX_SPACEDIM == 1)
         std::string msg;
         msg  = "\n";
@@ -127,18 +109,11 @@ public:
         msg += "| ELASTIC_WAVES_BASE must be double-checked step-by-step when dimension is "+std::to_string(AMREX_SPACEDIM)+".\n";
         amrex::Abort(msg);
 #endif
-
-        // VARIABLES --------------------------------------------------
-        amrex::Real AMREX_D_DECL(I1T[N_V*N_E], I2T[N_V*N_E], I3T[N_V*N_E]);
+        // PARAMETERS -------------------------------------------------
         // ------------------------------------------------------------
 
-        // AUXILIARY MATRICES
-        AMREX_D_TERM
-        (
-            amrex::DG_utils::transpose(N_E, N_V, I1, I1T);,
-            amrex::DG_utils::transpose(N_E, N_V, I2, I2T);,
-            amrex::DG_utils::transpose(N_E, N_V, I3, I3T);
-        )
+        // VARIABLES --------------------------------------------------
+        // ------------------------------------------------------------
 
         // STORE THE MATERIAL PROPERTIES ------------------------------
         for (int d = 0; d < N_DOM; ++d)
