@@ -5,8 +5,12 @@
 // IBVP PARAMETERS ####################################################
 // NUMBER OF LEVEL SET FUNCTIONS/DOMAINS/UNKNOWN FIELDS ---------------
 #define N_PHI 1
-#define N_DOM 2
-#define N_U (2*N_VE)
+#define N_DOM 1
+#define N_U (N_DOM*N_VE)
+// --------------------------------------------------------------------
+
+// CONSTANTS ----------------------------------------------------------
+#define R 0.25
 // --------------------------------------------------------------------
 // ####################################################################
 
@@ -73,7 +77,7 @@ public:
         std::fill(InTc, InTc+N_V*N_E, 0.0);
         std::fill(In, In+N_E*N_V, 0.0);
         std::fill(An, An+N_VE*N_VE, 0.0);
-        std::fill(An_w, An+N_VE, 0.0);
+        std::fill(An_w, An_w+N_VE, 0.0);
         std::fill(An_v, An_v+N_VE*N_VE, 0.0);
 
 #if (AMREX_SPACEDIM == 2)
@@ -150,14 +154,6 @@ public:
         this->ICs_w = An_w[iv];
         std::copy(&An_v[iv*N_VE], &An_v[(iv+1)*N_VE], this->ICs_v);
         // ------------------------------------------------------------
-
-amrex::Print() << "iv: " << iv << std::endl;
-amrex::Print() << "N_VE: " << N_VE << std::endl;
-amrex::Print() << "this->ICs_w: " << this->ICs_w << std::endl;
-for (int r = 0; r < N_VE; ++r)
-{
-amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
-}
     }
     // ================================================================
 
@@ -169,15 +165,26 @@ amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
 #if (AMREX_SPACEDIM == 2)
         const amrex::Real x1 = x[0];
         const amrex::Real x2 = x[1];
-        const amrex::Real phi = 0.125-std::cos(2.0*M_PI*x1)*std::cos(2.0*M_PI*x2);
+#if (N_DOM == 1)
+        const amrex::Real phi = R*R-(x1-0.5)*(x1-0.5)-(x2-0.5)*(x2-0.5);
 #endif
+#if (N_DOM == 2)
+        const amrex::Real phi = std::cos(2.0*M_PI*x1)*std::cos(2.0*M_PI*x2)-0.125;
+#endif
+#endif
+
 #if (AMREX_SPACEDIM == 3)
         const amrex::Real x1 = x[0];
         const amrex::Real x2 = x[1];
         const amrex::Real x3 = x[2];
-        const amrex::Real phi = 0.125+std::cos(2.0*M_PI*x1)*std::cos(2.0*M_PI*x2)*std::cos(2.0*M_PI*x3);
+#if (N_DOM == 1)
+        const amrex::Real phi = R*R-(x1-0.5)*(x1-0.5)-(x2-0.5)*(x2-0.5)-(x3-0.5)*(x3-0.5);
 #endif
-        return -phi;
+#if (N_DOM == 2)
+        const amrex::Real phi = -std::cos(2.0*M_PI*x1)*std::cos(2.0*M_PI*x2)*std::cos(2.0*M_PI*x3)-0.125;
+#endif
+#endif
+        return phi;
     }
     // ================================================================
 
@@ -185,6 +192,14 @@ amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
     AMREX_GPU_HOST_DEVICE
     void F_DOM2PHI(const int & dom, int * phi_info) const
     {
+#if (N_DOM == 1)
+        const int PHI_INFO[2*N_DOM] =
+        {
+            // dom = 0
+            0, -1
+        };
+#endif
+#if (N_DOM == 2)
         const int PHI_INFO[2*N_DOM] =
         {
             // dom = 0
@@ -193,6 +208,7 @@ amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
             // dom = 1
             0, +1
         };
+#endif
 
         phi_info[0] = PHI_INFO[2*dom];
         phi_info[1] = PHI_INFO[2*dom+1];
@@ -201,7 +217,36 @@ amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
     amrex::Real F_EXACT_VOLUME(const int & dom) const
     {
 #if (AMREX_SPACEDIM == 2)
-        const amrex::Real val = 0.3867888308923567;
+#if (N_DOM == 1)
+        const amrex::Real EXACT_VOLUME[N_DOM] =
+        {
+            // dom = 0
+            1.0-M_PI*R*R
+        };
+#endif
+#if (N_DOM == 2)
+        const amrex::Real val = 0.38678883014054993;
+        const amrex::Real EXACT_VOLUME[N_DOM] =
+        {
+            // dom = 0
+            1.0-val,
+
+            // dom = 1
+            val
+        };
+#endif        
+#endif
+
+#if (AMREX_SPACEDIM == 3)
+#if (N_DOM == 1)
+        const amrex::Real EXACT_VOLUME[N_DOM] =
+        {
+            // dom = 0
+            1.0-(4.0/3.0)*M_PI*R*R*R
+        };
+#endif
+#if (N_DOM == 2)
+        const amrex::Real val = 0.0;
         const amrex::Real EXACT_VOLUME[N_DOM] =
         {
             // dom = 0
@@ -211,16 +256,6 @@ amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
             val
         };
 #endif
-#if (AMREX_SPACEDIM == 3)
-        const amrex::Real val = 0.3867888308923567;
-        const amrex::Real EXACT_VOLUME[N_DOM] =
-        {
-            // dom = 0
-            1.0-val,
-
-            // dom = 1
-            val
-        };
 #endif
 
         return EXACT_VOLUME[dom];
@@ -228,7 +263,15 @@ amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
     amrex::Real F_EXACT_SURFACE(const int & dom) const
     {
 #if (AMREX_SPACEDIM == 2)
-        const amrex::Real val = 3.201999313783625;
+#if (N_DOM == 1)
+        const amrex::Real EXACT_SURFACE[N_DOM] =
+        {
+            // dom = 0
+            2.0*M_PI*R
+        };
+#endif
+#if (N_DOM == 2)
+        const amrex::Real val = 3.201998801404303;
         const amrex::Real EXACT_SURFACE[N_DOM] =
         {
             // dom = 0
@@ -238,15 +281,26 @@ amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
             val
         };
 #endif
+#endif
+
 #if (AMREX_SPACEDIM == 3)
+#if (N_DOM == 1)
         const amrex::Real EXACT_SURFACE[N_DOM] =
         {
             // dom = 0
-            2.0,
+            4.0*M_PI*R*R
+        };
+#endif
+#if (N_DOM == 2)
+        const amrex::Real EXACT_SURFACE[N_DOM] =
+        {
+            // dom = 0
+            0.0,
 
             // dom = 1
-            2.0
+            0.0
         };
+#endif
 #endif
 
         return EXACT_SURFACE[dom];
@@ -258,6 +312,14 @@ amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
     int F_U2DOM(const int & u) const
     {
 #if (AMREX_SPACEDIM == 2)
+#if (N_DOM == 1)
+        const int DOM[N_U] =
+        {
+            // dom = 0
+            0, 0,  0, 0, 0
+        };
+#endif
+#if (N_DOM == 2)
         const int DOM[N_U] =
         {
             // dom = 0
@@ -267,7 +329,17 @@ amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
             1, 1,  1, 1, 1
         };
 #endif
+#endif
+
 #if (AMREX_SPACEDIM == 3)
+#if (N_DOM == 1)
+        const int DOM[N_U] =
+        {
+            // dom = 0
+            0, 0, 0,  0, 0, 0, 0, 0, 0
+        };
+#endif
+#if (N_DOM == 2)
         const int DOM[N_U] =
         {
             // dom = 0
@@ -277,6 +349,7 @@ amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
             1, 1, 1,  1, 1, 1, 1, 1, 1
         };
 #endif
+#endif
         return DOM[u];
     }
     // ================================================================
@@ -285,6 +358,15 @@ amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
     AMREX_GPU_HOST_DEVICE
     int F_DOM2NBRDOM(const int& dom) const
     {
+
+#if (N_DOM == 1)
+        const int NBRDOM[N_DOM] =
+        {
+            // dom = 0
+            -1
+        };
+#endif
+#if (N_DOM == 2)
         const int NBRDOM[N_DOM] =
         {
             // dom = 0
@@ -293,6 +375,7 @@ amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
             // dom = 1
             0
         };
+#endif
         return NBRDOM[dom];
     }
     // ================================================================
@@ -492,7 +575,8 @@ amrex::Print() << "this->ICs_v[" << r << "]: " << this->ICs_v[r] << std::endl;
 
     // GRID BOUNDARIES ------------------------------------------------
     AMREX_GPU_HOST_DEVICE
-    void F_NF_BCS(const amrex::Real & t, const amrex::Real * x, const amrex::Real * un,
+    void F_NF_BCS(const int & dom,
+                  const amrex::Real & t, const amrex::Real * x, const amrex::Real * un,
                   const amrex::Real * U,
                   amrex::Real * NFn) const
     {
@@ -507,7 +591,29 @@ amrex::Abort("Hello! F_NF_BCS (We should not end up here)");
                       const amrex::Real * U,
                       amrex::Real * NFn) const
     {
-amrex::Abort("Hello! F_NF_PHI_BCS (We should not end up here)");
+        const amrex::Real mu = this->max_wave_speed;
+
+        // EXACT SOLUTION
+        amrex::Real Ue[N_VE], Se[N_E];
+        
+        this->F_EXACT(t, x, Ue);
+        this->_eval_S_(0, &Ue[N_V], Se);
+
+        amrex::Real bcs_U[N_VE];
+
+        bcs_U[0] = Ue[0];
+        bcs_U[1] = Ue[1];
+        bcs_U[2] = U[2];
+        bcs_U[3] = U[3];
+        bcs_U[4] = U[4];
+
+        this->_eval_AnU_(dom, un, bcs_U, NFn);
+
+        NFn[0] += 0.0;
+        NFn[1] += 0.0;
+        NFn[2] += mu*(un[0]*(U[0]-bcs_U[0]));
+        NFn[3] += mu*(un[1]*(U[1]-bcs_U[1]));
+        NFn[4] += mu*(un[0]*(U[1]-bcs_U[1])+un[1]*(U[0]-bcs_U[0]));
     }
     // ----------------------------------------------------------------
 
@@ -576,24 +682,41 @@ amrex::Abort("Hello! F_POINT_SOL (We should not end up here)");
     void F_SOL_DESCRIPTION(amrex::Vector<int> & fields_domain, amrex::Vector<std::string> & fields_name) const
     {
 #if (AMREX_SPACEDIM == 2)
+#if (N_DOM == 1)
         fields_domain = {0, 0,  0, 0, 0,
-                         1, 1,  1, 1, 1,
+                         0, 0,  0, 0, 0};
+        fields_name = {"Vx", "Vy",  "Sxx", "Syy", "Sxy",
+                       "err_Vx", "err_Vy",  "err_Sxx", "err_Syy", "err_Sxy"};
+#endif
+#if (N_DOM == 2)
+        fields_domain = {0, 0,  0, 0, 0,
                          0, 0,  0, 0, 0,
+                         1, 1,  1, 1, 1,
                          1, 1,  1, 1, 1};
         fields_name = {"Vx_a", "Vy_a",  "Sxx_a", "Syy_a", "Sxy_a",
-                       "Vx_b", "Vy_b",  "Sxx_b", "Syy_b", "Sxy_b",
                        "err_Vx_a", "err_Vy_a",  "err_Sxx_a", "err_Syy_a", "err_Sxy_a",
+                       "Vx_b", "Vy_b",  "Sxx_b", "Syy_b", "Sxy_b",
                        "err_Vx_b", "err_Vy_b",  "err_Sxx_b", "err_Syy_b", "err_Sxy_b"};
 #endif
+#endif
+
 #if (AMREX_SPACEDIM == 3)
+#if (N_DOM == 1)
         fields_domain = {0, 0, 0,  0, 0, 0, 0, 0, 0,
-                         1, 1, 1,  1, 1, 1, 1, 1, 1,
+                         0, 0, 0,  0, 0, 0, 0, 0, 0};
+        fields_name = {"Vx", "Vy", "Vz",  "Sxx", "Syy", "Szz", "Syz", "Sxz", "Sxy",
+                       "err_Vx", "err_Vy", "err_Vz",  "err_Sxx", "err_Syy", "err_Szz", "err_Syz", "err_Sxz", "err_Sxy"};
+#endif
+#if (N_DOM == 2)
+        fields_domain = {0, 0, 0,  0, 0, 0, 0, 0, 0,
                          0, 0, 0,  0, 0, 0, 0, 0, 0,
+                         1, 1, 1,  1, 1, 1, 1, 1, 1,
                          1, 1, 1,  1, 1, 1, 1, 1, 1};
         fields_name = {"Vx_a", "Vy_a", "Vz_a",  "Sxx_a", "Syy_a", "Szz_a", "Syz_a", "Sxz_a", "Sxy_a",
-                       "Vx_b", "Vy_b", "Vz_b",  "Sxx_b", "Syy_b", "Szz_b", "Syz_b", "Sxz_b", "Sxy_b",
                        "err_Vx_a", "err_Vy_a", "err_Vz_a",  "err_Sxx_a", "err_Syy_a", "err_Szz_a", "err_Syz_a", "err_Sxz_a", "err_Sxy_a",
+                       "Vx_b", "Vy_b", "Vz_b",  "Sxx_b", "Syy_b", "Szz_b", "Syz_b", "Sxz_b", "Sxy_b",
                        "err_Vx_b", "err_Vy_b", "err_Vz_b",  "err_Sxx_b", "err_Syy_b", "err_Szz_b", "err_Syz_b", "err_Sxz_b", "err_Sxy_b"};
+#endif
 #endif
     }
     
@@ -622,20 +745,21 @@ amrex::Abort("Hello! F_POINT_SOL (We should not end up here)");
         F[3] = S[1];
         F[4] = S[2];
 
-        F[0+N_VE+N_VE] = U[0]-Ue[0];
-        F[1+N_VE+N_VE] = U[1]-Ue[1];
-        F[2+N_VE+N_VE] = S[0]-Se[0];
-        F[3+N_VE+N_VE] = S[1]-Se[1];
-        F[4+N_VE+N_VE] = S[2]-Se[2];
+        F[0+N_VE] = U[0]-Ue[0];
+        F[1+N_VE] = U[1]-Ue[1];
+        F[2+N_VE] = S[0]-Se[0];
+        F[3+N_VE] = S[1]-Se[1];
+        F[4+N_VE] = S[2]-Se[2];
 
+#if (N_DOM == 2)
         // DOMAIN 1
         this->_eval_S_(1, &U[N_V+N_VE], S);
 
-        F[0+N_VE] = U[0+N_VE];
-        F[1+N_VE] = U[1+N_VE];
-        F[2+N_VE] = S[0];
-        F[3+N_VE] = S[1];
-        F[4+N_VE] = S[2];
+        F[0+N_VE+N_VE] = U[0+N_VE];
+        F[1+N_VE+N_VE] = U[1+N_VE];
+        F[2+N_VE+N_VE] = S[0];
+        F[3+N_VE+N_VE] = S[1];
+        F[4+N_VE+N_VE] = S[2];
 
         F[0+N_VE+N_VE+N_VE] = U[0+N_VE]-Ue[0];
         F[1+N_VE+N_VE+N_VE] = U[1+N_VE]-Ue[1];
@@ -643,6 +767,8 @@ amrex::Abort("Hello! F_POINT_SOL (We should not end up here)");
         F[3+N_VE+N_VE+N_VE] = S[1]-Se[1];
         F[4+N_VE+N_VE+N_VE] = S[2]-Se[2];
 #endif
+#endif
+
 #if (AMREX_SPACEDIM == 3)
         // DOMAIN 0
         this->_eval_S_(0, &U[N_V], S);
@@ -657,28 +783,29 @@ amrex::Abort("Hello! F_POINT_SOL (We should not end up here)");
         F[7] = S[4];
         F[8] = S[5];
 
-        F[0+N_VE+N_VE] = U[0]-Ue[0];
-        F[1+N_VE+N_VE] = U[1]-Ue[1];
-        F[2+N_VE+N_VE] = U[2]-Ue[2];
-        F[3+N_VE+N_VE] = S[0]-Se[0];
-        F[4+N_VE+N_VE] = S[1]-Se[1];
-        F[5+N_VE+N_VE] = S[2]-Se[2];
-        F[6+N_VE+N_VE] = S[3]-Se[3];
-        F[7+N_VE+N_VE] = S[4]-Se[4];
-        F[8+N_VE+N_VE] = S[5]-Se[5];
+        F[0+N_VE] = U[0]-Ue[0];
+        F[1+N_VE] = U[1]-Ue[1];
+        F[2+N_VE] = U[2]-Ue[2];
+        F[3+N_VE] = S[0]-Se[0];
+        F[4+N_VE] = S[1]-Se[1];
+        F[5+N_VE] = S[2]-Se[2];
+        F[6+N_VE] = S[3]-Se[3];
+        F[7+N_VE] = S[4]-Se[4];
+        F[8+N_VE] = S[5]-Se[5];
         
+#if (N_DOM == 2)
         // DOMAIN 1
         this->_eval_S_(1, &U[N_V+N_VE], S);
 
-        F[0+N_VE] = U[0+N_VE];
-        F[1+N_VE] = U[1+N_VE];
-        F[2+N_VE] = U[2+N_VE];
-        F[3+N_VE] = S[0];
-        F[4+N_VE] = S[1];
-        F[5+N_VE] = S[2];
-        F[6+N_VE] = S[3];
-        F[7+N_VE] = S[4];
-        F[8+N_VE] = S[5];
+        F[0+N_VE+N_VE] = U[0+N_VE];
+        F[1+N_VE+N_VE] = U[1+N_VE];
+        F[2+N_VE+N_VE] = U[2+N_VE];
+        F[3+N_VE+N_VE] = S[0];
+        F[4+N_VE+N_VE] = S[1];
+        F[5+N_VE+N_VE] = S[2];
+        F[6+N_VE+N_VE] = S[3];
+        F[7+N_VE+N_VE] = S[4];
+        F[8+N_VE+N_VE] = S[5];
 
         F[0+N_VE+N_VE+N_VE] = U[0+N_VE]-Ue[0];
         F[1+N_VE+N_VE+N_VE] = U[1+N_VE]-Ue[1];
@@ -689,6 +816,7 @@ amrex::Abort("Hello! F_POINT_SOL (We should not end up here)");
         F[6+N_VE+N_VE+N_VE] = S[3]-Se[3];
         F[7+N_VE+N_VE+N_VE] = S[4]-Se[4];
         F[8+N_VE+N_VE+N_VE] = S[5]-Se[5];
+#endif
 #endif
     }
     // ================================================================

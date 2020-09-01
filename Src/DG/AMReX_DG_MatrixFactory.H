@@ -88,10 +88,7 @@ struct MatrixFactory
                   const BoxArray & cc_ba_,
                   const DistributionMapping & dm_,
                   const Geometry & geom_,
-                  const int & space_p_,
-                  const int & time_p_,
-                  const int & space_q_,
-                  const int & time_q_)
+                  const DGInput & inputs)
     :
     cc_ibx(cc_ibx_),
     rbx(rbx_),
@@ -107,13 +104,13 @@ struct MatrixFactory
 #endif
     dm(dm_),
     geom(geom_),
-    space_p(space_p_),
-    space_Np(AMREX_D_PICK(1+space_p_, (1+space_p_)*(1+space_p_), (1+space_p_)*(1+space_p_)*(1+space_p_))),
-    time_p(time_p_),
-    time_Np(time_p_+1),
-    space_q(space_q_),
-    time_q(time_q_),
-    uHyperrect(space_p, space_q),
+    space_p(inputs.space_p),
+    space_Np(AMREX_D_PICK(1+inputs.space_p, (1+inputs.space_p)*(1+inputs.space_p), (1+inputs.space_p)*(1+inputs.space_p)*(1+inputs.space_p))),
+    time_p(inputs.time_p),
+    time_Np(inputs.time_p+1),
+    space_q(inputs.space_q),
+    time_q(inputs.time_q),
+    uHyperrect(inputs.space_p, inputs.space_q),
     n_cut_elms(0),
     n_special_elms(0),
     mem_for_space_Dom_BF(0L),
@@ -123,29 +120,29 @@ struct MatrixFactory
     mem_for_space_MMCh(0L)
     {
         // SOME CHECKS ================================================
-        BL_ASSERT(space_p_ >= 0);
-        BL_ASSERT(space_p_ <= DG_SOL_MAX_SPACE_p);
+        BL_ASSERT(inputs.space_p >= 0);
+        BL_ASSERT(inputs.space_p <= DG_SOL_MAX_SPACE_p);
 
-        if (space_p_ != DG_SOL_MAX_SPACE_p)
+        if (inputs.space_p != DG_SOL_MAX_SPACE_p)
         {
             Print() << std::endl;
             Print() << "WARNING: AMReX_DG_MatrixFactory.H - MatrixFactory::MatrixFactory" << std::endl;
             Print() << "| DG_SOL_MAX_SPACE_p = " << DG_SOL_MAX_SPACE_p << std::endl;
-            Print() << "| input space p = " << space_p_ << std::endl;
-            Print() << "| Consider setting DG_SOL_MAX_SPACE_p = " << space_p_ << " and recompiling the code." <<std::endl;
+            Print() << "| input space p = " << inputs.space_p << std::endl;
+            Print() << "| Consider setting DG_SOL_MAX_SPACE_p = " << inputs.space_p << " and recompiling the code." <<std::endl;
             Print() << std::endl;
         }
 
-        BL_ASSERT(time_p_ >= 0);
-        BL_ASSERT(time_p_ <= DG_SOL_MAX_TIME_p);
+        BL_ASSERT(inputs.time_p >= 0);
+        BL_ASSERT(inputs.time_p <= DG_SOL_MAX_TIME_p);
 
-        if (time_p_ != DG_SOL_MAX_TIME_p)
+        if (inputs.time_p != DG_SOL_MAX_TIME_p)
         {
             Print() << std::endl;
             Print() << "WARNING: AMReX_DG_MatrixFactory.H - MatrixFactory::MatrixFactory" << std::endl;
             Print() << "| DG_SOL_MAX_TIME_p = " << DG_SOL_MAX_TIME_p << std::endl;
-            Print() << "| input time p = " << time_p_ << std::endl;
-            Print() << "| Consider setting DG_SOL_MAX_TIME_p = " << time_p_ << " and recompiling the code." <<std::endl;
+            Print() << "| input time p = " << inputs.time_p << std::endl;
+            Print() << "| Consider setting DG_SOL_MAX_TIME_p = " << inputs.time_p << " and recompiling the code." <<std::endl;
             Print() << std::endl;
         }
         // ============================================================

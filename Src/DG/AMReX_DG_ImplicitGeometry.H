@@ -4,6 +4,7 @@
 #define BL_DG_IMPLICIT_GEOMETRY_H_
 
 #include <AMReX_DG_Base.H>
+#include <AMReX_DG_InputReader.H>
 #include <AMReX_VTK_utils.H>
 
 namespace amrex
@@ -107,7 +108,8 @@ struct ImplicitGeometry
     const Real _tol;
 
     /*const*/ UnitHyperrectangle<AMREX_SPACEDIM> uHyperrect;
-
+    const int space_q_im, time_q_im;
+    const Real volume_fraction_threshold;
     const int PHI_n_comp;
 
     // VARIABLES
@@ -156,8 +158,7 @@ struct ImplicitGeometry
                      const BoxArray & cc_ba_,
                      const DistributionMapping & dm_,
                      const Geometry & geom_,
-                     const int & p_,
-                     const int & q_)
+                     const DGInput & inputs)
     :
     cc_ibx(cc_ibx_),
     rbx(rbx_),
@@ -192,7 +193,10 @@ struct ImplicitGeometry
     _bou_aJ({this->_J[1]*this->_J[2], this->_J[0]*this->_J[2], this->_J[0]*this->_J[1]}),
     _tol(1.0e-12*fmin(fmin(this->_dx[0], this->_dx[1]), this->_dx[2])),
 #endif
-    uHyperrect(p_, q_),
+    uHyperrect(inputs.phi_space_p, inputs.space_q),
+    space_q_im(inputs.space_q_im),
+    time_q_im(inputs.time_q_im),
+    volume_fraction_threshold(inputs.VF),
     PHI_n_comp((this->uHyperrect.Np)*N_PHI),
     n_cut_elms(0),
     n_cut_elm_bou(0),
@@ -201,21 +205,21 @@ struct ImplicitGeometry
     mem_for_eBouQuad(0L),
     mem_for_eIntBouQuad(0L),
     mem_for_eTri(0L),
-    pp_ratio(2*p_+1),
+    pp_ratio(2*inputs.phi_space_p+1),
     pp_cc_ibx(refine(cc_ibx, this->pp_ratio)),
     pp_cc_ba(cc_ba),
     pp_uHyperrect(0, 1)
     {
         // SOME CHECKS ================================================
-        BL_ASSERT(p_ >= 1);
-        BL_ASSERT(p_ <= DG_PHI_MAX_SPACE_p);
-        if (p_ != DG_PHI_MAX_SPACE_p)
+        BL_ASSERT(inputs.phi_space_p >= 1);
+        BL_ASSERT(inputs.phi_space_p <= DG_PHI_MAX_SPACE_p);
+        if (inputs.phi_space_p != DG_PHI_MAX_SPACE_p)
         {
             Print() << std::endl;
             Print() << "WARNING: AMReX_DG_ImplicitGeometry.H - ImplicitGeometry::ImplicitGeometry" << std::endl;
             Print() << "| DG_PHI_MAX_SPACE_p = " << DG_PHI_MAX_SPACE_p << std::endl;
-            Print() << "| input phi space p = " << p_ << std::endl;
-            Print() << "| Consider setting DG_PHI_MAX_SPACE_p = " << p_ << " and recompiling the code." <<std::endl;
+            Print() << "| input phi space p = " << inputs.phi_space_p << std::endl;
+            Print() << "| Consider setting DG_PHI_MAX_SPACE_p = " << inputs.phi_space_p << " and recompiling the code." <<std::endl;
             Print() << std::endl;
         }
         // ============================================================
@@ -402,9 +406,12 @@ struct ImplicitGeometry
         const GpuArray<int, AMREX_SPACEDIM> is_periodic = this->_is_periodic;
         const Real tol = this->_tol;
 
+        // VOLUME FRACTION THRESHOLD
+        const Real vft = this->volume_fraction_threshold;
+
         // STANDARD ELEMENT
         const int p = this->uHyperrect.p;
-        const int qo = this->uHyperrect.q+1;
+        const int qo = this->space_q_im+1;
         // ============================================================
 
         // VARIABLES ==================================================
@@ -998,10 +1005,10 @@ struct ImplicitGeometry
                 Real nbr_vf, best_nbr_vf;
                 bool elm_has_been_merged, nbr_is_valid;
 
-                if (elm_is_partial && (vf < DG_SMALL_ELM_VF_THRESHOLD))
+                if (elm_is_partial && (vf < vft))
                 {
                     elm_has_been_merged = false;
-                    best_nbr_vf = DG_SMALL_ELM_VF_THRESHOLD;
+                    best_nbr_vf = vft;
 
                     // Search among the neighbors. We currently limit
                     // ourselves to the neighboring cells that share a 
@@ -1064,7 +1071,7 @@ struct ImplicitGeometry
 #endif
                     }
                 }
-                else if (elm_is_partial && (vf >= DG_SMALL_ELM_VF_THRESHOLD))
+                else if (elm_is_partial && (vf >= vft))
                 {
                     eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom) = DG_ELM_TYPE_LARGE;
                 }

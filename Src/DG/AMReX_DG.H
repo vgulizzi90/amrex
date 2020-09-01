@@ -4,6 +4,7 @@
 #define BL_DG_H_
 
 #include <AMReX_DG_Base.H>
+#include <AMReX_DG_InputReader.H>
 #include <AMReX_DG_MatrixFactory.H>
 #include <AMReX_DG_ImplicitGeometry.H>
 #include <AMReX_DG_RK.H>
@@ -28,6 +29,7 @@ private:
 
     // VARIABLES
     // Time-stepping data structures
+    const Real CFL_base;
     RungeKutta<N_PHI, N_DOM, N_U> RK;
 
     // Solution
@@ -49,10 +51,12 @@ private:
 public:
     // CONSTRUCTOR ####################################################
     DG(const std::string & PDEs_info_,
-       const std::string & time_stepping_info_)
+       const std::string & time_stepping_info_,
+       const InputReader & inputs)
     :
     PDEs_info(PDEs_info_),
     time_stepping_info(time_stepping_info_),
+    CFL_base(inputs.CFL),
     print_point_fields(false)
     {}
     // ################################################################
@@ -308,7 +312,7 @@ public:
         Real CFL;
         if (this->isPDEsSystemHyperbolic() && this->isTimeSteppingRungeKutta())
         {
-            CFL = 1.0/(2.0*MatFactory.space_p+1.0);
+            CFL = this->CFL_base/(2.0*MatFactory.space_p+1.0);
         }
         else
         {
@@ -696,8 +700,8 @@ Print() << "(error.sum(0)): " << (error.sum(0)) << std::endl;
             Array4<Real const> const & X_fab = this->X_new.array(mfi);
             Array4<Real> const & err_fab = error.array(mfi);
 
-            ParallelFor(bx,
-            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
             {
                 // INITIALIZATION
                 err_fab(i,j,k,0) = 0.0;
@@ -707,7 +711,7 @@ Print() << "(error.sum(0)): " << (error.sum(0)) << std::endl;
                 const Real cell_m[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0], prob_lo[1]+(j+0.5)*dx[1], prob_lo[2]+(k+0.5)*dx[2])};
 
                 // LOCAL VARIABLES
-                int dom, etype;
+                int /*dom,*/ etype;
                 int BF_i, BF_j, BF_k;
                 Real x[AMREX_SPACEDIM], w;
                 Real Uh[N_U];
@@ -724,9 +728,9 @@ Print() << "(error.sum(0)): " << (error.sum(0)) << std::endl;
                 DG_mem_sol_space_BFX sol(X_fab, sp, &iJ[0]);
 
                 // CYCLE OVER THE UNKNOWN FIELDS
-                for (int ru = 0; ru < N_U; ++ru)
-                {
-                    dom = IBVP.F_U2DOM(ru);
+                //for (int ru = 0; ru < N_U; ++ru)
+                //{
+                    //dom = IBVP.F_U2DOM(ru);
                     etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
 
                     // Get the support of the basis functions
@@ -765,12 +769,12 @@ Print() << "(error.sum(0)): " << (error.sum(0)) << std::endl;
                         }
                         
                         // EXACT SOLUTION
-                        IBVP.F_ERROR(t, x, Uh, err_x, norm_x);
+                        IBVP.F_ERROR(dom, t, x, Uh, err_x, norm_x);
 
                         err_fab(i,j,k,0) += norm_x*w;
                         err_fab(i,j,k,1) += err_x*w;
                     }
-                }
+                //}
             });
             Gpu::synchronize();
         }

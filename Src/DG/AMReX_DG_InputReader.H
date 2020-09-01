@@ -3,6 +3,8 @@
 #ifndef BL_DG_INPUT_READER_H_
 #define BL_DG_INPUT_READER_H_
 
+#include <AMReX_ParmParse.H>
+
 #include <AMReX_DG_Base.H>
 
 namespace amrex
@@ -54,6 +56,8 @@ struct DGInput
 {
     int phi_space_p, space_p, time_p;
     int space_q, time_q;
+    int space_q_im, time_q_im;
+    Real VF;
 
     DGInput()
     :
@@ -61,7 +65,10 @@ struct DGInput
     space_p(-1),
     time_p(-1),
     space_q(-1),
-    time_q(-1)
+    time_q(-1),
+    space_q_im(-1),
+    time_q_im(-1),
+    VF(-1.0)
     {}
 };
 // ####################################################################
@@ -83,6 +90,7 @@ struct InputReader
     Vector<MeshInput> mesh;
 
     Vector<DGInput> dG;
+    Real CFL;
 
     int plot_int;
     // ################################################################
@@ -91,6 +99,7 @@ struct InputReader
     InputReader()
     :
     n_patches(1),
+    CFL(-1.0),
     plot_int(-1)
     {
         // VARIABLES ==================================================
@@ -262,10 +271,19 @@ struct InputReader
             pp_dG.get("time_p", this->dG[p].time_p);
 
             this->dG[p].space_q = std::max(this->dG[p].phi_space_p+2, this->dG[p].space_p+2);
-            //this->dG[p].space_q = ?
+            this->dG[p].space_q_im = this->dG[p].space_q;
+            //this->dG[p].time_q = ?
+            //this->dG[p].time_q_im = ?
 
             pp_dG.query("space_q", this->dG[p].space_q);
+            pp_dG.query("space_q_im", this->dG[p].space_q_im);
+
+            // VOLUME FRACTION THRESHOLD (FOR THE IMPLICIT MESH)
+            pp_dG.get("VF", this->dG[p].VF);
         }
+
+        // COURANT-FRIEDRICHS-LEWY COEFFICIENT
+        pp.get("CFL", this->CFL);
         // ============================================================
 
         // A FEW CONSISTENCY CHECKS (AND SOME POST-PROCESSING) ========
@@ -358,6 +376,15 @@ struct InputReader
 
         // REPORT TO SCREEN ===========================================
 #if (DG_VERBOSITY > 0)
+        this->PrintSummary();
+#endif
+        // ============================================================
+    }
+    // ################################################################
+
+    // PRINT TO SCREEN ################################################
+    void PrintSummary() const
+    {
         Print() << "# ANALYSIS INPUT                                                       " << std::endl;
         Print() << "# MODEL ===============================================================" << std::endl;
         Print() << "# Number of patches: " << this->n_patches << std::endl;
@@ -433,15 +460,17 @@ struct InputReader
             Print() << "#  - time_p     : " << this->dG[p].time_p << std::endl;
             Print() << "#  - space_q    : " << this->dG[p].space_q << std::endl;
             Print() << "#  - time_q     : " << this->dG[p].time_q << std::endl;
+            Print() << "#  - space_q_im : " << this->dG[p].space_q_im << std::endl;
+            Print() << "#  - time_q_im  : " << this->dG[p].time_q_im << std::endl;
+            Print() << "#  - VF         : " << this->dG[p].VF << std::endl;
         }
+        Print() << "#" << std::endl << "# CFL: " << this->CFL << std::endl;
         Print() << "# ---------------------------------------------------------------------" << std::endl;
         Print() << "# =====================================================================" << std::endl;
         Print() << "# POST-PROCESSING INFO ================================================" << std::endl;
         Print() << "# plot_int = " << this->plot_int << std::endl;
         Print() << "# =====================================================================" << std::endl;
         Print() << "#######################################################################" << std::endl;
-#endif
-        // ============================================================
     }
     // ################################################################
 };

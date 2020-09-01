@@ -56,6 +56,53 @@ struct RungeKutta
     }
     // ################################################################
 
+    // MISC ###########################################################
+    void PrintElementInfo(const int ii, const int jj, const int kk, const int dd,
+                          const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
+                          const MatrixFactory<N_PHI, N_DOM> & MatFactory,
+                          const MultiFab & _X_) const
+    {
+        // PARAMETERS =================================================
+        // GRID
+        const GpuArray<Real, AMREX_SPACEDIM> dx = iGeom._dx;
+        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = iGeom._prob_lo;
+
+        // DG
+        const int sNp = MatFactory.space_Np;
+        // ============================================================
+
+        // CYCLE OVER THE CELLS UNTIL THE ELEMENT IS FOUND ============
+        for (MFIter mfi(_X_); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.fabbox();
+
+            Array4<int const> const & eType_fab = iGeom.eType.array(mfi);
+            Array4<Real const> const & X_fab = _X_.array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // LOCAL PARAMETERS
+                //const int etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
+                //const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0], prob_lo[1]+j*dx[1], prob_lo[2]+k*dx[2])};
+                //const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+1)*dx[0], prob_lo[1]+(j+1)*dx[1], prob_lo[2]+(k+1)*dx[2])};
+
+                if ((i == ii) && (j == jj) && (k == kk) && (dom == dd))
+                {
+                    for (int ru = 0; ru < 1; ++ru)
+                    for (int rs = 0; rs < sNp; ++rs)
+                    {
+                        Print() << std::scientific << std::setprecision(10) << std::setw(17) << X_fab(i,j,k,rs+ru*sNp) << std::endl;
+                    }
+                }
+                
+            });
+            Gpu::synchronize();
+        }
+        // ============================================================
+    }
+    // ################################################################
+
     // TIME-STEP: HYPERBOLIC ##########################################
     template<typename IBVP_CLASS>
     void TakeTimeStep_Hyperbolic(const int & RK_order,
@@ -87,7 +134,7 @@ struct RungeKutta
             MultiFab::Copy(this->X[1], X_old, 0, 0, X_n_comp, ngr);
             MultiFab::Saxpy(this->X[1], dt, this->dXdt[0], 0, 0, X_n_comp, ngr);
 
-            this->Eval_dXdt_Hyperbolic(t, iGeom, MatFactory, this->X[1], this->dXdt[1], IBVP);
+            this->Eval_dXdt_Hyperbolic(t+dt, iGeom, MatFactory, this->X[1], this->dXdt[1], IBVP);
 
             MultiFab::Saxpy(X_new, 0.5*dt, this->dXdt[0], 0, 0, X_n_comp, ngr);
             MultiFab::Saxpy(X_new, 0.5*dt, this->dXdt[1], 0, 0, X_n_comp, ngr);
@@ -99,13 +146,13 @@ struct RungeKutta
             MultiFab::Copy(this->X[1], X_old, 0, 0, X_n_comp, ngr);
             MultiFab::Saxpy(this->X[1], dt, this->dXdt[0], 0, 0, X_n_comp, ngr);
 
-            this->Eval_dXdt_Hyperbolic(t, iGeom, MatFactory, this->X[1], this->dXdt[1], IBVP);
+            this->Eval_dXdt_Hyperbolic(t+dt, iGeom, MatFactory, this->X[1], this->dXdt[1], IBVP);
 
             MultiFab::Copy(this->X[2], X_old, 0, 0, X_n_comp, ngr);
             MultiFab::Saxpy(this->X[2], 0.25*dt, this->dXdt[0], 0, 0, X_n_comp, ngr);
             MultiFab::Saxpy(this->X[2], 0.25*dt, this->dXdt[1], 0, 0, X_n_comp, ngr);
 
-            this->Eval_dXdt_Hyperbolic(t, iGeom, MatFactory, this->X[2], this->dXdt[2], IBVP);
+            this->Eval_dXdt_Hyperbolic(t+0.5*dt, iGeom, MatFactory, this->X[2], this->dXdt[2], IBVP);
 
             MultiFab::Saxpy(X_new,     dt/6.0, this->dXdt[0], 0, 0, X_n_comp, ngr);
             MultiFab::Saxpy(X_new,     dt/6.0, this->dXdt[1], 0, 0, X_n_comp, ngr);
@@ -118,17 +165,17 @@ struct RungeKutta
             MultiFab::Copy(this->X[1], X_old, 0, 0, X_n_comp, ngr);
             MultiFab::Saxpy(this->X[1], 0.5*dt, this->dXdt[0], 0, 0, X_n_comp, ngr);
 
-            this->Eval_dXdt_Hyperbolic(t, iGeom, MatFactory, this->X[1], this->dXdt[1], IBVP);
+            this->Eval_dXdt_Hyperbolic(t+0.5*dt, iGeom, MatFactory, this->X[1], this->dXdt[1], IBVP);
 
             MultiFab::Copy(this->X[2], X_old, 0, 0, X_n_comp, ngr);
             MultiFab::Saxpy(this->X[2], 0.5*dt, this->dXdt[1], 0, 0, X_n_comp, ngr);
 
-            this->Eval_dXdt_Hyperbolic(t, iGeom, MatFactory, this->X[2], this->dXdt[2], IBVP);
+            this->Eval_dXdt_Hyperbolic(t+0.5*dt, iGeom, MatFactory, this->X[2], this->dXdt[2], IBVP);
 
             MultiFab::Copy(this->X[3], X_old, 0, 0, X_n_comp, ngr);
             MultiFab::Saxpy(this->X[3], dt, this->dXdt[2], 0, 0, X_n_comp, ngr);
 
-            this->Eval_dXdt_Hyperbolic(t, iGeom, MatFactory, this->X[3], this->dXdt[3], IBVP);
+            this->Eval_dXdt_Hyperbolic(t+dt, iGeom, MatFactory, this->X[3], this->dXdt[3], IBVP);
 
             MultiFab::Saxpy(X_new, dt/6.0, this->dXdt[0], 0, 0, X_n_comp, ngr);
             MultiFab::Saxpy(X_new, dt/3.0, this->dXdt[1], 0, 0, X_n_comp, ngr);
@@ -385,7 +432,7 @@ struct RungeKutta
                             dUhdx3[cu] = grad[2];
                         );
                     }
-                    
+
                     // FLUX
                     IBVP.F_F(t, x, Uh, AMREX_D_DECL(F1h, F2h, F3h));
                     
@@ -746,44 +793,16 @@ struct RungeKutta
                                     nbr_dUhdx3[cu] = grad[2];
                                 );
                             }
+                            
+                            // NUMERICAL FLUX FOR INTRAPHASE
+                            IBVP.F_NF_ICS(dom, t, x, un, Uh, nbr_Uh, NFn);
 
-/*
-// NUMERICAL FLUX FOR INTRAPHASE
-IBVP.F_NF_ICS(t, x, un, Uh, nbr_Uh, AMREX_D_DECL(NF1, NF2, NF3));
-
-// DG CONTRIBUTION
-for (int rs = 0; rs < sNp; ++rs)
-{
-    AMREX_D_TERM
-    (
-        integrand  = sol.BF[rs]*NF1[ru]*un[0];,
-        integrand += sol.BF[rs]*NF2[ru]*un[1];,
-        integrand += sol.BF[rs]*NF3[ru]*un[2];
-    )
-
-    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
-}
-*/
-
-// NUMERICAL FLUX FOR INTRAPHASE
-IBVP.F_NF_ICS(dom, t, x, un, Uh, nbr_Uh, NFn);
-
-// DG CONTRIBUTION
-for (int rs = 0; rs < sNp; ++rs)
-{
-    integrand = sol.BF[rs]*NFn[ru];
-    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
-}
-
-/*
-if ((std::abs(x[0]-0.02544604383) < 1.0e-8) && (std::abs(x[1]-0.02544604383) < 1.0e-8) && (std::abs(x[2]-0.25) < 1.0e-8))
-{
-    std::ofstream fp;
-    fp.open("interface_no.txt", std::ios::app);
-    if (un[2] > 0.5) fp << un[2] << " " << Uh[1] << " " << nbr_Uh[1] << " " << Uh[6] << "\n";
-    fp.close();
-}
-*/
+                            // DG CONTRIBUTION
+                            for (int rs = 0; rs < sNp; ++rs)
+                            {
+                                integrand = sol.BF[rs]*NFn[ru];
+                                dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+                            }
                         }
                     }
                     // GRID BOUNDARY
@@ -819,34 +838,16 @@ if ((std::abs(x[0]-0.02544604383) < 1.0e-8) && (std::abs(x[1]-0.02544604383) < 1
                                     dUhdx3[cu] = grad[2];
                                 );
                             }
-/*
-// NUMERICAL FLUX FOR GRID BOUNDARY CONDITIONS
-IBVP.F_NF_BCS(t, x, un, Uh, AMREX_D_DECL(NF1, NF2, NF3));
 
-// DG CONTRIBUTION
-for (int rs = 0; rs < sNp; ++rs)
-{
-    AMREX_D_TERM
-    (
-        integrand  = sol.BF[rs]*NF1[ru]*un[0];,
-        integrand += sol.BF[rs]*NF2[ru]*un[1];,
-        integrand += sol.BF[rs]*NF3[ru]*un[2];
-    )
+                            // NUMERICAL FLUX FOR GRID BOUNDARY CONDITIONS
+                            IBVP.F_NF_BCS(dom, t, x, un, Uh, NFn);
 
-    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
-}
-*/
-
-// NUMERICAL FLUX FOR GRID BOUNDARY CONDITIONS
-IBVP.F_NF_BCS(t, x, un, Uh, NFn);
-
-// DG CONTRIBUTION
-for (int rs = 0; rs < sNp; ++rs)
-{
-    integrand = sol.BF[rs]*NFn[ru];
-
-    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
-}
+                            // DG CONTRIBUTION
+                            for (int rs = 0; rs < sNp; ++rs)
+                            {
+                                integrand = sol.BF[rs]*NFn[ru];
+                                dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+                            }
                         }
                     }
                 }
@@ -915,33 +916,16 @@ for (int rs = 0; rs < sNp; ++rs)
                                     dUhdx3[cu] = grad[2];
                                 );
                             }
-/*
-// NUMERICAL FLUX FOR INTERNAL BOUNDARY
-IBVP.F_NF_PHI_BCS(dom, t, x, un, Uh, AMREX_D_DECL(NF1, NF2, NF3));
+                            
+                            // NUMERICAL FLUX FOR INTERNAL BOUNDARY
+                            IBVP.F_NF_PHI_BCS(dom, t, x, un, Uh, NFn);
 
-// DG CONTRIBUTION
-for (int rs = 0; rs < sNp; ++rs)
-{
-    AMREX_D_TERM
-    (
-        integrand  = sol.BF[rs]*NF1[ru]*un[0];,
-        integrand += sol.BF[rs]*NF2[ru]*un[1];,
-        integrand += sol.BF[rs]*NF3[ru]*un[2];
-    )
-
-    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
-}
-*/
-// NUMERICAL FLUX FOR INTERNAL BOUNDARY
-IBVP.F_NF_PHI_BCS(dom, t, x, un, Uh, NFn);
-
-// DG CONTRIBUTION
-for (int rs = 0; rs < sNp; ++rs)
-{
-    integrand = sol.BF[rs]*NFn[ru];
-
-    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
-}
+                            // DG CONTRIBUTION
+                            for (int rs = 0; rs < sNp; ++rs)
+                            {
+                                integrand = sol.BF[rs]*NFn[ru];
+                                dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+                            }
                         }
                     }
                     // VALID NEIGHBORING DOMAIN
@@ -1018,44 +1002,16 @@ for (int rs = 0; rs < sNp; ++rs)
                                     nbr_dUhdx3[cu] = grad[2];
                                 );
                             }
+                            
+                            // NUMERICAL FLUX FOR INTERNAL INTERFACE
+                            IBVP.F_NF_PHI_ICS(dom, nbr_dom, t, x, un, Uh, nbr_Uh, NFn);
 
-/*
-// NUMERICAL FLUX FOR INTERNAL INTERFACE
-IBVP.F_NF_PHI_ICS(dom, t, x, un, Uh, nbr_Uh, AMREX_D_DECL(NF1, NF2, NF3));
-
-// DG CONTRIBUTION
-for (int rs = 0; rs < sNp; ++rs)
-{
-    AMREX_D_TERM
-    (
-        integrand  = sol.BF[rs]*NF1[ru]*un[0];,
-        integrand += sol.BF[rs]*NF2[ru]*un[1];,
-        integrand += sol.BF[rs]*NF3[ru]*un[2];
-    )
-
-    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
-}
-*/
-// NUMERICAL FLUX FOR INTERNAL INTERFACE
-IBVP.F_NF_PHI_ICS(dom, nbr_dom, t, x, un, Uh, nbr_Uh, NFn);
-
-// DG CONTRIBUTION
-for (int rs = 0; rs < sNp; ++rs)
-{
-    integrand = sol.BF[rs]*NFn[ru];
-
-    dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
-}
-
-/*
-if ((std::abs(x[0]-0.02544604383) < 1.0e-8) && (std::abs(x[1]-0.02544604383) < 1.0e-8) && (std::abs(x[2]-0.24999) < 1.0e-8))
-{
-    std::ofstream fp;
-    fp.open("interface_yes.txt", std::ios::app);
-    if (un[2] > 0.5) fp << un[2] << " " << Uh[1] << " " << nbr_Uh[1+9] << " " << Uh[6] << "\n";
-    fp.close();
-}
-*/
+                            // DG CONTRIBUTION
+                            for (int rs = 0; rs < sNp; ++rs)
+                            {
+                                integrand = sol.BF[rs]*NFn[ru];
+                                dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+                            }
                         }
                     }
                 }
