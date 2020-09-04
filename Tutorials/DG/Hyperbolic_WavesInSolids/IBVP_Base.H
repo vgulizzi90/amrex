@@ -1,5 +1,6 @@
 /* ELASTIC WAVES IN SOLIDS */
 
+#include <AMReX_DG_IBVP.H>
 
 // IBVP PARAMETERS ####################################################
 // NUMBER OF VELOCITY COMPONENTS AND STRESS COMPONENTS ----------------
@@ -103,8 +104,10 @@
 
 
 // IBVP CLASS #########################################################
-template <int N_DOM>
+template <int N_PHI, int N_DOM, int N_U>
 class ELASTIC_WAVES_BASE
+:
+public amrex::DG::IBVP_HYPERBOLIC_BASE<N_PHI, N_DOM, N_U>
 {
 public:
     // DATA MEMBERS ===================================================
@@ -368,10 +371,10 @@ amrex::Abort("Hello! ELASTIC_WAVES_BASE.F_SOL (We should not end up in here)");
 
 
 // IBVP CLASS: VELOCITY-STRESS FORMULATION ############################
-template <int N_DOM>
+template <int N_PHI, int N_DOM, int N_U>
 class ELASTIC_WAVES_BASE_VS
 :
-public ELASTIC_WAVES_BASE<N_DOM>
+public ELASTIC_WAVES_BASE<N_PHI, N_DOM, N_U>
 {
 public:
     // DATA MEMBERS ===================================================
@@ -385,7 +388,7 @@ public:
     ELASTIC_WAVES_BASE_VS(const amrex::Vector<std::string> & material_type,
                           const amrex::Vector<amrex::Vector<amrex::Real>> material_properties)
     :
-    ELASTIC_WAVES_BASE<N_DOM>(material_type, material_properties)
+    ELASTIC_WAVES_BASE<N_PHI, N_DOM, N_U>(material_type, material_properties)
     {}
     // ================================================================
 

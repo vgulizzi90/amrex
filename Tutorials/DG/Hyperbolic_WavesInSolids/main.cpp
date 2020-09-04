@@ -155,7 +155,7 @@ amrex::Print() << "#############################################################
             // INIT DG DATA STRUCTURES --------------------------------
             amrex::DG::ImplicitGeometry<N_PHI, N_DOM> iGeom(indices_box, real_box, ba, dm, geom, inputs.dG[0]);
             amrex::DG::MatrixFactory<N_PHI, N_DOM> MatFactory(indices_box, real_box, ba, dm, geom, inputs.dG[0]);
-            amrex::DG::DG<N_PHI, N_DOM, N_U> dG("Hyperbolic", "Runge-Kutta", inputs);
+            amrex::DG::DG<N_PHI, N_DOM, N_U> dG("Hyperbolic", "Runge-Kutta", inputs.dG[0]);
             dG.InitData(iGeom, MatFactory);
             // --------------------------------------------------------
 

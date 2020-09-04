@@ -139,19 +139,6 @@ struct ImplicitGeometry
     Gpu::DeviceVector<Real> eBouQuad_device_mem;
     Gpu::DeviceVector<Real> eIntBouQuad_device_mem;
     Gpu::DeviceVector<Real> eTri_device_mem;
-
-    // POST-PROCESSING
-    /*
-    const int pp_ratio;
-    const Box pp_cc_ibx;
-    BoxArray pp_cc_ba;
-    DistributionMapping pp_dm;
-    Geometry pp_geom;
-
-    const UnitHyperrectangle<AMREX_SPACEDIM> pp_uHyperrect;
-
-    MultiFab pp_PHI;
-    */
     // ################################################################
 
     // CONSTRUCTOR ####################################################
@@ -207,12 +194,6 @@ struct ImplicitGeometry
     mem_for_eBouQuad(0L),
     mem_for_eIntBouQuad(0L),
     mem_for_eTri(0L)
-    /*
-    pp_ratio(2*inputs.phi_space_p+1),
-    pp_cc_ibx(refine(cc_ibx, this->pp_ratio)),
-    pp_cc_ba(cc_ba),
-    pp_uHyperrect(0, 1)
-    */
     {
         // SOME CHECKS ================================================
         BL_ASSERT(inputs.phi_space_p >= 1);
@@ -276,18 +257,6 @@ struct ImplicitGeometry
             this->eBouQuad_pos[dim] = -1L;
         }
         // ------------------------------------------------------------
-        // ============================================================
-
-        // POST-PROCESSING ============================================
-        /*
-        this->pp_cc_ba.refine(this->pp_ratio);
-        this->pp_dm.define(this->pp_cc_ba);
-        this->pp_geom.define(this->pp_cc_ibx, &rbx_, this->geom.CoordInt(), this->geom.isPeriodic().data());
-
-        this->pp_PHI.define(this->pp_cc_ba, this->pp_dm, N_PHI, this->dom_data_ngr);
-
-        this->pp_PHI = 0.0;
-        */
         // ============================================================
     }
     // ################################################################
@@ -2219,124 +2188,6 @@ struct ImplicitGeometry
         ParallelDescriptor::Barrier();
         // ===========================
     }
-    // ################################################################
-
-    // PLOT ###########################################################
-    /*
-    void Plot_Mesh(const std::string & dst_folder,
-                   const std::string & filename_root,
-                   const Real & time,
-                   const int & time_id,
-                   const int & time_id_max)
-    {
-        // PROFILING --------------------------------------------------
-        BL_PROFILE("ImplicitGeometry::EvalImplicitMesh(const std::string &, ....)");
-        // ------------------------------------------------------------
-
-        // PARAMETERS =================================================
-        int n_digits;
-        Vector<std::string> varnames;
-        std::string filename;
-        // ============================================================
-
-        // VARIABLES ==================================================
-        // ============================================================
-
-        // INITIALIZATION =============================================
-        this->pp_PHI = 0.0;
-        // ============================================================
-
-        // PROJECT THE LEVEL SET FUNCTIONS INTO THE FINER GRID ========
-        {
-            // FINE GRID PARAMETERS -----------------------------------
-            // GRID
-            const int rr = this->pp_ratio;
-            const GpuArray<Real, AMREX_SPACEDIM> dst_dx = this->pp_geom.CellSizeArray();
-            const GpuArray<Real, AMREX_SPACEDIM> src_dx = this->_dx;
-            const GpuArray<Real, AMREX_SPACEDIM> prob_lo = this->pp_geom.ProbLoArray();
-            const GpuArray<Real, AMREX_SPACEDIM> dst_J = {AMREX_D_DECL(0.5*dst_dx[0], 0.5*dst_dx[1], 0.5*dst_dx[2])};
-
-            // STANDARD ELEMENT
-            const int src_p = this->uHyperrect.p;
-            const int Np = this->pp_uHyperrect.Np;
-            const int dom_Nq = this->pp_uHyperrect.dom_Nq;
-
-            AMREX_D_TERM
-            (
-                Real const * dom_XI1q_ptr = this->pp_uHyperrect.dom_XI1q.data();,
-                Real const * dom_XI2q_ptr = this->pp_uHyperrect.dom_XI2q.data();,
-                Real const * dom_XI3q_ptr = this->pp_uHyperrect.dom_XI3q.data();
-            )
-            Real const * dom_Wq_ptr = this->pp_uHyperrect.dom_Wq.data();
-            Real const * dom_BF_ptr = this->pp_uHyperrect.dom_BF.data(); 
-            
-            Real const * iMM_ptr = this->pp_uHyperrect.iMM.data();
-            // --------------------------------------------------------
-
-            // EVAL THE PROJECTION ------------------------------------
-            for (MFIter mfi(this->pp_PHI); mfi.isValid(); ++mfi)
-            {
-                const Box & bx = mfi.validbox();
-
-                Array4<Real const> const & PHI_fab = this->PHI.array(mfi);
-                Array4<Real> const & pp_PHI_fab = this->pp_PHI.array(mfi);
-                    
-                ParallelFor(bx,
-                [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-                {
-                    // LOCAL PARAMETERS
-                    const Real cell_m[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dst_dx[0], prob_lo[1]+(j+0.5)*dst_dx[1], prob_lo[2]+(k+0.5)*dst_dx[2])};
-
-                    // LOCAL PARAMETERS (COARSE GRID)
-                    const int ci = i/rr, cj = j/rr, ck = k/rr;
-                    const Real src_cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+ci*src_dx[0], prob_lo[1]+cj*src_dx[1], prob_lo[2]+ck*src_dx[2])};
-                    const Real src_cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(ci+1)*src_dx[0], prob_lo[1]+(cj+1)*src_dx[1], prob_lo[2]+(ck+1)*src_dx[2])};
-
-                    // LOCAL VARIABLES
-                    Real x[AMREX_SPACEDIM];
-                    Real integrand;
-
-                    DG_phi_space_BFX phi(src_cell_lo, src_cell_hi, PHI_fab, src_p, ci, cj, ck, -1);
-
-                    // PROJECTION
-                    for (int q = 0; q < dom_Nq; ++q)
-                    {
-                        // Quadrature point
-                        AMREX_D_TERM
-                        (
-                            x[0] = dst_J[0]*dom_XI1q_ptr[q]+cell_m[0];,
-                            x[1] = dst_J[1]*dom_XI2q_ptr[q]+cell_m[1];,
-                            x[2] = dst_J[2]*dom_XI3q_ptr[q]+cell_m[2];
-                        )
-
-                        phi._eval_BF_table_(x);
-
-                        // Eval the integral
-                        for (int rph = 0; rph < N_PHI; ++rph)
-                        {
-                            phi.set_fab_ptrs(ci, cj, ck, rph);
-
-                            for (int rs = 0; rs < Np; ++rs)
-                            {
-                                integrand = 0.0;
-                                for (int cs = 0; cs < Np; ++cs) integrand += iMM_ptr[rs+cs*Np]*dom_BF_ptr[q+cs*dom_Nq];
-                                integrand *= phi._eval_unsafe_();
-
-                                // Sum integral contribution
-                                pp_PHI_fab(i,j,k,rs+rph*Np) += integrand*dom_Wq_ptr[q];
-                            }
-                        }
-                    }
-                });
-                Gpu::synchronize();
-
-            }
-            this->pp_PHI.FillBoundary(this->geom.periodicity());
-            // --------------------------------------------------------
-        }
-        // ============================================================
-    }
-    */
     // ################################################################
 };
 // ####################################################################

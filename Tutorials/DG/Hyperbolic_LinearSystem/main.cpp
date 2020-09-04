@@ -7,6 +7,7 @@
 #include <AMReX_Print.H>
 
 #include <AMReX_DG_InputReader.H>
+#include <AMReX_DG_IBVP.H>
 #include <AMReX_DG.H>
 
 // PDES INFORMATION ###################################################
@@ -38,6 +39,8 @@
 #define N_U 3
 
 class LINEAR_SYSTEM
+:
+public amrex::DG::IBVP_HYPERBOLIC_BASE<N_PHI, N_DOM, N_U>
 {
 public:
     // DATA MEMBERS ===================================================
@@ -632,7 +635,7 @@ amrex::Print() << "#############################################################
             // INIT DG DATA STRUCTURES --------------------------------
             amrex::DG::ImplicitGeometry<N_PHI, N_DOM> iGeom(indices_box, real_box, ba, dm, geom, inputs.dG[0]);
             amrex::DG::MatrixFactory<N_PHI, N_DOM> MatFactory(indices_box, real_box, ba, dm, geom, inputs.dG[0]);
-            amrex::DG::DG<N_PHI, N_DOM, N_U> dG("Hyperbolic", "Runge-Kutta", inputs);
+            amrex::DG::DG<N_PHI, N_DOM, N_U> dG("Hyperbolic", "Runge-Kutta", inputs.dG[0]);
             dG.InitData(iGeom, MatFactory);
             // --------------------------------------------------------
 

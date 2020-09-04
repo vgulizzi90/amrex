@@ -26,7 +26,7 @@
 // IBVP CLASS #########################################################
 class ELASTIC_WAVES
 :
-public ELASTIC_WAVES_BASE_VS<N_DOM>
+public ELASTIC_WAVES_BASE_VS<N_PHI, N_DOM, N_U>
 {
 public:
     // DATA MEMBERS ===================================================
