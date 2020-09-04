@@ -52,12 +52,26 @@ struct MeshInput
     {}
 };
 
+
+
+struct SlopeLimiterInput
+{
+    bool active;
+
+    SlopeLimiterInput()
+    :
+    active(false)
+    {}
+};
+
 struct DGInput
 {
     int phi_space_p, space_p, time_p;
     int space_q, time_q;
     int space_q_im, time_q_im;
     Real VF;
+    Real CFL;
+    SlopeLimiterInput limiter;
 
     DGInput()
     :
@@ -68,7 +82,8 @@ struct DGInput
     time_q(-1),
     space_q_im(-1),
     time_q_im(-1),
-    VF(-1.0)
+    VF(-1.0),
+    CFL(-1.0)
     {}
 };
 // ####################################################################
@@ -90,7 +105,6 @@ struct InputReader
     Vector<MeshInput> mesh;
 
     Vector<DGInput> dG;
-    Real CFL;
 
     int plot_int;
     // ################################################################
@@ -99,7 +113,6 @@ struct InputReader
     InputReader()
     :
     n_patches(1),
-    CFL(-1.0),
     plot_int(-1)
     {
         // VARIABLES ==================================================
@@ -280,10 +293,21 @@ struct InputReader
 
             // VOLUME FRACTION THRESHOLD (FOR THE IMPLICIT MESH)
             pp_dG.get("VF", this->dG[p].VF);
-        }
 
-        // COURANT-FRIEDRICHS-LEWY COEFFICIENT
-        pp.get("CFL", this->CFL);
+            // COURANT-FRIEDRICHS-LEWY COEFFICIENT
+            pp_dG.get("CFL", this->dG[p].CFL);
+
+            // SLOPE LIMITER ------------------------------------------
+            {
+                std::string active_limiter;
+                pp_dG.query("slope_limiter_active", active_limiter);
+                if (active_limiter.compare("true") == 0)
+                {
+                    this->dG[p].limiter.active = true;
+                }
+            }
+            // --------------------------------------------------------
+        }
         // ============================================================
 
         // A FEW CONSISTENCY CHECKS (AND SOME POST-PROCESSING) ========
@@ -463,8 +487,8 @@ struct InputReader
             Print() << "#  - space_q_im : " << this->dG[p].space_q_im << std::endl;
             Print() << "#  - time_q_im  : " << this->dG[p].time_q_im << std::endl;
             Print() << "#  - VF         : " << this->dG[p].VF << std::endl;
+            Print() << "#  - CFL        : " << this->dG[p].CFL << std::endl;
         }
-        Print() << "#" << std::endl << "# CFL: " << this->CFL << std::endl;
         Print() << "# ---------------------------------------------------------------------" << std::endl;
         Print() << "# =====================================================================" << std::endl;
         Print() << "# POST-PROCESSING INFO ================================================" << std::endl;

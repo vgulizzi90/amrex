@@ -11,18 +11,20 @@
 
 // PDES INFORMATION ###################################################
 // SUMMARY:
-// In this tutorial, we are solving elastic wave propagations.
+// In this tutorial, we are solving Gasdynamics equations.
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
-#define PROBLEM_HP_CONVERGENCE_VS 23
+#define PROBLEM_SODS_TUBE 0
+#define PROBLEM_EB_COMPARISON 1
 
-#define PROBLEM 23
+#define PROBLEM 0
 
-#if (PROBLEM == PROBLEM_HP_CONVERGENCE_VS)
-#include <IBVP_hp_Convergence_VS.H>
+#if (PROBLEM == PROBLEM_SODS_TUBE)
+#include <IBVP_SodsTube_Reference.H>
+#elif (PROBLEM == PROBLEM_EB_COMPARISON)
+#include <IBVP_EB_Comparison.H>
 #endif
-
 // ====================================================================
 // ####################################################################
 
@@ -37,7 +39,7 @@ amrex::Print() << "# AMREX & DG PROJECT                                         
 amrex::Print() << "# Author: Vincenzo Gulizzi (vgulizzi@lbl.gov)                          " << std::endl;
 amrex::Print() << "#######################################################################" << std::endl;
 amrex::Print() << "# SUMMARY:                                                             " << std::endl;
-amrex::Print() << "# In this tutorial, we are solving elastic wave propagations.          " << std::endl;
+amrex::Print() << "# In this tutorial, we are solving Gasdynamics equations.              " << std::endl;
 amrex::Print() << "#                                                                      " << std::endl;
 amrex::Print() << "#######################################################################" << std::endl;
 amrex::Print() << "# The selected space dimension at compile time is                      " << std::endl;
@@ -57,24 +59,6 @@ amrex::Print() << "#############################################################
     amrex::DG::InputReader inputs;
     // ================================================================
 
-    // READ INPUTS FOR HP ANALYSIS ====================================
-    amrex::Vector<int> hp_p;
-    amrex::Vector<amrex::Vector<int>> hp_Ne;
-    amrex::ParmParse pp_hp("hp");
-
-    pp_hp.getarr("p", hp_p);
-    
-    for (size_t ip = 0; ip < hp_p.size(); ++ip)
-    {
-        const int p = hp_p[ip];
-        const std::string s = "Ne["+std::to_string(p)+"]";
-        amrex::Vector<int> Ne;
-
-        pp_hp.getarr(s.c_str(), Ne);
-        hp_Ne.push_back(Ne);
-    }
-    // ================================================================
-
     // TIC ============================================================
     start_time = amrex::second();
     // ================================================================
@@ -85,29 +69,21 @@ amrex::Print() << "#############################################################
     {
         time_t date_and_time = time(0);
         char * date_and_time_ = ctime(&date_and_time);
-
-        fp.open("hp.txt", std::ofstream::app);
+#if (PROBLEM == PROBLEM_SODS_TUBE)
+        fp.open("hp_SodsTube_Reference.txt", std::ofstream::app);
+#elif (PROBLEM == PROBLEM_EB_COMPARISON)
+        fp.open("hp_EB_Comparison.txt", std::ofstream::app);
+#endif
         fp << std::endl << "HP ANALYSIS: " << date_and_time_ << "\n";
     }
     amrex::ParallelDescriptor::Barrier();
     // ================================================================
 
-    // PERFORM THE HP ANALYSIS ========================================
-    for (int ip = 0; ip < hp_p.size(); ++ip)
+    // PERFORM THE ANALYSIS ===========================================
     {
         // PHYSICAL BOX -----------------------------------------------
         amrex::RealBox real_box(inputs.space[0].prob_lo.data(),
                                 inputs.space[0].prob_hi.data());
-        // ------------------------------------------------------------
-
-        // MODIFY INPUTS ----------------------------------------------
-        inputs.dG[0].phi_space_p = 3;
-        
-        inputs.dG[0].space_p = hp_p[ip];
-        inputs.dG[0].space_q = std::max(inputs.dG[0].phi_space_p+2, inputs.dG[0].space_p+2);
-        inputs.dG[0].time_p = inputs.dG[0].space_p;
-
-        inputs.dG[0].space_q_im = 3;
         // ------------------------------------------------------------
 
         // WRITE TO FILE ----------------------------------------------
@@ -117,19 +93,7 @@ amrex::Print() << "#############################################################
         }
         // ------------------------------------------------------------
 
-        for (int iNe = 0; iNe < hp_Ne[ip].size(); ++iNe)
         {
-            // MODIFY INPUTS ------------------------------------------
-            const int Ne = hp_Ne[ip][iNe];
-            
-            AMREX_D_TERM
-            (
-                inputs.mesh[0].n_cells[0] = Ne;,
-                inputs.mesh[0].n_cells[1] = Ne;,
-                inputs.mesh[0].n_cells[2] = Ne;
-            )
-            // --------------------------------------------------------
-
             // PRINT TO SCREEN ----------------------------------------
             amrex::Print() << std::endl;
             inputs.PrintSummary();
@@ -155,7 +119,7 @@ amrex::Print() << "#############################################################
             // INIT DG DATA STRUCTURES --------------------------------
             amrex::DG::ImplicitGeometry<N_PHI, N_DOM> iGeom(indices_box, real_box, ba, dm, geom, inputs.dG[0]);
             amrex::DG::MatrixFactory<N_PHI, N_DOM> MatFactory(indices_box, real_box, ba, dm, geom, inputs.dG[0]);
-            amrex::DG::DG<N_PHI, N_DOM, N_U> dG("Hyperbolic", "Runge-Kutta", inputs);
+            amrex::DG::DG<N_PHI, N_DOM, N_U> dG("Hyperbolic", "Runge-Kutta", inputs.dG[0]);
             dG.InitData(iGeom, MatFactory);
             // --------------------------------------------------------
 
@@ -167,8 +131,10 @@ amrex::Print() << "#############################################################
                                                      std::to_string(inputs.mesh[0].n_cells[1]),+"x"+
                                                      std::to_string(inputs.mesh[0].n_cells[2]));
 
-#if (PROBLEM == PROBLEM_HP_CONVERGENCE_VS)
-            const std::string problem = "PROBLEM_hp_Convergence_VS";
+#if (PROBLEM == PROBLEM_SODS_TUBE)
+            const std::string problem = "PROBLEM_SodsTube_Reference";
+#elif (PROBLEM == PROBLEM_EB_COMPARISON)
+            const std::string problem = "PROBLEM_EB_Comparison";
 #endif
             dst_folder = "./IBVP_"+std::to_string(AMREX_SPACEDIM)+"d/"+problem+"_"+dG_mesh+"_"+dG_order+"/";
 
@@ -183,25 +149,28 @@ amrex::Print() << "#############################################################
             // --------------------------------------------------------
 
             // INIT IBVP DATA STRUCTURE -------------------------------
-#if (PROBLEM == PROBLEM_HP_CONVERGENCE_VS)
-            const amrex::Vector<std::string> material_type = {"Isotropic", "Isotropic"};
-            const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.0, 1.0, 0.33}, {1.0, 1.0, 0.33}};
+#if (PROBLEM == PROBLEM_SODS_TUBE)
+            const amrex::Vector<std::string> material_type = {"Ideal gas"};
+            const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.4}};
+#elif (PROBLEM == PROBLEM_EB_COMPARISON)
+            const amrex::Vector<std::string> material_type = {"Ideal gas"};
+            const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.4}};
 #endif
-            ELASTIC_WAVES Waves(material_type, material_properties);
+            GASDYNAMICS GD(material_type, material_properties);
             // --------------------------------------------------------
 
             // INIT OUTPUT DATA INFORMATION ---------------------------
-            dG.SetOutput(dst_folder, "PointSolution", iGeom, Waves);
+            dG.SetOutput(dst_folder, "PointSolution", iGeom, GD);
             // --------------------------------------------------------
 
             // INIT FIELDS' DATA WITH INITIAL CONDITIONS --------------
-            iGeom.ProjectLevelsetFunctions(Waves);
-            iGeom.EvalImplicitMesh(Waves);
+            iGeom.ProjectLevelsetFunctions(GD);
+            iGeom.EvalImplicitMesh(GD);
             MatFactory.Eval(iGeom);
-            dG.SetICs(iGeom, MatFactory, Waves);
-            
+            dG.SetICs(iGeom, MatFactory, GD);
+
             // WRITE TO OUTPUT
-            dG.PrintPointSolution(0, 0.0, iGeom, MatFactory, Waves);
+            dG.PrintPointSolution(0, 0.0, iGeom, MatFactory, GD);
 
             if (inputs.plot_int > 0)
             {
@@ -209,7 +178,7 @@ amrex::Print() << "#############################################################
                 amrex::Real time = 0.0;
 
                 iGeom.Export_VTK_Mesh(dst_folder, "Mesh", n, inputs.time.n_steps);
-                dG.Export_VTK(dst_folder, "Solution", n, inputs.time.n_steps, time, iGeom, MatFactory, Waves);
+                dG.Export_VTK(dst_folder, "Solution", n, inputs.time.n_steps, time, iGeom, MatFactory, GD);
             }
             // --------------------------------------------------------
 
@@ -233,7 +202,7 @@ amrex::Print() << "#############################################################
                 start_clock_time_per_step = amrex::second();
 
                 // COMPUTE NEXT TIME STEP
-                dt = dG.Compute_dt(time+0.5*dt, iGeom, MatFactory, Waves);
+                dt = dG.Compute_dt(time+0.5*dt, iGeom, MatFactory, GD);
                 dt = std::min(time+dt, inputs.time.T)-time;
 
                 // REPORT TO SCREEN
@@ -243,7 +212,7 @@ amrex::Print() << "#############################################################
                                << ", clock time per time step = " << clock_time_per_time_step << std::endl;
 
                 // TIME STEP
-                dG.TakeTimeStep_Hyperbolic(dt, time, iGeom, MatFactory, Waves);
+                dG.TakeTimeStep_Hyperbolic(dt, time, iGeom, MatFactory, GD);
 
                 // UPDATE TIME AND STEP
                 n += 1;
@@ -252,28 +221,19 @@ amrex::Print() << "#############################################################
                 // COMPUTE ERROR
                 if (std::abs(time/inputs.time.T-1.0) < 1.0e-12)
                 {
-#if (PROBLEM == PROBLEM_HP_CONVERGENCE_VS)
-                    amrex::Real err;
-                    err = dG.EvalError(time, iGeom, MatFactory, Waves);
-                    amrex::Print() << "| Error: " << std::scientific << std::setprecision(5) << std::setw(12) << std::sqrt(err) << std::endl;
-#endif
-
                     // WRITE TO FILE
                     if (amrex::ParallelDescriptor::IOProcessor())
                     {
-                        fp << "Ne = " << Ne;
-#if (PROBLEM == PROBLEM_HP_CONVERGENCE_VS)
-                        fp << ", error = " << std::scientific << std::setprecision(5) << std::setw(12) << std::sqrt(err);
-#endif
+                        fp << "Ne = " << AMREX_D_TERM(inputs.mesh[0].n_cells[0], << "x" << inputs.mesh[0].n_cells[1], << "x" << inputs.mesh[0].n_cells[2]);
                     }
                 }
 
                 // WRITE TO OUTPUT
-                dG.PrintPointSolution(n, time, iGeom, MatFactory, Waves);
+                dG.PrintPointSolution(n, time, iGeom, MatFactory, GD);
 
                 if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(time/inputs.time.T-1.0) < 1.0e-12)))
                 {
-                    dG.Export_VTK(dst_folder, "Solution", n, inputs.time.n_steps, time, iGeom, MatFactory, Waves);
+                    dG.Export_VTK(dst_folder, "Solution", n, inputs.time.n_steps, time, iGeom, MatFactory, GD);
                 }
 
                 // CLOCK TIME PER TIME STEP TOC

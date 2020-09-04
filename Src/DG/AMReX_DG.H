@@ -14,6 +14,225 @@ namespace amrex
 namespace DG
 {
 // ####################################################################
+// SLOPE LIMITER DATA STRUCTURE #######################################
+// ####################################################################
+template<int N_PHI, int N_DOM, int N_U>
+struct SlopeLimiter
+{
+    // DATA MEMBERS ###################################################
+    // CLASS-WIDE PARAMETERS
+    static const int dom_data_ngr = 1;
+
+    // VARIABLES
+    bool active;
+
+    // COARSE GRID INFO
+    iMultiFab coarse_grid_info;
+
+    // FINE GRID INFO
+    // Geometry
+    Box ibx;
+    RealBox rbx;
+    BoxArray ba;
+    DistributionMapping dm;
+    Geometry geom;
+
+    // Solution
+    MultiFab X;
+    // ################################################################
+
+    // CONSTRUCTOR ####################################################
+    SlopeLimiter(const bool active_)
+    :
+    active(active_)
+    {}
+    // ################################################################
+
+    // INITIALIZATION #################################################
+    void InitData(const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
+                  const MatrixFactory<N_PHI, N_DOM> & MatFactory)
+    {
+        // PARAMETERS =================================================
+        const int refinement_ratio = 2*MatFactory.space_p+1;
+        // ============================================================
+
+        // INIT COARSE GRID DATA ======================================
+        this->coarse_grid_info.define(iGeom.cc_ba, iGeom.dm, 1, this->dom_data_ngr);
+        this->coarse_grid_info = 0;
+        // ============================================================
+
+        // INIT FINE GRID DATA ========================================
+        this->ibx = refine(iGeom.cc_ibx, refinement_ratio);
+        this->rbx = iGeom.rbx;
+        this->ba = iGeom.cc_ba;
+        this->ba.refine(refinement_ratio);
+        this->dm.define(this->ba);
+        this->geom = iGeom.geom;
+        this->geom.refine(IntVect(refinement_ratio));
+
+        this->X.define(this->ba, this->dm, N_U, this->dom_data_ngr);
+        // ============================================================
+    }
+    // ################################################################
+
+    // EVAL INTERPOLATION-RESTRICTION OPERATORS #######################
+    void Eval_IR_Operators(const ImplicitGeometry<N_PHI, N_DOM> & Coarse_iGeom,
+                           const MatrixFactory<N_PHI, N_DOM> & Coarse_MatFactory)
+    {
+
+Print() << "HERE WE ARE: SlopeLimiter.Eval_IR_Operators" << std::endl;
+exit(-1);
+    }
+    // ################################################################
+
+    // APPLICATION OF THE SLOPE LIMITER ###############################
+    template<typename IBVP_CLASS>
+    void Apply(const Real & dt,
+               const Real & t,
+               const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
+               const MatrixFactory<N_PHI, N_DOM> & MatFactory,
+               const MultiFab & X_old,
+               MultiFab & X_new,
+               const IBVP_CLASS & IBVP)
+    {
+        // IDENTIFY THE CELLS TO BE LIMITED
+        this->IdentifyCellsToBeLimited(dt, t, iGeom, MatFactory, X_old, X_new, IBVP);
+
+
+
+Print() << "HERE WE ARE: SlopeLimiter.Apply" << std::endl;
+exit(-1);
+    }
+    // ################################################################
+
+    // IDENTIFY CELLS TO BE LIMITED ###################################
+    template<typename IBVP_CLASS>
+    void IdentifyCellsToBeLimited(const Real & dt,
+                                  const Real & t,
+                                  const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
+                                  const MatrixFactory<N_PHI, N_DOM> & MatFactory,
+                                  const MultiFab & X_old,
+                                  MultiFab & X_new,
+                                  const IBVP_CLASS & IBVP)
+    {
+        // PARAMETERS =================================================
+        // GRID
+        const GpuArray<Real, AMREX_SPACEDIM> dx = iGeom._dx;
+        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = iGeom._prob_lo;
+        const GpuArray<Real, AMREX_SPACEDIM> J = iGeom._J;
+        const GpuArray<Real, AMREX_SPACEDIM> iJ = iGeom._iJ;
+
+        // IMPLICIT MESH
+#ifdef AMREX_USE_CUDA
+        const Real * eTri_mem_ptr = iGeom.eTri_device_mem.data();
+        const Real * space_Tri_BF_mem_ptr = MatFactory.space_Tri_BF_device_mem.data();
+#else
+        const Real * eTri_mem_ptr = iGeom.eTri_host_mem.data();
+        const Real * space_Tri_BF_mem_ptr = MatFactory.space_Tri_BF_host_mem.data();
+#endif
+
+        // DG
+        const int sp = MatFactory.space_p;
+        // ============================================================
+
+        // IDENTIFY THE CELLS TO BE LIMITED ===========================
+        for (MFIter mfi(X_new); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+            
+            Array4<int const> const & eType_fab = iGeom.eType.array(mfi);
+            Array4<int const> const & eTri_Npt_fab = iGeom.eTri_Npt.array(mfi);
+            Array4<long const> const & eTri_pos_fab = iGeom.eTri_pos.array(mfi);
+            Array4<long const> const & space_Tri_BF_pos_fab = MatFactory.space_Tri_BF_pos.array(mfi);
+            Array4<Real const> const & X_fab = X_new.array(mfi);
+
+            Array4<int> const & coarse_grid_info_fab = this->coarse_grid_info.array(mfi);
+
+            ParallelFor(bx,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+                // LOCAL PARAMETERS
+                const Real cell_m[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0], prob_lo[1]+(j+0.5)*dx[1], prob_lo[2]+(k+0.5)*dx[2])};
+
+                // LOCAL VARIABLES
+                int etype;
+                bool elm_is_empty;
+                int BF_i, BF_j, BF_k;
+                Real x[AMREX_SPACEDIM];
+                Real Uh[N_U];
+
+                // QUERY INFO
+                int dom_Npt;
+                long eTri_pos, qi_pos, space_BF_pos;
+                const Real * xptr;
+                const Real * BF_ptr;
+
+                // Data structures used to compute the basis functions
+                // and the unknown fields
+                DG_mem_sol_space_BFX sol(X_fab, sp, &iJ[0]);
+
+                // Init the cell info
+                coarse_grid_info_fab(i,j,k,0) = 0;
+
+                // CYCLE OVER THE DOMAINS
+                for (int dom = 0; dom < N_DOM; ++dom)
+                {
+                    // Element info
+                    etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
+                    elm_is_empty = (etype == DG_ELM_TYPE_EMPTY);
+
+                    if (!elm_is_empty)
+                    {
+                        // Get the support of the basis functions
+                        BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+
+                        // Query info
+                        dom_Npt = eTri_Npt_fab(i,j,k,DG_ELM_TRI_N_COMP_PER_DOM*dom);
+                        eTri_pos = eTri_pos_fab(i,j,k,DG_ELM_TRI_N_COMP_PER_DOM*dom);
+                        xptr = &eTri_mem_ptr[eTri_pos];
+
+                        // Basis functions info
+                        space_BF_pos = space_Tri_BF_pos_fab(i,j,k,DG_TRI_BF_INFO_N_COMP_PER_DOM*dom);
+                        BF_ptr = &space_Tri_BF_mem_ptr[space_BF_pos];
+                        sol.set_BF_ptrs(BF_ptr);
+
+                        // CYCLE OVER THE QUERY POINTS
+                        for (int qi = 0; qi < dom_Npt; ++qi)
+                        {
+                            qi_pos = AMREX_SPACEDIM*qi;
+                            AMREX_D_TERM
+                            (
+                                x[0] = xptr[qi_pos+0]; x[0] = J[0]*x[0]+cell_m[0];,
+                                x[1] = xptr[qi_pos+1]; x[1] = J[1]*x[1]+cell_m[1];,
+                                x[2] = xptr[qi_pos+2]; x[2] = J[2]*x[2]+cell_m[2];
+                            )
+
+                            sol._eval_BF_only_table_(qi);
+                            for (int ru = 0; ru < N_U; ++ru)
+                            {
+                                sol.set_fab_ptrs(BF_i, BF_j, BF_k, ru);
+
+                                Uh[ru] = sol._eval_unsafe_();
+                            }
+
+                            coarse_grid_info_fab(i,j,k,0) = std::max(coarse_grid_info_fab(i,j,k,0), IBVP.F_TROUBLED(dom, t, x, Uh));
+                        }
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+        // ============================================================
+    }
+    // ################################################################
+
+};
+// ####################################################################
+// ####################################################################
+
+
+
+// ####################################################################
 // DG BASE CLASS ######################################################
 // ####################################################################
 template<int N_PHI, int N_DOM, int N_U>
@@ -35,6 +254,9 @@ private:
     // Solution
     MultiFab X_old, X_new;
 
+    // Slope limiter
+    SlopeLimiter<N_PHI, N_DOM, N_U> slope_limiter;
+
     // Post-processing
     Vector<int> fields_domain;
     Vector<std::string> fields_name;
@@ -52,11 +274,12 @@ public:
     // CONSTRUCTOR ####################################################
     DG(const std::string & PDEs_info_,
        const std::string & time_stepping_info_,
-       const InputReader & inputs)
+       const DGInput & inputs)
     :
     PDEs_info(PDEs_info_),
     time_stepping_info(time_stepping_info_),
     CFL_base(inputs.CFL),
+    slope_limiter(inputs.limiter.active),
     print_point_fields(false)
     {}
     // ################################################################
@@ -108,6 +331,13 @@ public:
 
         this->X_old = 0.0;
         this->X_new = 0.0;
+        // ============================================================
+
+        // INIT THE SLOPE LIMITER DATA STRUCTURES IF NEEDED ===========
+        if (this->slope_limiter.active)
+        {
+            this->slope_limiter.InitData(iGeom, MatFactory);
+        }
         // ============================================================
     }
     // ################################################################
@@ -303,6 +533,19 @@ public:
         }
         this->X_new.FillBoundary(iGeom.geom.periodicity());
         // ============================================================
+    }
+    // ################################################################
+
+    // SLOPE LIMITER METHODS ##########################################
+    bool isSlopeLimiterActive() const
+    {
+        return this->slope_limiter.active;
+    }
+
+    void EvalSlopeLimiterOperators(const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
+                                   const MatrixFactory<N_PHI, N_DOM> & MatFactory)
+    {
+        this->slope_limiter.Eval_IR_Operators(iGeom, MatFactory);
     }
     // ################################################################
 
@@ -506,6 +749,13 @@ public:
             Print() << "ERROR: AMReX_DG.H - DG::TakeTimeStep_Hyperbolic" << std::endl;
             Print() << "| Unexpected time-stepping scheme: " << this->time_stepping_info << std::endl;
             exit(-1);
+        }
+        // ============================================================
+
+        // LIMIT THE SOLUTION (IF REQUESTED) ==========================
+        if (this->slope_limiter.active)
+        {
+            this->slope_limiter.Apply(dt, t, iGeom, MatFactory, this->X_old, this->X_new, IBVP);
         }
         // ============================================================
     }

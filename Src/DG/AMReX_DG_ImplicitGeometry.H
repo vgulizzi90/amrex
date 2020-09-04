@@ -141,6 +141,7 @@ struct ImplicitGeometry
     Gpu::DeviceVector<Real> eTri_device_mem;
 
     // POST-PROCESSING
+    /*
     const int pp_ratio;
     const Box pp_cc_ibx;
     BoxArray pp_cc_ba;
@@ -150,6 +151,7 @@ struct ImplicitGeometry
     const UnitHyperrectangle<AMREX_SPACEDIM> pp_uHyperrect;
 
     MultiFab pp_PHI;
+    */
     // ################################################################
 
     // CONSTRUCTOR ####################################################
@@ -204,11 +206,13 @@ struct ImplicitGeometry
     mem_for_eDomQuad(0L),
     mem_for_eBouQuad(0L),
     mem_for_eIntBouQuad(0L),
-    mem_for_eTri(0L),
+    mem_for_eTri(0L)
+    /*
     pp_ratio(2*inputs.phi_space_p+1),
     pp_cc_ibx(refine(cc_ibx, this->pp_ratio)),
     pp_cc_ba(cc_ba),
     pp_uHyperrect(0, 1)
+    */
     {
         // SOME CHECKS ================================================
         BL_ASSERT(inputs.phi_space_p >= 1);
@@ -275,6 +279,7 @@ struct ImplicitGeometry
         // ============================================================
 
         // POST-PROCESSING ============================================
+        /*
         this->pp_cc_ba.refine(this->pp_ratio);
         this->pp_dm.define(this->pp_cc_ba);
         this->pp_geom.define(this->pp_cc_ibx, &rbx_, this->geom.CoordInt(), this->geom.isPeriodic().data());
@@ -282,6 +287,7 @@ struct ImplicitGeometry
         this->pp_PHI.define(this->pp_cc_ba, this->pp_dm, N_PHI, this->dom_data_ngr);
 
         this->pp_PHI = 0.0;
+        */
         // ============================================================
     }
     // ################################################################
@@ -2216,6 +2222,7 @@ struct ImplicitGeometry
     // ################################################################
 
     // PLOT ###########################################################
+    /*
     void Plot_Mesh(const std::string & dst_folder,
                    const std::string & filename_root,
                    const Real & time,
@@ -2329,6 +2336,7 @@ struct ImplicitGeometry
         }
         // ============================================================
     }
+    */
     // ################################################################
 };
 // ####################################################################

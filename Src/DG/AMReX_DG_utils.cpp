@@ -29,7 +29,7 @@ void PrintRealArray2D(int Nr, int Nc, const Real * a)
 {
     for (int r = 0; r < Nr; ++r)
     {
-        for (int c = 0; c < Nc; ++c) Print() << std::scientific << std::setprecision(5) << std::setw(12) << a[r+c*Nr] << " ";
+        for (int c = 0; c < Nc; ++c) Print() << std::scientific << std::setprecision(4) << std::setw(11) << a[r+c*Nr] << " ";
         Print() << std::endl;
     }
 }
