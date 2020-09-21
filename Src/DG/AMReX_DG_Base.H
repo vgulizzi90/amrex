@@ -19,11 +19,6 @@
 
 
 // SOME PARAMETERS ####################################################
-// DG REPORT
-#ifndef DG_VERBOSITY
-#define DG_VERBOSITY 1
-#endif
-
 // DG NUMBER OF LEVEL SET FUNCTIONS/DOMAINS/UNKNOWN FIELDS PER PATCH
 #define DG_MAX_N_PHI_PER_PATCH 4
 #define DG_MAX_N_DOM_PER_PATCH 3
@@ -72,23 +67,31 @@
 // IMPLICIT MESH INFO
 #define DG_ELM_TYPE_N_COMP_PER_DOM 1
 #define DG_ELM_INFO_N_COMP_PER_DOM 3
+#define DG_ELM_COLOR_N_COMP_PER_DOM 1
 #define DG_ELM_BOU_TYPE_N_COMP_PER_DOM 1
 #define DG_ELM_DOM_QUAD_N_COMP_PER_DOM 1
 #define DG_ELM_BOU_QUAD_N_COMP_PER_DOM 2
 #define DG_ELM_INT_BOU_QUAD_N_COMP_PER_DOM 1
 #define DG_ELM_TRI_N_COMP_PER_DOM 1
 
-#define DG_ELM_TYPE_UNDEFINED -100
+#define DG_ELM_TYPE_UNDEFINED -2
 #define DG_ELM_TYPE_EMPTY -1
 #define DG_ELM_TYPE_ENTIRE 1
 #define DG_ELM_TYPE_LARGE 2
 #define DG_ELM_TYPE_SMALL 3
 #define DG_ELM_TYPE_PARTIAL 5
 
-#define DG_ELM_BOU_TYPE_UNDEFINED -100
+#define DG_ELM_BOU_TYPE_UNDEFINED -2
 #define DG_ELM_BOU_TYPE_EMPTY -1
 #define DG_ELM_BOU_TYPE_ENTIRE 1
 #define DG_ELM_BOU_TYPE_PARTIAL 5
+
+#define SOUND_ELEMENT 0
+#define TROUBLED_ELEMENT 1
+#define TAGGED_ELEMENT TROUBLED_ELEMENT
+
+#define DG_ELM_COLOR_UNDEFINED -1
+//#define DG_ELM_MAX_N_COLORS AMREX_D_PICK(1, 5, 10)
 
 #define DG_INFO_MAX_N_1D_BOU_GRIDS 10
 #define DG_INFO_MAX_N_2D_BOU_GRIDS 4
@@ -99,6 +102,8 @@
 #define DG_TRI_BF_INFO_N_COMP_PER_DOM 1
 #define DG_BOU_BF_INFO_N_COMP_PER_DOM DG_INFO_MAX_N_BOU_GRIDS
 #define DG_INT_BOU_BF_INFO_N_COMP_PER_DOM 1
+
+#define DG_DOM_INTERPOLATION_N_COMP_PER_DOM 1
 // ####################################################################
 
 
@@ -108,8 +113,9 @@ namespace DG
 {
 
 // TYPEDEFS ###########################################################
-typedef FabArray<BaseFab<Real *>> pMultiFab;
+typedef FabArray<BaseFab<short>> shortMultiFab;
 typedef FabArray<BaseFab<long>> longMultiFab;
+typedef FabArray<BaseFab<char>> charMultiFab;
 
 template<int Np>
 struct X_
@@ -155,19 +161,19 @@ typedef Algoim::QuadratureRule<AMREX_SPACEDIM> iTriRule;
 // ####################################################################
 
 // ####################################################################
-// REFERENCE ELEMENT: HYPERRECTANGLE ##################################
+// REFERENCE ELEMENT: UNIT-CUBE #######################################
 // ####################################################################
 template<int DIM>
-struct UnitHyperrectangle
+struct UnitCube
 {
     // DATA MEMBERS ###################################################
     // CLASS-WIDE PARAMETERS
     static const int n_bou = 2*DIM;
 
     // PARAMETERS
-    const int p, Np;
-    const int q, dom_Nq, bou_Nq;
-    const int g, dom_Ng, bou_Ng;
+    int p, Np;
+    int q, dom_Nq, bou_Nq;
+    int g, dom_Ng, bou_Ng;
 
     // VARIABLES
     // Quadrature abscissae and weights
@@ -204,19 +210,40 @@ struct UnitHyperrectangle
 
     // Basis functions evaluated at the uniformly-spaced grid
     Gpu::ManagedVector<Real> grid_BF;
+
+    // Interpolation
+    IntVect rr;
+    Gpu::ManagedVector<Real> I;
     // ################################################################
 
     // CONSTRUCTOR ####################################################
-    UnitHyperrectangle(const int& ip, const int& iq):
-    p(ip),
-    Np((DIM == 1) ? (1+ip) : ((DIM == 2) ? ((1+ip)*(1+ip)) : ((1+ip)*(1+ip)*(1+ip)))),
-    q(iq),
-    dom_Nq((DIM == 1) ? (1+iq) : ((DIM == 2) ? ((1+iq)*(1+iq)) : ((1+iq)*(1+iq)*(1+iq)))),
-    bou_Nq((DIM == 1) ? 1 : ((DIM == 2) ? (1+iq) : ((1+iq)*(1+iq)))),
-    g(std::max(2, iq)),
-    dom_Ng((DIM == 1) ? (1+this->g) : ((DIM == 2) ? ((1+this->g)*(1+this->g)) : ((1+this->g)*(1+this->g)*(1+this->g)))),
-    bou_Ng((DIM == 1) ? (1) : ((DIM == 2) ? (1+this->g) : ((1+this->g)*(1+this->g))))
+    UnitCube()
+    :
+    rr(AMREX_D_DECL(0, 0, 0))
+    {}
+
+    UnitCube(const int ip, const int iq)
+    :
+    rr(AMREX_D_DECL(0, 0, 0))
     {
+        this->Define(ip, iq);
+    }
+    // ################################################################
+
+    // INITIALIZATION METHOD ##########################################
+    void Define(const int ip, const int iq)
+    {
+        // SET ORDER ==================================================
+        this->p = ip;
+        this->Np = AMREX_D_PICK(1+ip, (1+ip)*(1+ip), (1+ip)*(1+ip)*(1+ip));
+        this->q = iq;
+        this->dom_Nq = AMREX_D_PICK(1+iq, (1+iq)*(1+iq), (1+iq)*(1+iq)*(1+iq));
+        this->bou_Nq = AMREX_D_PICK(1, 1+iq, (1+iq)*(1+iq));
+        this->g = std::max(1, iq);
+        this->dom_Ng = AMREX_D_PICK(1+this->g, (1+this->g)*(1+this->g), (1+this->g)*(1+this->g)*(1+this->g));
+        this->bou_Ng = AMREX_D_PICK(1, 1+this->g, (1+this->g)*(1+this->g));
+        // ============================================================
+
         // ALLOCATE MEMORY: QUADRATURE INFORMATION ====================
         // DOMAIN
         if (DIM > 0) this->dom_XI1q.resize(this->dom_Nq);
@@ -253,7 +280,7 @@ struct UnitHyperrectangle
         else if (iq == 15) {Xq_1d = gau_leg_16_x; Wq_1d = gau_leg_16_w;}
         else
         {
-            Print() << "ERROR: AMReX_DG_Definitions.H - UnitHyperrectangle::UnitHyperrectangle" << std::endl;
+            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Define" << std::endl;
             Print() << "| Quadrature order = " << iq << "not implemented yet" << std::endl;
             exit(-1);
         }
@@ -447,7 +474,7 @@ struct UnitHyperrectangle
         }
         else
         {
-            Print() << "ERROR: AMReX_DG_Definitions.H - UnitHyperrectangle::UnitHyperrectangle" << std::endl;
+            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Define" << std::endl;
             Print() << "| Dimension = " << DIM << "not implemented yet" << std::endl;
             exit(-1);
         }
@@ -554,7 +581,7 @@ struct UnitHyperrectangle
             }
             else
             {
-                Print() << "ERROR: AMReX_DG_Definitions.H - UnitHyperrectangle::UnitHyperrectangle" << std::endl;
+                Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Define" << std::endl;
                 Print() << "| Dimension = " << DIM << "not implemented yet" << std::endl;
                 exit(-1);
             }
@@ -645,7 +672,7 @@ struct UnitHyperrectangle
         else if (this->g == 15) {Xg_1d = gau_lob_16_x;}
         else
         {
-            Print() << "ERROR: AMReX_DG_Definitions.H - UnitHyperrectangle::UnitHyperrectangle" << std::endl;
+            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Define" << std::endl;
             Print() << "| Grid order = " << this->g << "not implemented yet" << std::endl;
             exit(-1);
         }
@@ -721,7 +748,7 @@ struct UnitHyperrectangle
         }
         else
         {
-            Print() << "ERROR: AMReX_DG_Definitions.H - UnitHyperrectangle::UnitHyperrectangle" << std::endl;
+            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Define" << std::endl;
             Print() << "| Grid order = " << this->g << "not implemented yet" << std::endl;
             exit(-1);
         }
@@ -775,10 +802,183 @@ struct UnitHyperrectangle
             }
             else
             {
-                Print() << "ERROR: AMReX_DG_Definitions.H - UnitHyperrectangle::UnitHyperrectangle" << std::endl;
+                Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Define" << std::endl;
                 Print() << "| Dimension = " << DIM << "not implemented yet" << std::endl;
                 exit(-1);
             }
+        }
+        // ============================================================
+    }
+    // ################################################################
+
+    // INTERPOLATION OPERATOR #########################################
+    void InitInterpolation(const UnitCube & coarse, const IntVect & rr_)
+    {
+        // QUICK RETURNS ==============================================
+        // WE HAVE ALREADY COMPUTED THE INTERPOLATION OPERATOR
+        if (this->rr == rr_)
+        {
+            return;
+        }
+
+        // SAME ORDER AND REFINEMENT RATIO = 1
+        if ((coarse.p == this->p) && (AMREX_D_TERM(rr_[0] == 1, && rr_[1] == 1, && rr_[2] == 1)))
+        {
+            return;
+        }
+        // ============================================================
+
+        // PARAMETERS =================================================
+        const int iNq = std::max(this->dom_Nq, coarse.dom_Nq);
+        // ============================================================
+
+        // VARIABLES ==================================================
+        const Real * XI1q, * XI2q, * XI3q, * Wq;
+        if (this->q > coarse.q)
+        {
+            XI1q = this->dom_XI1q.data();
+            XI2q = this->dom_XI2q.data();
+            XI3q = this->dom_XI3q.data();
+            Wq = this->dom_Wq.data();
+        }
+        else
+        {
+            XI1q = coarse.dom_XI1q.data();
+            XI2q = coarse.dom_XI2q.data();
+            XI3q = coarse.dom_XI3q.data();
+            Wq = coarse.dom_Wq.data();
+        }
+
+        // Basis functions
+        Vector<Real> cBF, fBF;
+        // ============================================================
+
+        // SET THE REFINEMENT RATIOS ==================================
+        this->rr = rr_;
+
+        // SMALL CHECK
+        if (AMREX_D_TERM(rr_[0] == 0, || rr_[1] == 0, || rr_[2] == 0))
+        {
+            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::InitInterpolation" << std::endl;
+            Print() << "| The input refinement ratio cannot be zero:" << std::endl;
+            Print() << "| Input rr = "  << rr_ << std::endl;
+            exit(-1);
+        }
+        // ============================================================
+
+        // ALLOCATE MEMORY FOR THE INTERPOLATION OPERATOR =============
+        {
+            int size;
+
+            size = iNq*coarse.Np;
+            cBF.resize(size);
+
+            size = iNq*this->Np;
+            fBF.resize(size);
+
+            size = this->Np*coarse.Np*AMREX_D_PICK(rr_[0], rr_[0]*rr_[1], rr_[0]*rr_[1]*rr_[2]);
+            this->I.resize(size);
+            std::fill(this->I.begin(), this->I.end(), 0.0);
+        }
+        // ============================================================
+
+        // CYCLE OVER THE SUBGRID ELEMENTS ============================
+        // EVAL THE BASIS FUNCTIONS (FINE ELEMENT) --------------------
+        {
+            const Vector<Real> flo = {-1.0, -1.0, -1.0};
+            const Vector<Real> fhi = {+1.0, +1.0, +1.0};
+            const int f_size_1d = iNq*(1+this->p);
+            Vector<Real> fP1(f_size_1d), fP2(f_size_1d), fP3(f_size_1d);
+
+            if (DIM == 1)
+            {
+                DG_space_1d_BF_Table_NxL(iNq, this->p,
+                                         XI1q, flo[0], fhi[0],
+                                         fP1.data(),
+                                         fBF.data());
+            }
+            else if (DIM == 2)
+            {
+                DG_space_2d_BF_Table_NxL(iNq, this->p,
+                                         XI1q, XI2q, flo.data(), fhi.data(),
+                                         fP1.data(), fP2.data(),
+                                         fBF.data());
+            }
+            else if (DIM == 3)
+            {
+                DG_space_3d_BF_Table_NxL(iNq, this->p,
+                                         XI1q, XI2q, XI3q, flo.data(), fhi.data(),
+                                         fP1.data(), fP2.data(), fP3.data(),
+                                         fBF.data());
+            }
+        }
+        // ------------------------------------------------------------
+
+        if (DIM == 1)
+        {
+            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::InitInterpolation" << std::endl;
+            Print() << "| DIM == 1 must be implemented." << std::endl;
+            exit(-1);
+        }
+        else if (DIM == 2)
+        {
+            // LOCAL VARIABLES ----------------------------------------
+            int f1, f2, pos, posr, posc;
+
+            // COARSE ELEMENT
+            Vector<Real> clo(DIM);
+            Vector<Real> chi(DIM);
+            const int c_size_1d = iNq*(1+coarse.p);
+            Vector<Real> cP1(c_size_1d), cP2(c_size_1d);
+
+            // OPERATOR
+            Real I_tmp[this->Np*coarse.Np];
+            // --------------------------------------------------------
+
+            for (f2 = 0; f2 < rr_[1]; ++f2)
+            for (f1 = 0; f1 < rr_[0]; ++f1)
+            {   
+                // EVAL THE BASIS FUNCTIONS (COARSE ELEMENT)
+                clo[0] = -1.0-2.0* f1;         clo[1] = -1.0-2.0* f2;
+                chi[0] = -1.0-2.0*(f1-rr_[0]); chi[1] = -1.0-2.0*(f2-rr_[1]);
+                
+                DG_space_2d_BF_Table_NxL(iNq, coarse.p,
+                                         XI1q, XI2q, clo.data(), chi.data(),
+                                         cP1.data(), cP2.data(),
+                                         cBF.data());
+
+                // EVAL THE INTERPOLATION OPERATOR
+                std::fill(I_tmp, I_tmp+(this->Np*coarse.Np), 0.0);
+
+                for (int c = 0; c < (coarse.Np); ++c)
+                for (int r = 0; r < (this->Np); ++r)
+                for (int k = 0; k < (iNq); ++k)
+                {
+                    pos = r+c*(this->Np);
+                    posr = k+r*iNq;
+                    posc = k+c*iNq;
+
+                    I_tmp[pos] += fBF[posr]*cBF[posc]*Wq[k];
+                }
+
+                pos = (f1+f2*rr_[0])*this->Np*coarse.Np;
+                DG_utils::matmul(this->Np, this->Np, coarse.Np, this->iMM.data(), I_tmp, &this->I[pos]);
+
+//Print() << std::endl << "I_ptr(" << this->Np << "x" << coarse.Np << "): " << std::endl;
+//DG_utils::PrintRealArray2D(this->Np, coarse.Np, &this->I[pos]);
+            }
+        }
+        else if (DIM == 3)
+        {
+            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::InitInterpolation" << std::endl;
+            Print() << "| DIM == 3 must be implemented." << std::endl;
+            exit(-1);
+        }
+        else
+        {
+            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::InitInterpolation" << std::endl;
+            Print() << "| Dimension = " << DIM << "not implemented yet" << std::endl;
+            exit(-1);
         }
         // ============================================================
     }
@@ -1067,6 +1267,26 @@ public:
                                      this->BF, this->dBFdx1, this->dBFdx2, this->dBFdx3);
         )
     }
+
+    AMREX_GPU_HOST_DEVICE
+    void _eval_BF_only_table_(const Real * x)
+    {
+        AMREX_D_PICK
+        (
+            DG_space_1d_BF_Table_NxL(1, this->p,
+                                     x, this->lo[0], this->hi[0],
+                                     this->P1,
+                                     this->BF);,
+            DG_space_2d_BF_Table_NxL(1, this->p,
+                                     &x[0], &x[1], this->lo, this->hi,
+                                     this->P1, this->P2,
+                                     this->BF);,
+            DG_space_3d_BF_Table_NxL(1, this->p,
+                                     &x[0], &x[1], &x[2], this->lo, this->hi,
+                                     this->P1, this->P2, this->P3,
+                                     this->BF);
+        )
+    }
     // ================================================================
 };
 
@@ -1239,11 +1459,265 @@ public:
                                      this->BF, this->dBFdx1, this->dBFdx2, this->dBFdx3);
         )
     }
+
+    AMREX_GPU_HOST_DEVICE
+    void _eval_BF_only_table_(const Real * x)
+    {
+        AMREX_D_PICK
+        (
+            DG_space_1d_BF_Table_NxL(1, this->p,
+                                     x, this->lo[0], this->hi[0],
+                                     this->P1,
+                                     this->BF);,
+            DG_space_2d_BF_Table_NxL(1, this->p,
+                                     &x[0], &x[1], this->lo, this->hi,
+                                     this->P1, this->P2,
+                                     this->BF);,
+            DG_space_3d_BF_Table_NxL(1, this->p,
+                                     &x[0], &x[1], &x[2], this->lo, this->hi,
+                                     this->P1, this->P2, this->P3,
+                                     this->BF);
+        )
+    }
     // ================================================================
 };
 
 typedef _DG_space_BFX_<AMREX_SPACEDIM, DG_PHI_MAX_SPACE_p, DG_PHI_MAX_SPACE_Np> DG_phi_space_BFX;
 typedef _DG_space_BFX_<AMREX_SPACEDIM, DG_SOL_MAX_SPACE_p, DG_SOL_MAX_SPACE_Np> DG_sol_space_BFX;
+
+
+template<int N, int DG_MAX_p, int DG_MAX_Np>
+class _DG_space_BFX_truncated_
+{
+private:
+    // VARIABLES
+    const Real * lo;
+    const Real * hi;
+    Array4<Real const> const & fab;
+    const int p, Np;
+    int p_max, Np_max;
+    int i, j, k, u;
+    Real sgn;
+
+public:
+    Real BF[DG_MAX_Np];
+    AMREX_D_TERM
+    (
+        Real P1[1+DG_MAX_p];,
+        Real P2[1+DG_MAX_p];,
+        Real P3[1+DG_MAX_p];
+    )
+    AMREX_D_TERM
+    (
+        Real dP1[1+DG_MAX_p];,
+        Real dP2[1+DG_MAX_p];,
+        Real dP3[1+DG_MAX_p];
+    )
+    AMREX_D_TERM
+    (
+        Real dBFdx1[DG_MAX_Np];,
+        Real dBFdx2[DG_MAX_Np];,
+        Real dBFdx3[DG_MAX_Np];
+    )
+
+public:
+    // CONSTRUCTOR ====================================================
+    AMREX_GPU_HOST_DEVICE
+    _DG_space_BFX_truncated_(const Real * lo_, const Real * hi_,
+                             Array4<Real const> const & fab_,
+                             const int & p_,
+                             const int & p_max_,
+                             const int & i_, const int & j_, const int & k_, const int & u_):
+    lo(lo_), hi(hi_),
+    fab(fab_),
+    p(p_),
+    Np(AMREX_D_PICK((1+p_),(1+p_)*(1+p_),(1+p_)*(1+p_)*(1+p_))),
+    p_max(p_max_),
+    Np_max(AMREX_D_PICK((1+p_max_),(1+p_max_)*(1+p_max_),(1+p_max_)*(1+p_max_)*(1+p_max_))),
+    i(i_), j(j_), k(k_), u(u_),
+    sgn(-1.0)
+    {}
+    
+    AMREX_GPU_HOST_DEVICE
+    _DG_space_BFX_truncated_(Array4<Real const> const & fab_, const int & p_, const int & p_max_):
+    lo(nullptr), hi(nullptr),
+    fab(fab_),
+    p(p_),
+    Np(AMREX_D_PICK((1+p_),(1+p_)*(1+p_),(1+p_)*(1+p_)*(1+p_))),
+    p_max(p_max_),
+    Np_max(AMREX_D_PICK((1+p_max_),(1+p_max_)*(1+p_max_),(1+p_max_)*(1+p_max_)*(1+p_max_))),
+    i(-1), j(-1), k(-1), u(-1),
+    sgn(-1.0)
+    {}
+    // ================================================================
+
+    // MISC ===========================================================
+    AMREX_GPU_HOST_DEVICE
+    void set_support(const Real * lo_, const Real * hi_)
+    {
+        this->lo = lo_;
+        this->hi = hi_;
+    }
+    
+    AMREX_GPU_HOST_DEVICE
+    void set_fab_ptrs(const int & i_, const int & j_, const int & k_, const int & u_)
+    {
+        this->i = i_;
+        this->j = j_;
+        this->k = k_;
+        this->u = u_;
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void set_sign(const int & sgn_)
+    {
+        this->sgn = 1.0*sgn_;
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void set_p_max(const int & p_max_)
+    {
+        this->p_max = p_max_;
+        this->Np_max = AMREX_D_PICK((1+p_max_),(1+p_max_)*(1+p_max_),(1+p_max_)*(1+p_max_)*(1+p_max_));
+    }
+    // ================================================================
+
+    // EVAL THE SOLUTION AT LOCATION x ================================
+    AMREX_GPU_HOST_DEVICE
+    Real eval(const Real * x)
+    {
+        this->_eval_BF_table_(x);
+
+        return this->_eval_unsafe_();
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    Real _eval_unsafe_()
+    {
+        Real res;
+
+        res = 0.0;
+        for (int c = 0; c < (this->Np_max); ++c)
+        {
+#if (AMREX_SPACEDIM == 1)
+            int cc = c;
+#endif
+#if (AMREX_SPACEDIM == 2)
+            int l2 = c/(1+this->p_max);
+            int l1 = (c-l2*(1+this->p_max));
+            int cc = (l1+l2*(1+this->p));
+#endif
+#if (AMREX_SPACEDIM == 3)
+            int l3 = c/((1+this->p_max)*(1+this->p_max));
+            int l2 = (c-l3*(1+this->p_max)*(1+this->p_max))/(1+this->p_max);
+            int l1 = (c-l3*(1+this->p_max)*(1+this->p_max)-l2*(1+this->p_max));
+            int cc = (l1+l2*(1+this->p)+l3*(1+this->p)*(1+this->p));
+#endif
+            res += this->BF[cc]*this->fab(this->i,this->j,this->k,cc+(this->u)*(this->Np));
+        }
+
+        res *= -this->sgn;
+
+        return res;
+    }
+    // ================================================================
+
+    // EVAL THE SOLUTION'S GRADIENT AT LOCATION x =====================
+    AMREX_GPU_HOST_DEVICE
+    void eval_grad(const Real * x, Real * res)
+    {
+        this->_eval_BF_table_(x);
+
+        this->_eval_grad_unsafe_(&res[0]);
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void _eval_grad_unsafe_(Real * res)
+    {
+        AMREX_D_TERM
+        (
+            res[0] = 0.0;,
+            res[1] = 0.0;,
+            res[2] = 0.0;
+        )
+
+        for (int c = 0; c < (this->Np_max); ++c)
+        {
+#if (AMREX_SPACEDIM == 1)
+            int cc = c;
+#endif
+#if (AMREX_SPACEDIM == 2)
+            int l2 = c/(1+this->p_max);
+            int l1 = (c-l2*(1+this->p_max));
+            int cc = (l1+l2*(1+this->p));
+#endif
+#if (AMREX_SPACEDIM == 3)
+            int l3 = c/((1+this->p_max)*(1+this->p_max));
+            int l2 = (c-l3*(1+this->p_max)*(1+this->p_max))/(1+this->p_max);
+            int l1 = (c-l3*(1+this->p_max)*(1+this->p_max)-l2*(1+this->p_max));
+            int cc = (l1+l2*(1+this->p)+l3*(1+this->p)*(1+this->p));
+#endif
+            AMREX_D_TERM
+            (
+                res[0] += this->dBFdx1[cc]*this->fab(this->i,this->j,this->k,cc+(this->u)*(this->Np));,
+                res[1] += this->dBFdx2[cc]*this->fab(this->i,this->j,this->k,cc+(this->u)*(this->Np));,
+                res[2] += this->dBFdx3[cc]*this->fab(this->i,this->j,this->k,cc+(this->u)*(this->Np));
+            )
+        }
+
+        AMREX_D_TERM
+        (
+            res[0] *= -this->sgn;,
+            res[1] *= -this->sgn;,
+            res[2] *= -this->sgn;
+        )
+    }
+    // ================================================================
+
+    // EVAL THE BASIS FUNCTIONS =======================================
+    AMREX_GPU_HOST_DEVICE
+    void _eval_BF_table_(const Real * x)
+    {
+        AMREX_D_PICK
+        (
+            DG_space_1d_BF_Table_NxL(1, this->p,
+                                     x, this->lo[0], this->hi[0],
+                                     this->P1, this->dP1,
+                                     this->BF, this->dBFdx1);,
+            DG_space_2d_BF_Table_NxL(1, this->p,
+                                     &x[0], &x[1], this->lo, this->hi,
+                                     this->P1, this->dP1, this->P2, this->dP2,
+                                     this->BF, this->dBFdx1, this->dBFdx2);,
+            DG_space_3d_BF_Table_NxL(1, this->p,
+                                     &x[0], &x[1], &x[2], this->lo, this->hi,
+                                     this->P1, this->dP1, this->P2, this->dP2, this->P3, this->dP3,
+                                     this->BF, this->dBFdx1, this->dBFdx2, this->dBFdx3);
+        )
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void _eval_BF_only_table_(const Real * x)
+    {
+        AMREX_D_PICK
+        (
+            DG_space_1d_BF_Table_NxL(1, this->p,
+                                     x, this->lo[0], this->hi[0],
+                                     this->P1,
+                                     this->BF);,
+            DG_space_2d_BF_Table_NxL(1, this->p,
+                                     &x[0], &x[1], this->lo, this->hi,
+                                     this->P1, this->P2,
+                                     this->BF);,
+            DG_space_3d_BF_Table_NxL(1, this->p,
+                                     &x[0], &x[1], &x[2], this->lo, this->hi,
+                                     this->P1, this->P2, this->P3,
+                                     this->BF);
+        )
+    }
+    // ================================================================
+};
+
+typedef _DG_space_BFX_truncated_<AMREX_SPACEDIM, DG_SOL_MAX_SPACE_p, DG_SOL_MAX_SPACE_Np> DG_sol_space_BFX_truncated;
 
 
 template<int N, int DG_MAX_p, int DG_MAX_Np>
@@ -1550,6 +2024,8 @@ typedef _DG_MEM_space_BFX_<AMREX_SPACEDIM, DG_SOL_MAX_SPACE_p, DG_SOL_MAX_SPACE_
 // ####################################################################
 // EXPORT ROUTINES ####################################################
 // ####################################################################
+std::string MakePath(const std::initializer_list<std::string>);
+
 std::string GetPlotFilepath(const std::string & dst_folder,
                             const std::string & filename_root,
                             const int & time_id,

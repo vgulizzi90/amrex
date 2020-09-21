@@ -15,13 +15,16 @@
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
-#define PROBLEM_SODS_TUBE 0
-#define PROBLEM_EB_COMPARISON 1
+#define PROBLEM_SODS_TUBE_REF 0
+#define PROBLEM_SODS_TUBE 1
+#define PROBLEM_EB_COMPARISON 2
 
-#define PROBLEM 0
+#define PROBLEM 2
 
-#if (PROBLEM == PROBLEM_SODS_TUBE)
+#if (PROBLEM == PROBLEM_SODS_TUBE_REF)
 #include <IBVP_SodsTube_Reference.H>
+#elif (PROBLEM == PROBLEM_SODS_TUBE)
+#include <IBVP_SodsTube.H>
 #elif (PROBLEM == PROBLEM_EB_COMPARISON)
 #include <IBVP_EB_Comparison.H>
 #endif
@@ -69,8 +72,10 @@ amrex::Print() << "#############################################################
     {
         time_t date_and_time = time(0);
         char * date_and_time_ = ctime(&date_and_time);
-#if (PROBLEM == PROBLEM_SODS_TUBE)
+#if (PROBLEM == PROBLEM_SODS_TUBE_REF)
         fp.open("hp_SodsTube_Reference.txt", std::ofstream::app);
+#elif (PROBLEM == PROBLEM_SODS_TUBE)
+        fp.open("hp_SodsTube.txt", std::ofstream::app);
 #elif (PROBLEM == PROBLEM_EB_COMPARISON)
         fp.open("hp_EB_Comparison.txt", std::ofstream::app);
 #endif
@@ -94,33 +99,8 @@ amrex::Print() << "#############################################################
         // ------------------------------------------------------------
 
         {
-            // PRINT TO SCREEN ----------------------------------------
-            amrex::Print() << std::endl;
-            inputs.PrintSummary();
-            // --------------------------------------------------------
-
-            // BOX ARRAY ----------------------------------------------
-            amrex::Box indices_box({AMREX_D_DECL(0, 0, 0)}, inputs.mesh[0].n_cells-1);
-
-            amrex::BoxArray ba;
-            ba.define(indices_box);
-            ba.maxSize(inputs.mesh[0].max_grid_size);
-            // --------------------------------------------------------
-
-            // GEOMETRY -----------------------------------------------
-            amrex::Geometry geom;
-            geom.define(indices_box, &real_box, inputs.space[0].coord_sys, inputs.space[0].is_periodic.data());
-            // --------------------------------------------------------
-
-            // BOXES DISTRIBUTION AMONG MPI PROCESSES -----------------
-            amrex::DistributionMapping dm(ba);
-            // --------------------------------------------------------
-
-            // INIT DG DATA STRUCTURES --------------------------------
-            amrex::DG::ImplicitGeometry<N_PHI, N_DOM> iGeom(indices_box, real_box, ba, dm, geom, inputs.dG[0]);
-            amrex::DG::MatrixFactory<N_PHI, N_DOM> MatFactory(indices_box, real_box, ba, dm, geom, inputs.dG[0]);
-            amrex::DG::DG<N_PHI, N_DOM, N_U> dG("Hyperbolic", "Runge-Kutta", inputs.dG[0]);
-            dG.InitData(iGeom, MatFactory);
+            // INIT DG OBJECT -----------------------------------------
+            amrex::DG::DG<N_PHI, N_DOM, N_U> dG(inputs);
             // --------------------------------------------------------
 
             // DESTINATION FOLDER AND OUTPUT DATA ---------------------
@@ -131,12 +111,14 @@ amrex::Print() << "#############################################################
                                                      std::to_string(inputs.mesh[0].n_cells[1]),+"x"+
                                                      std::to_string(inputs.mesh[0].n_cells[2]));
 
-#if (PROBLEM == PROBLEM_SODS_TUBE)
+#if (PROBLEM == PROBLEM_SODS_TUBE_REF)
             const std::string problem = "PROBLEM_SodsTube_Reference";
+#elif (PROBLEM == PROBLEM_SODS_TUBE)
+            const std::string problem = "PROBLEM_SodsTube";
 #elif (PROBLEM == PROBLEM_EB_COMPARISON)
             const std::string problem = "PROBLEM_EB_Comparison";
 #endif
-            dst_folder = "./IBVP_"+std::to_string(AMREX_SPACEDIM)+"d/"+problem+"_"+dG_mesh+"_"+dG_order+"/";
+            dst_folder = amrex::DG::MakePath({".", "IBVP_"+std::to_string(AMREX_SPACEDIM)+"d/"+problem+"_"+dG_mesh+"_"+dG_order});
 
             if (amrex::ParallelDescriptor::IOProcessor())
             {
@@ -149,36 +131,39 @@ amrex::Print() << "#############################################################
             // --------------------------------------------------------
 
             // INIT IBVP DATA STRUCTURE -------------------------------
-#if (PROBLEM == PROBLEM_SODS_TUBE)
+#if ((PROBLEM == PROBLEM_SODS_TUBE_REF) || (PROBLEM == PROBLEM_SODS_TUBE))
             const amrex::Vector<std::string> material_type = {"Ideal gas"};
             const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.4}};
 #elif (PROBLEM == PROBLEM_EB_COMPARISON)
             const amrex::Vector<std::string> material_type = {"Ideal gas"};
-            const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.4}};
+            const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{5.0/3.0}};
 #endif
             GASDYNAMICS GD(material_type, material_properties);
             // --------------------------------------------------------
 
             // INIT OUTPUT DATA INFORMATION ---------------------------
-            dG.SetOutput(dst_folder, "PointSolution", iGeom, GD);
+            dG.SetOutput(dst_folder, GD);
             // --------------------------------------------------------
 
             // INIT FIELDS' DATA WITH INITIAL CONDITIONS --------------
-            iGeom.ProjectLevelsetFunctions(GD);
-            iGeom.EvalImplicitMesh(GD);
-            MatFactory.Eval(iGeom);
-            dG.SetICs(iGeom, MatFactory, GD);
+            dG.SetICs(GD);
+
+            // SOME REPORTS
+            dG.PrintMemoryReport();
+            dG.mesh.CheckQuadratureRules(GD);
 
             // WRITE TO OUTPUT
-            dG.PrintPointSolution(0, 0.0, iGeom, MatFactory, GD);
-
-            if (inputs.plot_int > 0)
             {
                 int n = 0;
                 amrex::Real time = 0.0;
 
-                iGeom.Export_VTK_Mesh(dst_folder, "Mesh", n, inputs.time.n_steps);
-                dG.Export_VTK(dst_folder, "Solution", n, inputs.time.n_steps, time, iGeom, MatFactory, GD);
+                dG.PrintPointSolution("PointSolution", n, time, GD);
+
+                if (inputs.plot_int > 0)
+                {
+                    dG.ExportMesh("Mesh", n, time, GD);
+                    dG.ExportSolution("Solution", n, time, GD);
+                }
             }
             // --------------------------------------------------------
 
@@ -202,7 +187,7 @@ amrex::Print() << "#############################################################
                 start_clock_time_per_step = amrex::second();
 
                 // COMPUTE NEXT TIME STEP
-                dt = dG.Compute_dt(time+0.5*dt, iGeom, MatFactory, GD);
+                dt = dG.Compute_dt(time+0.5*dt, GD);
                 dt = std::min(time+dt, inputs.time.T)-time;
 
                 // REPORT TO SCREEN
@@ -212,7 +197,7 @@ amrex::Print() << "#############################################################
                                << ", clock time per time step = " << clock_time_per_time_step << std::endl;
 
                 // TIME STEP
-                dG.TakeTimeStep_Hyperbolic(dt, time, iGeom, MatFactory, GD);
+                dG.TakeTimeStep(dt, time, GD);
 
                 // UPDATE TIME AND STEP
                 n += 1;
@@ -229,11 +214,11 @@ amrex::Print() << "#############################################################
                 }
 
                 // WRITE TO OUTPUT
-                dG.PrintPointSolution(n, time, iGeom, MatFactory, GD);
+                dG.PrintPointSolution("PointSolution", n, time, GD);
 
                 if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(time/inputs.time.T-1.0) < 1.0e-12)))
                 {
-                    dG.Export_VTK(dst_folder, "Solution", n, inputs.time.n_steps, time, iGeom, MatFactory, GD);
+                    dG.ExportSolution("Solution", n, time, GD);
                 }
 
                 // CLOCK TIME PER TIME STEP TOC

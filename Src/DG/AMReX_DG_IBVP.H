@@ -63,6 +63,23 @@ struct IBVP_BASE
     }
     // ================================================================
 
+    // BOUNDARY CONDITIONS ============================================
+    AMREX_GPU_HOST_DEVICE
+    void F_BCS(const int dom, const Real t, const Real * x, const Real * un,
+               const Real * U, Real * bcs_U) const
+    {
+Abort("Hello! IBVP_BASE.F_BCS (We should not end up in here)");
+    }
+    // ================================================================
+
+    // TROUBLED CELLS INDICATOR =======================================
+    AMREX_GPU_HOST_DEVICE
+    bool F_TROUBLED(const int dom, const Real t, const Real * x, const Real * U) const
+    {
+        return false;
+    }
+    // ================================================================
+
     // FUNCTIONS FOR POST-PROCESSING ==================================
     void F_POINT_SOL_DESCRIPTION(Vector<Array<Real, AMREX_SPACEDIM>> & point_fields_location,
                                  Vector<int> & point_fields_domain,
@@ -188,7 +205,7 @@ Abort("Hello! IBVP_HYPERBOLIC_BASE.F_NF_PHI_BCS (We should not end up in here)")
     }
     // ================================================================
 
-    // NUMERICAL FLUXES: INTERNAL INTERFACE ==========================
+    // NUMERICAL FLUXES: INTERNAL INTERFACE ===========================
     AMREX_GPU_HOST_DEVICE
     void F_NF_PHI_ICS(const int dom, const int nbr_dom,
                       const Real t, const Real * x, const Real * un,
@@ -196,14 +213,6 @@ Abort("Hello! IBVP_HYPERBOLIC_BASE.F_NF_PHI_BCS (We should not end up in here)")
                       Real * NFn) const
     {
 Abort("Hello! IBVP_HYPERBOLIC_BASE.F_NF_PHI_ICS (We should not end up in here)");
-    }
-    // ================================================================
-
-    // TROUBLED CELLS INDICATOR =======================================
-    AMREX_GPU_HOST_DEVICE
-    int F_TROUBLED(const int dom, const Real t, const Real * x, const Real * U) const
-    {
-        return 0;
     }
     // ================================================================
 };

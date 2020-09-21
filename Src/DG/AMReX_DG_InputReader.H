@@ -13,6 +13,16 @@ namespace DG
 {
 
 // INPUT DATA STRUCTURES ##############################################
+struct PDEsInput
+{
+    std::string description;
+
+    PDEsInput()
+    :
+    description("")
+    {}
+};
+
 struct SpaceInput
 {
     Vector<int> is_periodic;
@@ -52,15 +62,15 @@ struct MeshInput
     {}
 };
 
-
-
 struct SlopeLimiterInput
 {
     bool active;
+    IntVect freeze_refinement;
 
     SlopeLimiterInput()
     :
-    active(false)
+    active(false),
+    freeze_refinement(AMREX_D_DECL(0, 0, 0))
     {}
 };
 
@@ -69,6 +79,7 @@ struct DGInput
     int phi_space_p, space_p, time_p;
     int space_q, time_q;
     int space_q_im, time_q_im;
+    std::string time_marching;
     Real VF;
     Real CFL;
     SlopeLimiterInput limiter;
@@ -82,6 +93,7 @@ struct DGInput
     time_q(-1),
     space_q_im(-1),
     time_q_im(-1),
+    time_marching(""),
     VF(-1.0),
     CFL(-1.0)
     {}
@@ -96,7 +108,11 @@ struct DGInput
 struct InputReader
 {
     // DATA MEMBERS ###################################################
+    int verbosity;
+
     int n_patches;
+
+    Vector<PDEsInput> PDEs;
 
     Vector<SpaceInput> space;
 
@@ -112,6 +128,7 @@ struct InputReader
     // CONSTRUCTOR ####################################################
     InputReader()
     :
+    verbosity(1),
     n_patches(1),
     plot_int(-1)
     {
@@ -120,12 +137,19 @@ struct InputReader
         amrex::ParmParse pp_time("time");
         // ============================================================
 
+        // VERBOSITY ==================================================
+        pp.query("verbosity", this->verbosity);
+        // ============================================================
+
         // GET THE NUMBER OF PATCHES ==================================
         pp.query("n_patches", this->n_patches);
 
         // SET MEMORY
         if (this->n_patches > 0)
         {
+            // PDES
+            this->PDEs.resize(this->n_patches);
+            
             // SPACE
             this->space.resize(this->n_patches);
 
@@ -145,6 +169,17 @@ struct InputReader
         }
         // ============================================================
 
+        // READ PDES INFO =============================================
+        for (int p = 0; p < this->n_patches; ++p)
+        {
+            amrex::ParmParse pp_PDEs("PDEs["+std::to_string(p)+"]");
+
+            // DESCRIPTION --------------------------------------------
+            pp_PDEs.get("description", this->PDEs[p].description);
+            // --------------------------------------------------------
+        }
+        // ============================================================
+        
         // READ GEOMETRY INFO =========================================
         for (int p = 0; p < this->n_patches; ++p)
         {
@@ -291,6 +326,9 @@ struct InputReader
             pp_dG.query("space_q", this->dG[p].space_q);
             pp_dG.query("space_q_im", this->dG[p].space_q_im);
 
+            // TIME-MARCHING SCHEME
+            pp_dG.get("time_marching", this->dG[p].time_marching);
+
             // VOLUME FRACTION THRESHOLD (FOR THE IMPLICIT MESH)
             pp_dG.get("VF", this->dG[p].VF);
 
@@ -305,6 +343,15 @@ struct InputReader
                 {
                     this->dG[p].limiter.active = true;
                 }
+
+                Vector<int> aux(AMREX_SPACEDIM);
+                pp_dG.queryarr("slope_limiter_freeze_refinement", aux);
+                AMREX_D_TERM
+                (
+                    this->dG[p].limiter.freeze_refinement[0] = aux[0];,
+                    this->dG[p].limiter.freeze_refinement[1] = aux[1];,
+                    this->dG[p].limiter.freeze_refinement[2] = aux[2];
+                )
             }
             // --------------------------------------------------------
         }
@@ -399,9 +446,10 @@ struct InputReader
         // ============================================================
 
         // REPORT TO SCREEN ===========================================
-#if (DG_VERBOSITY > 0)
-        this->PrintSummary();
-#endif
+        if (this->verbosity > 0)
+        {
+            this->PrintSummary();
+        }
         // ============================================================
     }
     // ################################################################
@@ -412,6 +460,13 @@ struct InputReader
         Print() << "# ANALYSIS INPUT                                                       " << std::endl;
         Print() << "# MODEL ===============================================================" << std::endl;
         Print() << "# Number of patches: " << this->n_patches << std::endl;
+        Print() << "# =====================================================================" << std::endl;
+        Print() << "# PDES ================================================================" << std::endl;
+        for (int p = 0; p < this->n_patches; ++p)
+        {
+            Print() << "# PATCH: " << p << std::endl;
+            Print() << "#  - description: " << this->PDEs[p].description << std::endl;
+        }
         Print() << "# =====================================================================" << std::endl;
         Print() << "# SPACE ===============================================================" << std::endl;
         for (int p = 0; p < this->n_patches; ++p)
@@ -479,15 +534,16 @@ struct InputReader
         for (int p = 0; p < this->n_patches; ++p)
         {
             Print() << "# PATCH: " << p << std::endl;
-            Print() << "#  - phi_space_p: " << this->dG[p].phi_space_p << std::endl;
-            Print() << "#  - space_p    : " << this->dG[p].space_p << std::endl;
-            Print() << "#  - time_p     : " << this->dG[p].time_p << std::endl;
-            Print() << "#  - space_q    : " << this->dG[p].space_q << std::endl;
-            Print() << "#  - time_q     : " << this->dG[p].time_q << std::endl;
-            Print() << "#  - space_q_im : " << this->dG[p].space_q_im << std::endl;
-            Print() << "#  - time_q_im  : " << this->dG[p].time_q_im << std::endl;
-            Print() << "#  - VF         : " << this->dG[p].VF << std::endl;
-            Print() << "#  - CFL        : " << this->dG[p].CFL << std::endl;
+            Print() << "#  - phi_space_p  : " << this->dG[p].phi_space_p << std::endl;
+            Print() << "#  - space_p      : " << this->dG[p].space_p << std::endl;
+            Print() << "#  - time_p       : " << this->dG[p].time_p << std::endl;
+            Print() << "#  - space_q      : " << this->dG[p].space_q << std::endl;
+            Print() << "#  - time_q       : " << this->dG[p].time_q << std::endl;
+            Print() << "#  - space_q_im   : " << this->dG[p].space_q_im << std::endl;
+            Print() << "#  - time_q_im    : " << this->dG[p].time_q_im << std::endl;
+            Print() << "#  - time marching: " << this->dG[p].time_marching << std::endl;
+            Print() << "#  - VF           : " << this->dG[p].VF << std::endl;
+            Print() << "#  - CFL          : " << this->dG[p].CFL << std::endl;
         }
         Print() << "# ---------------------------------------------------------------------" << std::endl;
         Print() << "# =====================================================================" << std::endl;

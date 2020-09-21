@@ -14,22 +14,22 @@ PDEs[0].description = Hyperbolic
 
 
 # SPACE ###############################################################
-space[0].is_periodic = 0 0
-space[0].prob_lo     = 0.0 0.0
-space[0].prob_hi     = 7.5 3.75
+space[0].is_periodic = 0 0 0
+space[0].prob_lo     = 0.0 0.0 0.0
+space[0].prob_hi     = 1.0 1.0 1.0
 #######################################################################
 
 
 # TIME ################################################################
-time.T = 1.2e-5
-time.n_steps = 10000
+time.T = 0.2
+time.n_steps = 1000
 #######################################################################
 
 
 # SPACE AND TIME DISCRETIZATION #######################################
 # MESH ================================================================
-mesh[0].n_cells       = 512 256
-mesh[0].max_grid_size = 4 4
+mesh[0].n_cells       = 64 64 64
+mesh[0].max_grid_size = 4 4 4
 # =====================================================================
 
 # DISCONTINUOUS GALERKIN DISCRETIZATION ===============================
@@ -46,7 +46,7 @@ dG[0].time_marching = RungeKutta
 dG[0].VF = 0.35
 
 # CFL COEFFICIENT
-dG[0].CFL = 0.80
+dG[0].CFL = 0.95
 
 # SLOPE LIMITER
 dG[0].slope_limiter_active = false
@@ -55,5 +55,5 @@ dG[0].slope_limiter_active = false
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 8
+plot_int = 1000
 #######################################################################

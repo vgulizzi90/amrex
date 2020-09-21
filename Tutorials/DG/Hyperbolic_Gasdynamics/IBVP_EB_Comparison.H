@@ -1,5 +1,4 @@
-/* ELASTIC WAVES IN SOLIDS: VELOCITY-STRESS FORMULATION */
-/* HP CONVERGENCE ANALYSIS */
+/* GASDYNAMICS: DOUBLE MACH REFLECTION PROBLEM */
 
 #include <IBVP_Base.H>
 
@@ -35,37 +34,24 @@ public:
     // ================================================================
 
     // LEVEL SET FUNCTION =============================================
-#define TH (-49.0*M_PI/180.0)
+#define THETA (-49.0*M_PI/180.0)
 #define P1 5.2
 #define P2 0.0
-#define N1 (std::cos(TH))
-#define N2 (std::sin(TH))
+#define N1 (std::cos(THETA))
+#define N2 (std::sin(THETA))
 #define VF 0.1
 #define DELTA ((1.0-VF)*3.75/32.0)
     AMREX_GPU_HOST_DEVICE
     amrex::Real F_PHI(const int & ph,
                       const amrex::Real & t, const amrex::Real * x) const
     {
-        //return (N1*x[0]+N2*x[1])-(N1*P1+N2*P2);
+        return (N1*x[0]+N2*x[1])-(N1*P1+N2*P2);
 
-        return (DELTA-x[1]);
+        //return (DELTA-x[1]);
     }
     // ================================================================
 
     // RELATIONSHIP AMONG LEVEL SET FUNCTIONS AND DOMAINS =============
-    AMREX_GPU_HOST_DEVICE
-    void F_DOM2PHI(const int & dom, int * phi_info) const
-    {
-        const int PHI_INFO[2*N_DOM] =
-        {
-            // dom = 0
-            0, -1
-        };
-
-        phi_info[0] = PHI_INFO[2*dom];
-        phi_info[1] = PHI_INFO[2*dom+1];
-    }
-
     amrex::Real F_EXACT_VOLUME(const int & dom) const
     {
         const amrex::Real EXACT_VOLUME[N_DOM] =
@@ -84,41 +70,6 @@ public:
             7.5
         };
         return EXACT_SURFACE[dom];
-    }
-    // ================================================================
-
-    // RELATIONSHIP AMONG UNKNOWN FIELDS AND DOMAINS ==================
-    AMREX_GPU_HOST_DEVICE
-    int F_U2DOM(const int & u) const
-    {
-#if (AMREX_SPACEDIM == 2)
-        const int DOM[N_U] =
-        {
-            // dom = 0
-            0, 0, 0, 0
-        };
-#endif
-#if (AMREX_SPACEDIM == 3)
-        const int DOM[N_U] =
-        {
-            // dom = 0
-            0, 0, 0, 0, 0
-        };
-#endif
-        return DOM[u];
-    }
-    // ================================================================
-
-    // RELATIONSHIP BETWEEN NEIGHBORING DOMAINS =======================
-    AMREX_GPU_HOST_DEVICE
-    int F_DOM2NBRDOM(const int& dom) const
-    {
-        const int NBRDOM[N_DOM] =
-        {
-            // dom = 0
-            -1
-        };
-        return NBRDOM[dom];
     }
     // ================================================================
 
@@ -159,6 +110,16 @@ public:
     // EXACT SOLUTION/ERROR EVALUATION ================================
     // ================================================================
 
+    // NUMERICAL FLUX =================================================
+    AMREX_GPU_HOST_DEVICE
+    void _eval_NFn_(const int dom, const amrex::Real * un, const amrex::Real * U, const amrex::Real * nbr_U,
+                    amrex::Real * NFn) const
+    {
+        this->_eval_NFn_mOsher_(dom, un, U, nbr_U, NFn);
+        //this->_eval_NFn_ExactRiemann_(dom, un, U, nbr_U, NFn);
+    }
+    // ================================================================
+
     // NUMERICAL FLUXES: INTRAPHASE ===================================
     AMREX_GPU_HOST_DEVICE
     void F_NF_ICS(const int dom,
@@ -166,7 +127,7 @@ public:
                   const amrex::Real * U, const amrex::Real * nbr_U,
                   amrex::Real * NFn) const
     {
-        this->_eval_NFn_LF_(dom, un, U, nbr_U, NFn);
+        this->_eval_NFn_(dom, un, U, nbr_U, NFn);
     }
     // ================================================================
 
@@ -183,14 +144,14 @@ public:
         // OUTFLOW BOUNDARY CONDITIONS
         if (un[0] < -0.5)
         {
-            bcs_U[RHO] = 2.0*rhoL-U[RHO];
+            bcs_U[RHO] = U[RHO];
             bcs_U[RHOV1] = U[RHOV1];
             bcs_U[RHOV2] = U[RHOV2];
             bcs_U[TE] = U[TE];
         }
         else if (un[0] > 0.5)
         {
-            bcs_U[RHO] = 2.0*rhoR-U[RHO];
+            bcs_U[RHO] = U[RHO];
             bcs_U[RHOV1] = U[RHOV1];
             bcs_U[RHOV2] = U[RHOV2];
             bcs_U[TE] = U[TE];
@@ -210,7 +171,7 @@ public:
             bcs_U[TE] = U[TE];
         }
 
-        this->_eval_NFn_LF_(dom, un, U, bcs_U, NFn);
+        this->_eval_NFn_(dom, un, U, bcs_U, NFn);
     }
     // ================================================================
 
@@ -222,25 +183,13 @@ public:
                       amrex::Real * NFn) const
     {
         // VARIABLES
-        amrex::Real bcs_U[N_U];
+        amrex::Real Un[N_U], bcs_U[N_U];
 
-        bcs_U[RHO] = U[RHO];
-        bcs_U[RHOV1] = U[RHOV1];
-        bcs_U[RHOV2] = -U[RHOV2];
-        bcs_U[TE] = U[TE];
+        this->_eval_U2Un_(un, U, Un);
+        Un[RHOV1] = -Un[RHOV1];
+        this->_eval_Un2U_(un, Un, bcs_U);
 
-        this->_eval_NFn_LF_(dom, un, U, bcs_U, NFn);
-    }
-    // ================================================================
-
-    // NUMERICAL FLUXES: INTERNAL INTERFACE ==========================
-    AMREX_GPU_HOST_DEVICE
-    void F_NF_PHI_ICS(const int dom, const int nbr_dom,
-                      const amrex::Real & t, const amrex::Real * x, const amrex::Real * un,
-                      const amrex::Real * U, const amrex::Real * nbr_U,
-                      amrex::Real * NFn) const
-    {
-amrex::Abort("GASDYNAMICS.F_NF_PHI_ICS");
+        this->_eval_NFn_(dom, un, U, bcs_U, NFn);
     }
     // ================================================================
 
@@ -248,13 +197,8 @@ amrex::Abort("GASDYNAMICS.F_NF_PHI_ICS");
     void F_SOL_DESCRIPTION(amrex::Vector<int> & fields_domain, amrex::Vector<std::string> & fields_name) const
     {
 #if (AMREX_SPACEDIM == 2)
-        fields_domain = {0, 0, 0, 0};
-        fields_name = {"rho", "ux", "uy", "M"};
-#endif
-
-#if (AMREX_SPACEDIM == 3)
-        fields_domain = {0, 0, 0, 0, 0};
-        fields_name = {"rho", "ux", "uy", "uz", "M"};
+        fields_domain = {0, 0, 0, 0, 0, 0, 0};
+        fields_name = {"rho", "u_x", "u_y", "M", "p", "u_n", "u_t"};
 #endif
     }
 
@@ -268,6 +212,11 @@ amrex::Abort("GASDYNAMICS.F_NF_PHI_ICS");
         const int dom = 0;
         const amrex::Real g = this->gamma[dom];
 
+        // VARIABLES
+        const amrex::Real un[AMREX_SPACEDIM] = {N1, N2};
+        amrex::Real Un[N_U];
+        this->_eval_U2Un_(un, U, Un);
+
         // PRIMARY VARIABLES
         amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
         this->_eval_primary_variables_(dom, U, rho, AMREX_D_DECL(u1, u2, u3), p);
@@ -280,15 +229,9 @@ amrex::Abort("GASDYNAMICS.F_NF_PHI_ICS");
         F[1] = u1;
         F[2] = u2;
         F[3] = M;
-#endif
-
-#if (AMREX_SPACEDIM == 3)
-        // DOMAIN 0
-        F[0] = rho;
-        F[1] = u1;
-        F[2] = u2;
-        F[3] = u3;
-        F[4] = M;
+        F[4] = p;
+        F[5] = Un[RHOV1]/rho;
+        F[6] = Un[RHOV2]/rho;
 #endif
     }
     // ================================================================

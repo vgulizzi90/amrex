@@ -1,263 +1,59 @@
-// AMREX_DG.H
+// AMReX_DG.H
 
 #ifndef BL_DG_H_
 #define BL_DG_H_
 
+#include <AMReX_TagBox.H>
+
 #include <AMReX_DG_Base.H>
 #include <AMReX_DG_InputReader.H>
+#include <AMReX_DG_ImplicitMesh.H>
 #include <AMReX_DG_MatrixFactory.H>
-#include <AMReX_DG_ImplicitGeometry.H>
-#include <AMReX_DG_RK.H>
+#include <AMReX_DG_Solution.H>
+#include <AMReX_DG_Solution_AMR.H>
+#include <AMReX_DG_SlopeLimiter.H>
+#include <AMReX_DG_RungeKutta.H>
 
 namespace amrex
 {
 namespace DG
 {
 // ####################################################################
-// SLOPE LIMITER DATA STRUCTURE #######################################
-// ####################################################################
-template<int N_PHI, int N_DOM, int N_U>
-struct SlopeLimiter
-{
-    // DATA MEMBERS ###################################################
-    // CLASS-WIDE PARAMETERS
-    static const int dom_data_ngr = 1;
-
-    // VARIABLES
-    bool active;
-
-    // COARSE GRID INFO
-    iMultiFab coarse_grid_info;
-
-    // FINE GRID INFO
-    // Geometry
-    Box ibx;
-    RealBox rbx;
-    BoxArray ba;
-    DistributionMapping dm;
-    Geometry geom;
-
-    // Solution
-    MultiFab X;
-    // ################################################################
-
-    // CONSTRUCTOR ####################################################
-    SlopeLimiter(const bool active_)
-    :
-    active(active_)
-    {}
-    // ################################################################
-
-    // INITIALIZATION #################################################
-    void InitData(const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
-                  const MatrixFactory<N_PHI, N_DOM> & MatFactory)
-    {
-        // PARAMETERS =================================================
-        const int refinement_ratio = 2*MatFactory.space_p+1;
-        // ============================================================
-
-        // INIT COARSE GRID DATA ======================================
-        this->coarse_grid_info.define(iGeom.cc_ba, iGeom.dm, 1, this->dom_data_ngr);
-        this->coarse_grid_info = 0;
-        // ============================================================
-
-        // INIT FINE GRID DATA ========================================
-        this->ibx = refine(iGeom.cc_ibx, refinement_ratio);
-        this->rbx = iGeom.rbx;
-        this->ba = iGeom.cc_ba;
-        this->ba.refine(refinement_ratio);
-        this->dm.define(this->ba);
-        this->geom = iGeom.geom;
-        this->geom.refine(IntVect(refinement_ratio));
-
-        this->X.define(this->ba, this->dm, N_U, this->dom_data_ngr);
-        // ============================================================
-    }
-    // ################################################################
-
-    // EVAL INTERPOLATION-RESTRICTION OPERATORS #######################
-    void Eval_IR_Operators(const ImplicitGeometry<N_PHI, N_DOM> & Coarse_iGeom,
-                           const MatrixFactory<N_PHI, N_DOM> & Coarse_MatFactory)
-    {
-
-Print() << "HERE WE ARE: SlopeLimiter.Eval_IR_Operators" << std::endl;
-exit(-1);
-    }
-    // ################################################################
-
-    // APPLICATION OF THE SLOPE LIMITER ###############################
-    template<typename IBVP_CLASS>
-    void Apply(const Real & dt,
-               const Real & t,
-               const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
-               const MatrixFactory<N_PHI, N_DOM> & MatFactory,
-               const MultiFab & X_old,
-               MultiFab & X_new,
-               const IBVP_CLASS & IBVP)
-    {
-        // IDENTIFY THE CELLS TO BE LIMITED
-        this->IdentifyCellsToBeLimited(dt, t, iGeom, MatFactory, X_old, X_new, IBVP);
-
-
-
-Print() << "HERE WE ARE: SlopeLimiter.Apply" << std::endl;
-exit(-1);
-    }
-    // ################################################################
-
-    // IDENTIFY CELLS TO BE LIMITED ###################################
-    template<typename IBVP_CLASS>
-    void IdentifyCellsToBeLimited(const Real & dt,
-                                  const Real & t,
-                                  const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
-                                  const MatrixFactory<N_PHI, N_DOM> & MatFactory,
-                                  const MultiFab & X_old,
-                                  MultiFab & X_new,
-                                  const IBVP_CLASS & IBVP)
-    {
-        // PARAMETERS =================================================
-        // GRID
-        const GpuArray<Real, AMREX_SPACEDIM> dx = iGeom._dx;
-        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = iGeom._prob_lo;
-        const GpuArray<Real, AMREX_SPACEDIM> J = iGeom._J;
-        const GpuArray<Real, AMREX_SPACEDIM> iJ = iGeom._iJ;
-
-        // IMPLICIT MESH
-#ifdef AMREX_USE_CUDA
-        const Real * eTri_mem_ptr = iGeom.eTri_device_mem.data();
-        const Real * space_Tri_BF_mem_ptr = MatFactory.space_Tri_BF_device_mem.data();
-#else
-        const Real * eTri_mem_ptr = iGeom.eTri_host_mem.data();
-        const Real * space_Tri_BF_mem_ptr = MatFactory.space_Tri_BF_host_mem.data();
-#endif
-
-        // DG
-        const int sp = MatFactory.space_p;
-        // ============================================================
-
-        // IDENTIFY THE CELLS TO BE LIMITED ===========================
-        for (MFIter mfi(X_new); mfi.isValid(); ++mfi)
-        {
-            const Box & bx = mfi.validbox();
-            
-            Array4<int const> const & eType_fab = iGeom.eType.array(mfi);
-            Array4<int const> const & eTri_Npt_fab = iGeom.eTri_Npt.array(mfi);
-            Array4<long const> const & eTri_pos_fab = iGeom.eTri_pos.array(mfi);
-            Array4<long const> const & space_Tri_BF_pos_fab = MatFactory.space_Tri_BF_pos.array(mfi);
-            Array4<Real const> const & X_fab = X_new.array(mfi);
-
-            Array4<int> const & coarse_grid_info_fab = this->coarse_grid_info.array(mfi);
-
-            ParallelFor(bx,
-            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-            {
-                // LOCAL PARAMETERS
-                const Real cell_m[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0], prob_lo[1]+(j+0.5)*dx[1], prob_lo[2]+(k+0.5)*dx[2])};
-
-                // LOCAL VARIABLES
-                int etype;
-                bool elm_is_empty;
-                int BF_i, BF_j, BF_k;
-                Real x[AMREX_SPACEDIM];
-                Real Uh[N_U];
-
-                // QUERY INFO
-                int dom_Npt;
-                long eTri_pos, qi_pos, space_BF_pos;
-                const Real * xptr;
-                const Real * BF_ptr;
-
-                // Data structures used to compute the basis functions
-                // and the unknown fields
-                DG_mem_sol_space_BFX sol(X_fab, sp, &iJ[0]);
-
-                // Init the cell info
-                coarse_grid_info_fab(i,j,k,0) = 0;
-
-                // CYCLE OVER THE DOMAINS
-                for (int dom = 0; dom < N_DOM; ++dom)
-                {
-                    // Element info
-                    etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
-                    elm_is_empty = (etype == DG_ELM_TYPE_EMPTY);
-
-                    if (!elm_is_empty)
-                    {
-                        // Get the support of the basis functions
-                        BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
-
-                        // Query info
-                        dom_Npt = eTri_Npt_fab(i,j,k,DG_ELM_TRI_N_COMP_PER_DOM*dom);
-                        eTri_pos = eTri_pos_fab(i,j,k,DG_ELM_TRI_N_COMP_PER_DOM*dom);
-                        xptr = &eTri_mem_ptr[eTri_pos];
-
-                        // Basis functions info
-                        space_BF_pos = space_Tri_BF_pos_fab(i,j,k,DG_TRI_BF_INFO_N_COMP_PER_DOM*dom);
-                        BF_ptr = &space_Tri_BF_mem_ptr[space_BF_pos];
-                        sol.set_BF_ptrs(BF_ptr);
-
-                        // CYCLE OVER THE QUERY POINTS
-                        for (int qi = 0; qi < dom_Npt; ++qi)
-                        {
-                            qi_pos = AMREX_SPACEDIM*qi;
-                            AMREX_D_TERM
-                            (
-                                x[0] = xptr[qi_pos+0]; x[0] = J[0]*x[0]+cell_m[0];,
-                                x[1] = xptr[qi_pos+1]; x[1] = J[1]*x[1]+cell_m[1];,
-                                x[2] = xptr[qi_pos+2]; x[2] = J[2]*x[2]+cell_m[2];
-                            )
-
-                            sol._eval_BF_only_table_(qi);
-                            for (int ru = 0; ru < N_U; ++ru)
-                            {
-                                sol.set_fab_ptrs(BF_i, BF_j, BF_k, ru);
-
-                                Uh[ru] = sol._eval_unsafe_();
-                            }
-
-                            coarse_grid_info_fab(i,j,k,0) = std::max(coarse_grid_info_fab(i,j,k,0), IBVP.F_TROUBLED(dom, t, x, Uh));
-                        }
-                    }
-                }
-            });
-            Gpu::synchronize();
-        }
-        // ============================================================
-    }
-    // ################################################################
-
-};
-// ####################################################################
-// ####################################################################
-
-
-
-// ####################################################################
 // DG BASE CLASS ######################################################
 // ####################################################################
 template<int N_PHI, int N_DOM, int N_U>
-class DG
+struct DG
 {
-private:
     // DATA MEMBERS ###################################################
     // CLASS-WIDE PARAMETERS
     static const int dom_data_ngr = 1;
+    
+    // PDES INFO
+    std::string PDEs_info;
 
-    // PARAMETERS
-    const std::string PDEs_info, time_stepping_info;
+    // IMPLICIT MESH
+    ImplicitMesh<N_PHI, N_DOM> mesh;
 
-    // VARIABLES
-    // Time-stepping data structures
-    const Real CFL_base;
+    // MATRIX FACTORY
+    MatrixFactory<N_PHI, N_DOM> matfactory;
+
+    // SOLUTION MULTIFABS
+    MultiFab X_old, X_new;
+    charMultiFab slope_limiter_tags;
+
+    // TIME MARCHING
+    int n_time_steps;
+    Real CFL_base;
+    std::string time_marching_info;
+    int tp, tNp;
     RungeKutta<N_PHI, N_DOM, N_U> RK;
 
-    // Solution
-    MultiFab X_old, X_new;
+    // SLOPE LIMITER
+    bool slope_limiter_is_active;
+    SlopeLimiter<N_PHI, N_DOM, N_U> limiter;
 
-    // Slope limiter
-    SlopeLimiter<N_PHI, N_DOM, N_U> slope_limiter;
-
-    // Post-processing
+    // POST-PROCESSING
+    std::string output_folder;
     Vector<int> fields_domain;
     Vector<std::string> fields_name;
     
@@ -267,26 +63,100 @@ private:
     Vector<Vector<std::string>> point_fields_name;
     Vector<int> point_fields_rank;
     bool print_point_fields;
-    Vector<std::string> point_fields_filepath;
     // ################################################################
 
-public:
     // CONSTRUCTOR ####################################################
-    DG(const std::string & PDEs_info_,
-       const std::string & time_stepping_info_,
-       const DGInput & inputs)
+    DG()
     :
-    PDEs_info(PDEs_info_),
-    time_stepping_info(time_stepping_info_),
-    CFL_base(inputs.CFL),
-    slope_limiter(inputs.limiter.active),
-    print_point_fields(false)
+    PDEs_info{""},
+    slope_limiter_is_active{false},
+    n_time_steps{-1},
+    CFL_base{0.0},
+    time_marching_info{""},
+    tp{-1},
+    tNp{-1},
+    output_folder{""},
+    print_point_fields{false}
     {}
+
+    DG(const InputReader & inputs, const int d = 0)
+    {
+        this->Define(inputs, d);
+    }
     // ################################################################
 
     // DESTRUCTOR #####################################################
     ~DG()
     {}
+    // ################################################################
+
+    // INITIALIZATION #################################################
+    void Define(const InputReader & inputs, const int d)
+    {
+        // PDES INFO ==================================================
+        this->PDEs_info = inputs.PDEs[d].description;
+        // ============================================================
+
+        // IMPLICIT MESH ==============================================
+        this->mesh.Define(inputs, d);
+        // ============================================================
+
+        // MATRIX FACTORY =============================================
+        this->matfactory.Define(this->mesh.cc_ba, this->mesh.dm, inputs, d);
+        // ============================================================
+
+        // SOLUTION MULTIFABS =========================================
+        {
+            const int n_comp = (this->matfactory.cube.Np)*N_U;
+
+            this->X_old.define(this->mesh.cc_ba, this->mesh.dm, n_comp, this->dom_data_ngr);
+            this->X_old = 0.0;
+
+            this->X_new.define(this->mesh.cc_ba, this->mesh.dm, n_comp, this->dom_data_ngr);
+            this->X_new = 0.0;
+        }
+
+        this->slope_limiter_tags.define(this->mesh.cc_ba, this->mesh.dm, N_DOM, this->dom_data_ngr);
+        this->slope_limiter_tags = SOUND_ELEMENT;
+        // ============================================================
+
+        // TIME MARCHING ==============================================
+        this->n_time_steps = inputs.time.n_steps;
+
+        this->CFL_base = inputs.dG[d].CFL;
+
+        this->time_marching_info = inputs.dG[d].time_marching;
+
+        this->tp = inputs.dG[d].time_p;
+        this->tNp = inputs.dG[d].time_p+1;
+
+        if (this->isTimeMarchingRungeKutta())
+        {
+            const int n_comp = (this->matfactory.cube.Np)*N_U;
+
+            this->RK.Define(this->mesh.cc_ba, this->mesh.dm, n_comp, this->tNp);
+        }
+        else
+        {
+            Print() << std::endl;
+            Print() << "ERROR: AMReX_DG.H - DG::Define" << std::endl;
+            Print() << "| Unexpected time-stepping scheme: " << this->time_marching_info << std::endl;
+            Print() << std::endl;
+            exit(-1);
+        }
+        // ============================================================
+
+        // SLOPE LIMITER ==============================================
+        this->slope_limiter_is_active = inputs.dG[d].limiter.active;
+        if (slope_limiter_is_active)
+        {
+            this->limiter.Define(this->mesh, this->matfactory, inputs, d);
+        }
+        // ============================================================
+
+        // POST-PROCESSING ============================================
+        // ============================================================
+    }
     // ################################################################
 
     // MISC ###########################################################
@@ -295,768 +165,234 @@ public:
         return (this->PDEs_info.compare("Hyperbolic") == 0);
     }
 
-    bool isTimeSteppingRungeKutta() const
+    bool isTimeMarchingRungeKutta() const
     {
-        return (this->time_stepping_info.compare("Runge-Kutta") == 0);
+        return (this->time_marching_info.compare("RungeKutta") == 0);
     }
     // ################################################################
 
-    // INITIALIZATION #################################################
-    void InitData(const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
-                  const MatrixFactory<N_PHI, N_DOM> & MatFactory)
+    // PRINT SOME REPORTS #############################################
+    void PrintMemoryReport() const
     {
-        // PARAMETERS ===========================
-        const int space_Np = MatFactory.space_Np;
-        const int U_n_comp = space_Np*N_U;
-        // ======================================
+        ParallelDescriptor::Barrier();
+        Print() << "IMPLICIT MESH MEMORY REPORT:" << std::endl;
 
-        // INIT THE DATA STRUCTURE FOR TIME-STEPPING ==================
-        if (this->isTimeSteppingRungeKutta())
+        for (int rank = 0; rank < ParallelDescriptor::NProcs(); ++rank)
         {
-            this->RK.InitData(iGeom, MatFactory);
-        }
-        else
-        {
-            std::cout << std::endl;
-            std::cout << "ERROR: AMReX_DG.H - DG::InitData" << std::endl;
-            std::cout << "| Unexpected time-stepping scheme: " << this->time_stepping_info << std::endl;
-            std::cout << std::endl;
-            exit(-1);
-        }
-        // ============================================================
+            if (ParallelDescriptor::MyProc() == rank)
+            {
+                printf("| Hello, I am processor %d and I have counted:\n", ParallelDescriptor::MyProc());
+                printf("| %d cut elements\n", this->mesh.n_cut_elms);
+                printf("| %d entire extended elements\n", this->mesh.n_entire_extended_elms);
+                printf("| ...and I have allocated:\n");
+                printf("| %lu doubles (%f MB) for implicit domain quadrature;\n", this->mesh.mem_for_eDomQuad, this->mesh.mem_for_eDomQuad*sizeof(Real)/(1024.0*1024.0));
+                printf("| %lu doubles (%f MB) for implicit internal boundary quadrature;\n", this->mesh.mem_for_eIntBouQuad, this->mesh.mem_for_eIntBouQuad*sizeof(Real)/(1024.0*1024.0));
+                printf("| %lu doubles (%f MB) for query points.\n", this->mesh.mem_for_eQuery, this->mesh.mem_for_eQuery*sizeof(Real)/(1024.0*1024.0));
+                printf("| %lu doubles (%f MB) for implicit boundary quadrature.\n", this->mesh.mem_for_eBouQuad, this->mesh.mem_for_eBouQuad*sizeof(Real)/(1024.0*1024.0));
+                printf("| %lu doubles (%f MB) for the mass matrices.\n", this->matfactory.mem_for_space_MMCh, this->matfactory.mem_for_space_MMCh*sizeof(Real)/(1024.0*1024.0));
+            }
 
-        // STORE MEMORY FOR THE MULTIFABS CONTAINING DG SOLUTION ======
-        this->X_old.define(iGeom.cc_ba, iGeom.dm, U_n_comp, this->dom_data_ngr);
-        this->X_new.define(iGeom.cc_ba, iGeom.dm, U_n_comp, this->dom_data_ngr);
-
-        this->X_old = 0.0;
-        this->X_new = 0.0;
-        // ============================================================
-
-        // INIT THE SLOPE LIMITER DATA STRUCTURES IF NEEDED ===========
-        if (this->slope_limiter.active)
-        {
-            this->slope_limiter.InitData(iGeom, MatFactory);
+            ParallelDescriptor::Barrier();
         }
-        // ============================================================
+
+        ParallelDescriptor::Barrier();
+        Print() << std::endl;
     }
     // ################################################################
 
     // INITIAL CONDITIONS #############################################
     template<typename IBVP_CLASS>
-    void SetICs(const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
-                const MatrixFactory<N_PHI, N_DOM> & MatFactory,
-                const IBVP_CLASS & IBVP)
+    void SetICs(const IBVP_CLASS & IBVP, const bool im_flag = true)
     {
-        // PROFILING --------------------------------------------------
-        BL_PROFILE("DG::SetICs(const ImplicitGeometry<N_PHI, N_DOM> &, ....)");
-        // ------------------------------------------------------------
-
-        // PARAMETERS =================================================
-        // GRID
-        const GpuArray<Real, AMREX_SPACEDIM> dx = iGeom._dx;
-        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = iGeom._prob_lo;
-        const GpuArray<Real, AMREX_SPACEDIM> J = iGeom._J;
-        const GpuArray<Real, AMREX_SPACEDIM> iJ = iGeom._iJ;
-        const Real aJ = iGeom._aJ, iaJ = iGeom._iaJ;
-
-        // IMPLICIT MESH
-#ifdef AMREX_USE_CUDA
-        const Real * eDomQuad_mem_ptr = iGeom.eDomQuad_device_mem.data();
-        const Real * space_Dom_BF_mem_ptr = MatFactory.space_Dom_BF_device_mem.data();
-        AMREX_D_TERM
-        (
-            const Real * space_Dom_dBFdXI1_mem_ptr = MatFactory.space_Dom_dBFdXI1_device_mem.data();,
-            const Real * space_Dom_dBFdXI2_mem_ptr = MatFactory.space_Dom_dBFdXI2_device_mem.data();,
-            const Real * space_Dom_dBFdXI3_mem_ptr = MatFactory.space_Dom_dBFdXI3_device_mem.data();
-        )
-        const Real * space_MMCh_mem_ptr = MatFactory.space_MMCh_device_mem.data();
-#else
-        const Real * eDomQuad_mem_ptr = iGeom.eDomQuad_host_mem.data();
-        const Real * space_Dom_BF_mem_ptr = MatFactory.space_Dom_BF_host_mem.data();
-        AMREX_D_TERM
-        (
-            const Real * space_Dom_dBFdXI1_mem_ptr = MatFactory.space_Dom_dBFdXI1_host_mem.data();,
-            const Real * space_Dom_dBFdXI2_mem_ptr = MatFactory.space_Dom_dBFdXI2_host_mem.data();,
-            const Real * space_Dom_dBFdXI3_mem_ptr = MatFactory.space_Dom_dBFdXI3_host_mem.data();
-        )
-        const Real * space_MMCh_mem_ptr = MatFactory.space_MMCh_host_mem.data();
-#endif
-
-        // DG
-        const int sp = MatFactory.space_p;
-        const int sNp = MatFactory.space_Np;
+        // PROJECT THE LEVEL SET FUNCTIONS OVER THE GRID ==============
+        ProjectLevelSets<N_PHI, N_DOM>(this->mesh, IBVP);
+        
+        if (this->slope_limiter_is_active)
+        {
+            AMR::InterpolateLevelSets<N_PHI, N_DOM>(this->mesh,
+                                                    this->limiter.ref_ratio,
+                                                    this->limiter.mesh);
+        }
         // ============================================================
 
-        // INITIALIZATION
-        this->X_new = 0.0;
-        // ===============
+        // MAKE THE IMPLICIT MESH =====================================
+        MakeImplicitMesh<N_PHI, N_DOM>(this->mesh, IBVP, im_flag);
 
-        // EVAL THE PROJECTION ========================================
-        for (MFIter mfi(this->X_new); mfi.isValid(); ++mfi)
+        if (this->slope_limiter_is_active)
         {
-            const Box & bx = mfi.fabbox();
+            MakeImplicitMesh<N_PHI, N_DOM>(this->limiter.mesh, IBVP, im_flag);
+        }
+        // ============================================================
 
-            //Array4<int const> const & eType_fab = iGeom.eType.array(mfi);
-            Array4<int const> const & eDomQuad_Nq_fab = iGeom.eDomQuad_Nq.array(mfi);
-            Array4<long const> const & eDomQuad_pos_fab = iGeom.eDomQuad_pos.array(mfi);
-            Array4<long const> const & space_Dom_BF_pos_fab = MatFactory.space_Dom_BF_pos.array(mfi);
+        // EVAL THE LINEAR OPERATORS FOR THE IMPLICIT MESH ============
+        EvalMassMatrices<N_PHI, N_DOM>(this->mesh, this->matfactory, IBVP);
+
+        if (this->slope_limiter_is_active)
+        {
+            EvalMassMatrices<N_PHI, N_DOM>(this->limiter.mesh, this->limiter.matfactory, IBVP);
+            AMR::EvalInterpolationOperator<N_PHI, N_DOM>(this->mesh, this->matfactory,
+                                                         this->limiter.ref_ratio,
+                                                         this->limiter.mesh, this->limiter.matfactory);
+        }
+        // ============================================================
+
+        // PROJECT THE INITIAL CONDITIONS OVER THE IMPLICIT MESH ======
+        ProjectInitialConditions<N_PHI, N_DOM, N_U>(this->mesh,
+                                                    this->matfactory,
+                                                    this->X_new,
+                                                    IBVP);
+
+        if (this->slope_limiter_is_active)
+        {
+            ProjectInitialConditions<N_PHI, N_DOM, N_U>(this->limiter.mesh,
+                                                        this->limiter.matfactory,
+                                                        this->limiter.X_new,
+                                                        IBVP);
+
+            const Real t = 0.0;
+            IdentifyTroubledElements<N_PHI, N_DOM, N_U>(t,
+                                                        this->mesh,
+                                                        this->matfactory,
+                                                        this->X_new,
+                                                        this->slope_limiter_tags,
+                                                        IBVP);
             
-            Array4<Real> const & X_fab = this->X_new.array(mfi);
-
-            ParallelFor(bx, N_U,
-            [=] AMREX_GPU_DEVICE (int i, int j, int k, int ru) noexcept
-            {
-                // LOCAL PARAMETERS
-                const int dom = IBVP.F_U2DOM(ru);
-                const Real cell_m[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0], prob_lo[1]+(j+0.5)*dx[1], prob_lo[2]+(k+0.5)*dx[2])};
-                
-                // QUADRATURE INFO
-                const int dom_Nq = eDomQuad_Nq_fab(i,j,k,DG_ELM_DOM_QUAD_N_COMP_PER_DOM*dom);
-                const long eDomQuad_pos = eDomQuad_pos_fab(i,j,k,DG_ELM_DOM_QUAD_N_COMP_PER_DOM*dom);
-                const Real * xptr = &eDomQuad_mem_ptr[eDomQuad_pos];
-
-                // BASIS FUNCTIONS INFO
-                const long space_BF_pos = space_Dom_BF_pos_fab(i,j,k,DG_DOM_BF_INFO_N_COMP_PER_DOM*dom);
-                const Real * BF_ptr = &space_Dom_BF_mem_ptr[space_BF_pos];
-                AMREX_D_TERM
-                (
-                    const Real * dBFdXI1_ptr = &space_Dom_dBFdXI1_mem_ptr[space_BF_pos];,
-                    const Real * dBFdXI2_ptr = &space_Dom_dBFdXI2_mem_ptr[space_BF_pos];,
-                    const Real * dBFdXI3_ptr = &space_Dom_dBFdXI3_mem_ptr[space_BF_pos];
-                )
-
-                // LOCAL VARIABLES
-                long qi_pos;
-                Real x[AMREX_SPACEDIM], w;
-                Real integrand;
-
-                // Data structures used to compute the basis functions
-                DG_mem_sol_space_BF bf(sp, BF_ptr, AMREX_D_DECL(dBFdXI1_ptr, dBFdXI2_ptr, dBFdXI3_ptr), &iJ[0]);
-
-                // PROJECTION
-                for (int qi = 0; qi < dom_Nq; ++qi)
-                {
-                    qi_pos = (AMREX_SPACEDIM+1)*qi;
-                    AMREX_D_TERM
-                    (
-                        x[0] = xptr[qi_pos+0]; x[0] = J[0]*x[0]+cell_m[0];,
-                        x[1] = xptr[qi_pos+1]; x[1] = J[1]*x[1]+cell_m[1];,
-                        x[2] = xptr[qi_pos+2]; x[2] = J[2]*x[2]+cell_m[2];
-                    )
-                    w = xptr[qi_pos+AMREX_SPACEDIM]; w = w*aJ;
-
-                    bf._eval_BF_table_(qi);
-                    
-                    for (int rs = 0; rs < sNp; ++rs)
-                    {
-                        integrand = bf.BF[rs]*IBVP.F_U0(ru, x);
-                        X_fab(i,j,k,rs+ru*sNp) += integrand*w;
-                    }
-                }
-            });
-            Gpu::synchronize();
+            this->limiter.SetTags(this->slope_limiter_tags);
         }
-        // IMPORTANT NOTE
-        // We are looping within the fabbox. Therefore we do not need
-        // to share information among the processors.
-        // 
-        //this->X_new.FillBoundary(geom.periodicity());
-        // ============================================================
-
-        // EXTENDED ELEMENTS AND MULTIPLICATION BY INVERSE MASS MATRIX
-        for (MFIter mfi(this->X_new); mfi.isValid(); ++mfi)
-        {
-            const Box & bx = mfi.validbox();
-
-            Array4<int const> const & eType_fab = iGeom.eType.array(mfi);
-            Array4<long const> const & space_MMCh_pos_fab = MatFactory.space_MMCh_pos.array(mfi);
-            Array4<Real> const & X_fab = this->X_new.array(mfi);
-
-            ParallelFor(bx, N_U,
-            [=] AMREX_GPU_DEVICE (int i, int j, int k, int ru) noexcept
-            {
-                // LOCAL PARAMETERS
-                const int dom = IBVP.F_U2DOM(ru);
-                const int etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
-                const bool elm_is_entire = (etype%10 == DG_ELM_TYPE_ENTIRE);
-                const bool elm_is_large = (etype%10 == DG_ELM_TYPE_LARGE);
-                const bool elm_is_valid = elm_is_entire || elm_is_large;
-                const bool elm_is_extended = elm_is_valid && (etype/10 == 1);
-
-                // MASS MATRIX
-                const long pos = space_MMCh_pos_fab(i,j,k,dom);
-                const Real * space_MMCh_ptr = &space_MMCh_mem_ptr[pos];
-                
-                // LOCAL VARIABLES
-                int nbr_i, nbr_j, nbr_k, nbr_b, nbr_etype, nbr_merged_b;
-                bool nbr_is_small;
-                Real Xh[DG_SOL_MAX_SPACE_Np];
-
-                // EXTENDED ELEMENTS
-                if (elm_is_extended)
-                for (int b = 0; b < DG_CELL_N_SPACE_BOUNDARIES; ++b)
-                {
-                    NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
-
-                    nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
-                    nbr_is_small = (nbr_etype%10 == DG_ELM_TYPE_SMALL);
-                    nbr_merged_b = (nbr_is_small) ? (nbr_etype/10) : -1;
-
-                    if (nbr_merged_b == nbr_b)
-                    {
-                        for (int rs = 0; rs < sNp; ++rs)
-                        {
-                            X_fab(i,j,k,rs+ru*sNp) += X_fab(nbr_i,nbr_j,nbr_k,rs+ru*sNp);
-                        }
-                    }
-                }
-                // IF VALID, MULTIPLY BY THE INVERSE OF THE MASS MATRIX
-                if (elm_is_valid)
-                {
-                    // Copy from memory. Remember that the mass matrix
-                    // is that of an element defined over the
-                    // [-1,1]^AMREX_SPACEDIM domain.
-                    for (int rs = 0; rs < sNp; ++rs)
-                        Xh[rs] = X_fab(i,j,k,rs+ru*sNp)*iaJ;
-
-                    // Actual matrix operation (using mass matrix'
-                    // Cholesky decomposition)
-                    DG_utils::Cholesky_solve_overwrite(sNp, 1, space_MMCh_ptr, Xh);
-
-                    // Copy back to memory
-                    for (int rs = 0; rs < sNp; ++rs)
-                        X_fab(i,j,k,rs+ru*sNp) = Xh[rs];
-                }
-            });
-            Gpu::synchronize();
-        }
-        this->X_new.FillBoundary(iGeom.geom.periodicity());
         // ============================================================
     }
     // ################################################################
 
-    // SLOPE LIMITER METHODS ##########################################
-    bool isSlopeLimiterActive() const
+    // COMPUTE THE TIME INCREMENT #####################################
+    template<typename IBVP_CLASS>
+    Real Compute_dt(const Real t, const IBVP_CLASS & IBVP)
     {
-        return this->slope_limiter.active;
-    }
+        // VARIABLES ==================================================
+        Real dt;
+        // ============================================================
 
-    void EvalSlopeLimiterOperators(const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
-                                   const MatrixFactory<N_PHI, N_DOM> & MatFactory)
-    {
-        this->slope_limiter.Eval_IR_Operators(iGeom, MatFactory);
-    }
-    // ################################################################
-
-    // TIME STEP: CFL CONDITION #######################################
-    Real Estimate_CFL(const MatrixFactory<N_PHI, N_DOM> & MatFactory) const
-    {
-        Real CFL;
-        if (this->isPDEsSystemHyperbolic() && this->isTimeSteppingRungeKutta())
+        // ============================================================
+        if (this->isPDEsSystemHyperbolic() && this->isTimeMarchingRungeKutta())
         {
-            CFL = this->CFL_base/(2.0*MatFactory.space_p+1.0);
+            dt = Compute_dt_ExplicitHyperbolic<N_PHI, N_DOM, N_U>(t,
+                                                                  this->mesh,
+                                                                  this->matfactory,
+                                                                  this->X_new,
+                                                                  this->slope_limiter_tags,
+                                                                  IBVP);
+
+            // CFL CONDITION
+            dt *= this->CFL_base/(2.0*this->matfactory.cube.p+1.0);
+
+            if (slope_limiter_is_active)
+            {
+                Real dt_limiter;
+                
+                dt_limiter = Compute_dt_ExplicitHyperbolic<N_PHI, N_DOM, N_U>(t,
+                                                                              this->limiter.mesh,
+                                                                              this->limiter.matfactory,
+                                                                              this->limiter.X_new,
+                                                                              this->limiter.tags,
+                                                                              IBVP);
+
+                // CFL CONDITION
+                dt_limiter *= this->CFL_base/(2.0*this->limiter.matfactory.cube.p+1.0);
+                dt = fmin(dt, dt_limiter);
+            }
         }
         else
         {
-            Print() << "ERROR: AMReX_DG.H - DG::EstimateCFL" << std::endl;
+            Print() << "ERROR: AMReX_DG.H - DG::Compute_dt" << std::endl;
             Print() << "| Unexpected type of PDEs               : " << this->PDEs_info << std::endl;
-            Print() << "| and/or unexpected time-stepping scheme: " << this->time_stepping_info << std::endl;
+            Print() << "| and/or unexpected time-stepping scheme: " << this->time_marching_info << std::endl;
             exit(-1);
         }
+        // ============================================================
 
-        return CFL;
+        return dt;
     }
     // ################################################################
 
-    // TIME STEP ######################################################
+    // TAKE TIME STEP #################################################
     template<typename IBVP_CLASS>
-    Real Compute_dt(const Real & t,
-                    const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
-                    const MatrixFactory<N_PHI, N_DOM> & MatFactory,
-                    const IBVP_CLASS & IBVP)
-    {
-        // PROFILING --------------------------------------------------
-        BL_PROFILE("DG::Compute_dt(const Real &, const ImplicitGeometry<N_PHI, N_DOM> &, ....)");
-        // ------------------------------------------------------------
-
-        // PARAMETERS =================================================
-        // GRID
-        const GpuArray<Real, AMREX_SPACEDIM> dx = iGeom._dx;
-        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = iGeom._prob_lo;
-        const GpuArray<Real, AMREX_SPACEDIM> J = iGeom._J;
-        const GpuArray<Real, AMREX_SPACEDIM> iJ = iGeom._iJ;
-
-        // IMPLICIT MESH
-#ifdef AMREX_USE_CUDA
-        const Real * eTri_mem_ptr = iGeom.eTri_device_mem.data();
-        const Real * space_Tri_BF_mem_ptr = MatFactory.space_Tri_BF_device_mem.data();
-#else
-        const Real * eTri_mem_ptr = iGeom.eTri_host_mem.data();
-        const Real * space_Tri_BF_mem_ptr = MatFactory.space_Tri_BF_host_mem.data();
-#endif
-
-        // DG
-        const int sp = MatFactory.space_p;
-
-        // CFL NUMBER
-        const Real CFL = this->Estimate_CFL(MatFactory);
-        // ============================================================
-
-        // VARIABLES ==================================================
-        MultiFab dt(iGeom.cc_ba, iGeom.dm, 1, 0);
-        dt = 1.0e12;
-        Real dt_min;
-        // ============================================================
-
-        // EVAL THE MINIMUM TIME STEP =================================
-        for (MFIter mfi(dt); mfi.isValid(); ++mfi)
-        {
-            const Box & bx = mfi.validbox();
-            
-            Array4<int const> const & eType_fab = iGeom.eType.array(mfi);
-            Array4<Real const> const & eInfo_fab = iGeom.eInfo.array(mfi);
-            Array4<int const> const & eTri_Npt_fab = iGeom.eTri_Npt.array(mfi);
-            Array4<long const> const & eTri_pos_fab = iGeom.eTri_pos.array(mfi);
-            Array4<long const> const & space_Tri_BF_pos_fab = MatFactory.space_Tri_BF_pos.array(mfi);
-            Array4<Real const> const & X_fab = this->X_new.array(mfi);
-            Array4<Real> const & dt_fab = dt.array(mfi);
-
-            ParallelFor(bx,
-            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-            {
-                // LOCAL PARAMETERS
-                const Real cell_m[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0], prob_lo[1]+(j+0.5)*dx[1], prob_lo[2]+(k+0.5)*dx[2])};
-
-                // LOCAL VARIABLES
-                int etype;
-                bool elm_is_empty, elm_is_large, elm_is_small;
-                Real vf;
-                int BF_i, BF_j, BF_k;
-                Real x[AMREX_SPACEDIM];
-                Real Uh[N_U];
-                Real elm_dt, x_dt;
-
-                // QUERY INFO
-                int dom_Npt;
-                long eTri_pos, qi_pos, space_BF_pos;
-                const Real * xptr;
-                const Real * BF_ptr;
-
-                // Data structures used to compute the basis functions
-                // and the unknown fields
-                DG_mem_sol_space_BFX sol(X_fab, sp, &iJ[0]);
-
-                // CYCLE OVER THE DOMAINS
-                for (int dom = 0; dom < N_DOM; ++dom)
-                {
-                    // Element info
-                    etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
-                    elm_is_empty = (etype == DG_ELM_TYPE_EMPTY);
-                    elm_is_large = (etype%10 == DG_ELM_TYPE_LARGE);
-                    elm_is_small = (etype%10 == DG_ELM_TYPE_SMALL);
-                    vf = eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom);
-
-                    if (!elm_is_empty)
-                    {
-                        // Get the support of the basis functions
-                        BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
-
-                        // Query info
-                        dom_Npt = eTri_Npt_fab(i,j,k,DG_ELM_TRI_N_COMP_PER_DOM*dom);
-                        eTri_pos = eTri_pos_fab(i,j,k,DG_ELM_TRI_N_COMP_PER_DOM*dom);
-                        xptr = &eTri_mem_ptr[eTri_pos];
-
-                        // Basis functions info
-                        space_BF_pos = space_Tri_BF_pos_fab(i,j,k,DG_TRI_BF_INFO_N_COMP_PER_DOM*dom);
-                        BF_ptr = &space_Tri_BF_mem_ptr[space_BF_pos];
-                        sol.set_BF_ptrs(BF_ptr);
-
-                        // CYCLE OVER THE QUERY POINTS
-                        elm_dt = 1.0e12;
-                        for (int qi = 0; qi < dom_Npt; ++qi)
-                        {
-                            qi_pos = AMREX_SPACEDIM*qi;
-                            AMREX_D_TERM
-                            (
-                                x[0] = xptr[qi_pos+0]; x[0] = J[0]*x[0]+cell_m[0];,
-                                x[1] = xptr[qi_pos+1]; x[1] = J[1]*x[1]+cell_m[1];,
-                                x[2] = xptr[qi_pos+2]; x[2] = J[2]*x[2]+cell_m[2];
-                            )
-
-                            sol._eval_BF_only_table_(qi);
-                            for (int ru = 0; ru < N_U; ++ru)
-                            {
-                                sol.set_fab_ptrs(BF_i, BF_j, BF_k, ru);
-
-                                Uh[ru] = sol._eval_unsafe_();
-                            }
-
-                            x_dt = IBVP.F_DT(&dx[0], t, x, Uh);
-                            elm_dt = fmin(elm_dt, x_dt);
-                        }
-                        elm_dt = (elm_is_large) ? (vf*elm_dt) : elm_dt;
-                        dt_fab(i,j,k,0) = fmin(dt_fab(i,j,k,0), elm_dt);
-                    }
-                }
-            });
-            Gpu::synchronize();
-        }
-        // ============================================================
-
-        // GET THE MINUMUM 
-        dt_min = dt.min(0);
-        dt_min *= CFL;
-        // ================
-
-        return dt_min;
-    }
-    // ################################################################
-
-    // TIME-STEP: HYPERBOLIC ##########################################
-    template<typename IBVP_CLASS>
-    void TakeTimeStep_Hyperbolic(const Real & dt,
-                                 const Real & t,
-                                 const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
-                                 const MatrixFactory<N_PHI, N_DOM> & MatFactory,
-                                 const IBVP_CLASS & IBVP)
+    void TakeTimeStep(const Real & dt, const Real & t,
+                      const IBVP_CLASS & IBVP)
     {
         // PARAMETERS =================================================
-        const int space_Np = MatFactory.space_Np;
-        const int U_n_comp = space_Np*N_U;
-        // ============================================================
-
-        // CONSISTENCY CHECK ==========================================
-        if (!(this->isPDEsSystemHyperbolic()))
-        {
-            Print() << "ERROR: AMReX_DG.H - DG::TakeTimeStep_Hyperbolic" << std::endl;
-            Print() << "| Unexpected type of PDEs: " << this->PDEs_info << std::endl;
-            exit(-1);
-        }
+        const int n_comp = this->matfactory.cube.Np*N_U;
         // ============================================================
 
         // COPY NEW TO OLD ============================================
-        MultiFab::Copy(this->X_old, this->X_new, 0, 0, U_n_comp, this->dom_data_ngr);
+        MultiFab::Copy(this->X_old, this->X_new, 0, 0, n_comp, this->dom_data_ngr);
+
+        if (slope_limiter_is_active)
+        {
+            const int limiter_n_comp = this->limiter.matfactory.cube.Np*N_U;
+            MultiFab::Copy(this->limiter.X_old, this->limiter.X_new, 0, 0, limiter_n_comp, this->limiter.dom_data_ngr);
+        }
         // ============================================================
 
         // CALL SELECTED TIME-STEPPING SCHEME =========================
-        if (this->isTimeSteppingRungeKutta())
+        if ((this->isPDEsSystemHyperbolic()) && (this->isTimeMarchingRungeKutta()))
         {
-            this->RK.TakeTimeStep_Hyperbolic(MatFactory.time_Np, dt, t, iGeom, MatFactory, this->X_old, this->X_new, IBVP);
+            if (this->slope_limiter_is_active)
+            {
+                this->RK.TakeTimeStep_SlopeLimiter(this->tNp, dt, t,
+                                                   this->mesh,
+                                                   this->matfactory,
+                                                   this->X_old, this->X_new,
+                                                   this->slope_limiter_tags,
+                                                   this->limiter,
+                                                   this->PDEs_info,
+                                                   IBVP);
+            }
+            else
+            {
+                this->RK.TakeTimeStep(this->tNp, dt, t,
+                                      this->mesh,
+                                      this->matfactory,
+                                      this->X_old, this->X_new,
+                                      this->PDEs_info,
+                                      IBVP);
+            }
         }
         else
         {
-            Print() << "ERROR: AMReX_DG.H - DG::TakeTimeStep_Hyperbolic" << std::endl;
-            Print() << "| Unexpected time-stepping scheme: " << this->time_stepping_info << std::endl;
+            Print() << "ERROR: AMReX_DG.H - DG::TakeTimeStep" << std::endl;
+            Print() << "| Unexpected time-stepping scheme: " << this->time_marching_info << std::endl;
             exit(-1);
         }
         // ============================================================
 
-        // LIMIT THE SOLUTION (IF REQUESTED) ==========================
-        if (this->slope_limiter.active)
+        // CHECK SOLUTION =============================================
+        if (this->X_new.contains_nan())
         {
-            this->slope_limiter.Apply(dt, t, iGeom, MatFactory, this->X_old, this->X_new, IBVP);
+            Print() << "ERROR: AMReX_DG.H - DG::TakeTimeStep" << std::endl;
+            Print() << "| Solution contains nans." << std::endl;
+            exit(-1);
         }
         // ============================================================
     }
     // ################################################################
 
-    // ERROR EVALUATION ###############################################
-    template<typename IBVP_CLASS>
-    Real EvalErrorNorm(const Real & t,
-                       const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
-                       const MatrixFactory<N_PHI, N_DOM> & MatFactory,
-                       const IBVP_CLASS & IBVP)
-    {
-        // PROFILING --------------------------------------------------
-        BL_PROFILE("DG::EvalErrorNorm(const Real &, const ImplicitGeometry<N_PHI, N_DOM> &, ....)");
-        // ------------------------------------------------------------
-
-        // PARAMETERS =================================================
-        // GRID
-        const GpuArray<Real, AMREX_SPACEDIM> dx = iGeom._dx;
-        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = iGeom._prob_lo;
-        const GpuArray<Real, AMREX_SPACEDIM> J = iGeom._J;
-        const GpuArray<Real, AMREX_SPACEDIM> iJ = iGeom._iJ;
-        const Real aJ = iGeom._aJ;
-
-        // IMPLICIT MESH
-#ifdef AMREX_USE_CUDA
-        const Real * eDomQuad_mem_ptr = iGeom.eDomQuad_device_mem.data();
-        const Real * space_Dom_BF_mem_ptr = MatFactory.space_Dom_BF_device_mem.data();
-#else
-        const Real * eDomQuad_mem_ptr = iGeom.eDomQuad_host_mem.data();
-        const Real * space_Dom_BF_mem_ptr = MatFactory.space_Dom_BF_host_mem.data();
-#endif
-
-        // DG
-        const int sp = MatFactory.space_p;
-        // ============================================================
-
-        // VARIABLES ==================================================
-        MultiFab error(iGeom.cc_ba, iGeom.dm, 2, 0);
-        Real err;
-        // ============================================================
-
-        // EVAL THE ERROR =============================================
-        for (MFIter mfi(error); mfi.isValid(); ++mfi)
-        {
-            const Box & bx = mfi.validbox();
-            
-            Array4<int const> const & eType_fab = iGeom.eType.array(mfi);
-            Array4<int const> const & eDomQuad_Nq_fab = iGeom.eDomQuad_Nq.array(mfi);
-            Array4<long const> const & eDomQuad_pos_fab = iGeom.eDomQuad_pos.array(mfi);
-            Array4<long const> const & space_Dom_BF_pos_fab = MatFactory.space_Dom_BF_pos.array(mfi);
-            Array4<Real const> const & X_fab = this->X_new.array(mfi);
-            Array4<Real> const & err_fab = error.array(mfi);
-
-            ParallelFor(bx,
-            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-            {
-                // INITIALIZATION
-                err_fab(i,j,k,0) = 0.0;
-                err_fab(i,j,k,1) = 0.0;
-
-                // LOCAL PARAMETERS
-                const Real cell_m[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0], prob_lo[1]+(j+0.5)*dx[1], prob_lo[2]+(k+0.5)*dx[2])};
-
-                // LOCAL VARIABLES
-                int dom, etype;
-                int BF_i, BF_j, BF_k;
-                Real x[AMREX_SPACEDIM], w;
-                Real Uh[N_U], Ue[N_U];
-                Real integrand;
-
-                // QUADRATURE INFO
-                int dom_Nq;
-                long eDomQuad_pos, qi_pos, space_BF_pos;
-                const Real * xptr;
-                const Real * BF_ptr;
-
-                // Data structures used to compute the basis functions
-                // and the unknown fields
-                DG_mem_sol_space_BFX sol(X_fab, sp, &iJ[0]);
-
-                // CYCLE OVER THE UNKNOWN FIELDS
-                for (int ru = 0; ru < N_U; ++ru)
-                {
-                    dom = IBVP.F_U2DOM(ru);
-                    etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
-
-                    // Get the support of the basis functions
-                    BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
-
-                    // Quadrature info
-                    dom_Nq = eDomQuad_Nq_fab(i,j,k,DG_ELM_DOM_QUAD_N_COMP_PER_DOM*dom);
-                    eDomQuad_pos = eDomQuad_pos_fab(i,j,k,DG_ELM_DOM_QUAD_N_COMP_PER_DOM*dom);
-                    xptr =  &eDomQuad_mem_ptr[eDomQuad_pos];
-
-                    // Basis functions info
-                    space_BF_pos = space_Dom_BF_pos_fab(i,j,k,DG_DOM_BF_INFO_N_COMP_PER_DOM*dom);
-                    BF_ptr = &space_Dom_BF_mem_ptr[space_BF_pos];
-                    sol.set_BF_ptrs(BF_ptr);
-
-                    // COMPUTE THE INTEGRALS
-                    for (int qi = 0; qi < dom_Nq; ++qi)
-                    {
-                        // QUADRATURE POINT AND WEIGHT
-                        qi_pos = (AMREX_SPACEDIM+1)*qi;
-                        AMREX_D_TERM
-                        (
-                            x[0] = xptr[qi_pos+0]; x[0] = J[0]*x[0]+cell_m[0];,
-                            x[1] = xptr[qi_pos+1]; x[1] = J[1]*x[1]+cell_m[1];,
-                            x[2] = xptr[qi_pos+2]; x[2] = J[2]*x[2]+cell_m[2];
-                        )
-                        w = xptr[qi_pos+AMREX_SPACEDIM]; w = w*aJ;
-                        
-                        // SOLUTION
-                        sol._eval_BF_only_table_(qi);
-                        for (int cu = 0; cu < N_U; ++cu)
-                        {
-                            sol.set_fab_ptrs(BF_i, BF_j, BF_k, cu);
-                            
-                            Uh[cu] = sol._eval_unsafe_();
-                        }
-                        
-                        // EXACT SOLUTION
-                        IBVP.F_EXACT(t, x, Ue);
-
-                        integrand = std::abs(Ue[ru]);
-                        err_fab(i,j,k,0) += integrand*w;
-                        
-                        Ue[ru] -= Uh[ru];
-                        integrand = std::abs(Ue[ru]);
-                        err_fab(i,j,k,1) += integrand*w;
-                    }
-                }
-            });
-            Gpu::synchronize();
-        }
-        // ============================================================
-
-        // SUM =============================
-Print() << "(error.sum(0)): " << (error.sum(0)) << std::endl;
-        err = (error.sum(1))/(error.sum(0));
-        // =================================
-
-        return err;
-    }
-
-    template<typename IBVP_CLASS>
-    Real EvalError(const Real & t,
-                   const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
-                   const MatrixFactory<N_PHI, N_DOM> & MatFactory,
-                   const IBVP_CLASS & IBVP)
-    {
-        // PROFILING --------------------------------------------------
-        BL_PROFILE("DG::EvalError(const Real &, const ImplicitGeometry<N_PHI, N_DOM> &, ....)");
-        // ------------------------------------------------------------
-
-        // PARAMETERS =================================================
-        // GRID
-        const GpuArray<Real, AMREX_SPACEDIM> dx = iGeom._dx;
-        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = iGeom._prob_lo;
-        const GpuArray<Real, AMREX_SPACEDIM> J = iGeom._J;
-        const GpuArray<Real, AMREX_SPACEDIM> iJ = iGeom._iJ;
-        const Real aJ = iGeom._aJ;
-
-        // IMPLICIT MESH
-#ifdef AMREX_USE_CUDA
-        const Real * eDomQuad_mem_ptr = iGeom.eDomQuad_device_mem.data();
-        const Real * space_Dom_BF_mem_ptr = MatFactory.space_Dom_BF_device_mem.data();
-#else
-        const Real * eDomQuad_mem_ptr = iGeom.eDomQuad_host_mem.data();
-        const Real * space_Dom_BF_mem_ptr = MatFactory.space_Dom_BF_host_mem.data();
-#endif
-
-        // DG
-        const int sp = MatFactory.space_p;
-        // ============================================================
-
-        // VARIABLES ==================================================
-        MultiFab error(iGeom.cc_ba, iGeom.dm, 2, 0);
-        Real err;
-        // ============================================================
-
-        // EVAL THE ERROR =============================================
-        for (MFIter mfi(error); mfi.isValid(); ++mfi)
-        {
-            const Box & bx = mfi.validbox();
-            
-            Array4<int const> const & eType_fab = iGeom.eType.array(mfi);
-            Array4<int const> const & eDomQuad_Nq_fab = iGeom.eDomQuad_Nq.array(mfi);
-            Array4<long const> const & eDomQuad_pos_fab = iGeom.eDomQuad_pos.array(mfi);
-            Array4<long const> const & space_Dom_BF_pos_fab = MatFactory.space_Dom_BF_pos.array(mfi);
-            Array4<Real const> const & X_fab = this->X_new.array(mfi);
-            Array4<Real> const & err_fab = error.array(mfi);
-
-            ParallelFor(bx, N_DOM,
-            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
-            {
-                // INITIALIZATION
-                err_fab(i,j,k,0) = 0.0;
-                err_fab(i,j,k,1) = 0.0;
-
-                // LOCAL PARAMETERS
-                const Real cell_m[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0], prob_lo[1]+(j+0.5)*dx[1], prob_lo[2]+(k+0.5)*dx[2])};
-
-                // LOCAL VARIABLES
-                int /*dom,*/ etype;
-                int BF_i, BF_j, BF_k;
-                Real x[AMREX_SPACEDIM], w;
-                Real Uh[N_U];
-                Real err_x, norm_x;
-
-                // QUADRATURE INFO
-                int dom_Nq;
-                long eDomQuad_pos, qi_pos, space_BF_pos;
-                const Real * xptr;
-                const Real * BF_ptr;
-
-                // Data structures used to compute the basis functions
-                // and the unknown fields
-                DG_mem_sol_space_BFX sol(X_fab, sp, &iJ[0]);
-
-                // CYCLE OVER THE UNKNOWN FIELDS
-                //for (int ru = 0; ru < N_U; ++ru)
-                //{
-                    //dom = IBVP.F_U2DOM(ru);
-                    etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
-
-                    // Get the support of the basis functions
-                    BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
-
-                    // Quadrature info
-                    dom_Nq = eDomQuad_Nq_fab(i,j,k,DG_ELM_DOM_QUAD_N_COMP_PER_DOM*dom);
-                    eDomQuad_pos = eDomQuad_pos_fab(i,j,k,DG_ELM_DOM_QUAD_N_COMP_PER_DOM*dom);
-                    xptr =  &eDomQuad_mem_ptr[eDomQuad_pos];
-
-                    // Basis functions info
-                    space_BF_pos = space_Dom_BF_pos_fab(i,j,k,DG_DOM_BF_INFO_N_COMP_PER_DOM*dom);
-                    BF_ptr = &space_Dom_BF_mem_ptr[space_BF_pos];
-                    sol.set_BF_ptrs(BF_ptr);
-
-                    // COMPUTE THE INTEGRALS
-                    for (int qi = 0; qi < dom_Nq; ++qi)
-                    {
-                        // QUADRATURE POINT AND WEIGHT
-                        qi_pos = (AMREX_SPACEDIM+1)*qi;
-                        AMREX_D_TERM
-                        (
-                            x[0] = xptr[qi_pos+0]; x[0] = J[0]*x[0]+cell_m[0];,
-                            x[1] = xptr[qi_pos+1]; x[1] = J[1]*x[1]+cell_m[1];,
-                            x[2] = xptr[qi_pos+2]; x[2] = J[2]*x[2]+cell_m[2];
-                        )
-                        w = xptr[qi_pos+AMREX_SPACEDIM]; w = w*aJ;
-                        
-                        // SOLUTION
-                        sol._eval_BF_only_table_(qi);
-                        for (int cu = 0; cu < N_U; ++cu)
-                        {
-                            sol.set_fab_ptrs(BF_i, BF_j, BF_k, cu);
-                            
-                            Uh[cu] = sol._eval_unsafe_();
-                        }
-                        
-                        // EXACT SOLUTION
-                        IBVP.F_ERROR(dom, t, x, Uh, err_x, norm_x);
-
-                        err_fab(i,j,k,0) += norm_x*w;
-                        err_fab(i,j,k,1) += err_x*w;
-                    }
-                //}
-            });
-            Gpu::synchronize();
-        }
-        // ============================================================
-
-        // SUM =============================
-Print() << "(error.sum(0)): " << (error.sum(0)) << std::endl;
-Print() << "(error.sum(1)): " << (error.sum(1)) << std::endl;
-        err = (error.sum(1))/(error.sum(0));
-        // =================================
-
-        return err;
-    }
-    // ################################################################
-
-    // EXPORT DG SOLUTION #############################################
+    // SET OUTPUT INFORMATION #########################################
     template<typename IBVP_CLASS>
     void SetOutput(const std::string & dst_folder,
-                   const std::string & filename_root,
-                   const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
                    const IBVP_CLASS & IBVP)
     {
         // PARAMETERS =================================================
         // GRID
-        const GpuArray<Real, AMREX_SPACEDIM> dx = iGeom._dx;
-        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = iGeom._prob_lo;
-        const Box & domain = iGeom.geom.Domain();
+        const GpuArray<Real, AMREX_SPACEDIM> dx = this->mesh.dx;
+        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = this->mesh.prob_lo;
+        const Box & domain = this->mesh.geom.Domain();
+        // ============================================================
+
+        // STORE THE DESTINATION FOLDER ===============================
+        this->output_folder = dst_folder;
         // ============================================================
 
         // SET THE OUTPUT FIELDS ======================================
-        IBVP.F_SOL_DESCRIPTION(this->fields_domain,
-                               this->fields_name);
+        IBVP.F_SOL_DESCRIPTION(this->fields_domain, this->fields_name);
 
         // CONSISTENCY CHECK
         if (this->fields_domain.size() != this->fields_name.size())
@@ -1134,8 +470,8 @@ Print() << "(error.sum(1)): " << (error.sum(1)) << std::endl;
             for (MFIter mfi(this->X_new); mfi.isValid(); ++mfi)
             {
                 const Box & bx = mfi.validbox();
-                const auto lo = lbound(bx);
-                const auto hi = ubound(bx);
+                const Dim3 lo = lbound(bx);
+                const Dim3 hi = ubound(bx);
 
                 for (int k = lo.z; k <= hi.z; ++k)
                 for (int j = lo.y; j <= hi.y; ++j)
@@ -1150,638 +486,117 @@ Print() << "(error.sum(1)): " << (error.sum(1)) << std::endl;
                 }
             }
         }
-
-        // OPEN THE FILES WHERE TO STORE THE POINT FIELDS
-        this->point_fields_filepath.resize(n_point_locations);
-
-        for (int p = 0; p < n_point_locations; ++p)
-        {
-            if (this->point_fields_rank[p] == ParallelDescriptor::MyProc())
-            {
-                this->point_fields_filepath[p] = dst_folder+"/"+filename_root+"_loc_"+std::to_string(p)+".txt";
-
-                std::ofstream fp;
-                fp.open(this->point_fields_filepath[p].c_str(), std::ofstream::out);
-                if (!fp.good())
-                {
-                    FileOpenFailed(this->point_fields_filepath[p]);
-                }
-
-                fp << "Point solution at location: " << AMREX_D_TERM(this->point_fields_location[p][0] << " " <<,
-                                                                     this->point_fields_location[p][1] << " " <<,
-                                                                     this->point_fields_location[p][2] <<) "\n";
-                
-                const int n_fields = this->point_fields_name[p].size();
-                fp << "t ";
-                for (int f = 0; f < (n_fields-1); ++f)
-                {
-                    fp << this->point_fields_name[p][f]+" ";
-                }
-                fp << this->point_fields_name[p][n_fields-1]+"\n";
-
-                fp.close();
-            }
-        }
         // ============================================================
     }
+    // ################################################################
 
+    // PRINT POINT SOLUTION AS A FUNCTION OF TIME #####################
     template<typename IBVP_CLASS>
-    void PrintPointSolution(const int & time_id,
-                            const Real & t,
-                            const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
-                            const MatrixFactory<N_PHI, N_DOM> & MatFactory,
+    void PrintPointSolution(const std::string & filename,
+                            const int n,
+                            const Real time,
                             const IBVP_CLASS & IBVP) const
     {
         // PARAMETERS =================================================
-        // GRID
-        const GpuArray<Real, AMREX_SPACEDIM> dx = iGeom._dx;
-        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = iGeom._prob_lo;
-
-        // DG
-        const int phi_p = iGeom.uHyperrect.p;
-        const int space_sol_p = MatFactory.space_p;
-        
         const int n_point_locations = this->point_fields_location.size();
         // ============================================================
+
+        // QUICK RETURN ===============================================
+        if (!this->print_point_fields) return;
+        // ============================================================
         
-        // VARIABLES ==================================================
+        // CREATE THE FILES IF n == 0 =================================
+        if (n == 0)
+        {
+            for (int p = 0; p < n_point_locations; ++p)
+            {
+                if (this->point_fields_rank[p] == ParallelDescriptor::MyProc())
+                {
+                    const std::string filepath = MakePath({this->output_folder, filename+"_loc_"+std::to_string(p)+".txt"});
+                    
+                    std::ofstream fp;
+                    fp.open(filepath.c_str(), std::ofstream::out);
+                    if (!fp.good())
+                    {
+                        FileOpenFailed(filepath);
+                    }
+
+                    fp << "Point solution at location: " << AMREX_D_TERM(this->point_fields_location[p][0] << " " <<,
+                                                                         this->point_fields_location[p][1] << " " <<,
+                                                                         this->point_fields_location[p][2] <<) "\n";
+
+                    const int n_fields = this->point_fields_name[p].size();
+                    fp << "t ";
+                    for (int f = 0; f < (n_fields-1); ++f)
+                    {
+                        fp << this->point_fields_name[p][f]+" ";
+                    }
+                    fp << this->point_fields_name[p][n_fields-1]+"\n";
+
+                    fp.close();
+                }
+            }
+        }
         // ============================================================
 
         // CYCLE OVER THE QUERY POINTS ================================
-        for (int p = 0; p < n_point_locations; ++p)
-        {
-            if (this->point_fields_rank[p] == ParallelDescriptor::MyProc())
-            {
-                std::ofstream fp;
-                fp.open(this->point_fields_filepath[p].c_str(), std::ofstream::out | std::ofstream::app);
-                if (!fp.good())
-                {
-                    FileOpenFailed(this->point_fields_filepath[p]);
-                }
-                
-                const amrex::Real x[AMREX_SPACEDIM] = {AMREX_D_DECL
-                (
-                    this->point_fields_location[p][0],
-                    this->point_fields_location[p][1],
-                    this->point_fields_location[p][2]
-                )};
-                const int pi = this->point_fields_ijk[p][0];
-                const int pj = this->point_fields_ijk[p][1];
-                const int pk = this->point_fields_ijk[p][2];
-                const int dom = this->point_fields_domain[p];
-                const int n_fields = this->point_fields_name[p].size();
-                Gpu::ManagedVector<Real> point_fields;
-                point_fields.resize(n_fields);
-                Real * point_fields_ptr = point_fields.data();
-
-                for (MFIter mfi(this->X_new); mfi.isValid(); ++mfi)
-                {
-                    const Box& bx = mfi.validbox();
-
-                    Array4<Real const> const & PHI_fab = iGeom.PHI.array(mfi);
-                    Array4<int const> const & eType_fab = iGeom.eType.array(mfi);
-                    Array4<Real const> const & X_fab = this->X_new.array(mfi);
-
-                    ParallelFor(bx,
-                    [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-                    {
-                        if ((i == pi) && (j == pj) && (k == pk))
-                        {
-                            // LOCAL PARAMETERS
-                            const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0], prob_lo[1]+j*dx[1], prob_lo[2]+k*dx[2])};
-                            const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+1)*dx[0], prob_lo[1]+(j+1)*dx[1], prob_lo[2]+(k+1)*dx[2])};
-                            const int etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
-
-                            // LOCAL VARIABLES
-                            Real grad[AMREX_SPACEDIM];
-                            Real PHIh[N_PHI], Uh[N_U];
-                            Real AMREX_D_DECL(dPHIhdx1[N_PHI], dPHIhdx2[N_PHI], dPHIhdx3[N_PHI]);
-                            Real AMREX_D_DECL(dUhdx1[N_U], dUhdx2[N_U], dUhdx3[N_U]);
-                            int BF_i, BF_j, BF_k;
-                            Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
-
-                            // Get the support of the basis functions
-                            BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
-
-                            // Data structures used to compute the
-                            // level set functions and the dG
-                            // solution
-                            DG_phi_space_BFX phi(cell_lo, cell_hi, PHI_fab, phi_p, i, j, k, -1);
-                            DG_sol_space_BFX sol(BF_lo, BF_hi, X_fab, space_sol_p, BF_i, BF_j, BF_k, -1);
-
-                            // FIELDS (LEVEL SET FUNCTIONS)
-                            phi._eval_BF_table_(x);
-                            for (int rph = 0; rph < N_PHI; ++rph)
-                            {
-                                phi.set_fab_ptrs(i, j, k, rph);
-
-                                PHIh[rph] = phi._eval_unsafe_();
-
-                                phi._eval_grad_unsafe_(grad);
-                                AMREX_D_TERM
-                                (
-                                    dPHIhdx1[rph] = grad[0];,
-                                    dPHIhdx2[rph] = grad[1];,
-                                    dPHIhdx3[rph] = grad[2];
-                                );
-                            }
-
-                            // FIELDS
-                            sol._eval_BF_table_(x);
-                            for (int ru = 0; ru < N_U; ++ru)
-                            {
-                                sol.set_fab_ptrs(BF_i, BF_j, BF_k, ru);
-
-                                Uh[ru] = sol._eval_unsafe_();
-                        
-                                sol._eval_grad_unsafe_(grad);
-                                AMREX_D_TERM
-                                (
-                                    dUhdx1[ru] = grad[0];,
-                                    dUhdx2[ru] = grad[1];,
-                                    dUhdx3[ru] = grad[2];
-                                );
-                            }
-
-                            IBVP.F_POINT_SOL(p,
-                                             PHIh, AMREX_D_DECL(dPHIhdx1, dPHIhdx2, dPHIhdx3),
-                                             Uh, AMREX_D_DECL(dUhdx1, dUhdx2, dUhdx3),
-                                             point_fields_ptr);
-                        }
-                    });
-                    Gpu::synchronize();
-                }
-
-                fp << std::scientific << std::setprecision(5) << std::setw(12) << t << " ";
-                for (int f = 0; f < (n_fields-1); ++f)
-                {
-                    fp << std::scientific << std::setprecision(5) << std::setw(12) << point_fields_ptr[f] << " ";
-                }
-                fp << std::scientific << std::setprecision(5) << std::setw(12) << point_fields_ptr[n_fields-1] << "\n";
-
-                fp.close();
-            }
-        }
+Print() << "HERE WE ARE - dG::PrintPointSolution" << std::endl;
+exit(-1);
         // ============================================================
+    }
+    // ################################################################
+
+    // EXPORT SOLUTION ################################################
+    template<typename IBVP_CLASS>
+    void ExportMesh(const std::string & filename_root,
+                    const int n,
+                    const Real time,
+                    const IBVP_CLASS & IBVP)
+    {
+        ExportMesh_VTK<N_PHI, N_DOM>(this->output_folder, filename_root,
+                                     n, this->n_time_steps, time,
+                                     this->mesh,
+                                     this->slope_limiter_tags,
+                                     IBVP);
+        
+        if (this->slope_limiter_is_active)
+        {
+            ExportMesh_VTK<N_PHI, N_DOM>(this->output_folder, filename_root+"Limited",
+                                         n, this->n_time_steps, time,
+                                         this->limiter.mesh,
+                                         this->limiter.tags,
+                                         IBVP);
+        }
     }
 
     template<typename IBVP_CLASS>
-    void Export_VTK(const std::string & dst_folder,
-                    const std::string & filename_root,
-                    const int & time_id,
-                    const int & time_id_max,
-                    const Real & t,
-                    const ImplicitGeometry<N_PHI, N_DOM> & iGeom,
-                    const MatrixFactory<N_PHI, N_DOM> & MatFactory,
-                    const IBVP_CLASS & IBVP) const
+    void ExportSolution(const std::string & filename_root,
+                        const int n,
+                        const Real time,
+                        const IBVP_CLASS & IBVP)
     {
-        // PARAMETERS =================================================
-        const bool vtk_legacy_format = false;
-        const bool vtk_xml_format = true;
+        ExportSolution_VTK<N_PHI, N_DOM, N_U>(this->output_folder, filename_root,
+                                              n, this->n_time_steps, time,
+                                              this->mesh,
+                                              this->matfactory,
+                                              this->X_new,
+                                              this->slope_limiter_tags,
+                                              this->fields_domain,
+                                              this->fields_name,
+                                              IBVP);
 
-        // FILEPATH
-        std::string filepath = GetOutputFilepath(dst_folder, filename_root, time_id, time_id_max)+".vtk";
-
-        // DATE AND TIME
-        const time_t now = time(0);
-        const char * date_time = ctime(&now);
-
-        // GRID
-        const GpuArray<Real, AMREX_SPACEDIM> dx = iGeom._dx;
-        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = iGeom._prob_lo;
-        const GpuArray<Real, AMREX_SPACEDIM> J = iGeom._J;
-
-        // STANDARD ELEMENT
-        const int cell_dom_Ng = std::max(iGeom.uHyperrect.dom_Ng, MatFactory.uHyperrect.dom_Ng);
-        const int cell_e = std::max(iGeom.uHyperrect.g, MatFactory.uHyperrect.g);
-        const int cell_dom_Ne = AMREX_D_PICK(cell_e, cell_e*cell_e, cell_e*cell_e*cell_e);
-        const int cell_conn_len = AMREX_D_PICK(2, 4, 8)*cell_dom_Ne;
-        const Gpu::ManagedVector<int> cell_base_conn = Get_VTK_BaseCell_Connectivity(cell_e);
-        const int * cell_base_conn_ptr = cell_base_conn.data();
-
-        AMREX_D_TERM
-        (
-            Real const * dom_XI1g_ptr = (iGeom.uHyperrect.g > MatFactory.uHyperrect.g) ? iGeom.uHyperrect.dom_XI1g.data() : MatFactory.uHyperrect.dom_XI1g.data();,
-            Real const * dom_XI2g_ptr = (iGeom.uHyperrect.g > MatFactory.uHyperrect.g) ? iGeom.uHyperrect.dom_XI2g.data() : MatFactory.uHyperrect.dom_XI2g.data();,
-            Real const * dom_XI3g_ptr = (iGeom.uHyperrect.g > MatFactory.uHyperrect.g) ? iGeom.uHyperrect.dom_XI3g.data() : MatFactory.uHyperrect.dom_XI3g.data();
-        )
-
-        // DG
-        const int phi_p = iGeom.uHyperrect.p;
-        const int space_sol_p = MatFactory.space_p;
-
-        // DOMAINS AND FIELDS
-        const int n_requested_fields = this->fields_domain.size();
-        const int n_total_fields = n_requested_fields+N_PHI;
-        Gpu::ManagedVector<int> Gpu_field_domains;
-        Gpu_field_domains.resize(n_requested_fields);
-        for (int f = 0; f < n_requested_fields; ++f) Gpu_field_domains[f] = this->fields_domain[f];
-        const int * field_domains_ptr = Gpu_field_domains.data();
-
-        // VTK
-        const int VTK_cell_id = AMREX_D_PICK(3, 9, 12);
-        // ============================================================
-
-        // VARIABLES ==================================================
-        FILE * fp;
-
-        long n_dG_cells;
-        Gpu::ManagedVector<Real> nodes;
-        Gpu::ManagedVector<long> conn;
-
-        long nodes_pos, conn_pos, conn_offset;
-        longMultiFab grid_info(iGeom.cc_ba, iGeom.dm, 3, iGeom.dom_data_ngr);
-
-        // FIELDS
-        Gpu::ManagedVector<Real> fields;
-
-        long fields_pos;
-        longMultiFab fields_info(iGeom.cc_ba, iGeom.dm, 1, iGeom.dom_data_ngr);
-        // ============================================================
-
-        // SOME CHECKS ================================================
-        if (n_total_fields > DG_MAX_N_FIELDS)
+        if (this->slope_limiter_is_active)
         {
-            std::cout << std::endl;
-            std::cout << "ERROR: AMReX_DG.H - DG::Export_VTK" << std::endl;
-            std::cout << "| The number of requested fields exceeds the number of allowed fields:" << std::endl;
-            std::cout << "| DG_MAX_N_FIELDS = " << DG_MAX_N_FIELDS << std::endl;
-            std::cout << "| n_total_fields = " << n_total_fields << std::endl;
-            std::cout << std::endl;
-            exit(-1);
+            ExportSolution_VTK<N_PHI, N_DOM, N_U>(this->output_folder, filename_root+"Limited",
+                                                  n, this->n_time_steps, time,
+                                                  this->limiter.mesh,
+                                                  this->limiter.matfactory,
+                                                  this->limiter.X_new,
+                                                  this->limiter.tags,
+                                                  this->fields_domain,
+                                                  this->fields_name,
+                                                  IBVP);
         }
-        // ============================================================
-
-        // ALIGN PROCESSORS ==========
-        ParallelDescriptor::Barrier();
-        // ===========================
-
-        // COLLECT INFORMATION ========================================
-        n_dG_cells = 0L;
-        nodes_pos = 0L;
-        conn_pos = 0L;
-        conn_offset = 0L;
-
-        fields_pos = 0L;
-
-        for (MFIter mfi(this->X_new); mfi.isValid(); ++mfi)
-        {
-            const Box& bx = mfi.validbox();
-            const auto lo = lbound(bx);
-            const auto hi = ubound(bx);
-            const auto len = length(bx);
-
-            Array4<long> const & grid_info_fab = grid_info.array(mfi);
-            Array4<long> const & fields_info_fab = fields_info.array(mfi);
-
-            n_dG_cells += len.x*len.y*len.z;
-
-            for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i)
-            {
-                // UPDATE INFO
-                grid_info_fab(i,j,k,0) = nodes_pos;
-                grid_info_fab(i,j,k,1) = conn_pos;
-                grid_info_fab(i,j,k,2) = conn_offset;
-
-                nodes_pos += cell_dom_Ng*AMREX_SPACEDIM;
-                conn_pos += cell_conn_len;
-                conn_offset += cell_dom_Ng;
-
-                fields_info_fab(i,j,k,0) = fields_pos;
-
-                fields_pos += cell_dom_Ng*n_total_fields;
-            }
-        }
-        // ============================================================
-
-        // COMPUTE OUTPUT DATA ========================================
-        nodes.resize(n_dG_cells*cell_dom_Ng*AMREX_SPACEDIM);
-        conn.resize(n_dG_cells*cell_conn_len);
-        fields.resize(n_dG_cells*cell_dom_Ng*n_total_fields);
-
-        Real * nodes_ptr = nodes.data();
-        long * conn_ptr = conn.data();
-        Real * fields_ptr = fields.data();
-
-        for (MFIter mfi(this->X_new); mfi.isValid(); ++mfi)
-        {
-            const Box& bx = mfi.validbox();
-
-            Array4<Real const> const & PHI_fab = iGeom.PHI.array(mfi);
-            Array4<int const> const & eType_fab = iGeom.eType.array(mfi);
-            Array4<Real const> const & X_fab = this->X_new.array(mfi);
-
-            Array4<long const> const & grid_info_fab = grid_info.array(mfi);
-            Array4<long const> const & fields_info_fab = fields_info.array(mfi);
-
-            ParallelFor(bx,
-            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-            {
-                // LOCAL PARAMETERS
-                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0], prob_lo[1]+j*dx[1], prob_lo[2]+k*dx[2])};
-                const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+1)*dx[0], prob_lo[1]+(j+1)*dx[1], prob_lo[2]+(k+1)*dx[2])};
-                const Real cell_m[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0], prob_lo[1]+(j+0.5)*dx[1], prob_lo[2]+(k+0.5)*dx[2])};
-                const long cell_nodes_pos = grid_info_fab(i,j,k,0);
-                const long cell_conn_pos = grid_info_fab(i,j,k,1);
-                const long cell_conn_offset = grid_info_fab(i,j,k,2);
-                const long cell_fields_pos = fields_info_fab(i,j,k,0);
-
-                // LOCAL VARIABLES
-                Real x[AMREX_SPACEDIM], grad[AMREX_SPACEDIM];
-                Real PHIh[N_PHI], Uh[N_U];
-                Real AMREX_D_DECL(dPHIhdx1[N_PHI], dPHIhdx2[N_PHI], dPHIhdx3[N_PHI]);
-                Real AMREX_D_DECL(dUhdx1[N_U], dUhdx2[N_U], dUhdx3[N_U]);
-                Real Fh[DG_MAX_N_FIELDS];
-                int dom, etype;
-                int BF_i, BF_j, BF_k;
-                Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
-
-                // Data structures used to compute the level set
-                // functions and the dG solution
-                DG_phi_space_BFX phi(cell_lo, cell_hi, PHI_fab, phi_p, i, j, k, -1);
-                DG_sol_space_BFX sol(X_fab, space_sol_p);
-
-                // UPDATE INFO: NODES AND FIELDS
-                for (int n = 0; n < cell_dom_Ng; ++n)
-                {
-                    // NODES
-                    AMREX_D_TERM
-                    (
-                        x[0] = J[0]*dom_XI1g_ptr[n]+cell_m[0];,
-                        x[1] = J[1]*dom_XI2g_ptr[n]+cell_m[1];,
-                        x[2] = J[2]*dom_XI3g_ptr[n]+cell_m[2];
-                    )
-                    AMREX_D_TERM
-                    (
-                        nodes_ptr[cell_nodes_pos+AMREX_SPACEDIM*n+0] = x[0];,
-                        nodes_ptr[cell_nodes_pos+AMREX_SPACEDIM*n+1] = x[1];,
-                        nodes_ptr[cell_nodes_pos+AMREX_SPACEDIM*n+2] = x[2];
-                    )
-
-                    // FIELDS (LEVEL SET FUNCTIONS)
-                    phi._eval_BF_table_(x);
-                    for (int rph = 0; rph < N_PHI; ++rph)
-                    {
-                        phi.set_fab_ptrs(i, j, k, rph);
-
-                        PHIh[rph] = phi._eval_unsafe_();
-
-                        phi._eval_grad_unsafe_(grad);
-                        AMREX_D_TERM
-                        (
-                            dPHIhdx1[rph] = grad[0];,
-                            dPHIhdx2[rph] = grad[1];,
-                            dPHIhdx3[rph] = grad[2];
-                        );
-
-                        fields_ptr[cell_fields_pos+n_total_fields*n+rph] = PHIh[rph];
-                    }
-
-                    // FIELDS
-                    for (int rf = 0; rf < n_requested_fields; ++rf)
-                    {
-                        dom = field_domains_ptr[rf];
-                        etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
-                        BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
-
-                        sol.set_support(BF_lo, BF_hi);
-                        sol._eval_BF_table_(x);
-
-                        for (int ru = 0; ru < N_U; ++ru)
-                        {
-                            sol.set_fab_ptrs(BF_i, BF_j, BF_k, ru);
-
-                            Uh[ru] = sol._eval_unsafe_();
-                    
-                            sol._eval_grad_unsafe_(grad);
-                            AMREX_D_TERM
-                            (
-                                dUhdx1[ru] = grad[0];,
-                                dUhdx2[ru] = grad[1];,
-                                dUhdx3[ru] = grad[2];
-                            );
-                        }
-                        
-                        IBVP.F_SOL(t, x,
-                                   PHIh, AMREX_D_DECL(dPHIhdx1, dPHIhdx2, dPHIhdx3),
-                                   Uh, AMREX_D_DECL(dUhdx1, dUhdx2, dUhdx3),
-                                   Fh);
-
-                        fields_ptr[cell_fields_pos+n_total_fields*n+N_PHI+rf] = Fh[rf];
-                    }
-                }
-
-                // UPDATE INFO: CONNECTIVITY
-                for (int c = 0; c < cell_conn_len; ++c)
-                {
-                    conn_ptr[cell_conn_pos+c] = cell_base_conn_ptr[c]+cell_conn_offset;
-                }
-            });
-            Gpu::synchronize();
-        }
-        // ============================================================
-
-        // WRITE OUTPUT DATA: LEGACY FORMAT ===========================
-        if (vtk_legacy_format)
-        {
-            // OPEN FILE FOR WRITING --------------------------------------
-            fp = fopen(filepath.c_str(), "w");
-            if (fp != nullptr)
-            {
-                fprintf(fp, "# vtk DataFile Version 2.0\n");
-                fprintf(fp, "VTK mesh file created on %s", date_time);
-                fprintf(fp, "ASCII\n");
-            }
-            else
-            {
-                Print() << "ERROR: AMReX_DG.H - DG::Export_VTK" << std::endl;
-                Print() << "| Unable to open and write: " << filepath << "file" << std::endl;
-                exit(-1);
-            }
-            // ------------------------------------------------------------
-            
-            // WRITE TO FILE: GRID INFORMATION ----------------------------
-            const long grid_n_nodes = n_dG_cells*cell_dom_Ng;
-            const long grid_n_cells = conn.size()/AMREX_D_PICK(2, 4, 8);
-            
-            fprintf(fp, "DATASET UNSTRUCTURED_GRID\n");
-    #if (AMREX_SPACEDIM == 1)
-            // NODES
-            fprintf(fp, "POINTS %lu float\n", grid_n_nodes);
-            for (int n = 0; n < grid_n_nodes; ++n)
-                fprintf(fp, "%+.12f 0.0 0.0\n", nodes[AMREX_SPACEDIM*n]);
-            
-            // CELLS
-            fprintf(fp, "CELLS %lu %lu\n", grid_n_cells, (1+2)*grid_n_cells);
-            for (int n = 0; n < grid_n_cells; ++n)
-                fprintf(fp, "2 %lu %lu\n", conn[2*n], conn[2*n+1]);
-    #endif
-    #if (AMREX_SPACEDIM == 2)
-            // NODES
-            fprintf(fp, "POINTS %lu float\n", grid_n_nodes);
-            for (int n = 0; n < grid_n_nodes; ++n)
-                fprintf(fp, "%+.12f %+.12f 0.0\n", nodes[AMREX_SPACEDIM*n], nodes[AMREX_SPACEDIM*n+1]);
-            
-            // CELLS
-            fprintf(fp, "CELLS %lu %lu\n", grid_n_cells, (1+4)*grid_n_cells);
-            for (int n = 0; n < grid_n_cells; ++n)
-                fprintf(fp, "4 %lu %lu %lu %lu\n", conn[4*n], conn[4*n+1], conn[4*n+2], conn[4*n+3]);
-    #endif
-    #if (AMREX_SPACEDIM == 3)
-            // NODES
-            fprintf(fp, "POINTS %lu float\n", grid_n_nodes);
-            for (int n = 0; n < grid_n_nodes; ++n)
-                fprintf(fp, "%+.12f %+.12f %+.12f\n", nodes[AMREX_SPACEDIM*n], nodes[AMREX_SPACEDIM*n+1], nodes[AMREX_SPACEDIM*n+2]);
-            
-            // CELLS
-            fprintf(fp, "CELLS %lu %lu\n", grid_n_cells, (1+8)*grid_n_cells);
-            for (int n = 0; n < grid_n_cells; ++n)
-                fprintf(fp, "8 %lu %lu %lu %lu %lu %lu %lu %lu\n", conn[8*n], conn[8*n+1], conn[8*n+2], conn[8*n+3],
-                                                                   conn[8*n+4], conn[8*n+5], conn[8*n+6], conn[8*n+7]);
-    #endif
-
-            // CELL TYPES
-            fprintf(fp, "CELL_TYPES %lu\n", grid_n_cells);
-            for (int n = 0; n < grid_n_cells; ++n)
-                fprintf(fp, "%d\n", VTK_cell_id);
-            // ------------------------------------------------------------
-
-            // WRITE TO FILE: FIELDS INFORMATION --------------------------
-            fprintf(fp, "POINT_DATA %lu\n", grid_n_nodes);
-
-            for (int rf = 0; rf < N_PHI; ++rf)
-            {
-                const std::string field_name = "Grid_PHI_"+std::to_string(rf);
-                
-                fprintf(fp, "SCALARS %s float 1\n", field_name.c_str());
-                fprintf(fp, "LOOKUP_TABLE default\n");
-                for (int n = 0; n < grid_n_nodes; ++n)
-                {
-                    fprintf(fp, "%+.12f\n", fields[n_total_fields*n+rf]);
-                }
-            }
-            for (int rf = 0; rf < n_requested_fields; ++rf)
-            {
-                fprintf(fp, "SCALARS %s float 1\n", this->fields_name[rf].c_str());
-                fprintf(fp, "LOOKUP_TABLE default\n");
-                for (int n = 0; n < grid_n_nodes; ++n)
-                {
-                    fprintf(fp, "%+.12f\n", fields[n_total_fields*n+N_PHI+rf]);
-                }
-            }
-            // ------------------------------------------------------------
-
-            // CLOSE FILE
-            fclose(fp);
-            // ----------   
-        }
-        // WRITE OUTPUT DATA: XML FORMAT ==============================
-        else if (vtk_xml_format)
-        {
-            // VARIABLES ----------------------------------------------
-            const long n_nodes = n_dG_cells*cell_dom_Ng;
-            const long n_cells = conn.size()/AMREX_D_PICK(2, 4, 8);
-            const int n_nodal_fields = n_total_fields;
-
-            Vector<VTK::Float_t> VTK_nodes;
-            Vector<VTK::Cell_conn_t> VTK_cell_conn;
-            Vector<VTK::Cell_offs_t> VTK_cell_offset;
-            Vector<VTK::Cell_type_t> VTK_cell_type;
-            Vector<Vector<VTK::Float_t>> VTK_nodal_field(n_nodal_fields);
-            Vector<std::string> VTK_nodal_field_name(n_nodal_fields);
-            // --------------------------------------------------------
-
-            // RESIZE MEMORY ------------------------------------------
-            VTK_nodes.resize(3*n_nodes);
-            VTK_cell_conn.resize(conn.size());
-            VTK_cell_offset.resize(n_cells+1);
-            VTK_cell_type.resize(n_cells);
-            for (int f = 0; f < n_nodal_fields; ++f)
-            {
-                VTK_nodal_field[f].resize(n_nodes);
-            }
-            // --------------------------------------------------------
-
-            // FILL IN DATA -------------------------------------------
-            for (int n = 0; n < n_nodes; ++n)
-            {
-#if (AMREX_SPACEDIM == 2)
-                VTK_nodes[3*n+0] = nodes[AMREX_SPACEDIM*n+0];
-                VTK_nodes[3*n+1] = nodes[AMREX_SPACEDIM*n+1];
-                VTK_nodes[3*n+2] = 0.0;
-#endif
-#if (AMREX_SPACEDIM == 3)
-                VTK_nodes[3*n+0] = nodes[AMREX_SPACEDIM*n+0];
-                VTK_nodes[3*n+1] = nodes[AMREX_SPACEDIM*n+1];
-                VTK_nodes[3*n+2] = nodes[AMREX_SPACEDIM*n+2];
-#endif
-            }
-
-            for (int k = 0; k < conn.size(); ++k)
-            {
-                VTK_cell_conn[k] = conn[k];
-            }
-            
-            VTK_cell_offset[0];
-            for (int k = 1; k < (n_cells+1); ++k)
-            {
-                VTK_cell_offset[k] = VTK_cell_offset[k-1]+AMREX_D_PICK(2, 4, 8);
-            }
-
-            for (int k = 0; k < n_cells; ++k)
-            {
-                VTK_cell_type[k] = VTK_cell_id;
-            }
-
-            for (int rph = 0; rph < N_PHI; ++rph)
-            {
-                VTK_nodal_field_name[rph] = "PHI_"+std::to_string(rph);
-            }
-            for (int rf = 0; rf < n_requested_fields; ++rf)
-            {
-                VTK_nodal_field_name[N_PHI+rf] = this->fields_name[rf];
-            }
-
-            for (int f = 0; f < n_nodal_fields; ++f)
-            {
-                for (int n = 0; n < n_nodes; ++n)
-                {
-                    VTK_nodal_field[f][n] = fields[n_nodal_fields*n+f];
-                }
-            }
-            // --------------------------------------------------------
-
-            // DUMP HEADER FILE ---------------------------------------
-            if (ParallelDescriptor::IOProcessor())
-            {
-                VTK::PrintHeaderFile_VTU(dst_folder, filename_root, time_id, time_id_max, {}, VTK_nodal_field_name);
-            }
-            // --------------------------------------------------------
-
-            // DUMP DATA FILE -----------------------------------------
-            filepath = GetOutputFilepath(dst_folder, filename_root, time_id, time_id_max)+".vtu";
-
-            VTK::PrintUnstructuredGridData_VTU(filepath,
-                                               n_nodes,
-                                               n_cells,
-                                               VTK_nodes,
-                                               VTK_cell_conn,
-                                               VTK_cell_offset,
-                                               VTK_cell_type,
-                                               {},
-                                               {},
-                                               VTK_nodal_field,
-                                               VTK_nodal_field_name,
-                                               "binary");
-            // --------------------------------------------------------
-        }
-        // ============================================================
-
-        // ALIGN PROCESSORS ==========
-        ParallelDescriptor::Barrier();
-        // ===========================
     }
     // ################################################################
 };

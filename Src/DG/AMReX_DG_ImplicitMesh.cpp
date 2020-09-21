@@ -1,6 +1,6 @@
-// AMReX_DG_ImplicitGeometry.cpp
+// AMReX_DG_ImplicitMesh.cpp
 
-#include <AMReX_DG_ImplicitGeometry.H>
+#include <AMReX_DG_ImplicitMesh.H>
 
 namespace amrex
 {
@@ -11,7 +11,7 @@ namespace DG
 // ELEMENT INFORMATION ================================================
 void PrintElementInfo(const Real * prob_lo, const Real * dx,
                       const int & i, const int & j, const int & k, const int & dom,
-                      Array4<int const> const & eType_fab)
+                      Array4<short const> const & eType_fab)
 {
     // PARAMETERS
     const int etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
@@ -76,12 +76,29 @@ void PrintElementInfo(const Real * prob_lo, const Real * dx,
 #endif
     Print() << " | etype: " << etype_description << std::endl;
     if (elm_is_small)
+    {
         Print() << " | merging element (through boundary " << merged_b << "): (" << BF_i << "," << BF_j << "," << BF_k << "," << dom << ")" << std::endl;
+    }
+    if (elm_is_extended)
+    {
+        Print() << " | extending to: ";
+        for (int b = 0; b < DG_CELL_N_SPACE_BOUNDARIES; ++b)
+        {
+            int nbr_i, nbr_j, nbr_k, nbr_b;
+            NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+            const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
+            const bool nbr_is_small = (nbr_etype%10 == DG_ELM_TYPE_SMALL);
+            const int nbr_merged_b = (nbr_is_small) ? (nbr_etype/10) : -1;
+            const bool cells_are_merged = (nbr_merged_b == nbr_b);
+            if (cells_are_merged) Print() << "(" << nbr_i << "," << nbr_j << "," << nbr_k << "," << dom << ") ";
+        }
+        Print() << std::endl;
+    }
 }
 
 void PrintElementInfo(const Real * prob_lo, const Real * dx,
                       const int & i, const int & j, const int & k, const int & dom,
-                      Array4<int const> const & eType_fab, Array4<Real const> const & eInfo_fab)
+                      Array4<short const> const & eType_fab, Array4<Real const> const & eInfo_fab)
 {
     // PARAMETERS
     const Real vf = eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom);
@@ -221,9 +238,93 @@ void BF_CELL(const Real * prob_lo, const Real * dx,
     int BF_i, BF_j, BF_k;
     BF_CELL(prob_lo, dx, i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
 }
+
+AMREX_GPU_HOST_DEVICE
+void COARSE_TO_FINE_GRID_BOUNDS(const int i, const int j, const int k, const int b,
+                                const IntVect & rr,
+                                Dim3 & lo, Dim3 & hi)
+{
+    if (b == 0)
+    {
+#if (AMREX_SPACEDIM == 1)
+        lo = {i*rr[0]-1, 0, 0};
+        hi = {i*rr[0]-1, 0, 0};
+#endif
+#if (AMREX_SPACEDIM == 2)
+        lo = {i*rr[0]-1, j*rr[1], 0};
+        hi = {i*rr[0]-1, (j+1)*rr[1]-1, 0};
+#endif
+#if (AMREX_SPACEDIM == 3)
+        lo = {i*rr[0]-1, j*rr[1], k*rr[2]};
+        hi = {i*rr[0]-1, (j+1)*rr[1]-1, (k+1)*rr[2]-1};
+#endif
+    }
+    else if (b == 1)
+    {
+#if (AMREX_SPACEDIM == 1)
+        lo = {(i+1)*rr[0], 0, 0};
+        hi = {(i+1)*rr[0], 0, 0};
+#endif
+#if (AMREX_SPACEDIM == 2)
+        lo = {(i+1)*rr[0], j*rr[1], 0};
+        hi = {(i+1)*rr[0], (j+1)*rr[1]-1, 0};
+#endif
+#if (AMREX_SPACEDIM == 3)
+        lo = {(i+1)*rr[0], j*rr[1], k*rr[2]};
+        hi = {(i+1)*rr[0], (j+1)*rr[1]-1, (k+1)*rr[2]-1};
+#endif
+    }
+#if (AMREX_SPACEDIM > 1)
+    else if (b == 2)
+    {
+#if (AMREX_SPACEDIM == 2)
+        lo = {i*rr[0], j*rr[1]-1, 0};
+        hi = {(i+1)*rr[0]-1, j*rr[1]-1, 0};
+#endif
+#if (AMREX_SPACEDIM == 3)
+        lo = {i*rr[0], j*rr[1]-1, k*rr[2]};
+        hi = {(i+1)*rr[0]-1, j*rr[1]-1, (k+1)*rr[2]-1};
+#endif
+    }
+    else if (b == 3)
+    {
+#if (AMREX_SPACEDIM == 2)
+        lo = {i*rr[0], (j+1)*rr[1], 0};
+        hi = {(i+1)*rr[0]-1, (j+1)*rr[1], 0};
+#endif
+#if (AMREX_SPACEDIM == 3)
+        lo = {i*rr[0], (j+1)*rr[1], k*rr[2]};
+        hi = {(i+1)*rr[0]-1, (j+1)*rr[1], (k+1)*rr[2]-1};
+#endif
+    }
+#endif
+#if (AMREX_SPACEDIM > 2)
+    else if (b == 4)
+    {
+        lo = {i*rr[0], j*rr[1], k*rr[2]-1};
+        hi = {(i+1)*rr[0]-1, (j+1)*rr[1]-1, k*rr[2]-1};
+    }
+    else if (b == 5)
+    {
+        lo = {i*rr[0], j*rr[1], (k+1)*rr[2]};
+        hi = {(i+1)*rr[0]-1, (j+1)*rr[1]-1, (k+1)*rr[2]};
+    }
+#endif
+}
 // ====================================================================
 // ####################################################################
 
 
 } // namespace DG
 } // namespace amrex
+
+/*
+#if (AMREX_SPACEDIM == 2)
+    fine_lo = {i*rr[0], j*rr[1], 0};
+    fine_hi = {(i+1)*rr[0]-1, (j+1)*rr[1]-1, 0};
+#endif
+#if (AMREX_SPACEDIM == 3)
+    fine_lo = {i*rr[0], j*rr[1], k*rr[2]};
+    fine_hi = {(i+1)*rr[0]-1, (j+1)*rr[1]-1, (k+1)*rr[2]-1};
+#endif
+*/

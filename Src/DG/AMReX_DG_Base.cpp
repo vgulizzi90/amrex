@@ -11,6 +11,43 @@ namespace DG
 // ####################################################################
 // EXPORT ROUTINES ####################################################
 // ####################################################################
+// BUILD A PATH FROM THE SET OF INPUT STRINGS =========================
+std::string MakePath(const std::initializer_list<std::string> list)
+{
+    int cnt;
+    std::string path;
+
+    cnt = 0;
+    for (const std::string & str : list)
+    {
+        if (cnt == 0)
+        {
+            path += str;
+        }
+        else
+        {
+            if (str.front() == '/')
+            {
+                path += str;
+            }
+            else
+            {
+                path += '/'+str;
+            }
+        }
+
+        if (str.back() == '/')
+        {
+            path.pop_back();
+        }
+
+        cnt += 1;
+    }
+
+    return path;
+}
+// ====================================================================
+
 // BUILD THE STRING CONTAINING THE FILEPATH FOR A GENERIC PLOT FILE ===
 std::string GetPlotFilepath(const std::string & dst_folder,
                             const std::string & filename_root,
@@ -27,7 +64,7 @@ std::string GetPlotFilepath(const std::string & dst_folder,
     while (std::pow(10, ndigits) < time_id_max) ndigits += 1;
 
     filename = Concatenate(filename_root+"_plt_", time_id, ndigits);
-    filepath = dst_folder+filename;
+    filepath = MakePath({dst_folder, filename});
     // ----------------------------------------------------------------
 
     return filepath;
@@ -54,7 +91,7 @@ std::string GetOutputFilepath(const std::string & dst_folder,
     while (std::pow(10, ndigits) < time_id_max) ndigits += 1;
 
     filename = Concatenate(filename_root+"_proc_"+std::to_string(rank)+"_", time_id, ndigits);
-    filepath = dst_folder+filename;
+    filepath = MakePath({dst_folder, filename});
     // ----------------------------------------------------------------
 
     return filepath;

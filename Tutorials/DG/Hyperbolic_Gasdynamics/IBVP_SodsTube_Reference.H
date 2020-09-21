@@ -1,5 +1,4 @@
-/* ELASTIC WAVES IN SOLIDS: VELOCITY-STRESS FORMULATION */
-/* HP CONVERGENCE ANALYSIS */
+/* GASDYNAMICS: SODS TUBE TEST */
 
 #include <IBVP_Base.H>
 
@@ -84,7 +83,8 @@ public:
     void _eval_NFn_(const int dom, const amrex::Real * un, const amrex::Real * U, const amrex::Real * nbr_U,
                     amrex::Real * NFn) const
     {
-        this->_eval_NFn_mOsher_(dom, un, U, nbr_U, NFn);
+        this->_eval_NFn_ExactRiemann_(dom, un, U, nbr_U, NFn);
+        //this->_eval_NFn_mOsher_(dom, un, U, nbr_U, NFn);
     }
     // ================================================================
 
@@ -109,10 +109,21 @@ public:
         // VARIABLES
         amrex::Real bcs_U[N_U];
 
+        this->F_BCS(dom, t, x, un, U, bcs_U);
+
+        this->_eval_NFn_(dom, un, U, bcs_U, NFn);
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void F_BCS(const int dom,
+               const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+               const amrex::Real * U,
+               amrex::Real * bcs_U) const
+    {
         // OUTFLOW BOUNDARY CONDITIONS
-        if (un[0] < -0.5)
+        if (std::abs(un[0]) > 0.5)
         {
-            bcs_U[RHO] = 2.0*rhoL-U[RHO];
+            bcs_U[RHO] = U[RHO];
             AMREX_D_TERM
             (
                 bcs_U[RHOV1] = U[RHOV1];,
@@ -121,17 +132,7 @@ public:
             )
             bcs_U[TE] = U[TE];
         }
-        else if (un[0] > 0.5)
-        {
-            bcs_U[RHO] = 2.0*rhoR-U[RHO];
-            AMREX_D_TERM
-            (
-                bcs_U[RHOV1] = U[RHOV1];,
-                bcs_U[RHOV2] = U[RHOV2];,
-                bcs_U[RHOV3] = U[RHOV3];
-            )
-            bcs_U[TE] = U[TE];
-        }
+        // SYMMETRY BOUNDARY CONDITIONS
         else if (std::abs(un[1]) > 0.5)
         {
             bcs_U[RHO] = U[RHO];
@@ -153,8 +154,6 @@ public:
             bcs_U[TE] = U[TE];
         }
 #endif
-
-        this->_eval_NFn_(dom, un, U, bcs_U, NFn);
     }
     // ================================================================
 
@@ -178,6 +177,7 @@ public:
         // PRIMARY VARIABLES
         amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
         this->_eval_primary_variables_(dom, U, rho, AMREX_D_DECL(u1, u2, u3), p);
+    
         const amrex::Real a = std::sqrt(g*p/rho);
         const amrex::Real M = std::sqrt(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3))/a;
 

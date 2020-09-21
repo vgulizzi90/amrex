@@ -1,4 +1,4 @@
-/* ELASTIC WAVES IN SOLIDS */
+/* GASDYNAMICS */
 
 #include <AMReX_DG_IBVP.H>
 
@@ -145,6 +145,19 @@ public:
 
     // AUXILIARY FUNCTIONS ============================================
     AMREX_GPU_HOST_DEVICE
+    void _eval_Tn_(const amrex::Real * un, amrex::Real * Tn) const
+    {
+#if (AMREX_SPACEDIM == 2)
+        Tn[0+0*N_U_PER_DOM] = 1.0; Tn[0+1*N_U_PER_DOM] =    0.0; Tn[0+2*N_U_PER_DOM] =   0.0; Tn[0+3*N_U_PER_DOM] = 0.0;
+        Tn[1+0*N_U_PER_DOM] = 0.0; Tn[1+1*N_U_PER_DOM] =  un[0]; Tn[1+2*N_U_PER_DOM] = un[1]; Tn[1+3*N_U_PER_DOM] = 0.0;
+        Tn[2+0*N_U_PER_DOM] = 0.0; Tn[2+1*N_U_PER_DOM] = -un[1]; Tn[2+2*N_U_PER_DOM] = un[0]; Tn[2+3*N_U_PER_DOM] = 0.0;
+        Tn[3+0*N_U_PER_DOM] = 0.0; Tn[3+1*N_U_PER_DOM] =    0.0; Tn[3+2*N_U_PER_DOM] =   0.0; Tn[3+3*N_U_PER_DOM] = 1.0;
+#else
+        amrex::Abort("GASDYNAMICS_BASE._eval_Tn_");
+#endif
+    }
+
+    AMREX_GPU_HOST_DEVICE
     void _eval_U2Un_(const amrex::Real * un, const amrex::Real * U, amrex::Real * Un) const
     {
 #if (AMREX_SPACEDIM == 2)
@@ -152,20 +165,52 @@ public:
         Un[RHOV1] =  un[0]*U[RHOV1]+un[1]*U[RHOV2];
         Un[RHOV2] = -un[1]*U[RHOV1]+un[0]*U[RHOV2];
         Un[TE] = U[TE];
-#else
-        amrex::Abort("GASDYNAMICS_BASE._eval_U2Un_");
+#endif
+#if (AMREX_SPACEDIM == 3)
+        // We assume un be written as
+        // un = n1 = cos(phi)*sin(theta)
+        //      n2   sin(phi)*sin(theta)
+        //      n3   cos(theta)
+        const amrex::Real theta = std::acos(un[2]);
+        const amrex::Real phi = std::atan2(un[1], un[0]);
+        const amrex::Real cth = std::cos(theta);
+        const amrex::Real sth = std::sin(theta);
+        const amrex::Real cph = std::cos(phi);
+        const amrex::Real sph = std::sin(phi);
+
+        Un[RHO] = U[RHO];
+        Un[RHOV1] =  cph*sth*U[RHOV1]+sph*sth*U[RHOV2]-cth*U[RHOV3];
+        Un[RHOV2] =     -sph*U[RHOV1]    +cph*U[RHOV2];
+        Un[RHOV3] = -cph*cth*U[RHOV1]+cth*sph*U[RHOV2]+sth*U[RHOV3];
+        Un[TE] = U[TE];
 #endif
     }
     AMREX_GPU_HOST_DEVICE
     void _eval_Un2U_(const amrex::Real * un, const amrex::Real * Un, amrex::Real * U) const
     {
 #if (AMREX_SPACEDIM == 2)
-        Un[RHO] = U[RHO];
-        Un[RHOV1] = un[0]*U[RHOV1]-un[1]*U[RHOV2];
-        Un[RHOV2] = un[1]*U[RHOV1]+un[0]*U[RHOV2];
-        Un[TE] = U[TE];
-#else
-        amrex::Abort("GASDYNAMICS_BASE._eval_Un2U_");
+        U[RHO] = Un[RHO];
+        U[RHOV1] = un[0]*Un[RHOV1]-un[1]*Un[RHOV2];
+        U[RHOV2] = un[1]*Un[RHOV1]+un[0]*Un[RHOV2];
+        U[TE] = Un[TE];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        // We assume un be written as
+        // un = n1 = cos(phi)*sin(theta)
+        //      n2   sin(phi)*sin(theta)
+        //      n3   cos(theta)
+        const amrex::Real theta = std::acos(un[2]);
+        const amrex::Real phi = std::atan2(un[1], un[0]);
+        const amrex::Real cth = std::cos(theta);
+        const amrex::Real sth = std::sin(theta);
+        const amrex::Real cph = std::cos(phi);
+        const amrex::Real sph = std::sin(phi);
+
+        U[RHO] = Un[RHO];
+        U[RHOV1] = cph*sth*Un[RHOV1]-sph*Un[RHOV2]+cph*cth*Un[RHOV3];
+        U[RHOV2] = sph*sth*Un[RHOV1]+cph*Un[RHOV2]+cth*sph*Un[RHOV3];
+        U[RHOV3] =    -cth*Un[RHOV1]                  +sth*Un[RHOV3];
+        U[TE] = Un[TE];
 #endif
     }
     
@@ -189,13 +234,16 @@ public:
 
 if ((p < 0.0) || (rho < 0.0))
 {
-amrex::Print() << "We might need a limiter" << std::endl;
-amrex::Print() << "U: ";
-amrex::DG_utils::PrintRealArray2D(1, N_U_PER_DOM, U);
-amrex::Print() << "rho: " << rho << std::endl;
-amrex::Print() << "p: " << p << std::endl;
-exit(-1);
+    std::string msg;
+    msg  = "\n";
+    msg += "ERROR: IBVP_Base.H - GASDYNAMICS_BASE::_eval_primary_variables_\n";
+    msg += "| We might need a limiter.\n";
+    msg += "| U: "+std::to_string(U[0])+" "+AMREX_D_TERM(std::to_string(U[1]),+" "+std::to_string(U[2]),+" "+std::to_string(U[3]))+" "+std::to_string(U[4])+"\n";
+    msg += "| rho: "+std::to_string(rho)+"\n";
+    msg += "| p: "+std::to_string(p)+"\n";
+    amrex::Abort(msg);
 }
+
     }
 
     AMREX_GPU_HOST_DEVICE
@@ -216,6 +264,19 @@ exit(-1);
         p = (g-1)*(e-0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3)));
         a = std::sqrt(g*p/rho);
         h = 0.5*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3))+a*a/(g-1.0);
+
+if ((p < 0.0) || (rho < 0.0))
+{
+    std::string msg;
+    msg  = "\n";
+    msg += "ERROR: IBVP_Base.H - GASDYNAMICS_BASE::_eval_enthalpy_variables_\n";
+    msg += "| We might need a limiter.\n";
+    msg += "| U: "+std::to_string(U[0])+" "+AMREX_D_DECL(std::to_string(U[1]),+" "+std::to_string(U[2]),+" "+std::to_string(U[3]))+" "+std::to_string(U[4])+"\n";
+    msg += "| rho: "+std::to_string(rho)+"\n";
+    msg += "| p: "+std::to_string(p)+"\n";
+    amrex::Abort(msg);
+}
+
     }
 
     AMREX_GPU_HOST_DEVICE
@@ -232,36 +293,10 @@ exit(-1);
 #if (AMREX_SPACEDIM == 2)
         return std::max(-a+u1*un[0]+u2*un[1], +a+u1*un[0]+u2*un[1]);
 #endif
-    }
-
-    AMREX_GPU_HOST_DEVICE
-    void _eval_dFndU_eigen_system_(const int dom, const amrex::Real * un, const amrex::Real * U,
-                                   amrex::Real * w,
-                                   amrex::Real * v) const
-    {
-        // PARAMETERS
-        const amrex::Real g = this->gamma[dom];
-
-        // PRIMARY VARIABLES
-        amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
-        this->_eval_primary_variables_(dom, U, rho, AMREX_D_DECL(u1, u2, u3), p);
-        const amrex::Real a = std::sqrt(g*p/rho);
-
-#if (AMREX_SPACEDIM == 2)
-        w[0] = -a+u1*un[0]+u2*un[1];
-        w[1] = u1*un[0]+u2*un[1];
-        w[2] = u1*un[0]+u2*un[1];
-        w[3] = +a+u1*un[0]+u2*un[1];
-#else
-        amrex::Abort("GASDYNAMICS_BASE._eval_dFndU_eigen_system_");
+#if (AMREX_SPACEDIM == 3)
+        amrex::Abort("GASDYNAMICS_BASE._eval_max_wave_speed_");
+        return 0.0;
 #endif
-
-
-amrex::Print() << "w: ";
-amrex::DG_utils::PrintRealArray2D(1, 4, w);
-
-amrex::Print() << "HERE WE ARE " << std::endl;
-exit(-1);
     }
 
     // LAX-FRIEDRICHS FLUX (ALSO KNOWN AS RUSANOV FLUX)
@@ -290,6 +325,369 @@ exit(-1);
         NFn[TE] = 0.5*(Fn[TE]+nbr_Fn[TE])+0.5*s*(U[TE]-nbr_U[TE]);
     }
 
+    // EXACT RIEMANN SOLVER
+    AMREX_GPU_HOST_DEVICE
+    void _eval_NFn_ExactRiemann_(const int dom, const amrex::Real * un, const amrex::Real * U, const amrex::Real * nbr_U,
+                                 amrex::Real * NFn) const
+    {
+        // VARIABLES --------------------------------------------------
+        amrex::Real Un[N_U_PER_DOM], nbr_Un[N_U_PER_DOM];
+        amrex::Real tmp[N_U_PER_DOM];
+        // ------------------------------------------------------------
+
+        // EXPRESS THE STATE IN LOCAL REFERENCE SYSTEM ----------------
+        this->_eval_U2Un_(un, U, Un);
+        this->_eval_U2Un_(un, nbr_U, nbr_Un);
+        // ------------------------------------------------------------
+
+        // CALL THE ACTUAL RIEMANN SOLVER -----------------------------
+        this->_eval_NFn_ExactRiemann_Un_(dom, Un, nbr_Un, tmp);
+        this->_eval_Un2U_(un, tmp, NFn);
+        // ------------------------------------------------------------
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    amrex::Real _aux_gK_(const amrex::Real g,
+                         const amrex::Real ps,
+                         const amrex::Real rho, const amrex::Real p) const
+    {
+        const amrex::Real A = 2.0/((g+1.0)*rho);
+        const amrex::Real B = (g-1.0)/(g+1.0)*p;
+
+        return std::sqrt(A/(ps+B));
+    }
+    AMREX_GPU_HOST_DEVICE
+    amrex::Real _aux_fK_(const amrex::Real g,
+                         const amrex::Real ps,
+                         const amrex::Real rho, const amrex::Real p) const
+    {
+        const amrex::Real a = std::sqrt(g*p/rho);
+        const amrex::Real A = 2.0/((g+1.0)*rho);
+        const amrex::Real B = (g-1.0)/(g+1.0)*p;
+        amrex::Real res;
+
+        if (ps > p)
+        {
+            res = (ps-p)*std::sqrt(A/(ps+B));
+        }
+        else
+        {
+            res = 2.0*a/(g-1.0)*(std::pow(ps/p, 0.5*(g-1.0)/g)-1.0);
+        }
+
+        return res;
+    }
+    AMREX_GPU_HOST_DEVICE
+    amrex::Real _aux_dfK_(const amrex::Real g,
+                          const amrex::Real ps,
+                          const amrex::Real rho, const amrex::Real p) const
+    {
+        const amrex::Real a = std::sqrt(g*p/rho);
+        const amrex::Real A = 2.0/((g+1.0)*rho);
+        const amrex::Real B = (g-1.0)/(g+1.0)*p;
+        amrex::Real res;
+
+        if (ps > p)
+        {
+            res = (1.0-0.5*(ps-p)/(ps+B))*std::sqrt(A/(ps+B));
+        }
+        else
+        {
+            res = (1.0/(a*rho))*std::pow(ps/p, -0.5*(g+1.0)/g);
+        }
+
+        return res;
+    }
+    AMREX_GPU_HOST_DEVICE
+    amrex::Real _aux_f_(const amrex::Real g,
+                        const amrex::Real ps,
+                        const amrex::Real rhoL, const amrex::Real pL,
+                        const amrex::Real rhoR, const amrex::Real pR,
+                        const amrex::Real dun) const
+    {
+        return (this->_aux_fK_(g, ps, rhoL, pL)+this->_aux_fK_(g, ps, rhoR, pR)+dun);
+    }
+    AMREX_GPU_HOST_DEVICE
+    amrex::Real _aux_df_(const amrex::Real g,
+                         const amrex::Real ps,
+                         const amrex::Real rhoL, const amrex::Real pL,
+                         const amrex::Real rhoR, const amrex::Real pR,
+                         const amrex::Real dun) const
+    {
+        return (this->_aux_dfK_(g, ps, rhoL, pL)+this->_aux_dfK_(g, ps, rhoR, pR)+dun);
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void _eval_NFn_ExactRiemann_Un_(const int dom, const amrex::Real * Un, const amrex::Real * nbr_Un,
+                                    amrex::Real * NFn) const
+    {
+        // PARAMETERS -------------------------------------------------
+        const amrex::Real g = this->gamma[dom];
+        const amrex::Real gg = (g-1.0)/(g+1.0);
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        // LEFT STATE
+        amrex::Real rhoL, AMREX_D_DECL(u1L, u2L, u3L), pL, aL;
+
+        // RIGHT STATE
+        amrex::Real rhoR, AMREX_D_DECL(u1R, u2R, u3R), pR, aR;
+
+        // INTERFACE STATE
+        amrex::Real rhoI, AMREX_D_DECL(u1I, u2I, u3I), pI;
+        amrex::Real UI[N_U_PER_DOM];
+
+        // AUXILIARY QUANTITIES
+        amrex::Real dun, us;
+        amrex::Real pm, pM, fm, fM, fs;
+        amrex::Real pPV, pTS, ps, dps, aux_ps;
+        amrex::Real gL, gR;
+        
+        const int n_max_it = 20;
+        int it;
+        // ------------------------------------------------------------
+
+        // EVAL THE LEFT AND RIGHT STATES -----------------------------
+        this->_eval_primary_variables_(dom,     Un, rhoL, AMREX_D_DECL(u1L, u2L, u3L), pL);
+        aL = std::sqrt(g*pL/rhoL);
+
+        this->_eval_primary_variables_(dom, nbr_Un, rhoR, AMREX_D_DECL(u1R, u2R, u3R), pR);
+        aR = std::sqrt(g*pR/rhoR);
+
+        // SOME AUXILIARY QUANTITIES
+        dun = u1R-u1L;
+
+        pm = std::min(pL, pR);
+        pM = std::max(pL, pR);
+
+        fm = this->_aux_f_(g, pm, rhoL, pL, rhoR, pR, dun);
+        fM = this->_aux_f_(g, pM, rhoL, pL, rhoR, pR, dun);
+        // ------------------------------------------------------------
+
+        // FIND PRESSURE AND VELOCITY IN STAR REGION ------------------
+        pPV = 0.5*(pL+pR)-0.125*dun*(rhoL+rhoR)*(aL+aR);
+        pPV = std::max(1.0e-10, pPV);
+        gL = this->_aux_gK_(g, pPV, rhoL, pL);
+        gR = this->_aux_gK_(g, pPV, rhoR, pR);
+        pTS = (gL*pL+gR*pR-dun)/(gL+gR);
+
+        // START ITERATION (TO COMPUTE PRESSURE)
+        ps = pTS;
+        it = 0;
+        do
+        {
+            aux_ps = 0.5*ps;
+
+            fs = this->_aux_f_(g, ps, rhoL, pL, rhoR, pR, dun);
+            dps = -fs/this->_aux_df_(g, ps, rhoL, pL, rhoR, pR, dun);
+            ps += dps;
+
+            aux_ps += 0.5*ps;
+
+            it += 1;
+        }
+        while ((it < n_max_it) && (std::abs(dps) > aux_ps*1.0e-8));
+
+        // EVAL VELOCITY
+        us = 0.5*(u1L+u1R)+0.5*(this->_aux_fK_(g, ps, rhoR, pR)-this->_aux_fK_(g, ps, rhoL, pL));
+        // ------------------------------------------------------------
+
+        // FIND SOLUTION AT INTERFACE ---------------------------------
+        if (us > 0.0)
+        {
+            // LEFT SHOCK
+            if (ps > pL)
+            {
+                const amrex::Real rhoLs = rhoL*(ps/pL+gg)/(gg*ps/pL+1.0);
+                const amrex::Real SL = u1L-aL*std::sqrt((0.5/g)*((g+1.0)*(ps/pL)+g-1.0));
+
+                if (SL < 0.0)
+                {
+                    rhoI = rhoLs;
+                    AMREX_D_TERM
+                    (
+                        u1I = us;,
+                        u2I = u2L;,
+                        u3I = u3L;
+                    )
+                    pI = ps;
+                }
+                else
+                {
+                    rhoI = rhoL;
+                    AMREX_D_TERM
+                    (
+                        u1I = u1L;,
+                        u2I = u2L;,
+                        u3I = u3L;
+                    )
+                    pI = pL;
+                }
+            }
+            // LEFT FAN
+            else
+            {
+                const amrex::Real rhoLs = rhoL*std::pow(ps/pL, 1.0/g);
+                const amrex::Real aLs = std::sqrt(g*ps/rhoLs);
+
+                if ((us-aLs) < 0.0)
+                {
+                    rhoI = rhoLs;
+                    AMREX_D_TERM
+                    (
+                        u1I = us;,
+                        u2I = u2L;,
+                        u3I = u3L;
+                    )
+                    pI = ps;
+                }
+                else if ((u1L-aL) > 0.0)
+                {
+                    rhoI = rhoL;
+                    AMREX_D_TERM
+                    (
+                        u1I = u1L;,
+                        u2I = u2L;,
+                        u3I = u3L;
+                    )
+                    pI = pL;
+                }
+                else
+                {
+                    rhoI = rhoL*std::pow(2.0/(g+1)+(g-1.0)/(g+1.0)*u1L/aL, 2.0/(g-1.0));
+                    AMREX_D_TERM
+                    (
+                        u1I = 2.0/(g+1.0)*(aL+0.5*(g-1.0)*u1L);,
+                        u2I = u2L;,
+                        u3I = u3L;
+                    )
+                    pI = pL*std::pow(2.0/(g+1)+(g-1.0)/(g+1.0)*u1L/aL, 2.0*g/(g-1.0));
+                }
+            }
+        }
+        else if (us < 0.0)
+        {   
+            // RIGHT SHOCK
+            if (ps > pR)
+            {
+                const amrex::Real rhoRs = rhoR*(ps/pR+gg)/(gg*ps/pR+1.0);
+                const amrex::Real SR = u1R+aR*std::sqrt((0.5/g)*((g+1.0)*(ps/pR)+g-1.0));
+
+                if (SR > 0.0)
+                {
+                    rhoI = rhoRs;
+                    AMREX_D_TERM
+                    (
+                        u1I = us;,
+                        u2I = u2R;,
+                        u3I = u3R;
+                    )
+                    pI = ps;
+                }
+                else
+                {
+                    rhoI = rhoR;
+                    AMREX_D_TERM
+                    (
+                        u1I = u1R;,
+                        u2I = u2R;,
+                        u3I = u3R;
+                    )
+                    pI = pR;
+                }
+            }
+            // RIGHT FAN
+            else
+            {
+                const amrex::Real rhoRs = rhoR*std::pow(ps/pR, 1.0/g);
+                const amrex::Real aRs = std::sqrt(g*ps/rhoRs);
+
+                if ((us+aRs) > 0.0)
+                {
+                    rhoI = rhoRs;
+                    AMREX_D_TERM
+                    (
+                        u1I = us;,
+                        u2I = u2R;,
+                        u3I = u3R;
+                    )
+                    pI = ps;
+                }
+                else if ((u1R+aR) < 0.0)
+                {
+                    rhoI = rhoR;
+                    AMREX_D_TERM
+                    (
+                        u1I = u1R;,
+                        u2I = u2R;,
+                        u3I = u3R;
+                    )
+                    pI = pR;
+                }
+                else
+                {
+                    rhoI = rhoR*std::pow(2.0/(g+1)-(g-1.0)/(g+1.0)*u1R/aR, 2.0/(g-1.0));
+                    AMREX_D_TERM
+                    (
+                        u1I = 2.0/(g+1.0)*(-aR+0.5*(g-1.0)*u1R);,
+                        u2I = u2R;,
+                        u3I = u3R;
+                    )
+                    pI = pR*std::pow(2.0/(g+1)-(g-1.0)/(g+1.0)*u1R/aR, 2.0*g/(g-1.0));
+                }
+            }
+        }
+        else
+        {
+            amrex::Real rhoLs, rhoRs;
+
+            // LEFT SHOCK
+            if (ps > pL)
+            {
+                rhoLs = rhoL*(ps/pL+gg)/(gg*ps/pL+1.0);
+            }
+            // LEFT FAN
+            else
+            {
+                rhoLs = rhoL*std::pow(ps/pL, 1.0/g);
+            }
+            
+            // RIGHT SHOCK
+            if (ps > pR)
+            {
+                rhoRs = rhoR*(ps/pR+gg)/(gg*ps/pR+1.0);
+            }
+            // RIGHT FAN
+            else
+            {
+                rhoRs = rhoR*std::pow(ps/pR, 1.0/g);
+            }
+
+            rhoI = 0.5*(rhoLs+rhoRs);
+            AMREX_D_TERM
+            (
+                u1I = us;,
+                u2I = 0.5*(u2L+u2R);,
+                u3I = 0.5*(u3L+u3R);
+            )
+            pI = ps;
+        }
+
+        UI[RHO] = rhoI;
+        AMREX_D_TERM
+        (
+            UI[RHOV1] = rhoI*u1I;,
+            UI[RHOV2] = rhoI*u2I;,
+            UI[RHOV3] = rhoI*u3I;
+        )
+        UI[TE] = pI/(g-1.0)+0.5*rhoI*(AMREX_D_TERM(u1I*u1I,+u2I*u2I,+u3I*u3I));
+        // ------------------------------------------------------------
+
+        // EVAL FLUX --------------------------------------------------
+        this->_eval_F1_(dom, UI, NFn);
+        // ------------------------------------------------------------
+    }
+
     // MODIFIED OSHER FLUX
     AMREX_GPU_HOST_DEVICE
     void _eval_NFn_mOsher_(const int dom, const amrex::Real * un, const amrex::Real * U, const amrex::Real * nbr_U,
@@ -298,14 +696,14 @@ exit(-1);
         // VARIABLES
         amrex::Real Fn[N_U_PER_DOM], nbr_Fn[N_U_PER_DOM];
         amrex::Real Uxi[N_U_PER_DOM];
-        amrex::Real An[N_U_PER_DOM*N_U_PER_DOM], IntAn[N_U_PER_DOM*N_U_PER_DOM];
+        amrex::Real absAn[N_U_PER_DOM*N_U_PER_DOM], IntAn[N_U_PER_DOM*N_U_PER_DOM];
 
         // EVAL LEFT AND RIGHT FLUXES
         this->_eval_Fn_(dom, un, U, Fn);
         this->_eval_Fn_(dom, un, nbr_U, nbr_Fn);
 
         // EVAL INTEGRAL CONTRIBUTION
-        const int qo = 3;
+        const int qo = 5;
 
         std::fill(IntAn, IntAn+N_U_PER_DOM*N_U_PER_DOM, 0.0);
 
@@ -323,11 +721,11 @@ exit(-1);
             )
             Uxi[TE] = U[TE]+xi*(nbr_U[TE]-U[TE]);
 
-            this->_eval_An_(dom, un, Uxi, An);
+            this->_eval_absAn_(dom, un, Uxi, absAn);
 
             for (int k = 0; k < N_U_PER_DOM*N_U_PER_DOM; ++k)
             {
-                IntAn[k] += std::abs(An[k])*w;
+                IntAn[k] += absAn[k]*w;
             }
         }
 
@@ -424,28 +822,116 @@ amrex::Print() << "HERE WE ARE - _eval_Fn_" << std::endl;
 exit(-1);
 #endif
     }
+    // ----------------------------------------------------------------
 
+    // EVAL EIGENVALUES AND EIGENVECTORS OF A1 = dF1dU ----------------
     AMREX_GPU_HOST_DEVICE
-    void _eval_Fn_via_Un_(const int dom, const amrex::Real * un, const amrex::Real * Un, amrex::Real * Fn) const
+    void _eval_A1_eigensystem_(const int dom, const amrex::Real * U, amrex::Real * A1w, amrex::Real * A1v, amrex::Real * iA1v) const
     {
         // VARIABLES
-        amrex::Real F1[N_U];
-
-        this->_eval_F1_(dom, Un, F1);
+        amrex::Real AMREX_D_DECL(u1, u2, u3), p, a, h, delta;
+        this->_eval_enthalpy_variables_(dom, U, AMREX_D_DECL(u1, u2, u3), p, a, h);
 
 #if (AMREX_SPACEDIM == 2)
-        Fn[RHO] = F1[RHO];
-        Fn[RHOV1] = F1[RHOV1]*un[0]-F1[RHOV2]*un[1];
-        Fn[RHOV2] = F1[RHOV1]*un[1]+F1[RHOV2]*un[0];
-        Fn[TE] = F1[TE];
+        delta = 1.0/(u1*u1+u2*u2-2.0*h);
+        
+        // EIGENVALUES
+        A1w[0] = -a+u1;
+        A1w[1] = u1;
+        A1w[2] = u1;
+        A1w[3] = +a+u1;
+
+        // EIGENVECTORS MATRIX (ORDERED PER COLUMN)
+        A1v[0+0*N_U_PER_DOM] = 1.0;
+        A1v[1+0*N_U_PER_DOM] = -a+u1;
+        A1v[2+0*N_U_PER_DOM] = u2;
+        A1v[3+0*N_U_PER_DOM] = h-a*u1;
+
+        A1v[0+1*N_U_PER_DOM] = 1.0;
+        A1v[1+1*N_U_PER_DOM] = u1;
+        A1v[2+1*N_U_PER_DOM] = u2;
+        A1v[3+1*N_U_PER_DOM] = 0.5*(u1*u1+u2*u2);
+
+        A1v[0+2*N_U_PER_DOM] = 0.0;
+        A1v[1+2*N_U_PER_DOM] = 0.0;
+        A1v[2+2*N_U_PER_DOM] = 1.0;
+        A1v[3+2*N_U_PER_DOM] = u2;
+
+        A1v[0+3*N_U_PER_DOM] = 1.0;
+        A1v[1+3*N_U_PER_DOM] = a+u1;
+        A1v[2+3*N_U_PER_DOM] = u2;
+        A1v[3+3*N_U_PER_DOM] = h+a*u1;
+
+        // INVERSE OF THE EIGENVECTORS MATRIX
+        iA1v[0+0*N_U_PER_DOM] = 0.5*(-1.0-2.0*h*delta+u1/a);
+        iA1v[1+0*N_U_PER_DOM] = 2.0+2.0*h*delta;
+        iA1v[2+0*N_U_PER_DOM] = -u2;
+        iA1v[3+0*N_U_PER_DOM] = -h*delta-0.5*(a+u1)/a;
+
+        iA1v[0+1*N_U_PER_DOM] = -0.5/a+u1*delta;
+        iA1v[1+1*N_U_PER_DOM] = -2.0*u1*delta;
+        iA1v[2+1*N_U_PER_DOM] = 0.0;
+        iA1v[3+1*N_U_PER_DOM] = 0.5/a+u1*delta;
+
+        iA1v[0+2*N_U_PER_DOM] = u2*delta;
+        iA1v[1+2*N_U_PER_DOM] = -2.0*u2*delta;
+        iA1v[2+2*N_U_PER_DOM] = 1.0;
+        iA1v[3+2*N_U_PER_DOM] = u2*delta;
+
+        iA1v[0+3*N_U_PER_DOM] = -1.0*delta;
+        iA1v[1+3*N_U_PER_DOM] = 2.0*delta;
+        iA1v[2+3*N_U_PER_DOM] = 0.0;
+        iA1v[3+3*N_U_PER_DOM] = -1.0*delta;
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "HERE WE ARE - _eval_Fn_" << std::endl;
+amrex::Print() << "HERE WE ARE - _eval_A1_eigensystem_" << std::endl;
 exit(-1);
 #endif
     }
     // ----------------------------------------------------------------
 
+    // EVAL EIGENVALUES AND EIGENVECTORS OF An = dFndU = dFidU*ni -----
+    AMREX_GPU_HOST_DEVICE
+    void _eval_An_eigensystem_(const int dom, const amrex::Real * un, const amrex::Real * U, amrex::Real * Anw, amrex::Real * Anv, amrex::Real * iAnv) const
+    {
+        // PARAMETERS
+        const amrex::Real AMREX_D_DECL(n1 = un[0], n2 = un[1], n3 = un[2]);
+
+        // VARIABLES
+        amrex::Real Un[N_U_PER_DOM];
+
+        // SOLUTION VECTOR IN THE NORMAL REFERENCE SYSTEM
+        this->_eval_U2Un_(un, U, Un);
+
+        // EVAL An EIGEN-DECOMPOSITION USING A1(Un)
+        this->_eval_A1_eigensystem_(dom, Un, Anw, Anv, iAnv);
+
+#if (AMREX_SPACEDIM == 2)
+        // PRE-MULTIPLY Anv TIMES iTn
+        for (int c = 0; c < N_U_PER_DOM; ++c)
+        {
+            const amrex::Real r2 = Anv[1+c*N_U_PER_DOM];
+            const amrex::Real r3 = Anv[2+c*N_U_PER_DOM];
+
+            Anv[1+c*N_U_PER_DOM] = r2*n1-r3*n2;
+            Anv[2+c*N_U_PER_DOM] = r3*n1+r2*n2;
+        }
+        // POST-MULTIPLY iAnv TIMES Tn
+        for (int r = 0; r < N_U_PER_DOM; ++r)
+        {
+            const amrex::Real c2 = iAnv[r+1*N_U_PER_DOM];
+            const amrex::Real c3 = iAnv[r+2*N_U_PER_DOM];
+
+            iAnv[r+1*N_U_PER_DOM] = c2*n1-c3*n2; iAnv[r+2*N_U_PER_DOM] = c3*n1+c2*n2;
+        }  
+#endif
+#if (AMREX_SPACEDIM == 3)
+amrex::Print() << "HERE WE ARE - _eval_An_eigensystem_" << std::endl;
+exit(-1);
+#endif
+    }
+    // ----------------------------------------------------------------
+    
     // EVAL An = dFndU = dFidU*ni -------------------------------------
     AMREX_GPU_HOST_DEVICE
     void _eval_An_(const int dom, const amrex::Real * un, const amrex::Real * U, amrex::Real * An) const
@@ -487,6 +973,26 @@ exit(-1);
 #endif
     }
     // ----------------------------------------------------------------
+
+    // EVAL |An| = Anv*diag(abs(Anw))*iAnv ----------------------------
+    AMREX_GPU_HOST_DEVICE
+    void _eval_absAn_(const int dom, const amrex::Real * un, const amrex::Real * U, amrex::Real * absAn) const
+    {
+        // VARIABLES
+        amrex::Real Anw[N_U_PER_DOM], Anv[N_U_PER_DOM*N_U_PER_DOM], iAnv[N_U_PER_DOM*N_U_PER_DOM];
+
+        // EVAL THE An EIGEN-SYSTEM
+        this->_eval_An_eigensystem_(dom, un, U, Anw, Anv, iAnv);
+        
+        for (int c = 0; c < N_U_PER_DOM; ++c)
+        for (int r = 0; r < N_U_PER_DOM; ++r)
+        {
+            Anv[r+c*N_U_PER_DOM] *= std::abs(Anw[c]);
+        }
+
+        amrex::DG_utils::matmul(N_U_PER_DOM, N_U_PER_DOM, N_U_PER_DOM, Anv, iAnv, absAn);
+    }
+    // ----------------------------------------------------------------
     // ================================================================
 
     // PDES SYSTEM ====================================================
@@ -517,14 +1023,23 @@ exit(-1);
 
     // TROUBLED CELLS INDICATOR =======================================
     AMREX_GPU_HOST_DEVICE
-    int F_TROUBLED(const int dom, const amrex::Real t, const amrex::Real * x, const amrex::Real * U) const
-    {
-        amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
-        this->_eval_primary_variables_(dom, U, rho, AMREX_D_DECL(u1, u2, u3), p);
+    bool F_TROUBLED(const int dom, const amrex::Real t, const amrex::Real * x, const amrex::Real * U) const
+    {   
+        const amrex::Real g = this->gamma[dom];
         
-        const int res = ((rho < 0.0) || (p < 0.0)) ? 1 : 0;
+        amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
 
-        return res;
+        rho = U[RHO];
+        AMREX_D_TERM
+        (
+            u1 = U[RHOV1]/rho;,
+            u2 = U[RHOV2]/rho;,
+            u3 = U[RHOV3]/rho;
+        )
+        const amrex::Real e = U[TE];
+        p = (g-1)*(e-0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3)));
+        
+        return ((rho < 0.0) || (p < 0.0));
     }
     // ================================================================
 };
