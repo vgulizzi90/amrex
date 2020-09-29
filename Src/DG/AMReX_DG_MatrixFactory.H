@@ -27,6 +27,7 @@ struct MatrixFactory
     static const int IntBou_BF_pos_n_comp = DG_INT_BOU_BF_INFO_N_COMP_PER_DOM*N_DOM;
     static const int Bou_BF_pos_n_comp = DG_BOU_BF_INFO_N_COMP_PER_DOM*N_DOM;
     static const int MMCh_pos_n_comp = N_DOM;
+    static const int Avg_pos_n_comp = N_DOM;
     static const int Dom_I_pos_n_comp = DG_DOM_INTERPOLATION_N_COMP_PER_DOM*N_DOM;
 
     // UNIT CUBE [-1,1]^AMREX_SPACEDIM
@@ -34,15 +35,19 @@ struct MatrixFactory
 
     // IMPLICIT MESH
     longMultiFab space_MMCh_pos;
+    longMultiFab space_Avg_pos;
     longMultiFab space_Dom_I_pos;
 
     long mem_for_space_MMCh;
+    long mem_for_space_Avg;
     long mem_for_space_Dom_I;
 
     Gpu::HostVector<Real> space_MMCh_host_mem;
+    Gpu::HostVector<Real> space_Avg_host_mem;
     Gpu::HostVector<Real> space_Dom_I_host_mem;
 
     Gpu::DeviceVector<Real> space_MMCh_device_mem;
+    Gpu::DeviceVector<Real> space_Avg_device_mem;
     Gpu::DeviceVector<Real> space_Dom_I_device_mem;
     // ################################################################
 
@@ -95,6 +100,7 @@ struct MatrixFactory
         // ============================================================
         // WARNING: Remember that on the MultiFabs
         //          - this->space_MMCh_pos
+        //          - this->space_Avg_pos
         //          - this->space_Dom_I_pos
         //          the FillBoundary method must NEVER be called.
         // ============================================================
@@ -103,12 +109,16 @@ struct MatrixFactory
             this->space_MMCh_pos.define(cc_ba, dm, this->MMCh_pos_n_comp, this->dom_data_ngr);
             this->space_MMCh_pos = -1L;
 
+            this->space_Avg_pos.define(cc_ba, dm, this->Avg_pos_n_comp, this->dom_data_ngr);
+            this->space_Avg_pos = -1L;
+
             this->space_Dom_I_pos.define(cc_ba, dm, this->Dom_I_pos_n_comp, this->dom_data_ngr);
             this->space_Dom_I_pos = -1L;
         }
         // ------------------------------------------------------------
 
         this->mem_for_space_MMCh = 0L;
+        this->mem_for_space_Avg = 0L;
         this->mem_for_space_Dom_I = 0L;
         // ============================================================
     }
@@ -119,31 +129,6 @@ struct MatrixFactory
         // UNIT CUBE [-1,1]^AMREX_SPACEDIM ============================
         this->DefineUnitCube(inputs.dG[d].space_p, inputs.dG[d].space_q,
                              inputs.dG[d].time_p);
-        // ============================================================
-
-        // IMPLICIT MESH ==============================================
-        this->DefineImplicitMeshInfo(cc_ba, dm);
-        // ============================================================
-    }
-    // ################################################################
-
-    // INITIALIZATION FOR A SLOPE LIMITER #############################
-    void DefineForSlopeLimiter(const MatrixFactory<N_PHI, N_DOM> & coarse,
-                               const IntVect & rr,
-                               const BoxArray & cc_ba, const DistributionMapping & dm,
-                               const InputReader & inputs, const int d)
-    {
-        // UNIT CUBE [-1,1]^AMREX_SPACEDIM ============================
-        // We are assuming that our solution will be constant over each
-        // element. Thus p = 0.
-        // ============================================================
-        const int space_p = 0;
-        const int time_p = 0;
-
-        this->DefineUnitCube(space_p, inputs.dG[d].space_q, time_p);
-
-        // WE ALSO NEED THE INTERPOLATION OPERATOR
-        this->cube.InitInterpolation(coarse.cube, rr);
         // ============================================================
 
         // IMPLICIT MESH ==============================================

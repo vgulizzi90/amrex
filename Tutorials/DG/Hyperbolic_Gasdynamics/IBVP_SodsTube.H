@@ -62,7 +62,7 @@ public:
         res[2] = v1[0]*v2[1]-v1[1]*v2[0];
     }
 
-#define THETA (0.0*M_PI/6.0)
+#define THETA (M_PI/4.0)
 #define A1 0.0
 #define B1 1.0
 #if (AMREX_SPACEDIM == 2)
@@ -213,6 +213,17 @@ public:
         // VARIABLES
         amrex::Real bcs_U[N_U];
 
+        this->F_BCS(dom, t, x, un, U, bcs_U);
+
+        this->_eval_NFn_(dom, un, U, bcs_U, NFn);
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void F_BCS(const int dom,
+               const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+               const amrex::Real * U,
+               amrex::Real * bcs_U) const
+    {
         bcs_U[RHO] = U[RHO];
         AMREX_D_TERM
         (
@@ -221,8 +232,6 @@ public:
             bcs_U[RHOV3] = U[RHOV3];
         )
         bcs_U[TE] = U[TE];
-
-        this->_eval_NFn_(dom, un, U, bcs_U, NFn);
     }
     // ================================================================
 
@@ -234,13 +243,25 @@ public:
                       amrex::Real * NFn) const
     {
         // VARIABLES
-        amrex::Real Un[N_U], bcs_U[N_U];
+        amrex::Real bcs_U[N_U];
+
+        this->F_PHI_BCS(dom, t, x, un, U, bcs_U);
+
+        this->_eval_NFn_(dom, un, U, bcs_U, NFn);
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void F_PHI_BCS(const int dom,
+                   const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                   const amrex::Real * U,
+                   amrex::Real * bcs_U) const
+    {
+        // VARIABLES
+        amrex::Real Un[N_U];
 
         this->_eval_U2Un_(un, U, Un);
         Un[RHOV1] = -Un[RHOV1];
         this->_eval_Un2U_(un, Un, bcs_U);
-
-        this->_eval_NFn_(dom, un, U, bcs_U, NFn);
     }
     // ================================================================
 

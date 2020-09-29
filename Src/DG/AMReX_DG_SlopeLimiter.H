@@ -7,13 +7,268 @@
 #include <AMReX_DG_ImplicitMesh.H>
 #include <AMReX_DG_MatrixFactory.H>
 
+#define DG_SL_THETA 1.0
+
 namespace amrex
 {
 namespace DG
 {
+// ####################################################################
+// DG SLOPE LIMITER ROUTINES ##########################################
+// ####################################################################
+template<int N_PHI, int N_DOM, int N_U, typename IBVP_CLASS>
+void ApplySlopeLimiter_FV(const Real t,
+                          const ImplicitMesh<N_PHI, N_DOM> & mesh,
+                          const MatrixFactory<N_PHI, N_DOM> & matfactory,
+                          const MultiFab & X,
+                          MultiFab & dX,
+                          const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("ApplySlopeLimiter_FV(const Real t, const ImplicitMesh<N_PHI, N_DOM> &, MultiFab &, ....)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS =====================================================
+    const int ngr = 1;
+
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.dx;
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.prob_lo;
+    // ================================================================
+
+    // EVAL THE PRIMARY VARIABLES AND THEIR GRADIENTS =================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        
+        Array4<Real const> const & X_fab = X.array(mfi);
+        Array4<Real> const & dX_fab = dX.array(mfi);
+
+        ParallelFor(bx, N_DOM,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // LOCAL PARAMETERS
+            const short etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
+            const bool elm_is_not_empty = (etype != DG_ELM_TYPE_EMPTY);
+
+            if (elm_is_not_empty)
+            {
+                // LOCAL VARIABLES
+                Real x[AMREX_SPACEDIM];
+                Real Uh[N_U], dUh[N_U], dCh_left[N_U], dCh_right[N_U], dCh[N_U];
+
+                // CELL-CENTERED INFO ---------------------------------
+                AMREX_D_TERM
+                (
+                    x[0] = prob_lo[0]+(i+0.5)*dx[0];,
+                    x[1] = prob_lo[1]+(j+0.5)*dx[1];,
+                    x[2] = prob_lo[2]+(k+0.5)*dx[2];
+                )
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    Uh[ru] = X_fab(i,j,k,ru);
+                }
+                // ----------------------------------------------------
+
+                // X1 DIRECTION ---------------------------------------
+                // LEFT DIFFERENCES
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    dUh[ru] = X_fab(i,j,k,ru)-X_fab(i-1,j,k,ru);
+                }
+                IBVP.F_DU2DC_1(dom, t, x, Uh, dUh, dCh_left);
+                // RIGHT DIFFERENCES
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    dUh[ru] = X_fab(i+1,j,k,ru)-X_fab(i,j,k,ru);
+                }
+                IBVP.F_DU2DC_1(dom, t, x, Uh, dUh, dCh_right);
+
+                // LIMITED SLOPES (OF THE CHARACTERISTICS)
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    const Real dc = 0.5*(dCh_left[ru]+dCh_right[ru]);
+                    const Real sgn = (dc >= 0.0) ? +1.0 : -1.0;
+                    const Real slope = DG_SL_THETA*fmin(fabs(dCh_left[ru]), fabs(dCh_right[ru]));
+                    const Real lim = (dCh_left[ru]*dCh_right[ru] >= 0.0) ? slope : 0.0;
+                    dCh[ru] = sgn*fmin(lim, fabs(dc));
+                }
+
+                // BACK TO THE CONSERVED VARIABLES
+                IBVP.F_DC2DU_1(dom, t, x, Uh, dCh, dUh);
+
+                // AND TO THE MULTIFAB
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    dX_fab(i,j,k,0+AMREX_SPACEDIM*ru) = dUh[ru]/dx[0];
+                }
+                // ----------------------------------------------------
+
+#if (AMREX_SPACEDIM > 1)
+                // X2 -------------------------------------------------
+                // LEFT DIFFERENCES
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    dUh[ru] = X_fab(i,j,k,ru)-X_fab(i,j-1,k,ru);
+                }
+                IBVP.F_DU2DC_2(dom, t, x, Uh, dUh, dCh_left);
+                // RIGHT DIFFERENCES
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    dUh[ru] = X_fab(i,j+1,k,ru)-X_fab(i,j,k,ru);
+                }
+                IBVP.F_DU2DC_2(dom, t, x, Uh, dUh, dCh_right);
+
+                // LIMITED SLOPES (OF THE CHARACTERISTICS)
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    const Real dc = 0.5*(dCh_left[ru]+dCh_right[ru]);
+                    const Real sgn = (dc >= 0.0) ? +1.0 : -1.0;
+                    const Real slope = DG_SL_THETA*fmin(fabs(dCh_left[ru]), fabs(dCh_right[ru]));
+                    const Real lim = (dCh_left[ru]*dCh_right[ru] >= 0.0) ? slope : 0.0;
+                    dCh[ru] = sgn*fmin(lim, fabs(dc));
+                }
+
+                // BACK TO THE CONSERVED VARIABLES
+                IBVP.F_DC2DU_2(dom, t, x, Uh, dCh, dUh);
+
+                // AND TO THE MULTIFAB
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    dX_fab(i,j,k,1+AMREX_SPACEDIM*ru) = dUh[ru]/dx[1];
+                }
+                // ----------------------------------------------------
+#endif
+#if (AMREX_SPACEDIM > 2)
+                // X3 -------------------------------------------------
+                // LEFT DIFFERENCES
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    dUh[ru] = X_fab(i,j,k,ru)-X_fab(i,j,k-1,ru);
+                }
+                IBVP.F_DU2DC_3(dom, t, x, Uh, dUh, dCh_left);
+                // RIGHT DIFFERENCES
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    dUh[ru] = X_fab(i,j,k+1,ru)-X_fab(i,j,k,ru);
+                }
+                IBVP.F_DU2DC_3(dom, t, x, Uh, dUh, dCh_right);
+
+                // LIMITED SLOPES (OF THE CHARACTERISTICS)
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    const Real dc = 0.5*(dCh_left[ru]+dCh_right[ru]);
+                    const Real sgn = (dc >= 0.0) ? +1.0 : -1.0;
+                    const Real slope = DG_SL_THETA*fmin(fabs(dCh_left[ru]), fabs(dCh_right[ru]));
+                    const Real lim = (dCh_left[ru]*dCh_right[ru] >= 0.0) ? slope : 0.0;
+                    dCh[ru] = sgn*fmin(lim, fabs(dc));
+                }
+
+                // BACK TO THE CONSERVED VARIABLES
+                IBVP.F_DC2DU_3(dom, t, x, Uh, dCh, dUh);
+
+                // AND TO THE MULTIFAB
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    dX_fab(i,j,k,2+AMREX_SPACEDIM*ru) = dUh[ru]/dx[2];
+                }
+                // ----------------------------------------------------
+#endif
+            }
+        });
+        Gpu::synchronize();
+    }
+    dX.FillBoundary(mesh.geom.periodicity());
+    // ================================================================
+}
+/*
+Print() << "dUh: "; DG_utils::PrintRealArray2D(1, N_U, dUh); 
+Print() << "dCh_left: "; DG_utils::PrintRealArray2D(1, N_U, dCh_left);
+Print() << "dCh_right: "; DG_utils::PrintRealArray2D(1, N_U, dCh_right);
+Print() << "dCh: "; DG_utils::PrintRealArray2D(1, N_U, dCh);
+Print() << "dUh: "; DG_utils::PrintRealArray2D(1, N_U, dUh);
+
+Print() << "HERE WE ARE" << std::endl;
+exit(-1);
+*/
+template<int N_PHI, int N_DOM, int N_U, typename IBVP_CLASS>
+void ApplySlopeLimiter_FV_LS(const Real t,
+                             const ImplicitMesh<N_PHI, N_DOM> & mesh,
+                             const MatrixFactory<N_PHI, N_DOM> & matfactory,
+                             const MultiFab & X,
+                             MultiFab & dX,
+                             const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("ApplySlopeLimiter_FV_LS(const Real t, const ImplicitMesh<N_PHI, N_DOM> &, MultiFab &, ....)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS =====================================================
+    const int ngr = 1;
+
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.dx;
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.prob_lo;
+    // ================================================================
+
+    // EVAL THE PRIMARY VARIABLES AND THEIR GRADIENTS =================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
+        
+        Array4<Real const> const & X_fab = X.array(mfi);
+        Array4<Real> const & dX_fab = dX.array(mfi);
+
+        ParallelFor(bx, N_DOM,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // LOCAL PARAMETERS
+            const short etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
+            const bool elm_is_entire = (etype%10 == DG_ELM_TYPE_ENTIRE);
+            const bool elm_is_large = (etype%10 == DG_ELM_TYPE_LARGE);
+            const bool elm_is_valid = elm_is_entire || elm_is_large;
+
+            if (elm_is_valid)
+            {
+
+
+Print() << "HERE WE ARE " << std::endl;
+exit(-1);
+            }
+        });
+        Gpu::synchronize();
+    }
+    dX.FillBoundary(mesh.geom.periodicity());
+    // ================================================================
+}
+
+
+template<int N_PHI, int N_DOM, int N_U, typename IBVP_CLASS>
+void ApplySlopeLimiter_DG(const Real t,
+                          const ImplicitMesh<N_PHI, N_DOM> & mesh,
+                          const MatrixFactory<N_PHI, N_DOM> & matfactory,
+                          MultiFab & X,
+                          const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("ApplySlopeLimiter_DG(const Real t, const ImplicitMesh<N_PHI, N_DOM> &, MultiFab &, ....)");
+    // ----------------------------------------------------------------
+
+
+Print() << "HERE WE ARE - ApplySlopeLimiter_DG" << std::endl;
+exit(-1);
+}
+// ####################################################################
+
+
 
 // ####################################################################
-// DG BASE CLASS ######################################################
+// DG SLOPE LIMITER CLASS #############################################
 // ####################################################################
 template<int N_PHI, int N_DOM, int N_U>
 struct SlopeLimiter

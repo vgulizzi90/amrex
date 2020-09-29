@@ -70,6 +70,12 @@ struct IBVP_BASE
     {
 Abort("Hello! IBVP_BASE.F_BCS (We should not end up in here)");
     }
+    AMREX_GPU_HOST_DEVICE
+    void F_PHI_BCS(const int dom, const Real t, const Real * x, const Real * un,
+                   const Real * U, Real * bcs_U) const
+    {
+Abort("Hello! IBVP_BASE.F_PHI_BCS (We should not end up in here)");
+    }
     // ================================================================
 
     // TROUBLED CELLS INDICATOR =======================================
@@ -169,6 +175,67 @@ public IBVP_BASE<N_PHI, N_DOM, N_U>
         {
             B[u] = 0.0;
         }
+    }
+    // ================================================================
+
+    // CONSERVED-CHARACTERISTICS VARIABLES RELATIONSHIPS ==============
+    AMREX_GPU_HOST_DEVICE
+    void F_DU2DC(const int dom,
+                 const Real t, const Real * x, const Real * un,
+                 const Real * U, const Real * DU, Real * DC) const
+    {
+Abort("Hello! IBVP_HYPERBOLIC_BASE.F_DU2DC (We should not end up in here)");
+    }
+    AMREX_GPU_HOST_DEVICE
+    void F_DU2DC_1(const int dom,
+                   const Real t, const Real * x,
+                   const Real * U, const Real * DU, Real * DC) const
+    {
+Abort("Hello! IBVP_HYPERBOLIC_BASE.F_DU2DC_1 (We should not end up in here)");
+    }
+    AMREX_GPU_HOST_DEVICE
+    void F_DU2DC_2(const int dom,
+                   const Real t, const Real * x,
+                   const Real * U, const Real * DU, Real * DC) const
+    {
+Abort("Hello! IBVP_HYPERBOLIC_BASE.F_DU2DC_1 (We should not end up in here)");
+    }
+    AMREX_GPU_HOST_DEVICE
+    void F_DU2DC_3(const int dom,
+                   const Real t, const Real * x,
+                   const Real * U, const Real * DU, Real * DC) const
+    {
+Abort("Hello! IBVP_HYPERBOLIC_BASE.F_DU2DC_1 (We should not end up in here)");
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void F_DC2DU(const int dom,
+                 const Real t, const Real * x, const Real * un,
+                 const Real * U, const Real * DC, Real * DU) const
+    {
+Abort("Hello! IBVP_HYPERBOLIC_BASE.F_DC2DU (We should not end up in here)");
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void F_DC2DU_1(const int dom,
+                   const Real t, const Real * x,
+                   const Real * U, const Real * DC, Real * DU) const
+    {
+Abort("Hello! IBVP_HYPERBOLIC_BASE.F_DC2DU_1 (We should not end up in here)");
+    }
+    AMREX_GPU_HOST_DEVICE
+    void F_DC2DU_2(const int dom,
+                   const Real t, const Real * x,
+                   const Real * U, const Real * DC, Real * DU) const
+    {
+Abort("Hello! IBVP_HYPERBOLIC_BASE.F_DC2DU_1 (We should not end up in here)");
+    }
+    AMREX_GPU_HOST_DEVICE
+    void F_DC2DU_3(const int dom,
+                   const Real t, const Real * x,
+                   const Real * U, const Real * DC, Real * DU) const
+    {
+Abort("Hello! IBVP_HYPERBOLIC_BASE.F_DC2DU_1 (We should not end up in here)");
     }
     // ================================================================
 

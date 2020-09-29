@@ -331,62 +331,6 @@ struct ImplicitMesh
     }
     // ################################################################
 
-    // INITIALIZATION FOR A SLOPE LIMITER #############################
-    void DefineForSlopeLimiter(const ImplicitMesh<N_PHI, N_DOM> & coarse,
-                               const IntVect & rr,
-                               const InputReader & inputs, const int d)
-    {
-        // GRID INFO ==================================================
-        this->rbx = coarse.rbx;
-
-        this->ibx = coarse.ibx;
-        this->ibx.refine(rr);
-
-        this->geom.define(this->ibx, &this->rbx,
-                          inputs.space[d].coord_sys,
-                          inputs.space[d].is_periodic.data());
-
-        this->DefineGridInfo();
-        // ============================================================
-
-        // BOX ARRAY AND DISTRIBUTION MAPPING =========================
-        this->cc_ba = coarse.cc_ba;
-        this->cc_ba.refine(rr);
-
-#if (AMREX_SPACEDIM == 1)
-        this->fc_ba[0] = convert(this->cc_ba, IntVect(1));
-#endif
-#if (AMREX_SPACEDIM == 2)
-        this->fc_ba[0] = convert(this->cc_ba, IntVect(1,0));
-        this->fc_ba[1] = convert(this->cc_ba, IntVect(0,1));
-#endif
-#if (AMREX_SPACEDIM == 3)
-        this->fc_ba[0] = convert(this->cc_ba, IntVect(1,0,0));
-        this->fc_ba[1] = convert(this->cc_ba, IntVect(0,1,0));
-        this->fc_ba[2] = convert(this->cc_ba, IntVect(0,0,1));
-#endif
-
-        this->dm = coarse.dm;
-        // ============================================================
-
-        // UNIT CUBE [-1,1]^AMREX_SPACEDIM ============================
-        this->DefineUnitCube(inputs.dG[d].phi_space_p, inputs.dG[d].space_q);
-
-        // WE ALSO NEED THE INTERPOLATION OPERATOR
-        this->cube.InitInterpolation(coarse.cube, rr);
-        // ============================================================
-
-        // LEVEL SETS =================================================
-        this->DefineLevelSetsMultiFabs();
-        // ============================================================
-
-        // IMPLICIT MESH ==============================================
-        this->DefineImplicitMeshInfo(inputs.dG[d].space_q_im, inputs.dG[d].time_q_im,
-                                     inputs.dG[d].VF);
-        // ============================================================
-    }
-    // ################################################################
-
     // CHECK QUADRATURE RULES #########################################
     template<typename IBVP_CLASS>
     void CheckQuadratureRules(const IBVP_CLASS & IBVP)

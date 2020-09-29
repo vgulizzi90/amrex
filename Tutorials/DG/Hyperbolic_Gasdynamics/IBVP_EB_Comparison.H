@@ -115,8 +115,8 @@ public:
     void _eval_NFn_(const int dom, const amrex::Real * un, const amrex::Real * U, const amrex::Real * nbr_U,
                     amrex::Real * NFn) const
     {
-        this->_eval_NFn_mOsher_(dom, un, U, nbr_U, NFn);
-        //this->_eval_NFn_ExactRiemann_(dom, un, U, nbr_U, NFn);
+        //this->_eval_NFn_mOsher_(dom, un, U, nbr_U, NFn);
+        this->_eval_NFn_ExactRiemann_(dom, un, U, nbr_U, NFn);
     }
     // ================================================================
 
@@ -141,6 +141,17 @@ public:
         // VARIABLES
         amrex::Real bcs_U[N_U];
 
+        this->F_BCS(dom, t, x, un, U, bcs_U);
+
+        this->_eval_NFn_(dom, un, U, bcs_U, NFn);
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void F_BCS(const int dom,
+               const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+               const amrex::Real * U,
+               amrex::Real * bcs_U) const
+    {
         // OUTFLOW BOUNDARY CONDITIONS
         if (un[0] < -0.5)
         {
@@ -170,8 +181,6 @@ public:
             bcs_U[RHOV2] = -U[RHOV2];
             bcs_U[TE] = U[TE];
         }
-
-        this->_eval_NFn_(dom, un, U, bcs_U, NFn);
     }
     // ================================================================
 
@@ -183,13 +192,25 @@ public:
                       amrex::Real * NFn) const
     {
         // VARIABLES
-        amrex::Real Un[N_U], bcs_U[N_U];
+        amrex::Real bcs_U[N_U];
+
+        this->F_PHI_BCS(dom, t, x, un, U, bcs_U);
+
+        this->_eval_NFn_(dom, un, U, bcs_U, NFn);
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void F_PHI_BCS(const int dom,
+                   const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                   const amrex::Real * U,
+                   amrex::Real * bcs_U) const
+    {
+        // VARIABLES
+        amrex::Real Un[N_U];
 
         this->_eval_U2Un_(un, U, Un);
         Un[RHOV1] = -Un[RHOV1];
         this->_eval_Un2U_(un, Un, bcs_U);
-
-        this->_eval_NFn_(dom, un, U, bcs_U, NFn);
     }
     // ================================================================
 

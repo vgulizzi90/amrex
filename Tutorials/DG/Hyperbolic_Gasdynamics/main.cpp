@@ -19,7 +19,7 @@
 #define PROBLEM_SODS_TUBE 1
 #define PROBLEM_EB_COMPARISON 2
 
-#define PROBLEM 2
+#define PROBLEM 1
 
 #if (PROBLEM == PROBLEM_SODS_TUBE_REF)
 #include <IBVP_SodsTube_Reference.H>

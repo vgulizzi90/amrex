@@ -37,9 +37,12 @@ struct DG
     // MATRIX FACTORY
     MatrixFactory<N_PHI, N_DOM> matfactory;
 
+    // SLOPE LIMITER
+    bool limiter_is_active;
+
     // SOLUTION MULTIFABS
     MultiFab X_old, X_new;
-    charMultiFab slope_limiter_tags;
+    charMultiFab tags;
 
     // TIME MARCHING
     int n_time_steps;
@@ -47,10 +50,6 @@ struct DG
     std::string time_marching_info;
     int tp, tNp;
     RungeKutta<N_PHI, N_DOM, N_U> RK;
-
-    // SLOPE LIMITER
-    bool slope_limiter_is_active;
-    SlopeLimiter<N_PHI, N_DOM, N_U> limiter;
 
     // POST-PROCESSING
     std::string output_folder;
@@ -69,7 +68,7 @@ struct DG
     DG()
     :
     PDEs_info{""},
-    slope_limiter_is_active{false},
+    limiter_is_active{false},
     n_time_steps{-1},
     CFL_base{0.0},
     time_marching_info{""},
@@ -105,9 +104,13 @@ struct DG
         this->matfactory.Define(this->mesh.cc_ba, this->mesh.dm, inputs, d);
         // ============================================================
 
+        // SLOPE LIMITER ==============================================
+        this->limiter_is_active = inputs.dG[d].limiter.active;
+        // ============================================================
+
         // SOLUTION MULTIFABS =========================================
         {
-            const int n_comp = (this->matfactory.cube.Np)*N_U;
+            int n_comp = (this->matfactory.cube.Np)*N_U;
 
             this->X_old.define(this->mesh.cc_ba, this->mesh.dm, n_comp, this->dom_data_ngr);
             this->X_old = 0.0;
@@ -116,8 +119,8 @@ struct DG
             this->X_new = 0.0;
         }
 
-        this->slope_limiter_tags.define(this->mesh.cc_ba, this->mesh.dm, N_DOM, this->dom_data_ngr);
-        this->slope_limiter_tags = SOUND_ELEMENT;
+        this->tags.define(this->mesh.cc_ba, this->mesh.dm, N_DOM, this->dom_data_ngr);
+        this->tags = SOUND_ELEMENT;
         // ============================================================
 
         // TIME MARCHING ==============================================
@@ -143,14 +146,6 @@ struct DG
             Print() << "| Unexpected time-stepping scheme: " << this->time_marching_info << std::endl;
             Print() << std::endl;
             exit(-1);
-        }
-        // ============================================================
-
-        // SLOPE LIMITER ==============================================
-        this->slope_limiter_is_active = inputs.dG[d].limiter.active;
-        if (slope_limiter_is_active)
-        {
-            this->limiter.Define(this->mesh, this->matfactory, inputs, d);
         }
         // ============================================================
 
@@ -206,33 +201,18 @@ struct DG
     {
         // PROJECT THE LEVEL SET FUNCTIONS OVER THE GRID ==============
         ProjectLevelSets<N_PHI, N_DOM>(this->mesh, IBVP);
-        
-        if (this->slope_limiter_is_active)
-        {
-            AMR::InterpolateLevelSets<N_PHI, N_DOM>(this->mesh,
-                                                    this->limiter.ref_ratio,
-                                                    this->limiter.mesh);
-        }
         // ============================================================
 
         // MAKE THE IMPLICIT MESH =====================================
         MakeImplicitMesh<N_PHI, N_DOM>(this->mesh, IBVP, im_flag);
-
-        if (this->slope_limiter_is_active)
-        {
-            MakeImplicitMesh<N_PHI, N_DOM>(this->limiter.mesh, IBVP, im_flag);
-        }
         // ============================================================
 
         // EVAL THE LINEAR OPERATORS FOR THE IMPLICIT MESH ============
         EvalMassMatrices<N_PHI, N_DOM>(this->mesh, this->matfactory, IBVP);
 
-        if (this->slope_limiter_is_active)
+        if (this->limiter_is_active)
         {
-            EvalMassMatrices<N_PHI, N_DOM>(this->limiter.mesh, this->limiter.matfactory, IBVP);
-            AMR::EvalInterpolationOperator<N_PHI, N_DOM>(this->mesh, this->matfactory,
-                                                         this->limiter.ref_ratio,
-                                                         this->limiter.mesh, this->limiter.matfactory);
+            EvalAverageOperator<N_PHI, N_DOM>(this->mesh, this->matfactory, IBVP);
         }
         // ============================================================
 
@@ -242,22 +222,15 @@ struct DG
                                                     this->X_new,
                                                     IBVP);
 
-        if (this->slope_limiter_is_active)
+        if (this->limiter_is_active)
         {
-            ProjectInitialConditions<N_PHI, N_DOM, N_U>(this->limiter.mesh,
-                                                        this->limiter.matfactory,
-                                                        this->limiter.X_new,
-                                                        IBVP);
-
             const Real t = 0.0;
-            IdentifyTroubledElements<N_PHI, N_DOM, N_U>(t,
-                                                        this->mesh,
-                                                        this->matfactory,
-                                                        this->X_new,
-                                                        this->slope_limiter_tags,
-                                                        IBVP);
-            
-            this->limiter.SetTags(this->slope_limiter_tags);
+            FillInvalidCells<N_PHI, N_DOM, N_U>(t, this->mesh, this->matfactory, this->X_new, IBVP);
+
+            if (this->matfactory.cube.Np != 1)
+            {
+                ApplySlopeLimiter_DG<N_PHI, N_DOM, N_U>(t, this->mesh, this->matfactory, this->X_new, IBVP);
+            }
         }
         // ============================================================
     }
@@ -278,27 +251,11 @@ struct DG
                                                                   this->mesh,
                                                                   this->matfactory,
                                                                   this->X_new,
-                                                                  this->slope_limiter_tags,
+                                                                  this->tags,
                                                                   IBVP);
 
             // CFL CONDITION
             dt *= this->CFL_base/(2.0*this->matfactory.cube.p+1.0);
-
-            if (slope_limiter_is_active)
-            {
-                Real dt_limiter;
-                
-                dt_limiter = Compute_dt_ExplicitHyperbolic<N_PHI, N_DOM, N_U>(t,
-                                                                              this->limiter.mesh,
-                                                                              this->limiter.matfactory,
-                                                                              this->limiter.X_new,
-                                                                              this->limiter.tags,
-                                                                              IBVP);
-
-                // CFL CONDITION
-                dt_limiter *= this->CFL_base/(2.0*this->limiter.matfactory.cube.p+1.0);
-                dt = fmin(dt, dt_limiter);
-            }
         }
         else
         {
@@ -324,34 +281,28 @@ struct DG
 
         // COPY NEW TO OLD ============================================
         MultiFab::Copy(this->X_old, this->X_new, 0, 0, n_comp, this->dom_data_ngr);
-
-        if (slope_limiter_is_active)
-        {
-            const int limiter_n_comp = this->limiter.matfactory.cube.Np*N_U;
-            MultiFab::Copy(this->limiter.X_old, this->limiter.X_new, 0, 0, limiter_n_comp, this->limiter.dom_data_ngr);
-        }
         // ============================================================
 
         // CALL SELECTED TIME-STEPPING SCHEME =========================
         if ((this->isPDEsSystemHyperbolic()) && (this->isTimeMarchingRungeKutta()))
         {
-            if (this->slope_limiter_is_active)
+            if (this->limiter_is_active)
             {
-                this->RK.TakeTimeStep_SlopeLimiter(this->tNp, dt, t,
-                                                   this->mesh,
-                                                   this->matfactory,
-                                                   this->X_old, this->X_new,
-                                                   this->slope_limiter_tags,
-                                                   this->limiter,
-                                                   this->PDEs_info,
-                                                   IBVP);
+                this->RK.TakeTimeStepWithSlopeLimiter(this->tNp, dt, t,
+                                                      this->mesh,
+                                                      this->matfactory,
+                                                      this->X_old,
+                                                      this->X_new,
+                                                      this->PDEs_info,
+                                                      IBVP);
             }
             else
             {
                 this->RK.TakeTimeStep(this->tNp, dt, t,
                                       this->mesh,
                                       this->matfactory,
-                                      this->X_old, this->X_new,
+                                      this->X_old,
+                                      this->X_new,
                                       this->PDEs_info,
                                       IBVP);
             }
@@ -556,17 +507,8 @@ exit(-1);
         ExportMesh_VTK<N_PHI, N_DOM>(this->output_folder, filename_root,
                                      n, this->n_time_steps, time,
                                      this->mesh,
-                                     this->slope_limiter_tags,
+                                     this->tags,
                                      IBVP);
-        
-        if (this->slope_limiter_is_active)
-        {
-            ExportMesh_VTK<N_PHI, N_DOM>(this->output_folder, filename_root+"Limited",
-                                         n, this->n_time_steps, time,
-                                         this->limiter.mesh,
-                                         this->limiter.tags,
-                                         IBVP);
-        }
     }
 
     template<typename IBVP_CLASS>
@@ -580,23 +522,10 @@ exit(-1);
                                               this->mesh,
                                               this->matfactory,
                                               this->X_new,
-                                              this->slope_limiter_tags,
+                                              this->tags,
                                               this->fields_domain,
                                               this->fields_name,
                                               IBVP);
-
-        if (this->slope_limiter_is_active)
-        {
-            ExportSolution_VTK<N_PHI, N_DOM, N_U>(this->output_folder, filename_root+"Limited",
-                                                  n, this->n_time_steps, time,
-                                                  this->limiter.mesh,
-                                                  this->limiter.matfactory,
-                                                  this->limiter.X_new,
-                                                  this->limiter.tags,
-                                                  this->fields_domain,
-                                                  this->fields_name,
-                                                  IBVP);
-        }
     }
     // ################################################################
 };

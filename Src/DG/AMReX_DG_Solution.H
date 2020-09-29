@@ -359,7 +359,7 @@ void MakeImplicitMesh(ImplicitMesh<N_PHI, N_DOM> & mesh, const IBVP_CLASS & IBVP
                     // on a [-1,1]^AMREX_SPACEDIM cell
                     for (int qi = 0; qi < dom_Nq; ++qi)
                     {
-                        long pos = eDomQuad_mem_pos+(AMREX_SPACEDIM+1)*qi;
+                        const long pos = eDomQuad_mem_pos+(AMREX_SPACEDIM+1)*qi;
 
                         AMREX_D_TERM
                         (
@@ -372,6 +372,79 @@ void MakeImplicitMesh(ImplicitMesh<N_PHI, N_DOM> & mesh, const IBVP_CLASS & IBVP
 
                     // Update memory (nodes coordinates + weights)
                     eDomQuad_mem_pos += (AMREX_SPACEDIM+1)*dom_Nq;
+                }
+                // ----------------------------------------------------
+            }
+
+            // DOMAIN: CENTROID
+            {
+                // EMPTY ELEMENTS -------------------------------------
+                if (cell_is_empty)
+                {
+                    // ELEMENT INFO
+                    AMREX_D_TERM
+                    (
+                        eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+1) = 0.0;,
+                        eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+2) = 0.0;,
+                        eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+3) = 0.0;
+                    )
+                }
+                // ----------------------------------------------------
+                // ENTIRE ELEMENTS ------------------------------------
+                else if (cell_is_entire)
+                {
+                    // STORE CENTROID
+                    AMREX_D_TERM
+                    (
+                        eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+1) += cell_m[0];,
+                        eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+2) += cell_m[1];,
+                        eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+3) += cell_m[2];
+                    )
+                }
+                // ----------------------------------------------------
+                // PARTIAL ELEMENTS -----------------------------------
+                else
+                {
+                    // PARAMETERS
+                    const Real V = eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1);
+                    const int dom_Nq = eDomQuad_Nq_fab(i,j,k,DG_ELM_DOM_QUAD_N_COMP_PER_DOM*dom);
+                    const long pos0 = eDomQuad_pos_fab(i,j,k,DG_ELM_DOM_QUAD_N_COMP_PER_DOM*dom);
+
+                    // VARIABLES
+                    Real x[AMREX_SPACEDIM], w, S[AMREX_SPACEDIM];
+
+                    // EVAL THE STATIC MOMENTS
+                    AMREX_D_TERM
+                    (
+                        S[0] = 0.0;,
+                        S[1] = 0.0;,
+                        S[2] = 0.0;
+                    )
+                    for (int qi = 0; qi < dom_Nq; ++qi)
+                    {
+                        const long pos = pos0+(AMREX_SPACEDIM+1)*qi;
+                        AMREX_D_TERM
+                        (
+                            x[0] = J[0]*mesh.eDomQuad_host_mem[pos+0]+cell_m[0];,
+                            x[1] = J[1]*mesh.eDomQuad_host_mem[pos+1]+cell_m[1];,
+                            x[2] = J[2]*mesh.eDomQuad_host_mem[pos+2]+cell_m[2];
+                        )
+                        w = aJ*mesh.eDomQuad_host_mem[pos+AMREX_SPACEDIM];
+                        AMREX_D_TERM
+                        (
+                            S[0] += x[0]*w;,
+                            S[1] += x[1]*w;,
+                            S[2] += x[2]*w;
+                        )
+                    }
+
+                    // EVAL AND STORE CENTROID
+                    AMREX_D_TERM
+                    (
+                        eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+1) += S[0]/V;,
+                        eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+2) += S[1]/V;,
+                        eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+3) += S[2]/V;
+                    )
                 }
                 // ----------------------------------------------------
             }
@@ -414,7 +487,7 @@ void MakeImplicitMesh(ImplicitMesh<N_PHI, N_DOM> & mesh, const IBVP_CLASS & IBVP
                     // [-1,1]^AMREX_SPACEDIM cell
                     for (int qi = 0; qi < dom_Npt; ++qi)
                     {
-                        long pos = eQuery_mem_pos+AMREX_SPACEDIM*qi;
+                        const long pos = eQuery_mem_pos+AMREX_SPACEDIM*qi;
 
                         AMREX_D_TERM
                         (
@@ -449,7 +522,7 @@ void MakeImplicitMesh(ImplicitMesh<N_PHI, N_DOM> & mesh, const IBVP_CLASS & IBVP
                 // Store data
                 for (int qi = 0; qi < bou_Nq; ++qi)
                 {
-                    long pos = eIntBouQuad_mem_pos+(AMREX_SPACEDIM+1+AMREX_SPACEDIM)*qi;
+                    const long pos = eIntBouQuad_mem_pos+(AMREX_SPACEDIM+1+AMREX_SPACEDIM)*qi;
 
                     AMREX_D_TERM
                     (
@@ -482,6 +555,7 @@ void MakeImplicitMesh(ImplicitMesh<N_PHI, N_DOM> & mesh, const IBVP_CLASS & IBVP
             }
         }
     }
+    mesh.eInfo.FillBoundary(mesh.geom.periodicity());
     // ================================================================
 
     // STORE MEMORY INFO ==============================================
@@ -616,7 +690,7 @@ void MakeImplicitMesh(ImplicitMesh<N_PHI, N_DOM> & mesh, const IBVP_CLASS & IBVP
                         // computed on a [-1,1]^AMREX_SPACEDIM cell
                         for (int qi = 0; qi < bou_Nq; ++qi)
                         {
-                            long pos = eBouQuad_mem_pos+(AMREX_SPACEDIM+1)*qi;
+                            const long pos = eBouQuad_mem_pos+(AMREX_SPACEDIM+1)*qi;
 
                             AMREX_D_TERM
                             (
@@ -643,7 +717,7 @@ void MakeImplicitMesh(ImplicitMesh<N_PHI, N_DOM> & mesh, const IBVP_CLASS & IBVP
                         // computed on a [-1,1]^AMREX_SPACEDIM cell
                         for (int qi = 0; qi < bou_Nq; ++qi)
                         {
-                            long pos = eBouQuad_mem_pos+(AMREX_SPACEDIM+1)*qi;
+                            const long pos = eBouQuad_mem_pos+(AMREX_SPACEDIM+1)*qi;
 
                             AMREX_D_TERM
                             (
@@ -749,6 +823,72 @@ void MakeImplicitMesh(ImplicitMesh<N_PHI, N_DOM> & mesh, const IBVP_CLASS & IBVP
         Gpu::synchronize();
     }
     mesh.eType.FillBoundary(mesh.geom.periodicity());
+    // ================================================================
+
+    // UPDATE THE CENTROIDS OF THE EXTENDED ELEMENTS ==================
+    for (MFIter mfi(mesh.eType); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<Real> const & eInfo_fab = mesh.eInfo.array(mfi);
+
+        ParallelFor(bx, N_DOM,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // LOCAL PARAMETERS
+            const short etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
+            const bool elm_is_entire = (etype%10 == DG_ELM_TYPE_ENTIRE);
+            const bool elm_is_large = (etype%10 == DG_ELM_TYPE_LARGE);
+            const bool elm_is_valid = elm_is_entire || elm_is_large;
+
+            // LOCAL VARIABLES
+            short nbr_etype;
+            int nbr_i, nbr_j, nbr_k, nbr_b, nbr_merged_b;
+            bool nbr_is_small;
+
+            // Cycle over the boundaries, check whether the valid
+            // element is also extended and mark it
+            if (elm_is_valid)
+            for (int b = 0; b < DG_CELL_N_SPACE_BOUNDARIES; ++b)
+            {
+                NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+
+                nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
+                nbr_is_small = (nbr_etype%10 == DG_ELM_TYPE_SMALL);
+                nbr_merged_b = (nbr_is_small) ? (nbr_etype/10) : -1;
+
+                if (nbr_merged_b == nbr_b)
+                {
+                    const Real small_V = eInfo_fab(nbr_i,nbr_j,nbr_k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1);
+                    const Real V = eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1);
+                    
+                    Real small_S[AMREX_SPACEDIM], S[AMREX_SPACEDIM];
+
+                    AMREX_D_TERM
+                    (
+                        small_S[0] = eInfo_fab(nbr_i,nbr_j,nbr_k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+1)*small_V;,
+                        small_S[1] = eInfo_fab(nbr_i,nbr_j,nbr_k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+2)*small_V;,
+                        small_S[2] = eInfo_fab(nbr_i,nbr_j,nbr_k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+3)*small_V;
+                    )
+                    AMREX_D_TERM
+                    (
+                        S[0] = eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+1)*V;,
+                        S[1] = eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+2)*V;,
+                        S[2] = eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+3)*V;
+                    )
+                    AMREX_D_TERM
+                    (
+                        eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+1) = (S[0]+small_S[0])/(V+small_V);,
+                        eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+2) = (S[1]+small_S[1])/(V+small_V);,
+                        eInfo_fab(i,j,k,DG_ELM_INFO_N_COMP_PER_DOM*dom+1+3) = (S[2]+small_S[2])/(V+small_V);
+                    )
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+    mesh.eInfo.FillBoundary(mesh.geom.periodicity());
     // ================================================================
 
     // MARK THE EXTENDED ELEMENTS =====================================
@@ -1319,6 +1459,39 @@ void EvalMassMatrices(const ImplicitMesh<N_PHI, N_DOM> & mesh,
 }
 // ####################################################################
 
+// EVAL THE AVERAGE OPERATOR FOR THE IMPLICIT MESH ####################
+template<int N_PHI, int N_DOM, typename IBVP_CLASS>
+void EvalAverageOperator(const ImplicitMesh<N_PHI, N_DOM> & mesh,
+                         MatrixFactory<N_PHI, N_DOM> & matfactory,
+                         const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("EvalAverageOperator(const ImplicitMesh<N_PHI, N_DOM> &, MatrixFactory<N_PHI, N_DOM> &, const IBVP_CLASS &)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS =====================================================
+    // GRID
+
+    // UNIT CUBE [-1,1]^AMREX_SPACEDIM
+    const UnitCube<AMREX_SPACEDIM> & cube = matfactory.cube;
+
+    // IMPLICIT MESH
+    //const Real * eDomQuad_mem_ptr = mesh.eDomQuad_host_mem.data();
+
+    // DG
+    const int sp = cube.p;
+    //const int sNp = cube.Np;
+    // ================================================================
+
+    // QUICK RETURN IF p = 0 ==========================================
+    if (sp == 0) return;
+    // ================================================================
+
+Print() << "EvalAverageOperator" << std::endl;
+exit(-1);
+}
+// ####################################################################
+
 // ADD CONTRIBUTION OF SMALL ELEMENTS TO EXTENDED ELEMENTS ############
 template<int N_PHI, int N_DOM, int N_U, typename IBVP_CLASS>
 void AddSmallElementsContribution(const ImplicitMesh<N_PHI, N_DOM> & mesh,
@@ -1572,6 +1745,334 @@ void ProjectInitialConditions(const ImplicitMesh<N_PHI, N_DOM> & mesh,
     MultiplyByInverseMassMatrix<N_PHI, N_DOM, N_U>(mesh, matfactory, X, IBVP);
     // ================================================================
 
+}
+// ####################################################################
+
+
+
+// FILL BOUNDARY AND SMALL OR EMPTY CELLS USING BCS OR ICS INFO #######
+template<int N_PHI, int N_DOM, int N_U, typename IBVP_CLASS>
+void FillInvalidCells(const Real t,
+                      const ImplicitMesh<N_PHI, N_DOM> & mesh,
+                      const MatrixFactory<N_PHI, N_DOM> & matfactory,
+                      MultiFab & X,
+                      const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("FillInvalidCells(const Real, const ImplicitMesh<N_PHI, N_DOM> &, ....)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS =====================================================
+    const int ngr = 1;
+
+    // GRID
+    const Box domain = mesh.geom.Domain();
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.dx;
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.prob_lo;
+    const GpuArray<int, AMREX_SPACEDIM> is_periodic = mesh.is_periodic;
+
+    // LEVEL SET
+    const int phi_sp = mesh.cube.p;
+
+    // DG
+    const int sNp = matfactory.cube.Np;
+
+    // AUXILIARY MULTIFABS
+    MultiFab Xa;
+    MultiFab * pXa;
+    // ================================================================
+
+    // EVAL THE AVERAGE IF p > 0 ======================================
+    if (sNp != 1)
+    {
+Print() << "(We need to compute the average)" << std::endl;
+exit(-1);
+    }
+    else
+    {
+        pXa = &X;
+    }
+    // ================================================================
+    
+    // ================================================================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+        Array4<Real const> const & PHI_fab = mesh.PHI.array(mfi);
+        
+        Array4<Real> const & Xa_fab = pXa->array(mfi);
+        Array4<Real> const & X_fab = X.array(mfi);
+
+        ParallelFor(bx, N_DOM,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // LOCAL PARAMETERS
+            const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                               prob_lo[1]+j*dx[1],
+                                                               prob_lo[2]+k*dx[2])};
+            const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+1)*dx[0],
+                                                               prob_lo[1]+(j+1)*dx[1],
+                                                               prob_lo[2]+(k+1)*dx[2])};
+            const short etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
+            const bool elm_is_empty = (etype == DG_ELM_TYPE_EMPTY);
+            const bool elm_is_small = (etype%10 == DG_ELM_TYPE_SMALL);
+
+            // LOCAL VARIABLES
+            Real tmp;
+            Real cell_m[AMREX_SPACEDIM], un[AMREX_SPACEDIM];
+            Real Uh[N_U], U[N_U], nbr_Uh[N_U];
+
+            // CURRENT CELL DATA
+            for (int ru = 0; ru < N_U; ++ru)
+            {
+                Uh[ru] = Xa_fab(i,j,k,ru);
+            }
+
+            // UPDATE GRID BOUNDARY VALUES ============================
+            if ((i == domain.smallEnd(0)) && (is_periodic[0] == 0))
+            {
+                AMREX_D_TERM
+                (
+                    cell_m[0] = prob_lo[0]+(i-1+0.5)*dx[0];,
+                    cell_m[1] = prob_lo[1]+(j  +0.5)*dx[1];,
+                    cell_m[2] = prob_lo[2]+(k  +0.5)*dx[2];
+                )
+                AMREX_D_TERM
+                (
+                    un[0] = -1.0;,
+                    un[1] =  0.0;,
+                    un[2] =  0.0;;
+                )
+
+                IBVP.F_BCS(dom, t, cell_m, un, Uh, U);
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    X_fab(i-1,j,k,ru*sNp) = U[ru];
+                }
+            }
+            if ((i == domain.bigEnd(0)) && (is_periodic[0] == 0))
+            {
+                AMREX_D_TERM
+                (
+                    cell_m[0] = prob_lo[0]+(i+1+0.5)*dx[0];,
+                    cell_m[1] = prob_lo[1]+(j  +0.5)*dx[1];,
+                    cell_m[2] = prob_lo[2]+(k  +0.5)*dx[2];
+                )
+                AMREX_D_TERM
+                (
+                    un[0] = +1.0;,
+                    un[1] =  0.0;,
+                    un[2] =  0.0;;
+                )
+
+                IBVP.F_BCS(dom, t, cell_m, un, Uh, U);
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    X_fab(i+1,j,k,ru*sNp) = U[ru];
+                }
+            }
+
+#if (AMREX_SPACEDIM > 1)
+            if (j == domain.smallEnd(1))
+            {
+                AMREX_D_TERM
+                (
+                    cell_m[0] = prob_lo[0]+(i  +0.5)*dx[0];,
+                    cell_m[1] = prob_lo[1]+(j-1+0.5)*dx[1];,
+                    cell_m[2] = prob_lo[2]+(k  +0.5)*dx[2];
+                )
+                AMREX_D_TERM
+                (
+                    un[0] =  0.0;,
+                    un[1] = -1.0;,
+                    un[2] =  0.0;;
+                )
+
+                IBVP.F_BCS(dom, t, cell_m, un, Uh, U);
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    X_fab(i,j-1,k,ru*sNp) = U[ru];
+                }
+            }
+            if (j == domain.bigEnd(1))
+            {
+                AMREX_D_TERM
+                (
+                    cell_m[0] = prob_lo[0]+(i  +0.5)*dx[0];,
+                    cell_m[1] = prob_lo[1]+(j+1+0.5)*dx[1];,
+                    cell_m[2] = prob_lo[2]+(k  +0.5)*dx[2];
+                )
+                AMREX_D_TERM
+                (
+                    un[0] =  0.0;,
+                    un[1] = +1.0;,
+                    un[2] =  0.0;;
+                )
+
+                IBVP.F_BCS(dom, t, cell_m, un, Uh, U);
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    X_fab(i,j+1,k,ru*sNp) = U[ru];
+                }
+            }
+#endif
+#if (AMREX_SPACEDIM > 2)
+            if (k == domain.smallEnd(2))
+            {
+                AMREX_D_TERM
+                (
+                    cell_m[0] = prob_lo[0]+(i  +0.5)*dx[0];,
+                    cell_m[1] = prob_lo[1]+(j  +0.5)*dx[1];,
+                    cell_m[2] = prob_lo[2]+(k-1+0.5)*dx[2];
+                )
+                AMREX_D_TERM
+                (
+                    un[0] =  0.0;,
+                    un[1] =  0.0;,
+                    un[2] = -1.0;;
+                )
+
+                IBVP.F_BCS(dom, t, cell_m, un, Uh, U);
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    X_fab(i,j,k-1,ru*sNp) = U[ru];
+                }
+            }
+            if (k == domain.bigEnd(2))
+            {
+                AMREX_D_TERM
+                (
+                    cell_m[0] = prob_lo[0]+(i  +0.5)*dx[0];,
+                    cell_m[1] = prob_lo[1]+(j  +0.5)*dx[1];,
+                    cell_m[2] = prob_lo[2]+(k+1+0.5)*dx[2];
+                )
+                AMREX_D_TERM
+                (
+                    un[0] =  0.0;,
+                    un[1] =  0.0;,
+                    un[2] = +1.0;;
+                )
+
+                IBVP.F_BCS(dom, t, cell_m, un, Uh, U);
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    X_fab(i,j,k+1,ru*sNp) = U[ru];
+                }
+            }
+#endif
+            // ========================================================
+
+            // LEVEL SET INFO =========================================
+            DG_phi_space_BFX phi(cell_lo, cell_hi, PHI_fab, phi_sp, i, j, k, -1);
+
+            // WHICH LEVEL SET
+            int phi_info[2];
+            IBVP.F_DOM2PHI(dom, phi_info);
+            phi.set_fab_ptrs(i, j, k, phi_info[0]);
+            phi.set_sign(phi_info[1]);
+            
+            // LEVEL SET GRADIENT DIRECTION
+            phi.eval_grad(cell_m, un);
+            tmp = 1.0/std::sqrt(AMREX_D_PICK(un[0]*un[0], un[0]*un[0]+un[1]*un[1], un[0]*un[0]+un[1]*un[1]+un[2]*un[2]));
+            AMREX_D_TERM
+            (
+                un[0] *= -tmp;,
+                un[1] *= -tmp;,
+                un[2] *= -tmp;
+            )
+
+            // AUXILIARY TABLES
+#if (AMREX_SPACEDIM == 2)
+            const int nbr_i_table[8] = {1,1,0,-1,-1,-1,0,1};
+            const int nbr_j_table[8] = {0,1,1,1,0,-1,-1,-1};
+            const int nbr_k_table[1] = {0};
+#endif
+#if (AMREX_SPACEDIM == 3)
+            const int nbr_i_table[8] = {1,1,0,-1,-1,-1,0,1};
+            const int nbr_j_table[8] = {0,1,1,1,0,-1,-1,-1};
+            const int nbr_k_table[3] = {1,0,-1};
+#endif
+            // ========================================================
+
+            // UPDATE EMPTY CELLS VALUES ==============================
+            if (elm_is_empty)
+            {
+                const amrex::Real dph = 2.0*M_PI/8.0;
+                const amrex::Real ph = std::atan2(un[1], un[0]);
+                const int i_ph = (int) std::round((ph < 0.0) ? ((2.0*M_PI+ph-0.5*dph)/dph) : ((ph-0.5*dph)/dph));
+#if (AMREX_SPACEDIM == 2)
+                const int i_th = 0;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                const amrex::Real dth = M_PI/3.0;
+                const amrex::Real th = std::acos(un[2]);
+                const int i_th = (int) fmin(std::round(th/dth), 2);
+#endif
+                const int nbr_i = i+nbr_i_table[i_ph];
+                const int nbr_j = j+nbr_j_table[i_ph];
+                const int nbr_k = k+nbr_k_table[i_th];
+
+                const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
+                const bool nbr_is_empty = (nbr_etype == DG_ELM_TYPE_EMPTY);
+                const bool nbr_is_small = (nbr_etype%10 == DG_ELM_TYPE_SMALL);
+
+                if (nbr_is_empty || nbr_is_small)
+                {
+                    // do nothing
+                }
+                else
+                {
+                    const int nbr_dom = IBVP.F_DOM2NBRDOM(dom);
+
+                    // WE ARE CLOSE TO A BOUNDARY ---------------------
+                    if (nbr_dom == -1)
+                    {
+                        // NEIGHBORING CELL DATA
+                        for (int ru = 0; ru < N_U; ++ru)
+                        {
+                            nbr_Uh[ru] = Xa_fab(nbr_i,nbr_j,nbr_k,ru);
+                        }
+
+                        IBVP.F_BCS(dom, t, cell_m, un, nbr_Uh, U);
+
+                        for (int ru = 0; ru < N_U; ++ru)
+                        {
+                            X_fab(i,j,k,ru*sNp) = U[ru];
+                        }
+                    }
+                    // ------------------------------------------------
+                    // WE ARE CLOSE TO AN INTERFACE -------------------
+                    else
+                    {
+Abort("HERE WE ARE - FillInvalidCells");
+exit(-1);
+                    }
+                    // ------------------------------------------------
+                }
+            }
+            // ========================================================
+
+            // UPDATE SMALL CELLS VALUES ==============================
+            if (elm_is_small)
+            {
+                int BF_i, BF_j, BF_k;
+
+                BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+
+                for (int ru = 0; ru < N_U; ++ru)
+                {
+                    X_fab(i,j,k,ru*sNp) = X_fab(BF_i,BF_j,BF_k,ru*sNp);
+                }
+            }
+            // ========================================================
+        });
+        Gpu::synchronize();
+    }
+    X.FillBoundary(mesh.geom.periodicity());
+    // ================================================================
 }
 // ####################################################################
 

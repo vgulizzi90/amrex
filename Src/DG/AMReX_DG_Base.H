@@ -66,7 +66,7 @@
 
 // IMPLICIT MESH INFO
 #define DG_ELM_TYPE_N_COMP_PER_DOM 1
-#define DG_ELM_INFO_N_COMP_PER_DOM 3
+#define DG_ELM_INFO_N_COMP_PER_DOM (2+AMREX_SPACEDIM)
 #define DG_ELM_COLOR_N_COMP_PER_DOM 1
 #define DG_ELM_BOU_TYPE_N_COMP_PER_DOM 1
 #define DG_ELM_DOM_QUAD_N_COMP_PER_DOM 1
@@ -811,6 +811,15 @@ struct UnitCube
     }
     // ################################################################
 
+    // AVERAGE OPERATOR ###############################################
+    void InitAverage()
+    {
+
+Print() << "UnitCube::InitAverage" << std::endl;
+exit(-1);
+    }
+    // ################################################################
+
     // INTERPOLATION OPERATOR #########################################
     void InitInterpolation(const UnitCube & coarse, const IntVect & rr_)
     {
@@ -985,6 +994,103 @@ struct UnitCube
     // ################################################################
 };
 // ####################################################################
+// ####################################################################
+
+
+
+// ####################################################################
+// DATA STRUCTURES USED TO EVALUATE THE FV SOLUTION IN SPACE AND TIME #
+// ####################################################################
+template<int N>
+class _FV_space_BFX_
+{
+private:
+    // VARIABLES
+    const Real * lo;
+    const Real * hi;
+    Real mid[AMREX_SPACEDIM];
+    Array4<Real const> const & fab;
+    Array4<Real const> const & grad_fab;
+    int i, j, k, u;
+    Real sgn;
+
+public:
+    // CONSTRUCTOR ====================================================
+    AMREX_GPU_HOST_DEVICE
+    _FV_space_BFX_(const Real * lo_, const Real * hi_,
+                   Array4<Real const> const & fab_, Array4<Real const> const & grad_fab_,
+                   const int & i_, const int & j_, const int & k_, const int & u_):
+    lo(lo_), hi(hi_),
+    mid{AMREX_D_DECL(0.5*(lo_[0]+hi_[0]), 0.5*(lo_[1]+hi_[1]), 0.5*(lo_[2]+hi_[2]))},
+    fab(fab_),
+    grad_fab(grad_fab_),
+    i(i_), j(j_), k(k_), u(u_),
+    sgn(-1.0)
+    {}
+    
+    AMREX_GPU_HOST_DEVICE
+    _FV_space_BFX_(Array4<Real const> const & fab_, Array4<Real const> const & grad_fab_):
+    lo(nullptr), hi(nullptr),
+    fab(fab_),
+    grad_fab(grad_fab_),
+    i(-1), j(-1), k(-1), u(-1),
+    sgn(-1.0)
+    {}
+    // ================================================================
+
+    // MISC ===========================================================
+    AMREX_GPU_HOST_DEVICE
+    void set_support(const Real * lo_, const Real * hi_)
+    {
+        this->lo = lo_;
+        this->hi = hi_;
+        AMREX_D_TERM
+        (
+            this->mid[0] = 0.5*(lo_[0]+hi_[0]);,
+            this->mid[1] = 0.5*(lo_[1]+hi_[1]);,
+            this->mid[2] = 0.5*(lo_[2]+hi_[2]);
+        )
+    }
+    
+    AMREX_GPU_HOST_DEVICE
+    void set_fab_ptrs(const int & i_, const int & j_, const int & k_, const int & u_)
+    {
+        this->i = i_;
+        this->j = j_;
+        this->k = k_;
+        this->u = u_;
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void set_sign(const int & sgn_)
+    {
+        this->sgn = 1.0*sgn_;
+    }
+    // ================================================================
+
+    // EVAL THE SOLUTION AT LOCATION x ================================
+    AMREX_GPU_HOST_DEVICE
+    Real eval(const Real * x)
+    {
+        Real res;
+
+        res = this->fab(this->i,this->j,this->k,this->u);
+        AMREX_D_TERM
+        (
+            res += (x[0]-this->mid[0])*this->grad_fab(this->i,this->j,this->k,0+(this->u)*AMREX_SPACEDIM);,
+            res += (x[1]-this->mid[1])*this->grad_fab(this->i,this->j,this->k,1+(this->u)*AMREX_SPACEDIM);,
+            res += (x[2]-this->mid[2])*this->grad_fab(this->i,this->j,this->k,2+(this->u)*AMREX_SPACEDIM);
+        )
+
+        res *= -this->sgn;
+
+        return res;
+    }
+    // ================================================================
+};
+
+typedef _FV_space_BFX_<AMREX_SPACEDIM> FV_phi_space_BFX;
+typedef _FV_space_BFX_<AMREX_SPACEDIM> FV_sol_space_BFX;
 // ####################################################################
 
 
