@@ -48,8 +48,12 @@ function (configure_amrex)
    # Moreover, it will also enforce such standard on all the consuming targets
    #
    set_target_properties(amrex PROPERTIES CXX_EXTENSIONS OFF)
-   # minimum: C++11 on Linux, C++17 on Windows
-   target_compile_features(amrex PUBLIC $<IF:$<STREQUAL:$<PLATFORM_ID>,Windows>,cxx_std_17,cxx_std_11>)
+   # minimum: C++11 on Linux, C++17 on Windows, C++17 for dpc++
+   if (ENABLE_DPCPP)
+      target_compile_features(amrex PUBLIC cxx_std_17)
+   else ()
+      target_compile_features(amrex PUBLIC $<IF:$<STREQUAL:$<PLATFORM_ID>,Windows>,cxx_std_17,cxx_std_11>)
+   endif ()
 
    if (ENABLE_CUDA AND (CMAKE_VERSION VERSION_GREATER_EQUAL 3.17) )
       set_target_properties(amrex PROPERTIES CUDA_EXTENSIONS OFF)
@@ -58,36 +62,32 @@ function (configure_amrex)
    endif()
 
    #
+   # Special flags for MSV compiler
+   #
+   set(_cxx_msvc   "$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>")
+   set(_condition  "$<VERSION_LESS:$<CXX_COMPILER_VERSION>,19.26>")
+
+   target_compile_options( amrex PRIVATE $<${_cxx_msvc}:/bigobj> )
+
+   target_compile_options( amrex PUBLIC
+      $<${_cxx_msvc}:$<IF:${_condition},/experimental:preprocessor,/Zc:preprocessor>>
+      )
+
+   unset(_condition)
+   unset(_cxx_msvc)
+
+   #
    # Setup OpenMP
    #
    if (ENABLE_OMP)
-
-      find_package(OpenMP REQUIRED)
-      target_link_libraries(amrex PUBLIC OpenMP::OpenMP_CXX)
-
-      # Make imported target "global" so that it can be seen
-      # from other directories in the project.
-      # This is especially useful when get_target_properties_flattened()
-      # (see module AMReXTargetHelpers.cmake) is called to recover dependecy tree info
-      # in projects that use amrex directly in the build (via add_subdirectory()).
-      set_target_properties(OpenMP::OpenMP_CXX PROPERTIES IMPORTED_GLOBAL True )
-
-      if (ENABLE_FORTRAN_INTERFACES OR ENABLE_HYPRE)
-         target_link_libraries(amrex PUBLIC OpenMP::OpenMP_Fortran )
-         set_target_properties(OpenMP::OpenMP_Fortran PROPERTIES IMPORTED_GLOBAL True )
-      endif ()
-
       # We have to manually pass OpenMP flags to host compiler if CUDA is enabled
       # Since OpenMP imported targets are generated only for the Compiler ID in use, i.e.
       # they do not provide flags for all possible compiler ids, we assume the same compiler use
       # for building amrex will be used to build the application code
       if (ENABLE_CUDA)
-         get_target_property(_cxx_omp_flags OpenMP::OpenMP_CXX INTERFACE_COMPILE_OPTIONS)
+         get_target_property(_omp_flags OpenMP::OpenMP_CXX INTERFACE_COMPILE_OPTIONS)
 
-         evaluate_genex(_cxx_omp_flags _omp_flags
-            LANG   CXX
-            COMP   ${_comp}
-            STRING )
+         eval_genex(_omp_flags CXX ${_comp} INTERFACE BUILD STRING )
 
          target_compile_options(amrex PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=${_omp_flags}>)
       endif ()
@@ -111,8 +111,6 @@ function (configure_amrex)
          get_target_property( _amrex_flags_2 Flags_CXX INTERFACE_COMPILE_OPTIONS)
       endif()
 
-      get_target_property( _amrex_flags_3 Flags_CXX_REQUIRED INTERFACE_COMPILE_OPTIONS)
-
       set(_amrex_flags)
       if (_amrex_flags_1)
          list(APPEND _amrex_flags ${_amrex_flags_1})
@@ -120,18 +118,15 @@ function (configure_amrex)
       if (_amrex_flags_2)
          list(APPEND _amrex_flags ${_amrex_flags_2})
       endif ()
-      if (_amrex_flags_3)
-         list(APPEND _amrex_flags ${_amrex_flags_3})
-      endif ()
 
-      evaluate_genex(_amrex_flags _amrex_cxx_flags
-         LANG   CXX
-         COMP   ${CMAKE_CXX_COMPILER_ID}
-         CONFIG ${CMAKE_BUILD_TYPE}
+      eval_genex(_amrex_flags CXX  ${CMAKE_CXX_COMPILER_ID}
+         COMP_VERSION ${CMAKE_CXX_COMPILER_VERSION}
+         CONFIG       ${CMAKE_BUILD_TYPE}
+         INTERFACE    BUILD
          STRING )
 
-      if (_amrex_cxx_flags)
-         target_compile_options(amrex PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=${_amrex_cxx_flags}>)
+      if (_amrex_flags)
+         target_compile_options(amrex PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=${_amrex_flags}>)
       endif ()
 
       #
@@ -156,20 +151,6 @@ function (configure_amrex)
          target_link_options(amrex PUBLIC -Wl,--warn-unresolved-symbols)
       endif()
    endif()
-
-   #
-   # Setup HDF5 -- for now we do not create an imported target
-   #
-   if (ENABLE_HDF5)
-      set(HDF5_PREFER_PARALLEL TRUE)
-      find_package(HDF5 1.10.4 REQUIRED COMPONENTS CXX)
-      if (NOT HDF5_IS_PARALLEL)
-         message(FATAL_ERROR "\nHDF5 library does not support parallel I/O")
-      endif ()
-      target_include_directories(amrex PUBLIC ${HDF5_CXX_INCLUDE_DIRS})
-      target_compile_definitions(amrex PUBLIC ${HDF5_CXX_DEFINES})
-      target_link_libraries(amrex PUBLIC ${HDF5_CXX_LIBRARIES})
-   endif ()
 
    #
    # Setup third-party profilers
@@ -214,11 +195,11 @@ function (print_amrex_configuration_summary)
 
         # _${_ll}${_p} is a variable named as _lang_property,
         # both lower case.
-        evaluate_genex(${_p} _${_ll}${_p}
-           LANG ${_l}
-           COMP ${CMAKE_${_l}_COMPILER_ID}
-           CONFIG ${CMAKE_BUILD_TYPE}
-           INTERFACE BUILD)
+        set(_${_ll}${_p} "${${_p}}")
+        eval_genex( _${_ll}${_p} ${_l} ${CMAKE_${_l}_COMPILER_ID}
+           COMP_VERSION ${CMAKE_${_l}_COMPILER_VERSION}
+           CONFIG       ${CMAKE_BUILD_TYPE}
+           INTERFACE    BUILD)
 
         if (_${_ll}${_p})
 

@@ -8,21 +8,40 @@
 #include <AMReX_MLMG.H>
 
 //
+//
+// ***************************  DEFAULT MODE  ***************************
+//
 // Solves
 //
 //     div(sigma*grad(phi)) = div(vel) + S_nd + S_cc
 //
 // and  performs the projection
 //
-//     vel = vel - ( sigma / alpha ) * grad(phi)
+//     vel = vel - sigma * grad(phi)
 //
-// vel, sigma, alpha, and S_cc are cell-centered variables, while
+// vel, sigma, and S_cc are cell-centered variables, while
 // phi and S_nd are nodal-centered variables.
+//
+// ***************************  CUSTOM MODE   ***************************
+//
+// Solves
+//
+//     div(sigma*grad(phi)) = rhs
+//
+// and performs the projection
+//
+//     vel = vel - (sigma/alpha) * grad(phi)
+//
+// alpha is a cell-centered variable, while rhs is nodal-centered.
+//
+// In this mode, the user provides rhs and alpha
 //
 // By default alpha is assumed to be 1. Use setAlpha to change the default.
 //
-// The user can provide a custom RHS instead of letting NodalProjector to compute
-// one. Use setCustomRHS to provide a custom RHS.
+// Use setCustomRHS to provide a custom RHS, else "div(vel) + S_nd + S_cc"
+// is used.
+//
+// Example: rhs = div(alpha*vel)
 //
 namespace amrex {
 
@@ -43,15 +62,15 @@ public:
                      const Vector<Geometry>&                      a_geom,
                      const amrex::Vector<amrex::MultiFab*>&       a_S_cc = {},
                      const amrex::Vector<const amrex::MultiFab*>& a_S_nd = {} )
-    : NodalProjector(a_vel, a_sigma, a_geom, LPInfo(), a_S_cc, a_S_nd ) {};
+    : NodalProjector(a_vel, a_sigma, a_geom, LPInfo(), a_S_cc, a_S_nd ) {}
 
 
     void project ( amrex::Real a_rtol = 1.0e-11, amrex::Real a_atol = 1.0e-14 );
     void project ( const Vector<amrex::MultiFab*>& a_phi, amrex::Real a_rtol = 1.0e-11,
                    amrex::Real a_atol = 1.0e-14 );
 
-    Vector< const MultiFab* > getGradPhi () const {return GetVecOfConstPtrs(m_fluxes);};
-    Vector< const MultiFab* > getPhi     () const {return GetVecOfConstPtrs(m_phi);};
+    Vector< const MultiFab* > getGradPhi () const {return GetVecOfConstPtrs(m_fluxes);}
+    Vector< const MultiFab* > getPhi     () const {return GetVecOfConstPtrs(m_phi);}
 
     void computeRHS ( const amrex::Vector<amrex::MultiFab*>&       a_rhs,
                       const amrex::Vector<amrex::MultiFab*>&       a_vel,
@@ -59,7 +78,7 @@ public:
                       const amrex::Vector<const amrex::MultiFab*>& a_S_nd = {} );
 
     void setAlpha     (const amrex::Vector<const amrex::MultiFab*> a_alpha)
-        {m_alpha=a_alpha;m_has_alpha=true;};
+        {m_alpha=a_alpha;m_has_alpha=true;}
     void setCustomRHS (const amrex::Vector<const amrex::MultiFab*> a_rhs);
 
 

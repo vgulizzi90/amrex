@@ -6,13 +6,6 @@
 #
 target_compile_definitions( amrex PUBLIC $<BUILD_INTERFACE:AMREX_USE_F_INTERFACES BL_USE_F_INTERFACES>)
 
-# MPI Fortran library is required only when Fortran Interfaces are used
-if (ENABLE_MPI)
-   find_package(MPI REQUIRED Fortran)
-   target_link_libraries(amrex PUBLIC MPI::MPI_Fortran)
-   set_target_properties(MPI::MPI_Fortran  PROPERTIES IMPORTED_GLOBAL True )
-endif ()
-
 #
 # BASE subdir
 #
@@ -51,19 +44,22 @@ target_sources( amrex PRIVATE
 target_include_directories(amrex PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/AmrCore>)
 
 target_sources(amrex PRIVATE
-   AmrCore/AMReX_amr_mod.F90
-   AmrCore/AMReX_amrcore_mod.F90
-   AmrCore/AMReX_tagbox_mod.F90
-   AmrCore/AMReX_fillpatch_mod.F90
-   AmrCore/AMReX_fluxregister_mod.F90
-   AmrCore/AMReX_flash_fluxregister_mod.F90
-   AmrCore/AMReX_interpolater_mod.F90
    AmrCore/AMReX_amrcore_fi.cpp
-   AmrCore/AMReX_tagbox_fi.cpp
-   AmrCore/AMReX_fillpatch_fi.cpp
-   AmrCore/AMReX_fluxregister_fi.cpp
+   AmrCore/AMReX_amrcore_mod.F90
+   AmrCore/AMReX_amr_mod.F90
    AmrCore/AMReX_FAmrCore.cpp
    AmrCore/AMReX_FAmrCore.H
+   AmrCore/AMReX_fillpatch_fi.cpp
+   AmrCore/AMReX_fillpatch_mod.F90
+   AmrCore/AMReX_FlashFluxRegister.cpp
+   AmrCore/AMReX_flash_fluxregister_fi.cpp
+   AmrCore/AMReX_FlashFluxRegister.H
+   AmrCore/AMReX_flash_fluxregister_mod.F90
+   AmrCore/AMReX_fluxregister_fi.cpp
+   AmrCore/AMReX_fluxregister_mod.F90
+   AmrCore/AMReX_interpolater_mod.F90
+   AmrCore/AMReX_tagbox_fi.cpp
+   AmrCore/AMReX_tagbox_mod.F90
    )
 
 

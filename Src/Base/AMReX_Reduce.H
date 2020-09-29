@@ -192,6 +192,7 @@ namespace detail {
         });
         Array<T,2> tmp{v,v};
         Gpu::htod_memcpy(p, tmp.data(), sizeof(T)*2);
+        Gpu::synchronize();
     }
 #else
     template <typename T>
@@ -214,7 +215,7 @@ public:
     using Type = GpuTuple<Ts...>;
 
     template <typename... Ps>
-    explicit ReduceData (ReduceOps<Ps...> const& ops)
+    explicit ReduceData (ReduceOps<Ps...> const&)
         : m_host_tuple(),
           m_device_tuple((Type*)(The_Device_Arena()->alloc(2*sizeof(m_host_tuple))))
     {
@@ -264,6 +265,7 @@ namespace Reduce { namespace detail {
     auto call_f (F const& f, int i, int j, int k, IndexType t)
         noexcept -> decltype(f(Box()))
     {
+        AMREX_D_PICK(amrex::ignore_unused(j,k),amrex::ignore_unused(k),(void)0);
         return f(Box(IntVect(AMREX_D_DECL(i,j,k)),
                      IntVect(AMREX_D_DECL(i,j,k)),
                      t));
@@ -285,7 +287,7 @@ public:
         const auto len = amrex::length(box);
         IndexType ixtype = box.ixType();
         auto ec = Gpu::ExecutionConfig(ncells);
-        ec.numBlocks.x = std::min(ec.numBlocks.x, static_cast<unsigned int>(Gpu::Device::maxBlocksPerLaunch()));
+        ec.numBlocks.x = std::min(ec.numBlocks.x, Gpu::Device::maxBlocksPerLaunch());
 #ifdef AMREX_USE_DPCPP
         // device reduce needs local(i.e., shared) memory
         constexpr std::size_t shared_mem_bytes = sizeof(unsigned long long)*Gpu::Device::warp_size;
@@ -307,6 +309,22 @@ public:
             Reduce::detail::for_each_parallel<0, ReduceTuple, Ps...>(*dp,r, gh);
         });
 #else
+#ifdef AMREX_USE_CUDA
+        if (Gpu::inFuseRegion() && Gpu::inFuseReductionRegion()
+            && ec.numBlocks.x*ec.numThreads.x <= Gpu::getFuseSizeThreshold())
+        {
+            Gpu::Register(box, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+                ReduceTuple r = *(dp+1);
+                if (box.contains(IntVect(AMREX_D_DECL(i,j,k)))) {
+                    auto pr = Reduce::detail::call_f(f,i,j,k,ixtype);
+                    Reduce::detail::for_each_local<0, ReduceTuple, Ps...>(r, pr);
+                }
+                Reduce::detail::for_each_parallel<0, ReduceTuple, Ps...>(*dp,r);
+            });
+        } else
+#endif
+        {
         amrex::launch(ec.numBlocks.x, ec.numThreads.x, 0, Gpu::gpuStream(),
         [=] AMREX_GPU_DEVICE () noexcept {
             ReduceTuple r = *(dp+1);
@@ -323,6 +341,7 @@ public:
             }
             Reduce::detail::for_each_parallel<0, ReduceTuple, Ps...>(*dp,r);
         });
+        }
 #endif
     }
 
@@ -336,7 +355,7 @@ public:
         const auto lo  = amrex::lbound(box);
         const auto len = amrex::length(box);
         auto ec = Gpu::ExecutionConfig(ncells);
-        ec.numBlocks.x = std::min(ec.numBlocks.x, static_cast<unsigned int>(Gpu::Device::maxBlocksPerLaunch()));
+        ec.numBlocks.x = std::min(ec.numBlocks.x, Gpu::Device::maxBlocksPerLaunch());
 #ifdef AMREX_USE_DPCPP
         // device reduce needs local(i.e., shared) memory
         constexpr std::size_t shared_mem_bytes = sizeof(unsigned long long)*Gpu::Device::warp_size;
@@ -388,7 +407,7 @@ public:
         using ReduceTuple = typename D::Type;
         auto dp = reduce_data.devicePtr();
         auto ec = Gpu::ExecutionConfig(n);
-        ec.numBlocks.x = std::min(ec.numBlocks.x, static_cast<unsigned int>(Gpu::Device::maxBlocksPerLaunch()));
+        ec.numBlocks.x = std::min(ec.numBlocks.x, Gpu::Device::maxBlocksPerLaunch());
 #ifdef AMREX_USE_DPCPP
         // device reduce needs local(i.e., shared) memory
         constexpr std::size_t shared_mem_bytes = sizeof(unsigned long long)*Gpu::Device::warp_size;
@@ -566,7 +585,7 @@ bool AnyOf (N n, T const* v, P&& pred)
     });
 #else
     auto ec = Gpu::ExecutionConfig(n);
-    ec.numBlocks.x = std::min(ec.numBlocks.x, static_cast<unsigned int>(Gpu::Device::maxBlocksPerLaunch()));
+    ec.numBlocks.x = std::min(ec.numBlocks.x, Gpu::Device::maxBlocksPerLaunch());
     amrex::launch(ec.numBlocks.x, ec.numThreads.x, 0, 0,
     [=] AMREX_GPU_DEVICE () noexcept {
         __shared__ int has_any;
@@ -596,9 +615,6 @@ bool AnyOf (Box const& box, P&& pred)
     Gpu::LaunchSafeGuard lsg(true);
     Gpu::DeviceScalar<int> ds(0);
     int* dp = ds.dataPtr();
-    int ncells = box.numPts();
-    const auto lo  = amrex::lbound(box);
-    const auto len = amrex::length(box);
 #ifdef AMREX_USE_DPCPP
     // xxxxx DPCPP todo: Anyof Box: better version
     amrex::ParallelFor(box, [=] (int i, int j, int k) noexcept
@@ -607,8 +623,11 @@ bool AnyOf (Box const& box, P&& pred)
         Gpu::Atomic::LogicalOr(dp, r);
     });
 #else
+    int ncells = box.numPts();
+    const auto lo  = amrex::lbound(box);
+    const auto len = amrex::length(box);
     auto ec = Gpu::ExecutionConfig(ncells);
-    ec.numBlocks.x = std::min(ec.numBlocks.x, static_cast<unsigned int>(Gpu::Device::maxBlocksPerLaunch()));
+    ec.numBlocks.x = std::min(ec.numBlocks.x, Gpu::Device::maxBlocksPerLaunch());
     AMREX_LAUNCH_KERNEL(ec.numBlocks, ec.numThreads, 0, 0,
     [=] AMREX_GPU_DEVICE () noexcept {
         __shared__ int has_any;
@@ -648,7 +667,7 @@ public:
     using Type = GpuTuple<Ts...>;
 
     template <typename... Ps>
-    explicit ReduceData (ReduceOps<Ps...> const& ops)
+    explicit ReduceData (ReduceOps<Ps...> const&)
         : m_tuple()
     {
         Reduce::detail::for_each_init<0, Type, Ps...>(m_tuple);
@@ -677,7 +696,7 @@ private:
 
     template <typename D, typename F>
     AMREX_FORCE_INLINE
-    static auto call_f (Box const& box, D & reduce_data, F const& f)
+    static auto call_f (Box const& box, D & /*reduce_data*/, F const& f)
         noexcept -> decltype(f(0,0,0))
     {
         using ReduceTuple = typename D::Type;

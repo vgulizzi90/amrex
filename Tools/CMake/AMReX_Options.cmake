@@ -120,6 +120,7 @@ print_option( ENABLE_MPI )
 cmake_dependent_option( ENABLE_MPI_THREAD_MULTIPLE
    "whether to initialize MPI so that multiple threads can make MPI calls at the same time"  OFF
    "ENABLE_MPI" OFF)
+print_option( ENABLE_MPI_THREAD_MULTIPLE )
 
 option( ENABLE_OMP  "Enable OpenMP" OFF)
 print_option( ENABLE_OMP )
@@ -143,7 +144,8 @@ endif ()
 #
 # AMReX components selection  ================================================
 #
-option( ENABLE_EB "Build EB Code" OFF )
+cmake_dependent_option( ENABLE_EB "Build with Embedded Boundary support" OFF
+   "NOT DIM EQUAL 1" OFF )
 print_option(ENABLE_EB)
 
 cmake_dependent_option( ENABLE_FORTRAN_INTERFACES "Build Fortran API" OFF
@@ -188,12 +190,12 @@ print_option(ENABLE_SUNDIALS)
 
 # Hypre
 cmake_dependent_option(ENABLE_HYPRE "Enable Hypre interfaces" OFF
-   "ENABLE_FORTRAN;ENABLE_LINEAR_SOLVERS" OFF)
+   "ENABLE_LINEAR_SOLVERS" OFF)
 print_option(ENABLE_HYPRE)
 
 # PETSc
 cmake_dependent_option(ENABLE_PETSC "Enable PETSc interfaces" OFF
-   "ENABLE_FORTRAN;ENABLE_LINEAR_SOLVERS" OFF )
+   "ENABLE_LINEAR_SOLVERS" OFF )
 print_option(ENABLE_PETSC)
 
 # HDF5
@@ -272,3 +274,10 @@ if (  ( ( TP_PROFILE STREQUAL "CRAYPAT" ) OR
      (ENABLE_BASE_PROFILE OR ENABLE_TINY_PROFILE) )
    message(WARNING "This configuration should only be used to profile BL_PROFILE!")
 endif()
+
+
+#
+# Extra options  =========================================================
+#
+option(ALLOW_DIFFERENT_COMPILER
+    "Allow an application to use a different compiler than the one used to build AMReX" OFF)

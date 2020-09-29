@@ -182,8 +182,8 @@ public:
     //!  of a level hierarchy. Must be properly initialized later.
     ParticleContainer ()
       :
-      communicate_real_comp(NArrayReal, true),
-      communicate_int_comp(NArrayInt, true),
+      h_communicate_real_comp(NArrayReal, true),
+      h_communicate_int_comp(NArrayInt, true),
       m_verbose(0),
       m_gdb(nullptr),
       m_runtime_comps_defined(false),
@@ -202,8 +202,8 @@ public:
     //!
     ParticleContainer (ParGDBBase* gdb)
         :
-        communicate_real_comp(NArrayReal, true),
-        communicate_int_comp(NArrayInt, true),
+        h_communicate_real_comp(NArrayReal, true),
+        h_communicate_int_comp(NArrayInt, true),
 	m_verbose(0),
 	m_gdb(gdb),
         m_runtime_comps_defined(false),
@@ -226,8 +226,8 @@ public:
 		       const DistributionMapping & dmap,
 		       const BoxArray            & ba)
 	:
-        communicate_real_comp(NArrayReal, true),
-        communicate_int_comp(NArrayInt, true),
+        h_communicate_real_comp(NArrayReal, true),
+        h_communicate_int_comp(NArrayInt, true),
         m_verbose(0),
 	m_gdb_object(geom,dmap,ba),
         m_runtime_comps_defined(false),
@@ -254,8 +254,8 @@ public:
 		       const Vector<BoxArray>            & ba,
 		       const Vector<int>                 & rr)
 	:
-        communicate_real_comp(NArrayReal, true),
-        communicate_int_comp(NArrayInt, true),
+        h_communicate_real_comp(NArrayReal, true),
+        h_communicate_int_comp(NArrayInt, true),
         m_verbose(0),
 	m_gdb_object(geom,dmap,ba,rr),
         m_runtime_comps_defined(false),
@@ -281,8 +281,8 @@ public:
 		       const Vector<BoxArray>            & ba,
 		       const Vector<IntVect>             & rr)
 	:
-        communicate_real_comp(NArrayReal, true),
-        communicate_int_comp(NArrayInt, true),
+        h_communicate_real_comp(NArrayReal, true),
+        h_communicate_int_comp(NArrayInt, true),
         m_verbose(0),
 	m_gdb_object(geom,dmap,ba, [&]() -> Vector<int> {
                 Vector<int> ref_ratio;
@@ -516,15 +516,6 @@ public:
     Long IncrementWithTotal (MultiFab& mf, int level, bool local = false);
 
     /**
-    * \brief rho_index: rho index in rdata
-    *
-    * \param rho_index
-    * \param level
-    * \param local
-    */
-    Real sumParticleMass (int rho_index, int level, bool local = false) const;
-
-    /**
     * \brief Redistribute puts all the particles back in the right places (for some value of right)
     *
     * Assigns particles to the levels, grids, and tiles that contain their current positions. 
@@ -639,6 +630,34 @@ public:
     * \param nGrow
     */
     void AddParticlesAtLevel (AoS& particles, int level, int nGrow=0);
+
+    /**
+    * \brief Creates virtual particles for a given level that represent
+    * in some capacity all particles at finer levels
+    *
+    * \param level
+    * \param virts
+    */
+    void CreateVirtualParticles (int level, ParticleTileType& virts) const;
+
+    /**
+    * \brief Create ghost particles for a given level that are copies of particles
+    * near coarse-\>fine boundaries in level-1
+    *
+    * \param level
+    * \param ngrow
+    * \param ghosts
+    */
+    void CreateGhostParticles (int level, int ngrow, ParticleTileType& ghosts) const;
+
+    /**
+    * \brief Add particles from a pbox to the grid at this level
+    *
+    * \param particles
+    * \param level
+    * \param nGrow
+    */
+    void AddParticlesAtLevel (ParticleTileType& particles, int level, int nGrow=0);
 
 
     /**
@@ -940,7 +959,7 @@ public:
                         const std::string& name,
                         const Vector<int>& write_real_comp,
                         const Vector<int>& write_int_comp, F&& f) const;
-	
+
     /**
      * \brief This is the most general version of WritePlotFile, which takes component 
      * names and flags for whether to write each variable as components. Note that 
@@ -1055,7 +1074,8 @@ public:
     void AssignCellDensitySingleLevel (int rho_index, MultiFab& mf, int level,
                                        int ncomp=1, int particle_lvl_offset = 0) const;
 
-    IntVect Index (const Particle<NStructReal, NStructInt>& p, int lev) const;
+    template <typename P>
+    IntVect Index (const P& p, int lev) const;
 
 
     /**
@@ -1095,8 +1115,10 @@ public:
 
 
     //! struct-of-array stuff
-    Gpu::DeviceVector<int> communicate_real_comp;
-    Gpu::DeviceVector<int> communicate_int_comp;
+    Vector<int> h_communicate_real_comp;
+    Vector<int> h_communicate_int_comp;
+    Gpu::DeviceVector<int> d_communicate_real_comp;
+    Gpu::DeviceVector<int> d_communicate_int_comp;
 
     static bool do_tiling;
     static IntVect tile_size;
@@ -1127,13 +1149,7 @@ public:
 
     void RedistributeGPU (int lev_min = 0, int lev_max = -1, int nGrow = 0, int local=0);
 
-    bool OKCPU (int lev_min = 0, int lev_max = -1, int nGrow = 0) const;
-
-    bool OKGPU (int lev_min = 0, int lev_max = -1, int nGrow = 0) const;
-
     Long superParticleSize() const { return superparticle_size; }
-
-    void EnforcePeriodic ();
 
     template <typename T,
               typename std::enable_if<std::is_same<T,bool>::value,int>::type=0>
@@ -1141,7 +1157,7 @@ public:
     {
         m_runtime_comps_defined = true;
         m_num_runtime_real++;
-        communicate_real_comp.push_back(communicate);
+        h_communicate_real_comp.push_back(communicate);
         SetParticleSize();
     }
 
@@ -1151,7 +1167,7 @@ public:
     {
         m_runtime_comps_defined = true;
         m_num_runtime_int++;
-        communicate_int_comp.push_back(communicate);
+        h_communicate_int_comp.push_back(communicate);
         SetParticleSize();
     }
 
@@ -1160,7 +1176,7 @@ public:
     Vector<int> NeighborProcs(int ngrow) const         
     {
         return computeNeighborProcs(this->GetParGDB(), ngrow);
-    };
+    }
 
     bool OnSameGrids (int level, const MultiFab& mf) const { return m_gdb->OnSameGrids(level, mf); }
 
@@ -1201,7 +1217,8 @@ protected:
     * \param nGrow
     * \param local_grid
     */
-    bool Where (const ParticleType& prt, ParticleLocData& pld,
+    template <typename P>
+    bool Where (const P& prt, ParticleLocData& pld,
 		int lev_min = 0, int lev_max = -1, int nGrow=0, int local_grid=-1) const;
 
 
@@ -1259,10 +1276,10 @@ void ReadParticlesHDF5 (hsize_t offset, hsize_t cnt, int grd, int lev, hid_t int
 private:
 
     virtual void particlePostLocate(ParticleType& /*p*/, const ParticleLocData& /*pld*/,
-                                    const int /*lev*/) {};
+                                    const int /*lev*/) {}
 
     virtual void correctCellVectors(int /*old_index*/, int /*new_index*/,
-				    int /*grid*/, const ParticleType& /*p*/) {};
+				    int /*grid*/, const ParticleType& /*p*/) {}
 
     void RedistributeMPI (std::map<int, Vector<char> >& not_ours,
 			  int lev_min = 0, int lev_max = 0, int nGrow = 0, int local=0);
@@ -1280,6 +1297,9 @@ private:
     int num_real_comm_comps, num_int_comm_comps;
     Vector<ParticleLevel> m_particles;
     Vector<std::unique_ptr<MultiFab> > m_dummy_mf;
+
+    static std::string aggregation_type;
+    static int aggregation_buffer;
 };
 
 #include "AMReX_ParticleInit.H"

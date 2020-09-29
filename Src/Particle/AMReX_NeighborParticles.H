@@ -241,7 +241,7 @@ public:
     /// Build a Neighbor List for each tile
     ///
     template <class CheckPair>
-    void buildNeighborList (CheckPair check_pair, bool sort=false);
+    void buildNeighborList (CheckPair&& check_pair, bool sort=false);
 
     void printNeighborList ();
 
@@ -256,6 +256,13 @@ public:
     const ParticleVector& GetNeighbors (int lev, int grid, int tile) const
     {
         return neighbors[lev][std::make_pair(grid,tile)];
+    }
+
+    void Redistribute (int lev_min=0, int lev_max=-1, int nGrow=0, int local=0)
+    {
+        clearNeighbors();
+        ParticleContainer<NStructReal, NStructInt, 0, 0>::Redistribute(lev_min, lev_max,
+                                                                       nGrow, local);
     }
 
     void RedistributeLocal ()

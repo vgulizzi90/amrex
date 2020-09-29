@@ -67,7 +67,7 @@ namespace amrex
             Array4<Real> const& ccarr = cc.array(mfi);
             Array4<Real const> const& ndarr = nd.const_array(mfi);
 
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+            AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
             {
                 amrex_avg_nd_to_cc(tbx, ccarr, ndarr, dcomp, scomp, ncomp);
             });
@@ -91,7 +91,7 @@ namespace amrex
                          Array4<Real const> const& eyarr = edge[1]->const_array(mfi);,
                          Array4<Real const> const& ezarr = edge[2]->const_array(mfi););
 
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+            AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
             {
                 amrex_avg_eg_to_cc(tbx, ccarr, AMREX_D_DECL(exarr,eyarr,ezarr), dcomp);
             });
@@ -102,7 +102,7 @@ namespace amrex
         const Vector<const MultiFab*>& fc, int ngrow)
     {
         average_face_to_cellcenter(cc, dcomp,
-            Array<MultiFab const*,AMREX_SPACEDIM>{AMREX_D_DECL(fc[0],fc[1],fc[2])},
+            Array<MultiFab const*,AMREX_SPACEDIM>{{AMREX_D_DECL(fc[0],fc[1],fc[2])}},
             ngrow);
     }
 
@@ -111,7 +111,7 @@ namespace amrex
     {
         average_face_to_cellcenter(cc,
                                    Array<MultiFab const*,AMREX_SPACEDIM>
-                                                  {AMREX_D_DECL(fc[0],fc[1],fc[2])},
+                                   {{AMREX_D_DECL(fc[0],fc[1],fc[2])}},
                                    geom);
     }
 
@@ -133,12 +133,12 @@ namespace amrex
                          Array4<Real const> const& fzarr = fc[2]->const_array(mfi););
 
 #if (AMREX_SPACEDIM == 1)
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+            AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
             {
                 amrex_avg_fc_to_cc(tbx, ccarr, fxarr, dcomp, GeometryData());
             });
 #else
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+            AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
             {
                 amrex_avg_fc_to_cc(tbx, ccarr, AMREX_D_DECL(fxarr,fyarr,fzarr), dcomp);
             });
@@ -168,12 +168,12 @@ namespace amrex
                          Array4<Real const> const& fzarr = fc[2]->const_array(mfi););
 
 #if (AMREX_SPACEDIM == 1)
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+            AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
             {
                 amrex_avg_fc_to_cc(tbx, ccarr, fxarr, 0, gd);
             });
 #else
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+            AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
             {
                 amrex_avg_fc_to_cc(tbx, ccarr, AMREX_D_DECL(fxarr,fyarr,fzarr), 0);
             });
@@ -184,7 +184,7 @@ namespace amrex
     void average_cellcenter_to_face (const Vector<MultiFab*>& fc, const MultiFab& cc,
 				     const Geometry& geom)
     {
-        average_cellcenter_to_face(Array<MultiFab*,AMREX_SPACEDIM>{AMREX_D_DECL(fc[0],fc[1],fc[2])},
+        average_cellcenter_to_face(Array<MultiFab*,AMREX_SPACEDIM>{{AMREX_D_DECL(fc[0],fc[1],fc[2])}},
                                    cc, geom);
     }
 
@@ -198,6 +198,8 @@ namespace amrex
 
 #if (AMREX_SPACEDIM == 1)
         const GeometryData& gd = geom.data();
+#else
+        amrex::ignore_unused(geom);
 #endif
 
 #ifdef _OPENMP
@@ -216,12 +218,12 @@ namespace amrex
             Array4<Real const> const& ccarr = cc.const_array(mfi);
 
 #if (AMREX_SPACEDIM == 1)
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA (index_bounds, tbx,
+            AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA (index_bounds, tbx,
             {
                 amrex_avg_cc_to_fc(tbx, xbx, fxarr, ccarr, gd);
             });
 #else
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA (index_bounds, tbx,
+            AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA (index_bounds, tbx,
             {
                 amrex_avg_cc_to_fc(tbx, AMREX_D_DECL(xbx,ybx,zbx),
                                    AMREX_D_DECL(fxarr,fyarr,fzarr), ccarr);
@@ -246,6 +248,8 @@ namespace amrex
 		       const Geometry& fgeom, const Geometry& cgeom,
                        int scomp, int ncomp, const IntVect& ratio)
     {
+        amrex::ignore_unused(fgeom,cgeom);
+
         BL_PROFILE("amrex::average_down_w_geom");
 
         if (S_fine.is_nodal() || S_crse.is_nodal())
@@ -284,7 +288,7 @@ namespace amrex
             Array4<Real const> const& finearr = S_fine.const_array(mfi);
             Array4<Real const> const& finevolarr = fvolume.const_array(mfi);
 
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+            AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
             {
                 amrex_avgdown_with_vol(tbx,crsearr,finearr,finevolarr,
                                        0,scomp,ncomp,ratio);
@@ -308,7 +312,7 @@ namespace amrex
 
     void sum_fine_to_coarse(const MultiFab& S_fine, MultiFab& S_crse,
                             int scomp, int ncomp, const IntVect& ratio,
-                            const Geometry& cgeom, const Geometry& fgeom)
+                            const Geometry& cgeom, const Geometry& /*fgeom*/)
     {
         AMREX_ASSERT(S_crse.nComp() == S_fine.nComp());
         AMREX_ASSERT(ratio == ratio[0]);
@@ -333,7 +337,7 @@ namespace amrex
             Array4<Real> const& crsearr = crse_S_fine.array(mfi);
             Array4<Real const> const& finearr = S_fine.const_array(mfi);
 
-            AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+            AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
             {
                 amrex_avgdown(tbx,crsearr,finearr,0,scomp,ncomp,ratio);
             });
@@ -371,12 +375,12 @@ namespace amrex
                 Array4<Real const> const& finearr = S_fine.const_array(mfi);
 
                 if (is_cell_centered) {
-                    AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+                    AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
                     {
                         amrex_avgdown(tbx,crsearr,finearr,scomp,scomp,ncomp,ratio);
                     });
                 } else {
-                    AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+                    AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
                     {
                         amrex_avgdown_nodes(tbx,crsearr,finearr,scomp,scomp,ncomp,ratio);
                     });
@@ -402,12 +406,12 @@ namespace amrex
                 //        not part of the actual crse multifab which came in.
 
                 if (is_cell_centered) {
-                    AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+                    AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
                     {
                         amrex_avgdown(tbx,crsearr,finearr,0,scomp,ncomp,ratio);
                     });
                 } else {
-                    AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+                    AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
                     {
                         amrex_avgdown_nodes(tbx,crsearr,finearr,0,scomp,ncomp,ratio);
                     });
@@ -425,9 +429,9 @@ namespace amrex
                              const IntVect& ratio, int ngcrse)
     {
         average_down_faces(Array<const MultiFab*,AMREX_SPACEDIM>
-                                   {AMREX_D_DECL(fine[0],fine[1],fine[2])},
+                                   {{AMREX_D_DECL(fine[0],fine[1],fine[2])}},
                            Array<MultiFab*,AMREX_SPACEDIM>
-                                   {AMREX_D_DECL(crse[0],crse[1],crse[2])},
+                                   {{AMREX_D_DECL(crse[0],crse[1],crse[2])}},
                            ratio, ngcrse);
     }
 
@@ -482,7 +486,7 @@ namespace amrex
                 Array4<Real> const& crsearr = crse.array(mfi);
                 Array4<Real const> const& finearr = fine.const_array(mfi);
 
-                AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+                AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
                 {
                     amrex_avgdown_faces(tbx, crsearr, finearr, 0, 0, ncomp, ratio, dir);
                 });
@@ -495,6 +499,25 @@ namespace amrex
             average_down_faces(fine, ctmp, ratio, ngcrse);
             crse.ParallelCopy(ctmp,0,0,ncomp,ngcrse,ngcrse);
         }
+    }
+
+    void average_down_faces (const Array<const MultiFab*,AMREX_SPACEDIM>& fine,
+                             const Array<MultiFab*,AMREX_SPACEDIM>& crse,
+                             const IntVect& ratio, const Geometry& crse_geom)
+    {
+        for (int idim = 0; idim < AMREX_SPACEDIM; ++idim)
+        {
+            average_down_faces(*fine[idim], *crse[idim], ratio, crse_geom);
+        }
+    }
+
+    void average_down_faces (const MultiFab& fine, MultiFab& crse,
+                             const IntVect& ratio, const Geometry& crse_geom)
+    {
+        MultiFab ctmp(amrex::coarsen(fine.boxArray(),ratio), fine.DistributionMap(),
+                      crse.nComp(), 0);
+        average_down_faces(fine, ctmp, ratio, 0);
+        crse.ParallelCopy(ctmp,0,0,crse.nComp(),0,0,crse_geom.periodicity());
     }
 
     //! Average fine edge-based MultiFab onto crse edge-based MultiFab.
@@ -545,7 +568,7 @@ namespace amrex
                 Array4<Real> const& crsearr = crse.array(mfi);
                 Array4<Real const> const& finearr = fine.const_array(mfi);
 
-                AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( bx, tbx,
+                AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( bx, tbx,
                 {
                     amrex_avgdown_edges(tbx, crsearr, finearr, 0, 0, ncomp, ratio, dir);
                 });
@@ -617,7 +640,7 @@ namespace amrex
 
             if (interpolate)
             {
-                AMREX_LAUNCH_HOST_DEVICE_LAMBDA ( tile_box, thread_box,
+                AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA ( tile_box, thread_box,
                 {
                     amrex_fill_slice_interp(thread_box, slice_arr, full_arr,
                                             0, start_comp, ncomp,

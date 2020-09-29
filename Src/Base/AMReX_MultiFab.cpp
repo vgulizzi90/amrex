@@ -43,16 +43,36 @@ MultiFab::Dot (const MultiFab& x, int xcomp,
 
     BL_PROFILE("MultiFab::Dot()");
 
-    Real sm = amrex::ReduceSum(x, y, nghost,
-    [=] AMREX_GPU_HOST_DEVICE (Box const& bx, Array4<Real const> const& xfab, Array4<Real const> const& yfab) -> Real
-    {
-        Real t = 0.0;
-        AMREX_LOOP_4D(bx, numcomp, i, j, k, n,
+    Real sm = 0.0;
+#ifdef AMREX_USE_GPU
+    if (Gpu::inLaunchRegion()) {
+        sm = amrex::ReduceSum(x, y, nghost,
+        [=] AMREX_GPU_HOST_DEVICE (Box const& bx, Array4<Real const> const& xfab, Array4<Real const> const& yfab) -> Real
         {
-            t += xfab(i,j,k,xcomp+n) * yfab(i,j,k,ycomp+n);
+            Real t = 0.0;
+            AMREX_LOOP_4D(bx, numcomp, i, j, k, n,
+            {
+                t += xfab(i,j,k,xcomp+n) * yfab(i,j,k,ycomp+n);
+            });
+            return t;
         });
-        return t;
-    });
+    } else
+#endif
+    {
+#ifdef _OPENMP
+#pragma omp parallel reduction(+:sm)
+#endif
+        for (MFIter mfi(x,true); mfi.isValid(); ++mfi)
+        {
+            Box const& bx = mfi.growntilebox(nghost);
+            Array4<Real const> const& xfab = x.const_array(mfi);
+            Array4<Real const> const& yfab = y.const_array(mfi);
+            AMREX_LOOP_4D(bx, numcomp, i, j, k, n,
+            {
+                sm += xfab(i,j,k,xcomp+n) * yfab(i,j,k,ycomp+n);
+            });
+        }
+    }
 
     if (!local) ParallelAllReduce::Sum(sm, ParallelContext::CommunicatorSub());
 
@@ -155,33 +175,6 @@ MultiFab::Copy (MultiFab& dst, const MultiFab& src,
     amrex::Copy(dst,src,srccomp,dstcomp,numcomp,nghost);
 }
 
-
-#ifdef USE_PERILLA
-void
-MultiFab::Copy (MultiFab&       dst,
-                const MultiFab& src,
-                int             f,
-                int             srccomp,
-                int             dstcomp,
-                int             numcomp,
-                const Box&      bx)
-{
-// don't have to    BL_ASSERT(dst.boxArray() == src.boxArray());
-    BL_ASSERT(dst.distributionMap == src.distributionMap);
-    //BL_ASSERT(dst.nGrow() >= nghost); // and src.nGrow() >= nghost);
-
-    int fis = src.IndexArray()[f];
-    int fid = dst.IndexArray()[f];
-    //const Box& bx = BoxLib::grow(dst[f].box(),nghost);
-    //const Box& bx = dst[fid].box();
-
-    if (bx.ok())
-      dst[fid].copy(src[fid], bx, srccomp, bx, dstcomp, numcomp);
-
-}
-#endif
-
-
 void
 MultiFab::Swap (MultiFab& dst, MultiFab& src,
                 int srccomp, int dstcomp, int numcomp, int nghost)
@@ -225,7 +218,7 @@ MultiFab::Swap (MultiFab& dst, MultiFab& src,
             if (bx.ok()) {
                 auto sfab = src.array(mfi);
                 auto dfab = dst.array(mfi);
-                AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( bx, numcomp, i, j, k, n,
+                AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FUSIBLE ( bx, numcomp, i, j, k, n,
                 {
                     const amrex::Real tmp = dfab(i,j,k,n+dstcomp);
                     dfab(i,j,k,n+dstcomp) = sfab(i,j,k,n+srccomp);
@@ -325,7 +318,7 @@ MultiFab::Saxpy (MultiFab& dst, Real a, const MultiFab& src,
         if (bx.ok()) {
             auto const sfab = src.array(mfi);
             auto       dfab = dst.array(mfi);
-            AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( bx, numcomp, i, j, k, n,
+            AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FUSIBLE ( bx, numcomp, i, j, k, n,
             {
                 dfab(i,j,k,dstcomp+n) += a * sfab(i,j,k,srccomp+n);
             });
@@ -359,7 +352,7 @@ MultiFab::Xpay (MultiFab& dst, Real a, const MultiFab& src,
         if (bx.ok()) {
             auto const sfab = src.array(mfi);
             auto       dfab = dst.array(mfi);
-            AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( bx, numcomp, i, j, k, n,
+            AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FUSIBLE ( bx, numcomp, i, j, k, n,
             {
                 dfab(i,j,k,n+dstcomp) = sfab(i,j,k,n+srccomp) + a * dfab(i,j,k,n+dstcomp);
             });
@@ -401,7 +394,7 @@ MultiFab::LinComb (MultiFab& dst,
             auto const xfab =   x.array(mfi);
             auto const yfab =   y.array(mfi);
             auto       dfab = dst.array(mfi);
-            AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( bx, numcomp, i, j, k, n,
+            AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FUSIBLE ( bx, numcomp, i, j, k, n,
             {
                 dfab(i,j,k,dstcomp+n) = a*xfab(i,j,k,xcomp+n) + b*yfab(i,j,k,ycomp+n);
             });
@@ -442,7 +435,7 @@ MultiFab::AddProduct (MultiFab& dst,
             auto const s1fab = src1.array(mfi);
             auto const s2fab = src2.array(mfi);
             auto        dfab =  dst.array(mfi);
-            AMREX_HOST_DEVICE_PARALLEL_FOR_4D ( bx, numcomp, i, j, k, n,
+            AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FUSIBLE ( bx, numcomp, i, j, k, n,
             {
                 dfab(i,j,k,n+dstcomp) += s1fab(i,j,k,n+comp1) * s2fab(i,j,k,n+comp2);
             });
@@ -692,7 +685,7 @@ MultiFab::contains_inf (int scomp, int ncomp, IntVect const& ngrow, bool local) 
 bool 
 MultiFab::contains_inf (int scomp, int ncomp, int ngrow, bool local) const
 {
-    return contains_inf(0,ncomp,IntVect(ngrow),local);
+    return contains_inf(scomp,ncomp,IntVect(ngrow),local);
 }
 
 bool 
@@ -861,6 +854,8 @@ indexFromValue (MultiFab const& mf, int comp, int nghost, Real value, MPI_Op mml
         MPI_Allreduce(&in,  &out, 1, datatype, mmloc, comm);
         MPI_Bcast(&(loc[0]), AMREX_SPACEDIM, MPI_INT, out.rank, comm);
     }
+#else
+    amrex::ignore_unused(mmloc);
 #endif
 
     return loc;
@@ -907,6 +902,8 @@ MultiFab::norm0 (const iMultiFab& mask, int comp, int nghost, bool local) const
 Real
 MultiFab::norm0 (int comp, int nghost, bool local, bool ignore_covered ) const
 {
+    amrex::ignore_unused(ignore_covered);
+
     Real nm0;
 
 #ifdef AMREX_USE_EB
@@ -1015,6 +1012,8 @@ MultiFab::norm2 (const Vector<int>& comps) const
 Real
 MultiFab::norm1 (int comp, const Periodicity& period, bool ignore_covered ) const
 {
+    amrex::ignore_unused(ignore_covered);
+
     MultiFab tmpmf(this->boxArray(), this->DistributionMap(), 1, 0,
                    MFInfo(), this->Factory());
 
@@ -1268,7 +1267,7 @@ MultiFab::OverlapMask (const Periodicity& period) const
     [=] AMREX_GPU_DEVICE (int i, int j, int k, int n, Array4<Real> const& a) noexcept
     {
         Real* p = a.ptr(i,j,k,n);
-        Gpu::Atomic::Add(p, 1.0_rt);
+        Gpu::Atomic::Add(p, Real(1.0));
     });
 #endif
 

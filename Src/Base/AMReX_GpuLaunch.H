@@ -2,6 +2,7 @@
 #define AMREX_GPU_LAUNCH_H_
 
 #include <AMReX_GpuQualifiers.H>
+#include <AMReX_GpuKernelInfo.H>
 #include <AMReX_GpuControl.H>
 #include <AMReX_GpuTypes.H>
 #include <AMReX_GpuError.H>
@@ -9,12 +10,16 @@
 #include <AMReX_GpuDevice.H>
 #include <AMReX_GpuMemory.H>
 #include <AMReX_GpuReduce.H>
+#include <AMReX_GpuFuse.H>
 #include <AMReX_Tuple.H>
 #include <AMReX_Box.H>
 #include <AMReX_Loop.H>
 #include <AMReX_Extension.H>
 #include <AMReX_BLassert.H>
 #include <AMReX_TypeTraits.H>
+#include <AMReX_GpuLaunchGlobal.H>
+#include <AMReX_RandomEngine.H>
+#include <AMReX_Algorithm.H>
 #include <cstddef>
 #include <limits>
 #include <algorithm>
@@ -35,17 +40,14 @@
 
 namespace amrex {
 
-// Because of CUDA, we cannot take rvalue lambdas.
+// We cannot take rvalue lambdas.
 // ************************************************
 //  Variadic lambda function wrappers for C++ CUDA/HIP Kernel calls.
 
 #if defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
-    template<class L>
-    AMREX_GPU_GLOBAL void launch_global (L f0) { f0(); }
-
     template<class L, class... Lambdas>
     AMREX_GPU_GLOBAL void launch_global (L f0, Lambdas... fs) { f0(); call_device(fs...); }
-    
+
     template<class L>
     AMREX_GPU_DEVICE void call_device (L&& f0) noexcept { f0(); }
     
@@ -114,6 +116,7 @@ namespace Gpu {
         iv += bx.smallEnd();
         return (bx & Box(iv,iv,bx.type()));
 #else
+        amrex::ignore_unused(offset);
         return bx;
 #endif
     }
@@ -188,6 +191,20 @@ namespace Gpu {
                                                         AMREX_WRONG_NUM_ARGS, \
                                                         AMREX_WRONG_NUM_ARGS)(__VA_ARGS__)
 
+#ifdef AMREX_USE_CUDA
+#define AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA(...) AMREX_GET_MACRO(__VA_ARGS__,\
+                                                        AMREX_GPU_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA_RANGE_3, \
+                                                        AMREX_WRONG_NUM_ARGS, \
+                                                        AMREX_WRONG_NUM_ARGS, \
+                                                        AMREX_GPU_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA_RANGE_2, \
+                                                        AMREX_WRONG_NUM_ARGS, \
+                                                        AMREX_WRONG_NUM_ARGS, \
+                                                        AMREX_GPU_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA_RANGE, \
+                                                        AMREX_WRONG_NUM_ARGS, \
+                                                        AMREX_WRONG_NUM_ARGS)(__VA_ARGS__)
+#else
+#define AMREX_LAUNCH_HOST_DEVICE_FUSIBLE_LAMBDA(...) AMREX_LAUNCH_HOST_DEVICE_LAMBDA(__VA_ARGS__)
+#endif
 
 #if (AMREX_SPACEDIM == 1)
 #define AMREX_LAUNCH_DEVICE_LAMBDA_DIM(a1,a2,a3,b1,b2,b3,c1,c2,c3)      AMREX_GPU_LAUNCH_DEVICE_LAMBDA_RANGE     (a1,a2,a2)
@@ -215,6 +232,22 @@ namespace Gpu {
 #define AMREX_HOST_DEVICE_PARALLEL_FOR_1D(...) AMREX_GPU_HOST_DEVICE_PARALLEL_FOR_1D(__VA_ARGS__)
 #define AMREX_HOST_DEVICE_PARALLEL_FOR_3D(...) AMREX_GPU_HOST_DEVICE_PARALLEL_FOR_3D(__VA_ARGS__)
 #define AMREX_HOST_DEVICE_PARALLEL_FOR_4D(...) AMREX_GPU_HOST_DEVICE_PARALLEL_FOR_4D(__VA_ARGS__)
+
+#ifdef AMREX_USE_CUDA
+#define AMREX_HOST_DEVICE_PARALLEL_FOR_1D_FUSIBLE(...) AMREX_GPU_HOST_DEVICE_FOR_1D_FUSIBLE(__VA_ARGS__)
+#define AMREX_HOST_DEVICE_PARALLEL_FOR_3D_FUSIBLE(...) AMREX_GPU_HOST_DEVICE_FOR_3D_FUSIBLE(__VA_ARGS__)
+#define AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FUSIBLE(...) AMREX_GPU_HOST_DEVICE_FOR_4D_FUSIBLE(__VA_ARGS__)
+#define AMREX_HOST_DEVICE_FOR_1D_FUSIBLE(...) AMREX_GPU_HOST_DEVICE_FOR_1D_FUSIBLE(__VA_ARGS__)
+#define AMREX_HOST_DEVICE_FOR_3D_FUSIBLE(...) AMREX_GPU_HOST_DEVICE_FOR_3D_FUSIBLE(__VA_ARGS__)
+#define AMREX_HOST_DEVICE_FOR_4D_FUSIBLE(...) AMREX_GPU_HOST_DEVICE_FOR_4D_FUSIBLE(__VA_ARGS__)
+#else
+#define AMREX_HOST_DEVICE_PARALLEL_FOR_1D_FUSIBLE(...) AMREX_HOST_DEVICE_PARALLEL_FOR_1D(__VA_ARGS__)
+#define AMREX_HOST_DEVICE_PARALLEL_FOR_3D_FUSIBLE(...) AMREX_HOST_DEVICE_PARALLEL_FOR_3D(__VA_ARGS__)
+#define AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FUSIBLE(...) AMREX_HOST_DEVICE_PARALLEL_FOR_4D(__VA_ARGS__)
+#define AMREX_HOST_DEVICE_FOR_1D_FUSIBLE(...) AMREX_GPU_HOST_DEVICE_FOR_1D(__VA_ARGS__)
+#define AMREX_HOST_DEVICE_FOR_3D_FUSIBLE(...) AMREX_GPU_HOST_DEVICE_FOR_3D(__VA_ARGS__)
+#define AMREX_HOST_DEVICE_FOR_4D_FUSIBLE(...) AMREX_GPU_HOST_DEVICE_FOR_4D(__VA_ARGS__)
+#endif
 
 #ifdef AMREX_USE_GPU
 
@@ -249,12 +282,12 @@ namespace Gpu {
 #define AMREX_HOST_DEVICE_PARALLEL_FOR_4D_FLAG(where_to_run,box,nc,i,j,k,n,block) \
     if ((where_to_run == RunOn::Device) && (Gpu::inLaunchRegion())) \
     { \
-        amrex::ParallelFor(box, nc, [=] AMREX_GPU_DEVICE (int i, int j, int k, int n) AMREX_NOEXCEPT \
+        amrex::ParallelFor(box, nc, [=] AMREX_GPU_DEVICE (int i, int j, int k, int n) noexcept \
             block \
         ); \
     } \
     else { \
-        amrex::LoopConcurrentOnCpu(box, nc, [=] (int i, int j, int k, int n) AMREX_NOEXCEPT \
+        amrex::LoopConcurrentOnCpu(box, nc, [=] (int i, int j, int k, int n) noexcept \
             block \
         ); \
     }
@@ -289,12 +322,12 @@ namespace Gpu {
 #define AMREX_HOST_DEVICE_FOR_4D_FLAG(where_to_run,box,nc,i,j,k,n,block) \
     if ((where_to_run == RunOn::Device) && (Gpu::inLaunchRegion())) \
     { \
-        amrex::ParallelFor(box, nc, [=] AMREX_GPU_DEVICE (int i, int j, int k, int n) AMREX_NOEXCEPT \
+        amrex::ParallelFor(box, nc, [=] AMREX_GPU_DEVICE (int i, int j, int k, int n) noexcept \
             block \
         ); \
     } \
     else { \
-        amrex::LoopOnCpu(box, nc, [=] (int i, int j, int k, int n) AMREX_NOEXCEPT \
+        amrex::LoopOnCpu(box, nc, [=] (int i, int j, int k, int n) noexcept \
             block \
         ); \
     }

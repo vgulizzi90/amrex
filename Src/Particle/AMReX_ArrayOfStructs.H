@@ -68,7 +68,7 @@ public:
 
     bool empty () const { return m_data.empty(); }
 
-    const RealType* data () const { return &(m_data[0].m_rdata.pos[0]); }
+    const RealType* data () const { return &(m_data[0].m_pos[0]); }
     RealType* data () { return &(m_data[0].pos(0)); }
 
     const RealType* dataPtr () const { return data(); }
@@ -87,6 +87,11 @@ public:
 
     const ParticleType& operator[] (int i) const { return m_data[i]; }
     ParticleType      & operator[] (int i)       { return m_data[i]; }
+
+    void swap (ArrayOfStructs<NReal, NInt>& other)
+    {
+        m_data.swap(other.m_data);
+    }
 
     void resize(size_t count) { m_data.resize(count); }
 

@@ -33,7 +33,7 @@ template <int NStructReal, int NStructInt, int NArrayReal, int NArrayInt>
 void
 ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
 ::Checkpoint (const std::string& dir,
-              const std::string& name, bool is_checkpoint,
+              const std::string& name, bool /*is_checkpoint*/,
               const Vector<std::string>& real_comp_names,
               const Vector<std::string>& int_comp_names) const
 {
@@ -428,7 +428,7 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
 
     const int IOProcNumber = ParallelDescriptor::IOProcessorNumber();
     Long nparticles = 0;
-    int  maxnextid  = ParticleType::NextID();
+    Long  maxnextid  = ParticleType::NextID();
 
     for (int lev = 0; lev < m_particles.size();  lev++) {
         const auto& pmap = m_particles[lev];
@@ -448,7 +448,7 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
     ParallelDescriptor::ReduceLongSum(nparticles, IOProcNumber);
 
     ParticleType::NextID(maxnextid);
-    ParallelDescriptor::ReduceIntMax(maxnextid, IOProcNumber);
+    ParallelDescriptor::ReduceLongMax(maxnextid, IOProcNumber);
 
     nparticlesPrePost = nparticles;
     maxnextidPrePost  = maxnextid;
@@ -690,7 +690,7 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
 template <int NStructReal, int NStructInt, int NArrayReal, int NArrayInt>
 void
 ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
-::Restart (const std::string& dir, const std::string& file, bool is_checkpoint)
+::Restart (const std::string& dir, const std::string& file, bool /*is_checkpoint*/)
 {
     Restart(dir, file);
 }
@@ -787,7 +787,7 @@ ParticleContainer<NStructReal, NStructInt, NArrayReal, NArrayInt>
     HdrFile >> nparticles;
     AMREX_ASSERT(nparticles >= 0);
 
-    int maxnextid;
+    Long maxnextid;
     HdrFile >> maxnextid;
     AMREX_ASSERT(maxnextid > 0);
     ParticleType::NextID(maxnextid);
