@@ -962,6 +962,174 @@ void MakeImplicitMesh(ImplicitMesh<N_PHI, N_DOM> & mesh, const IBVP_CLASS & IBVP
     }
     // ================================================================
 
+    // PERFORM THE MESH PRUNING =======================================
+    // REMOVE ALL BOXES WHOSE ELEMENTS ARE EMPTY
+    // (THE ELEMENTS MUST BE EMPTY FOR EACH AND EVERY DOMAIN)
+    // ================================================================
+    if (true)
+    {
+        BoxList bl;
+
+        for (MFIter mfi(mesh.eType); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+            const Dim3 lo = lbound(bx);
+            const Dim3 hi = ubound(bx);
+
+            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+            bool bx_is_empty;
+
+            bx_is_empty = true;
+            for (int dom = 0; dom < N_DOM; ++dom)
+            for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i)
+            {
+                const short etype = eType_fab(i,j,k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
+                const bool elm_is_not_empty = (etype != DG_ELM_TYPE_EMPTY);
+
+                if (elm_is_not_empty)
+                {
+                    bx_is_empty = false;
+                }
+            }
+
+            if (!bx_is_empty)
+            {
+                bl.push_back(bx);
+            }
+        }
+
+        // SHARE THE INFO
+        AllGatherBoxes(bl.data());
+
+        // CREATE THE NEW BOX ARRAYS AND DISTRIBUTION MAPPING
+        BoxArray new_cc_ba;
+        Array<BoxArray, AMREX_SPACEDIM> new_fc_ba;
+        DistributionMapping new_dm;
+
+        new_cc_ba = BoxArray(bl);
+#if (AMREX_SPACEDIM == 1)
+        new_fc_ba[0] = convert(new_cc_ba, IntVect(1));
+#endif
+#if (AMREX_SPACEDIM == 2)
+        new_fc_ba[0] = convert(new_cc_ba, IntVect(1,0));
+        new_fc_ba[1] = convert(new_cc_ba, IntVect(0,1));
+#endif
+#if (AMREX_SPACEDIM == 3)
+        new_fc_ba[0] = convert(new_cc_ba, IntVect(1,0,0));
+        new_fc_ba[1] = convert(new_cc_ba, IntVect(0,1,0));
+        new_fc_ba[2] = convert(new_cc_ba, IntVect(0,0,1));
+#endif
+        new_dm.define(new_cc_ba);
+
+        // UPDATE ALL THE MULTIFABS RELATED TO THE IMPLICIT MESH
+        // LEVEL SETS
+        {
+            const int ngr = mesh.dom_data_ngr;
+            const int n_comp = (mesh.cube.Np)*N_PHI;
+
+            MultiFab real_mf;
+            
+            real_mf.define(new_cc_ba, new_dm, n_comp, ngr);
+            real_mf.ParallelCopy(mesh.PHI, 0, 0, n_comp, ngr, ngr, mesh.geom.periodicity());
+            mesh.PHI.define(new_cc_ba, new_dm, n_comp, ngr);
+            MultiFab::Copy(mesh.PHI, real_mf, 0, 0, n_comp, ngr);
+        }
+
+        // IMPLICIT MESH DOMAIN (CELL-CENTERED) INFO
+        {
+            const int ngr = mesh.dom_data_ngr;
+            
+            shortMultiFab short_mf;
+            iMultiFab int_mf;
+            longMultiFab long_mf;
+            MultiFab real_mf;
+            
+            short_mf.define(new_cc_ba, new_dm, mesh.eType_n_comp, ngr);
+            short_mf.ParallelCopy(mesh.eType, 0, 0, mesh.eType_n_comp, ngr, ngr, mesh.geom.periodicity());
+            mesh.eType.define(new_cc_ba, new_dm, mesh.eType_n_comp, ngr);
+            Copy(mesh.eType, short_mf, 0, 0, mesh.eType_n_comp, ngr);
+
+            real_mf.define(new_cc_ba, new_dm, mesh.eInfo_n_comp, ngr);
+            real_mf.ParallelCopy(mesh.eInfo, 0, 0, mesh.eInfo_n_comp, ngr, ngr, mesh.geom.periodicity());
+            mesh.eInfo.define(new_cc_ba, new_dm, mesh.eInfo_n_comp, ngr);
+            MultiFab::Copy(mesh.eInfo, real_mf, 0, 0, mesh.eInfo_n_comp, ngr);
+
+            int_mf.define(new_cc_ba, new_dm, mesh.eColor_n_comp, ngr);
+            int_mf.ParallelCopy(mesh.eColor, 0, 0, mesh.eColor_n_comp, ngr, ngr, mesh.geom.periodicity());
+            mesh.eColor.define(new_cc_ba, new_dm, mesh.eColor_n_comp, ngr);
+            iMultiFab::Copy(mesh.eColor, int_mf, 0, 0, mesh.eColor_n_comp, ngr);
+
+            int_mf.define(new_cc_ba, new_dm, mesh.eDomQuad_Nq_n_comp, ngr);
+            int_mf.ParallelCopy(mesh.eDomQuad_Nq, 0, 0, mesh.eDomQuad_Nq_n_comp, ngr, ngr, mesh.geom.periodicity());
+            mesh.eDomQuad_Nq.define(new_cc_ba, new_dm, mesh.eDomQuad_Nq_n_comp, ngr);
+            iMultiFab::Copy(mesh.eDomQuad_Nq, int_mf, 0, 0, mesh.eDomQuad_Nq_n_comp, ngr);
+
+            int_mf.define(new_cc_ba, new_dm, mesh.eQuery_Npt_n_comp, ngr);
+            int_mf.ParallelCopy(mesh.eQuery_Npt, 0, 0, mesh.eQuery_Npt_n_comp, ngr, ngr, mesh.geom.periodicity());
+            mesh.eQuery_Npt.define(new_cc_ba, new_dm, mesh.eQuery_Npt_n_comp, ngr);
+            iMultiFab::Copy(mesh.eQuery_Npt, int_mf, 0, 0, mesh.eQuery_Npt_n_comp, ngr);
+
+            long_mf.define(new_cc_ba, new_dm, mesh.eDomQuad_pos_n_comp, ngr);
+            long_mf.ParallelCopy(mesh.eDomQuad_pos, 0, 0, mesh.eDomQuad_pos_n_comp, ngr, ngr);
+            mesh.eDomQuad_pos.define(new_cc_ba, new_dm, mesh.eDomQuad_pos_n_comp, ngr);
+            Copy(mesh.eDomQuad_pos, long_mf, 0, 0, mesh.eDomQuad_pos_n_comp, ngr);
+
+            long_mf.define(new_cc_ba, new_dm, mesh.eQuery_pos_n_comp, ngr);
+            long_mf.ParallelCopy(mesh.eQuery_pos, 0, 0, mesh.eQuery_pos_n_comp, ngr, ngr);
+            mesh.eQuery_pos.define(new_cc_ba, new_dm, mesh.eQuery_pos_n_comp, ngr);
+            Copy(mesh.eQuery_pos, long_mf, 0, 0, mesh.eQuery_pos_n_comp, ngr);
+
+            int_mf.define(new_cc_ba, new_dm, mesh.eIntBouQuad_Nq_n_comp, ngr);
+            int_mf.ParallelCopy(mesh.eIntBouQuad_Nq, 0, 0, mesh.eIntBouQuad_Nq_n_comp, ngr, ngr, mesh.geom.periodicity());
+            mesh.eIntBouQuad_Nq.define(new_cc_ba, new_dm, mesh.eIntBouQuad_Nq_n_comp, ngr);
+            iMultiFab::Copy(mesh.eIntBouQuad_Nq, int_mf, 0, 0, mesh.eIntBouQuad_Nq_n_comp, ngr);
+
+            long_mf.define(new_cc_ba, new_dm, mesh.eIntBouQuad_pos_n_comp, ngr);
+            long_mf.ParallelCopy(mesh.eIntBouQuad_pos, 0, 0, mesh.eIntBouQuad_pos_n_comp, ngr, ngr);
+            mesh.eIntBouQuad_pos.define(new_cc_ba, new_dm, mesh.eIntBouQuad_pos_n_comp, ngr);
+            Copy(mesh.eIntBouQuad_pos, long_mf, 0, 0, mesh.eIntBouQuad_pos_n_comp, ngr);
+        }
+        
+        // IMPLICIT MESH BOUNDARY (FACE-CENTERED) INFO
+        for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+        {
+            const int ngr = mesh.bou_data_ngr;
+
+            shortMultiFab short_mf;
+            iMultiFab int_mf;
+            longMultiFab long_mf;
+
+            short_mf.define(new_fc_ba[dim], new_dm, mesh.eBouType_n_comp, ngr);
+            short_mf.ParallelCopy(mesh.eBouType[dim], 0, 0, mesh.eBouType_n_comp, ngr, ngr, mesh.geom.periodicity());
+            mesh.eBouType[dim].define(new_fc_ba[dim], new_dm, mesh.eBouType_n_comp, ngr);
+            Copy(mesh.eBouType[dim], short_mf, 0, 0, mesh.eBouType_n_comp, ngr);
+
+            int_mf.define(new_fc_ba[dim], new_dm, mesh.eBouQuad_Nq_n_comp, ngr);
+            int_mf.ParallelCopy(mesh.eBouQuad_Nq[dim], 0, 0, mesh.eBouQuad_Nq_n_comp, ngr, ngr, mesh.geom.periodicity());
+            mesh.eBouQuad_Nq[dim].define(new_fc_ba[dim], new_dm, mesh.eBouQuad_Nq_n_comp, ngr);
+            iMultiFab::Copy(mesh.eBouQuad_Nq[dim], int_mf, 0, 0, mesh.eBouQuad_Nq_n_comp, ngr);
+
+            long_mf.define(new_fc_ba[dim], new_dm, mesh.eBouQuad_pos_n_comp, ngr);
+            long_mf.ParallelCopy(mesh.eBouQuad_pos[dim], 0, 0, mesh.eBouQuad_pos_n_comp, ngr, ngr);
+            mesh.eBouQuad_pos[dim].define(new_fc_ba[dim], new_dm, mesh.eBouQuad_pos_n_comp, ngr);
+            Copy(mesh.eBouQuad_pos[dim], long_mf, 0, 0, mesh.eBouQuad_pos_n_comp, ngr);
+        }
+
+        // UPDATE IMPLICIT-MESH BOX ARRAYS AND DISTRIBUTION MAPPING
+        mesh.cc_ba = new_cc_ba;
+        AMREX_D_TERM
+        (
+            mesh.fc_ba[0] = new_fc_ba[0];,
+            mesh.fc_ba[1] = new_fc_ba[1];,
+            mesh.fc_ba[2] = new_fc_ba[2];
+        )
+        mesh.dm = new_dm;
+    }
+    // ================================================================
+
     // COLOR THE IMPLICITLY-DEFINED MESH ELEMENTS =====================
     mesh.eColor = DG_ELM_COLOR_UNDEFINED;
 

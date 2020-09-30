@@ -62,7 +62,7 @@ public:
         res[2] = v1[0]*v2[1]-v1[1]*v2[0];
     }
 
-#define THETA (M_PI/4.0)
+#define THETA (M_PI/6.0)
 #define A1 0.0
 #define B1 1.0
 #if (AMREX_SPACEDIM == 2)

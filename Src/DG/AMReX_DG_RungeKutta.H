@@ -1572,8 +1572,8 @@ struct RungeKutta
             const int dX_n_comp = AMREX_SPACEDIM*N_U;
             dX.define(mesh.cc_ba, mesh.dm, dX_n_comp, 1);
             
-            //ApplySlopeLimiter_FV<N_PHI, N_DOM, N_U>(t, mesh, matfactory, _X_, dX, IBVP);
-            ApplySlopeLimiter_FV_LS<N_PHI, N_DOM, N_U>(t, mesh, matfactory, _X_, dX, IBVP);
+            ApplySlopeLimiter_FV<N_PHI, N_DOM, N_U>(t, mesh, matfactory, _X_, dX, IBVP);
+            //ApplySlopeLimiter_FV_LS<N_PHI, N_DOM, N_U>(t, mesh, matfactory, _X_, dX, IBVP);
         }
         // ============================================================
 

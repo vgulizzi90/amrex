@@ -62,10 +62,10 @@ struct MatrixFactory
     // ################################################################
 
     // INITIALIZATION #################################################
-    void DefineUnitCube(const int space_p, const int space_q,
-                        const int time_p)
+    void InitUnitCube(const int space_p, const int space_q,
+                      const int time_p)
     {
-        this->cube.Define(space_p, space_q);
+        this->cube.Init(space_p, space_q);
 
         // SOME CHECKS
         BL_ASSERT(space_p >= 0);
@@ -74,7 +74,7 @@ struct MatrixFactory
         if ((space_p != DG_SOL_MAX_SPACE_p) && (false))
         {
             Print() << std::endl;
-            Print() << "WARNING: AMReX_DG_MatrixFactory.H - MatrixFactory::DefineUnitCube" << std::endl;
+            Print() << "WARNING: AMReX_DG_MatrixFactory.H - MatrixFactory::InitUnitCube" << std::endl;
             Print() << "| DG_SOL_MAX_SPACE_p = " << DG_SOL_MAX_SPACE_p << std::endl;
             Print() << "| input space p = " << space_p << std::endl;
             Print() << "| Consider setting DG_SOL_MAX_SPACE_p = " << space_p << " and recompiling the code." <<std::endl;
@@ -87,12 +87,20 @@ struct MatrixFactory
         if ((time_p != DG_SOL_MAX_TIME_p) && (false))
         {
             Print() << std::endl;
-            Print() << "WARNING: AMReX_DG_MatrixFactory.H - MatrixFactory::DefineUnitCube" << std::endl;
+            Print() << "WARNING: AMReX_DG_MatrixFactory.H - MatrixFactory::InitUnitCube" << std::endl;
             Print() << "| DG_SOL_MAX_TIME_p = " << DG_SOL_MAX_TIME_p << std::endl;
             Print() << "| input time p = " << time_p << std::endl;
             Print() << "| Consider setting DG_SOL_MAX_TIME_p = " << time_p << " and recompiling the code." <<std::endl;
             Print() << std::endl;
         }
+    }
+
+    void Init(const InputReader & inputs, const int d)
+    {
+        // UNIT CUBE [-1,1]^AMREX_SPACEDIM ============================
+        this->InitUnitCube(inputs.dG[d].space_p, inputs.dG[d].space_q,
+                           inputs.dG[d].time_p);
+        // ============================================================
     }
 
     void DefineImplicitMeshInfo(const BoxArray & cc_ba, const DistributionMapping & dm)
@@ -123,14 +131,8 @@ struct MatrixFactory
         // ============================================================
     }
     
-    void Define(const BoxArray & cc_ba, const DistributionMapping & dm,
-                const InputReader & inputs, const int d)
+    void Define(const BoxArray & cc_ba, const DistributionMapping & dm)
     {
-        // UNIT CUBE [-1,1]^AMREX_SPACEDIM ============================
-        this->DefineUnitCube(inputs.dG[d].space_p, inputs.dG[d].space_q,
-                             inputs.dG[d].time_p);
-        // ============================================================
-
         // IMPLICIT MESH ==============================================
         this->DefineImplicitMeshInfo(cc_ba, dm);
         // ============================================================

@@ -98,6 +98,9 @@ struct ImplicitMesh
     static const int eIntBouQuad_pos_n_comp = DG_ELM_INT_BOU_QUAD_N_COMP_PER_DOM*N_DOM;
     static const int eQuery_pos_n_comp = DG_ELM_TRI_N_COMP_PER_DOM*N_DOM;
 
+    // UNIT CUBE [-1,1]^AMREX_SPACEDIM
+    UnitCube<AMREX_SPACEDIM> cube;
+
     // GRID INFO
     RealBox rbx;
     Box ibx;
@@ -113,9 +116,6 @@ struct ImplicitMesh
     BoxArray cc_ba;
     Array<BoxArray, AMREX_SPACEDIM> fc_ba;
     DistributionMapping dm;
-
-    // UNIT CUBE [-1,1]^AMREX_SPACEDIM
-    UnitCube<AMREX_SPACEDIM> cube;
 
     // LEVEL SETS
     MultiFab PHI;
@@ -160,7 +160,7 @@ struct ImplicitMesh
     // ################################################################
 
     // INITIALIZATION #################################################
-    void DefineGridInfo()
+    void InitGridInfo()
     {
         this->dx = this->geom.CellSizeArray();
         this->prob_lo = this->geom.ProbLoArray();
@@ -184,9 +184,9 @@ struct ImplicitMesh
         this->atol = 1.0e-12;
     }
 
-    void DefineUnitCube(const int phi_space_p, const int space_q)
+    void InitUnitCube(const int phi_space_p, const int space_q)
     {
-        this->cube.Define(phi_space_p, space_q);
+        this->cube.Init(phi_space_p, space_q);
 
         // SOME CHECKS
         BL_ASSERT(phi_space_p >= 1);
@@ -194,7 +194,7 @@ struct ImplicitMesh
         if ((phi_space_p != DG_PHI_MAX_SPACE_p) && (false))
         {
             Print() << std::endl;
-            Print() << "WARNING: AMReX_DG_ImplicitMesh.H - ImplicitMesh::Define" << std::endl;
+            Print() << "WARNING: AMReX_DG_ImplicitMesh.H - ImplicitMesh::InitUnitCube" << std::endl;
             Print() << "| DG_PHI_MAX_SPACE_p = " << DG_PHI_MAX_SPACE_p << std::endl;
             Print() << "| input phi space p = " << phi_space_p << std::endl;
             Print() << "| Consider setting DG_PHI_MAX_SPACE_p = " << phi_space_p << " and recompiling the code." <<std::endl;
@@ -203,31 +203,81 @@ struct ImplicitMesh
 
         BL_ASSERT(space_q >= 1);
     }
-
-    void DefineLevelSetsMultiFabs()
+    
+    void Init(const InputReader & inputs, const int d)
     {
-        const int n_comp = (this->cube.Np)*N_PHI;
-
-        this->PHI.define(this->cc_ba, this->dm, n_comp, this->dom_data_ngr);
-        this->PHI = 0.0;
-    }
-
-    void DefineImplicitMeshInfo(const int space_q_im_, const int time_q_im_, const Real VF)
-    {
+        // UNIT CUBE [-1,1]^AMREX_SPACEDIM ============================
+        this->InitUnitCube(inputs.dG[d].phi_space_p, inputs.dG[d].space_q);
         // ============================================================
+
+        // GRID INFO ==================================================
+        this->rbx.setLo(inputs.space[d].prob_lo.data());
+        this->rbx.setHi(inputs.space[d].prob_hi.data());
+        
+        this->ibx.setSmall({AMREX_D_DECL(0, 0, 0)});
+        this->ibx.setBig(inputs.mesh[d].n_cells-1);
+        
+        this->geom.define(this->ibx, &this->rbx,
+                          inputs.space[d].coord_sys,
+                          inputs.space[d].is_periodic.data());
+
+        this->InitGridInfo();
+        // ============================================================
+
+        // BOX ARRAY AND DISTRIBUTION MAPPING =========================
+        this->cc_ba.define(this->ibx);
+        this->cc_ba.maxSize(inputs.mesh[d].max_grid_size);
+
+#if (AMREX_SPACEDIM == 1)
+        this->fc_ba[0] = convert(this->cc_ba, IntVect(1));
+#endif
+#if (AMREX_SPACEDIM == 2)
+        this->fc_ba[0] = convert(this->cc_ba, IntVect(1,0));
+        this->fc_ba[1] = convert(this->cc_ba, IntVect(0,1));
+#endif
+#if (AMREX_SPACEDIM == 3)
+        this->fc_ba[0] = convert(this->cc_ba, IntVect(1,0,0));
+        this->fc_ba[1] = convert(this->cc_ba, IntVect(0,1,0));
+        this->fc_ba[2] = convert(this->cc_ba, IntVect(0,0,1));
+#endif
+
+        this->dm.define(this->cc_ba);
+        // ============================================================
+
+        // IMPLICIT MESH ==============================================
+        this->space_q_im = inputs.dG[d].space_q_im;
+        this->time_q_im = inputs.dG[d].time_q_im;
+        this->volume_fraction_threshold = inputs.dG[d].VF;
+
+        this->n_cut_elms = 0;
+        this->n_cut_elm_bou = 0;
+        this->n_entire_extended_elms = 0;
+
+        this->mem_for_eDomQuad = 0L;
+        this->mem_for_eBouQuad = 0L;
+        this->mem_for_eIntBouQuad = 0L;
+        this->mem_for_eQuery = 0L;
+        // ============================================================
+    }
+    
+    void Define()
+    {
+        // LEVEL SETS =================================================
+        {
+            const int n_comp = (this->cube.Np)*N_PHI;
+
+            this->PHI.define(this->cc_ba, this->dm, n_comp, this->dom_data_ngr);
+            this->PHI = 0.0;
+        }
+        // ============================================================
+
+        // IMPLICIT MESH ==============================================
         // WARNING: Remember that on the MultiFabs
         //          - this->eDomQuad_pos
         //          - this->eBouQuad_pos[dim]
         //          - this->eTri_pos
         //          the FillBoundary method must NEVER be called.
         // ============================================================
-        this->space_q_im = space_q_im_;
-        this->time_q_im = time_q_im_;
-        this->volume_fraction_threshold = VF;
-        this->n_cut_elms = 0;
-        this->n_cut_elm_bou = 0;
-        this->n_entire_extended_elms = 0;
-
         // DOMAIN (CELL-CENTERED) INFO --------------------------------
         {
             this->eType.define(this->cc_ba, this->dm, this->eType_n_comp, this->dom_data_ngr);
@@ -272,61 +322,6 @@ struct ImplicitMesh
             this->eBouQuad_pos[dim] = -1L;
         }
         // ------------------------------------------------------------
-
-        this->mem_for_eDomQuad = 0L;
-        this->mem_for_eBouQuad = 0L;
-        this->mem_for_eIntBouQuad = 0L;
-        this->mem_for_eQuery = 0L;
-        // ============================================================
-    }
-
-    void Define(const InputReader & inputs, const int d)
-    {
-        // GRID INFO ==================================================
-        this->rbx.setLo(inputs.space[d].prob_lo.data());
-        this->rbx.setHi(inputs.space[d].prob_hi.data());
-        
-        this->ibx.setSmall({AMREX_D_DECL(0, 0, 0)});
-        this->ibx.setBig(inputs.mesh[d].n_cells-1);
-        
-        this->geom.define(this->ibx, &this->rbx,
-                          inputs.space[d].coord_sys,
-                          inputs.space[d].is_periodic.data());
-
-        this->DefineGridInfo();
-        // ============================================================
-
-        // BOX ARRAY AND DISTRIBUTION MAPPING =========================
-        this->cc_ba.define(this->ibx);
-        this->cc_ba.maxSize(inputs.mesh[d].max_grid_size);
-
-#if (AMREX_SPACEDIM == 1)
-        this->fc_ba[0] = convert(this->cc_ba, IntVect(1));
-#endif
-#if (AMREX_SPACEDIM == 2)
-        this->fc_ba[0] = convert(this->cc_ba, IntVect(1,0));
-        this->fc_ba[1] = convert(this->cc_ba, IntVect(0,1));
-#endif
-#if (AMREX_SPACEDIM == 3)
-        this->fc_ba[0] = convert(this->cc_ba, IntVect(1,0,0));
-        this->fc_ba[1] = convert(this->cc_ba, IntVect(0,1,0));
-        this->fc_ba[2] = convert(this->cc_ba, IntVect(0,0,1));
-#endif
-
-        this->dm.define(this->cc_ba);
-        // ============================================================
-
-        // UNIT CUBE [-1,1]^AMREX_SPACEDIM ============================
-        this->DefineUnitCube(inputs.dG[d].phi_space_p, inputs.dG[d].space_q);
-        // ============================================================
-
-        // LEVEL SETS =================================================
-        this->DefineLevelSetsMultiFabs();
-        // ============================================================
-
-        // IMPLICIT MESH ==============================================
-        this->DefineImplicitMeshInfo(inputs.dG[d].space_q_im, inputs.dG[d].time_q_im,
-                                     inputs.dG[d].VF);
         // ============================================================
     }
     // ################################################################
@@ -483,7 +478,7 @@ struct ImplicitMesh
                         integrand = 0.0;
                         dst_fab(i,j,k,QUAD_CHECK_N_COMP_PER_DOM*dom+2) += integrand*w;
 
-                        integrand = x[2]*un[2];
+                        integrand = x[1]*un[1];
                         cell_volume_from_bou_quadrature += integrand*w;
                         
                         integrand = 0.0;

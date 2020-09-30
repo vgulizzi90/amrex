@@ -86,11 +86,6 @@ amrex::Print() << "#############################################################
 
     // PERFORM THE ANALYSIS ===========================================
     {
-        // PHYSICAL BOX -----------------------------------------------
-        amrex::RealBox real_box(inputs.space[0].prob_lo.data(),
-                                inputs.space[0].prob_hi.data());
-        // ------------------------------------------------------------
-
         // WRITE TO FILE ----------------------------------------------
         if (amrex::ParallelDescriptor::IOProcessor())
         {
@@ -99,10 +94,6 @@ amrex::Print() << "#############################################################
         // ------------------------------------------------------------
 
         {
-            // INIT DG OBJECT -----------------------------------------
-            amrex::DG::DG<N_PHI, N_DOM, N_U> dG(inputs);
-            // --------------------------------------------------------
-
             // DESTINATION FOLDER AND OUTPUT DATA ---------------------
             std::string dst_folder;
     
@@ -139,6 +130,10 @@ amrex::Print() << "#############################################################
             const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{5.0/3.0}};
 #endif
             GASDYNAMICS GD(material_type, material_properties);
+            // --------------------------------------------------------
+
+            // INIT DG OBJECT -----------------------------------------
+            amrex::DG::DG<N_PHI, N_DOM, N_U> dG(inputs);
             // --------------------------------------------------------
 
             // INIT OUTPUT DATA INFORMATION ---------------------------

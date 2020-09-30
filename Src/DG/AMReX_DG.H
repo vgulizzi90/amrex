@@ -80,7 +80,7 @@ struct DG
 
     DG(const InputReader & inputs, const int d = 0)
     {
-        this->Define(inputs, d);
+        this->Init(inputs, d);
     }
     // ################################################################
 
@@ -90,24 +90,38 @@ struct DG
     // ################################################################
 
     // INITIALIZATION #################################################
-    void Define(const InputReader & inputs, const int d)
+    void Init(const InputReader & inputs, const int d)
     {
         // PDES INFO ==================================================
         this->PDEs_info = inputs.PDEs[d].description;
         // ============================================================
 
         // IMPLICIT MESH ==============================================
-        this->mesh.Define(inputs, d);
+        this->mesh.Init(inputs, d);
         // ============================================================
 
         // MATRIX FACTORY =============================================
-        this->matfactory.Define(this->mesh.cc_ba, this->mesh.dm, inputs, d);
+        this->matfactory.Init(inputs, d);
         // ============================================================
 
         // SLOPE LIMITER ==============================================
         this->limiter_is_active = inputs.dG[d].limiter.active;
         // ============================================================
 
+        // TIME MARCHING ==============================================
+        this->n_time_steps = inputs.time.n_steps;
+
+        this->CFL_base = inputs.dG[d].CFL;
+
+        this->time_marching_info = inputs.dG[d].time_marching;
+
+        this->tp = inputs.dG[d].time_p;
+        this->tNp = inputs.dG[d].time_p+1;
+        // ============================================================
+    }
+
+    void Define()
+    {
         // SOLUTION MULTIFABS =========================================
         {
             int n_comp = (this->matfactory.cube.Np)*N_U;
@@ -124,15 +138,6 @@ struct DG
         // ============================================================
 
         // TIME MARCHING ==============================================
-        this->n_time_steps = inputs.time.n_steps;
-
-        this->CFL_base = inputs.dG[d].CFL;
-
-        this->time_marching_info = inputs.dG[d].time_marching;
-
-        this->tp = inputs.dG[d].time_p;
-        this->tNp = inputs.dG[d].time_p+1;
-
         if (this->isTimeMarchingRungeKutta())
         {
             const int n_comp = (this->matfactory.cube.Np)*N_U;
@@ -200,6 +205,8 @@ struct DG
     void SetICs(const IBVP_CLASS & IBVP, const bool im_flag = true)
     {
         // PROJECT THE LEVEL SET FUNCTIONS OVER THE GRID ==============
+        this->mesh.Define();
+        
         ProjectLevelSets<N_PHI, N_DOM>(this->mesh, IBVP);
         // ============================================================
 
@@ -208,6 +215,8 @@ struct DG
         // ============================================================
 
         // EVAL THE LINEAR OPERATORS FOR THE IMPLICIT MESH ============
+        this->matfactory.Define(mesh.cc_ba, mesh.dm);
+
         EvalMassMatrices<N_PHI, N_DOM>(this->mesh, this->matfactory, IBVP);
 
         if (this->limiter_is_active)
@@ -215,8 +224,10 @@ struct DG
             EvalAverageOperator<N_PHI, N_DOM>(this->mesh, this->matfactory, IBVP);
         }
         // ============================================================
-
+        
         // PROJECT THE INITIAL CONDITIONS OVER THE IMPLICIT MESH ======
+        this->Define();
+
         ProjectInitialConditions<N_PHI, N_DOM, N_U>(this->mesh,
                                                     this->matfactory,
                                                     this->X_new,
@@ -336,6 +347,9 @@ struct DG
         const GpuArray<Real, AMREX_SPACEDIM> dx = this->mesh.dx;
         const GpuArray<Real, AMREX_SPACEDIM> prob_lo = this->mesh.prob_lo;
         const Box & domain = this->mesh.geom.Domain();
+
+        // AUXILIARY MULTIFAB
+        MultiFab aux(this->mesh.cc_ba, this->mesh.dm, 1, 0);
         // ============================================================
 
         // STORE THE DESTINATION FOLDER ===============================
@@ -418,7 +432,7 @@ struct DG
         {
             this->point_fields_rank[p] = -1;
             
-            for (MFIter mfi(this->X_new); mfi.isValid(); ++mfi)
+            for (MFIter mfi(aux); mfi.isValid(); ++mfi)
             {
                 const Box & bx = mfi.validbox();
                 const Dim3 lo = lbound(bx);

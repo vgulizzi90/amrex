@@ -226,12 +226,12 @@ struct UnitCube
     :
     rr(AMREX_D_DECL(0, 0, 0))
     {
-        this->Define(ip, iq);
+        this->Init(ip, iq);
     }
     // ################################################################
 
     // INITIALIZATION METHOD ##########################################
-    void Define(const int ip, const int iq)
+    void Init(const int ip, const int iq)
     {
         // SET ORDER ==================================================
         this->p = ip;
@@ -280,7 +280,7 @@ struct UnitCube
         else if (iq == 15) {Xq_1d = gau_leg_16_x; Wq_1d = gau_leg_16_w;}
         else
         {
-            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Define" << std::endl;
+            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Init" << std::endl;
             Print() << "| Quadrature order = " << iq << "not implemented yet" << std::endl;
             exit(-1);
         }
@@ -474,7 +474,7 @@ struct UnitCube
         }
         else
         {
-            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Define" << std::endl;
+            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Init" << std::endl;
             Print() << "| Dimension = " << DIM << "not implemented yet" << std::endl;
             exit(-1);
         }
@@ -581,7 +581,7 @@ struct UnitCube
             }
             else
             {
-                Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Define" << std::endl;
+                Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Init" << std::endl;
                 Print() << "| Dimension = " << DIM << "not implemented yet" << std::endl;
                 exit(-1);
             }
@@ -672,7 +672,7 @@ struct UnitCube
         else if (this->g == 15) {Xg_1d = gau_lob_16_x;}
         else
         {
-            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Define" << std::endl;
+            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Init" << std::endl;
             Print() << "| Grid order = " << this->g << "not implemented yet" << std::endl;
             exit(-1);
         }
@@ -748,7 +748,7 @@ struct UnitCube
         }
         else
         {
-            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Define" << std::endl;
+            Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Init" << std::endl;
             Print() << "| Grid order = " << this->g << "not implemented yet" << std::endl;
             exit(-1);
         }
@@ -802,7 +802,7 @@ struct UnitCube
             }
             else
             {
-                Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Define" << std::endl;
+                Print() << "ERROR: AMReX_DG_Definitions.H - UnitCube::Init" << std::endl;
                 Print() << "| Dimension = " << DIM << "not implemented yet" << std::endl;
                 exit(-1);
             }
