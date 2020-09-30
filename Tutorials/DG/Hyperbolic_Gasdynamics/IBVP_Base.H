@@ -30,8 +30,7 @@
 // --------------------------------------------------------------------
 
 // PDES PARAMETERS AND CONSTANT OPERATORS -----------------------------
-#define SMALL_P 1.0e-10
-#define SMALL_RHO 1.0e-19
+
 // --------------------------------------------------------------------
 // ####################################################################
 
@@ -131,18 +130,6 @@ public:
     // ================================================================
 
     // AUXILIARY FUNCTIONS ============================================
-    // ================================================================
-
-    // BODY LOAD ======================================================
-    AMREX_GPU_HOST_DEVICE
-    void F_B(const amrex::Real t, const amrex::Real * x,
-             amrex::Real * B) const
-    {
-        for (int u = 0; u < (N_DOM*N_U_PER_DOM); ++u)
-        {
-            B[u] = 0.0;
-        }
-    }
     // ================================================================
 
     // CONSERVED-CHARACTERISTICS VARIABLES RELATIONSHIPS ==============
@@ -1167,7 +1154,7 @@ exit(-1);
 
     // PDES SYSTEM ====================================================
     AMREX_GPU_HOST_DEVICE
-    void F_F(const amrex::Real & t, const amrex::Real * x,
+    void F_F(const amrex::Real /*t*/, const amrex::Real * /*x*/,
              const amrex::Real * U,
              AMREX_D_DECL(amrex::Real * F1, amrex::Real * F2, amrex::Real * F3)) const
     {

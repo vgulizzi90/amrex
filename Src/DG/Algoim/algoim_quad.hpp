@@ -641,7 +641,7 @@ namespace Algoim
         stream << "</Piece>\n";
         stream << "</PolyData>\n";
         stream << "</VTKFile>\n";
-    };
+    }
 
     /* Main engine for generating high-order accurate quadrature schemes for implicitly defined domains in
        hyperrectangles. The level set function is given by the function object phi, the hyperrectangle is

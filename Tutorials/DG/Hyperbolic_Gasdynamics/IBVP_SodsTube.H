@@ -87,7 +87,7 @@ public:
 #define DIAM AMREX_D_PICK(0.2, 0.2, 0.25)
 
     AMREX_GPU_HOST_DEVICE
-    amrex::Real F_PHI(const int ph, const amrex::Real t, const amrex::Real * x) const
+    amrex::Real F_PHI(const int /*ph*/, const amrex::Real t, const amrex::Real * x) const
     {
         const amrex::Real A[3] = {A1, A2, A3};
         const amrex::Real B[3] = {B1, B2, B3};
@@ -111,12 +111,12 @@ public:
     // ================================================================
 
     // RELATIONSHIP AMONG LEVEL SET FUNCTIONS AND DOMAINS =============
-    amrex::Real F_EXACT_VOLUME(const int dom) const
+    amrex::Real F_EXACT_VOLUME(const int /*dom*/) const
     {
         return DIAM/std::cos(THETA);
     }
 
-    amrex::Real F_EXACT_SURFACE(const int dom) const
+    amrex::Real F_EXACT_SURFACE(const int /*dom*/) const
     {
         return 2.0/std::cos(THETA);
     }

@@ -250,7 +250,7 @@ template<typename T>
 AMREX_GPU_HOST_DEVICE
 void DG_space_1d_BF_Table_NxL(const int& N, const int& L,
                               const T* x, const Real& xlo, const Real& xhi,
-                              T* BF_1d,
+                              T* /*BF_1d*/,
                               T* BF)
 {
     DG_BF_1d_Table_NxL(N, L, x, xlo, xhi, BF);
@@ -259,7 +259,7 @@ template<typename T>
 AMREX_GPU_HOST_DEVICE
 void DG_space_1d_BF_Table_NxL(const int& N, const int& L,
                               const T* x, const Real& xlo, const Real& xhi,
-                              T* BF_1d, T* dBF_1d,
+                              T* /*BF_1d*/, T* /*dBF_1d*/,
                               T* BF, T* dBF)
 {
     DG_BF_1d_Table_NxL(N, L, x, xlo, xhi, BF, dBF);
