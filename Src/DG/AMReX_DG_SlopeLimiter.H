@@ -19,7 +19,7 @@ namespace DG
 template<int N_PHI, int N_DOM, int N_U, typename IBVP_CLASS>
 void ApplySlopeLimiter_FV(const Real t,
                           const ImplicitMesh<N_PHI, N_DOM> & mesh,
-                          const MatrixFactory<N_PHI, N_DOM> & matfactory,
+                          const MatrixFactory<N_PHI, N_DOM> & /*matfactory*/,
                           const MultiFab & X,
                           MultiFab & dX,
                           const IBVP_CLASS & IBVP)
@@ -29,8 +29,6 @@ void ApplySlopeLimiter_FV(const Real t,
     // ----------------------------------------------------------------
 
     // PARAMETERS =====================================================
-    const int ngr = 1;
-
     // GRID
     const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.dx;
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.prob_lo;

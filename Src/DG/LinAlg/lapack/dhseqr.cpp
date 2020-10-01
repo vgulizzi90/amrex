@@ -28,14 +28,14 @@ AMREX_GPU_HOST_DEVICE
     doublereal c_b11 = 0.;
     doublereal c_b12 = 1.;
     integer c__12 = 12;
-    integer c__2 = 2;
+    //integer c__2 = 2; VG COMMENTED
     integer c__49 = 49;
 
     /* System generated locals */
-    address a__1[2];
-    integer h_dim1, h_offset, z_dim1, z_offset, i__1, i__2[2], i__3;
+    //address a__1[2]; VG COMMENTED
+    integer h_dim1, h_offset, z_dim1, z_offset, i__1, /*i__2[2],*/ i__3;
     doublereal d__1;
-    char ch__1[2];
+    //char ch__1[2]; VG COMMENTED
 
     /* Builtin functions */
     ///* Subroutine */ int s_cat(char *, char **, integer *, integer *, ftnlen);
@@ -399,8 +399,8 @@ AMREX_GPU_HOST_DEVICE
 /*        ==== DLAHQR/DLAQR0 crossover point ==== */
 
 /* Writing concatenation */
-	i__2[0] = 1;//, a__1[0] = job;
-	i__2[1] = 1;//, a__1[1] = compz;
+	//i__2[0] = 1;//, a__1[0] = job; // VG COMMENTED
+	//i__2[1] = 1;//, a__1[1] = compz; // VG COMMENTED
 	//s_cat(ch__1, a__1, i__2, &c__2, (ftnlen)2);
 	nmin = ilaenv_(&c__12, "DHSEQR", n, ilo, ihi, lwork);
 	nmin = std::max(11,nmin);

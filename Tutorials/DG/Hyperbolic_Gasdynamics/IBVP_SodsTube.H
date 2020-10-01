@@ -62,7 +62,7 @@ public:
         res[2] = v1[0]*v2[1]-v1[1]*v2[0];
     }
 
-#define THETA (M_PI/6.0)
+#define THETA (M_PI/3.0)
 #define A1 0.0
 #define B1 1.0
 #if (AMREX_SPACEDIM == 2)
@@ -87,7 +87,7 @@ public:
 #define DIAM AMREX_D_PICK(0.2, 0.2, 0.25)
 
     AMREX_GPU_HOST_DEVICE
-    amrex::Real F_PHI(const int /*ph*/, const amrex::Real t, const amrex::Real * x) const
+    amrex::Real F_PHI(const int /*ph*/, const amrex::Real /*t*/, const amrex::Real * x) const
     {
         const amrex::Real A[3] = {A1, A2, A3};
         const amrex::Real B[3] = {B1, B2, B3};

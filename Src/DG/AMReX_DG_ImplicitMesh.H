@@ -67,7 +67,7 @@ iQuadRule iQuadGen(const F & phi, const Real * lo, const Real * hi, const int & 
 template<typename F>
 iTriRule iTriGen(const F & phi, const Real * lo, const Real * hi, const int & dim, const int & side, const int & qo)
 {
-    return Algoim::quadGen<AMREX_SPACEDIM>(phi, Algoim::BoundingBox<Real,AMREX_SPACEDIM>(lo, hi), dim, side, qo, [] (int p, int i) {return 1.0e-12+i*(1.0-2.0e-12)/(p-1);}, [] (int p, int i) {return (1.0-2.0e-12)/(p-1);});
+    return Algoim::quadGen<AMREX_SPACEDIM>(phi, Algoim::BoundingBox<Real,AMREX_SPACEDIM>(lo, hi), dim, side, qo, [] (int p, int i) {return 1.0e-12+i*(1.0-2.0e-12)/(p-1);}, [] (int p, int /*i*/) {return (1.0-2.0e-12)/(p-1);});
 }
 // ====================================================================
 // ####################################################################

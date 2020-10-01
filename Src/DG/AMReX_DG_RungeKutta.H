@@ -20,7 +20,7 @@ template<int N_PHI, int N_DOM, int N_U, typename IBVP_CLASS>
 void ELEM_RKE_DOM_H_FV(const Real t,
                        const Real * prob_lo, const Real * dx, const Real * J, const Real aJ,
                        const int ru, const int i, const int j, const int k, const short etype,
-                       Array4<Real const> const & X_fab, const int sp,
+                       Array4<Real const> const & /*X_fab*/,
                        Array4<int const> const & eDomQuad_Nq_fab,
                        Array4<long const> const & eDomQuad_pos_fab,
                        const Real * eDomQuad_mem_ptr,
@@ -52,7 +52,6 @@ void ELEM_RKE_DOM_H_FV(const Real t,
     Real x[AMREX_SPACEDIM], w;
     
     // DG SOLUTION
-    Real Uh[N_U];
     Real B[N_U];
     Real integrand;
     // ================================================================
@@ -61,13 +60,9 @@ void ELEM_RKE_DOM_H_FV(const Real t,
     BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
     // ================================================================
 
-    // BASIS FUNCTIONS AND FV SOLUTION ================================
-    DG_sol_space_BFX sol(BF_lo, BF_hi, X_fab, sp, BF_i, BF_j, BF_k, -1);
-    // ================================================================
-
     // COMPUTE THE FOLLOWING INTEGRAL =================================
     //
-    // int_{Vh} V_{,i}.T F_i + int_{Vh} V.T B
+    // int_{Vh} V.T B
     //
     // ================================================================
     for (int qi = 0; qi < dom_Nq; ++qi)
@@ -81,21 +76,12 @@ void ELEM_RKE_DOM_H_FV(const Real t,
             x[2] = xptr[qi_pos+2]; x[2] = J[2]*x[2]+cell_m[2];
         )
         w = xptr[qi_pos+AMREX_SPACEDIM]; w = w*aJ;
-
-        // SOLUTION
-        sol._eval_BF_only_table_(x);
-        for (int cu = 0; cu < N_U; ++cu)
-        {
-            sol.set_fab_ptrs(BF_i, BF_j, BF_k, cu);
-            
-            Uh[cu] = sol._eval_unsafe_();
-        }
         
         // BODY LOAD
         IBVP.F_B(t, x, B);
         
         // FV CONTRIBUTION
-        integrand = sol.BF[0]*B[ru];
+        integrand = B[ru];
         dXdt_fab(i,j,k,ru) += integrand*w;
     }
     // ================================================================
@@ -104,7 +90,7 @@ void ELEM_RKE_DOM_H_FV(const Real t,
 template<int N_PHI, int N_DOM, int N_U, typename IBVP_CLASS>
 void RKE_DOM_H_FV(const Real t,
                   const ImplicitMesh<N_PHI, N_DOM> & mesh,
-                  const MatrixFactory<N_PHI, N_DOM> & matfactory,
+                  const MatrixFactory<N_PHI, N_DOM> & /*matfactory*/,
                   const MultiFab & X,
                   MultiFab & dXdt,
                   const IBVP_CLASS & IBVP)
@@ -126,9 +112,6 @@ void RKE_DOM_H_FV(const Real t,
 #else
     const Real * eDomQuad_mem_ptr = mesh.eDomQuad_host_mem.data();
 #endif
-
-    // FV
-    const int sp = 0;
     // ================================================================
 
     // ================================================================
@@ -154,7 +137,7 @@ void RKE_DOM_H_FV(const Real t,
             {
                 ELEM_RKE_DOM_H_FV<N_PHI, N_DOM, N_U>(t, &prob_lo[0], &dx[0], &J[0], aJ,
                                                      ru, i, j, k, etype,
-                                                     X_fab, sp,
+                                                     X_fab,
                                                      eDomQuad_Nq_fab,
                                                      eDomQuad_pos_fab,
                                                      eDomQuad_mem_ptr,
@@ -178,7 +161,7 @@ void ELEM_RKE_BOU_H_FV(const Real t,
                        const Real * prob_lo, const Real * dx, const Real * J, const Real * bou_aJ,
                        const int ru, const int i, const int j, const int k,
                        Array4<short const> const & eType_fab,
-                       Array4<Real const> const & X_fab, Array4<Real const> const & dX_fab, const int sp,
+                       Array4<Real const> const & X_fab, Array4<Real const> const & dX_fab,
                        AMREX_D_DECL(Array4<int const> const & eBouQuad_Nq_fab_0,
                                     Array4<int const> const & eBouQuad_Nq_fab_1,
                                     Array4<int const> const & eBouQuad_Nq_fab_2),
@@ -515,7 +498,7 @@ void ELEM_RKE_BOU_H_FV(const Real t,
 template<int N_PHI, int N_DOM, int N_U, typename IBVP_CLASS>
 void RKE_BOU_H_FV(const Real t,
                   const ImplicitMesh<N_PHI, N_DOM> & mesh,
-                  const MatrixFactory<N_PHI, N_DOM> & matfactory,
+                  const MatrixFactory<N_PHI, N_DOM> & /*matfactory*/,
                   const MultiFab & X,
                   const MultiFab & dX,
                   MultiFab & dXdt,
@@ -542,9 +525,6 @@ void RKE_BOU_H_FV(const Real t,
     const Real * eBouQuad_mem_ptr = mesh.eBouQuad_host_mem.data();
     const Real * eIntBouQuad_mem_ptr = mesh.eIntBouQuad_host_mem.data();
 #endif
-
-    // FV
-    const int sp = 0;
     // ================================================================
 
     // ================================================================
@@ -587,7 +567,7 @@ void RKE_BOU_H_FV(const Real t,
                                                      domain, &is_periodic[0],
                                                      &prob_lo[0], &dx[0], &J[0], &bou_aJ[0],
                                                      ru, i, j, k, eType_fab,
-                                                     X_fab, dX_fab, sp,
+                                                     X_fab, dX_fab,
                                                      AMREX_D_DECL(eBouQuad_Nq_fab_0, eBouQuad_Nq_fab_1, eBouQuad_Nq_fab_2),
                                                      eIntBouQuad_Nq_fab,
                                                      AMREX_D_DECL(eBouQuad_pos_fab_0, eBouQuad_pos_fab_1, eBouQuad_pos_fab_2),

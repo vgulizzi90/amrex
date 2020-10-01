@@ -91,7 +91,7 @@ public:
     // NUMERICAL FLUXES: INTRAPHASE ===================================
     AMREX_GPU_HOST_DEVICE
     void F_NF_ICS(const int dom,
-                  const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                  const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
                   const amrex::Real * U, const amrex::Real * nbr_U,
                   amrex::Real * NFn) const
     {
@@ -115,8 +115,8 @@ public:
     }
 
     AMREX_GPU_HOST_DEVICE
-    void F_BCS(const int dom,
-               const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+    void F_BCS(const int /*dom*/,
+               const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
                const amrex::Real * U,
                amrex::Real * bcs_U) const
     {
@@ -165,9 +165,9 @@ public:
     }
 
     AMREX_GPU_HOST_DEVICE
-    void F_SOL(const amrex::Real t, const amrex::Real * x,
-               const amrex::Real * PHI, AMREX_D_DECL(const amrex::Real * dPHIdx1, const amrex::Real * dPHIdx2, const amrex::Real * dPHIdx3),
-               const amrex::Real * U, AMREX_D_DECL(const amrex::Real * dUdx1, const amrex::Real * dUdx2, const amrex::Real * dUdx3),
+    void F_SOL(const amrex::Real /*t*/, const amrex::Real * /*x*/,
+               const amrex::Real * /*PHI*/, AMREX_D_DECL(const amrex::Real * /*dPHIdx1*/, const amrex::Real * /*dPHIdx2*/, const amrex::Real * /*dPHIdx3*/),
+               const amrex::Real * U, AMREX_D_DECL(const amrex::Real * /*dUdx1*/, const amrex::Real * /*dUdx2*/, const amrex::Real * /*dUdx3*/),
                amrex::Real * F) const
     {
         // PARAMETERS

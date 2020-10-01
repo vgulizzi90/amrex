@@ -119,7 +119,6 @@ void MakeImplicitMesh(ImplicitMesh<N_PHI, N_DOM> & mesh, const IBVP_CLASS & IBVP
     const GpuArray<Real, AMREX_SPACEDIM> J = mesh.J;
     const Real aJ = mesh.aJ;
     const GpuArray<Real, AMREX_SPACEDIM> bou_aJ = mesh.bou_aJ;
-    const GpuArray<int, AMREX_SPACEDIM> is_periodic = mesh.is_periodic;
     const Real atol = mesh.atol;
 
     // UNIT CUBE [-1,1]^AMREX_SPACEDIM
@@ -282,7 +281,7 @@ void MakeImplicitMesh(ImplicitMesh<N_PHI, N_DOM> & mesh, const IBVP_CLASS & IBVP
                     quad = iQuadGen(phi, cell_lo, cell_hi, -1, -1, qo);
 
                     // Compute the volume fraction
-                    cell_volume = quad([](const auto& x) {return 1.0;});
+                    cell_volume = quad([](const auto& /*x*/) {return 1.0;});
                     volume_fraction = cell_volume/entire_cell_volume;
                 }
                 else
@@ -626,7 +625,7 @@ void MakeImplicitMesh(ImplicitMesh<N_PHI, N_DOM> & mesh, const IBVP_CLASS & IBVP
                         quad = iQuadGen(phi, cell_lo, cell_hi, b/2, b%2, qo);
 
                         // Compute the surface fraction
-                        boundary_surface = quad([](const auto& x) {return 1.0;});
+                        boundary_surface = quad([](const auto& /*x*/) {return 1.0;});
                         surface_fraction = boundary_surface/entire_boundary_surface;
                     }
                     else
@@ -1333,7 +1332,7 @@ void MakeImplicitMesh(ImplicitMesh<N_PHI, N_DOM> & mesh, const IBVP_CLASS & IBVP
 template<int N_PHI, int N_DOM, typename IBVP_CLASS>
 void EvalMassMatrices(const ImplicitMesh<N_PHI, N_DOM> & mesh,
                       MatrixFactory<N_PHI, N_DOM> & matfactory,
-                      const IBVP_CLASS & IBVP)
+                      const IBVP_CLASS & /*IBVP*/)
 {
     // PROFILING ------------------------------------------------------
     BL_PROFILE("EvalMassMatrices(const ImplicitMesh<N_PHI, N_DOM> &, MatrixFactory<N_PHI, N_DOM> &, const IBVP_CLASS &)");
@@ -1931,8 +1930,6 @@ void FillInvalidCells(const Real t,
     // ----------------------------------------------------------------
 
     // PARAMETERS =====================================================
-    const int ngr = 1;
-
     // GRID
     const Box domain = mesh.geom.Domain();
     const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.dx;
@@ -2704,10 +2701,10 @@ void ExportMesh_VTK(const std::string & output_folder,
                     const std::string & filename_root,
                     const int time_step,
                     const int n_time_steps,
-                    const Real t,
+                    const Real /*t*/,
                     const ImplicitMesh<N_PHI, N_DOM> & mesh,
                     const charMultiFab & tags,
-                    const IBVP_CLASS & IBVP)
+                    const IBVP_CLASS & /*IBVP*/)
 {
     // PROFILING ------------------------------------------------------
     BL_PROFILE("ExportMesh_VTK(const std::string &, const std::string &, ....)");

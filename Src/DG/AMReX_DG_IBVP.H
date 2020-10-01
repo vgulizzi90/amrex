@@ -41,7 +41,7 @@ struct IBVP_BASE
 
     // RELATIONSHIP AMONG UNKNOWN FIELDS AND DOMAINS ==================
     AMREX_GPU_HOST_DEVICE
-    int F_U2DOM(const int u) const
+    int F_U2DOM(const int /*u*/) const
     {
         return 0;
     }
@@ -57,7 +57,7 @@ struct IBVP_BASE
 
     // INITIAL CONDITIONS =============================================
     AMREX_GPU_HOST_DEVICE
-    Real F_U0(const int u, const Real * /*x*/) const
+    Real F_U0(const int /*u*/, const Real * /*x*/) const
     {
         return 0.0;
     }
@@ -65,14 +65,14 @@ struct IBVP_BASE
 
     // BOUNDARY CONDITIONS ============================================
     AMREX_GPU_HOST_DEVICE
-    void F_BCS(const int /*dom*/, const Real /*t*/, const Real * /*x*/, const Real * un,
-               const Real * U, Real * bcs_U) const
+    void F_BCS(const int /*dom*/, const Real /*t*/, const Real * /*x*/, const Real * /*un*/,
+               const Real * /*U*/, Real * /*bcs_U*/) const
     {
 Abort("Hello! IBVP_BASE.F_BCS (We should not end up in here)");
     }
     AMREX_GPU_HOST_DEVICE
-    void F_PHI_BCS(const int /*dom*/, const Real /*t*/, const Real * /*x*/, const Real * un,
-                   const Real * U, Real * bcs_U) const
+    void F_PHI_BCS(const int /*dom*/, const Real /*t*/, const Real * /*x*/, const Real * /*un*/,
+                   const Real * /*U*/, Real * /*bcs_U*/) const
     {
 Abort("Hello! IBVP_BASE.F_PHI_BCS (We should not end up in here)");
     }
@@ -80,7 +80,7 @@ Abort("Hello! IBVP_BASE.F_PHI_BCS (We should not end up in here)");
 
     // TROUBLED CELLS INDICATOR =======================================
     AMREX_GPU_HOST_DEVICE
-    bool F_TROUBLED(const int /*dom*/, const Real /*t*/, const Real * /*x*/, const Real * U) const
+    bool F_TROUBLED(const int /*dom*/, const Real /*t*/, const Real * /*x*/, const Real * /*U*/) const
     {
         return false;
     }
@@ -88,31 +88,31 @@ Abort("Hello! IBVP_BASE.F_PHI_BCS (We should not end up in here)");
 
     // FUNCTIONS FOR POST-PROCESSING ==================================
     void F_POINT_SOL_DESCRIPTION(Vector<Array<Real, AMREX_SPACEDIM>> & point_fields_location,
-                                 Vector<int> & point_fields_domain,
-                                 Vector<Vector<std::string>> & point_fields_name) const
+                                 Vector<int> & /*point_fields_domain*/,
+                                 Vector<Vector<std::string>> & /*point_fields_name*/) const
     {
         point_fields_location.clear();
     }
 
     AMREX_GPU_HOST_DEVICE
-    void F_POINT_SOL(const int p,
-                     const Real * PHI, AMREX_D_DECL(const Real * dPHIdx1, const Real * dPHIdx2, const Real * dPHIdx3),
-                     const Real * U, AMREX_D_DECL(const Real * dUdx1, const Real * dUdx2, const Real * dUdx3),
-                     Real * F) const
+    void F_POINT_SOL(const int /*p*/,
+                     const Real * /*PHI*/, AMREX_D_DECL(const Real * /*dPHIdx1*/, const Real * /*dPHIdx2*/, const Real * /*dPHIdx3*/),
+                     const Real * /*U*/, AMREX_D_DECL(const Real * /*dUdx1*/, const Real * /*dUdx2*/, const Real * /*dUdx3*/),
+                     Real * /*F*/) const
     {
 Abort("Hello! IBVP_BASE.F_POINT_SOL (We should not end up in here)");
     }
 
-    void F_SOL_DESCRIPTION(Vector<int> & fields_domain, Vector<std::string> & fields_name) const
+    void F_SOL_DESCRIPTION(Vector<int> & fields_domain, Vector<std::string> & /*fields_name*/) const
     {
         fields_domain.clear();
     }
 
     AMREX_GPU_HOST_DEVICE
     void F_SOL(const Real /*t*/, const Real * /*x*/,
-               const Real * PHI, AMREX_D_DECL(const Real * dPHIdx1, const Real * dPHIdx2, const Real * dPHIdx3),
-               const Real * U, AMREX_D_DECL(const Real * dUdx1, const Real * dUdx2, const Real * dUdx3),
-               Real * F) const
+               const Real * /*PHI*/, AMREX_D_DECL(const Real * /*dPHIdx1*/, const Real * /*dPHIdx2*/, const Real * /*dPHIdx3*/),
+               const Real * /*U*/, AMREX_D_DECL(const Real * /*dUdx1*/, const Real * /*dUdx2*/, const Real * /*dUdx3*/),
+               Real * /*F*/) const
     {
 Abort("Hello! IBVP_BASE.F_SOL (We should not end up in here)");
     }

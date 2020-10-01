@@ -543,7 +543,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     /* Initialized data */
 
     logical first = TRUE_;
-    logical iwarn = FALSE_;
+    //logical iwarn = FALSE_; // VG COMMENTED
 
     /* Format strings */
     /*
@@ -758,7 +758,7 @@ L10:
 	    } else {
 		lemin = std::min(ngpmin,gpmin);
 /*            ( A guess; no known machine ) */
-		iwarn = TRUE_;
+		//iwarn = TRUE_; // VG COMMENTED
 	    }
 
 	} else if (ngpmin == gpmin && ngnmin == gnmin) {
@@ -769,7 +769,7 @@ L10:
 	    } else {
 		lemin = std::min(ngpmin,ngnmin);
 /*            ( A guess; no known machine ) */
-		iwarn = TRUE_;
+		//iwarn = TRUE_; // VG COMMENTED
 	    }
 
 	} else if ((i__1 = ngpmin - ngnmin, std::abs(i__1)) == 1 && gpmin == gnmin)
@@ -781,7 +781,7 @@ L10:
 	    } else {
 		lemin = std::min(ngpmin,ngnmin);
 /*            ( A guess; no known machine ) */
-		iwarn = TRUE_;
+		//iwarn = TRUE_; // VG COMMENTED
 	    }
 
 	} else {
@@ -789,7 +789,7 @@ L10:
 	    i__1 = std::min(ngpmin,ngnmin), i__1 = std::min(i__1,gpmin);
 	    lemin = std::min(i__1,gnmin);
 /*         ( A guess; no known machine ) */
-	    iwarn = TRUE_;
+	    //iwarn = TRUE_; // VG COMMENTED
 	}
 	first = FALSE_;
 /*

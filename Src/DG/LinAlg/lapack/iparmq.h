@@ -18,7 +18,7 @@
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 //integer iparmq_(integer *ispec, const char *name__, const char *opts, integer *n, integer *ilo, integer *ihi, integer *lwork)
-integer iparmq_(const integer *ispec, const integer *n, const integer *ilo, const integer *ihi, const integer *lwork)
+integer iparmq_(const integer *ispec, const integer */*n*/, const integer *ilo, const integer *ihi, const integer */*lwork*/)
 {
     /* System generated locals */
     integer ret_val, i__1, i__2;
