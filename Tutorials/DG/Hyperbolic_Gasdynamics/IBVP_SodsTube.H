@@ -1,4 +1,4 @@
-/* GASDYNAMICS: INCLINED SODS TUBE TEST */
+/* IDEAL_GAS: INCLINED SODS TUBE TEST */
 
 #include <IBVP_Base.H>
 
@@ -16,9 +16,9 @@
 
 
 // IBVP CLASS #########################################################
-class GASDYNAMICS
+class IDEAL_GAS
 :
-public GASDYNAMICS_BASE<N_PHI, N_DOM, N_U>
+public IDEAL_GAS_BASE<N_PHI, N_DOM, N_U>
 {
 public:
     // DATA MEMBERS ===================================================
@@ -26,10 +26,9 @@ public:
 
 public:
     // CONSTRUCTOR ====================================================
-    GASDYNAMICS(const amrex::Vector<std::string> & material_type,
-                const amrex::Vector<amrex::Vector<amrex::Real>> material_properties)
+    IDEAL_GAS(const amrex::Vector<amrex::Vector<amrex::Real>> material_properties)
     :
-    GASDYNAMICS_BASE(material_type, material_properties)
+    IDEAL_GAS_BASE(material_properties)
     {}
     // ================================================================
 
@@ -62,7 +61,7 @@ public:
         res[2] = v1[0]*v2[1]-v1[1]*v2[0];
     }
 
-#define THETA (M_PI/3.0)
+#define THETA (M_PI/6.0)
 #define A1 0.0
 #define B1 1.0
 #if (AMREX_SPACEDIM == 2)
@@ -187,7 +186,6 @@ public:
     void _eval_NFn_(const int dom, const amrex::Real * un, const amrex::Real * U, const amrex::Real * nbr_U,
                     amrex::Real * NFn) const
     {
-        //this->_eval_NFn_mOsher_(dom, un, U, nbr_U, NFn);
         this->_eval_NFn_ExactRiemann_(dom, un, U, nbr_U, NFn);
     }
     // ================================================================
@@ -195,7 +193,7 @@ public:
     // NUMERICAL FLUXES: INTRAPHASE ===================================
     AMREX_GPU_HOST_DEVICE
     void F_NF_ICS(const int dom,
-                  const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                  const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
                   const amrex::Real * U, const amrex::Real * nbr_U,
                   amrex::Real * NFn) const
     {
@@ -219,8 +217,8 @@ public:
     }
 
     AMREX_GPU_HOST_DEVICE
-    void F_BCS(const int dom,
-               const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+    void F_BCS(const int /*dom*/,
+               const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * /*un*/,
                const amrex::Real * U,
                amrex::Real * bcs_U) const
     {
@@ -251,8 +249,8 @@ public:
     }
 
     AMREX_GPU_HOST_DEVICE
-    void F_PHI_BCS(const int dom,
-                   const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+    void F_PHI_BCS(const int /*dom*/,
+                   const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
                    const amrex::Real * U,
                    amrex::Real * bcs_U) const
     {
@@ -273,9 +271,9 @@ public:
     }
 
     AMREX_GPU_HOST_DEVICE
-    void F_SOL(const amrex::Real t, const amrex::Real * x,
-               const amrex::Real * PHI, AMREX_D_DECL(const amrex::Real * dPHIdx1, const amrex::Real * dPHIdx2, const amrex::Real * dPHIdx3),
-               const amrex::Real * U, AMREX_D_DECL(const amrex::Real * dUdx1, const amrex::Real * dUdx2, const amrex::Real * dUdx3),
+    void F_SOL(const amrex::Real /*t*/, const amrex::Real * /*x*/,
+               const amrex::Real * /*PHI*/, AMREX_D_DECL(const amrex::Real * /*dPHIdx1*/, const amrex::Real * /*dPHIdx2*/, const amrex::Real * /*dPHIdx3*/),
+               const amrex::Real * U, AMREX_D_DECL(const amrex::Real * /*dUdx1*/, const amrex::Real * /*dUdx2*/, const amrex::Real * /*dUdx3*/),
                amrex::Real * F) const
     {
         // PARAMETERS

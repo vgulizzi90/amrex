@@ -216,8 +216,6 @@ void ELEM_RKE_BOU_H_FV(const Real t,
     FV_sol_space_BFX sol(BF_lo, BF_hi, X_fab, dX_fab, BF_i, BF_j, BF_k, -1);
     // ================================================================
 
-//Print() << "(" << i << "," << j << "," << k << ") etype: " << etype << std::endl;
-
     // COMPUTE THE FOLLOWING INTEGRAL: CELL BOUNDARIES ================
     //
     // int_{dVh} [[V.T]]_{i} NF_i
@@ -244,9 +242,6 @@ void ELEM_RKE_BOU_H_FV(const Real t,
         const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG_ELM_TYPE_N_COMP_PER_DOM*dom);
         const bool nbr_is_small = (nbr_etype%10 == DG_ELM_TYPE_SMALL);
         const int nbr_merged_b = (nbr_is_small) ? (nbr_etype/10) : -1;
-
-//Print() << "- b: " << b << std::endl;
-//Print() << " - (" << nbr_i << "," << nbr_j << "," << nbr_k << ") nbr_etype: " << nbr_etype << std::endl;
 
         // Conditions for NOT computing the flux contribution:
         // i) the current cell extends to the neighboring cell;
@@ -326,9 +321,6 @@ void ELEM_RKE_BOU_H_FV(const Real t,
                     
                     nbr_Uh[cu] = nbr_sol.eval(x);
                 }
-
-//Print() << "  - Uh: "; DG_utils::PrintRealArray2D(1, N_U, Uh);
-//Print() << "  - nbr_Uh: "; DG_utils::PrintRealArray2D(1, N_U, nbr_Uh);
                 
                 // NUMERICAL FLUX FOR INTRAPHASE
                 IBVP.F_NF_ICS(dom, t, x, un, Uh, nbr_Uh, NFn);
@@ -1466,11 +1458,57 @@ struct RungeKutta
 
     // TAKE TIME STEP WITH SLOPE LIMITER ##############################
     template<typename IBVP_CLASS>
+    void SlopeLimiterSteps_DG(const Real t,
+                              const ImplicitMesh<N_PHI, N_DOM> & mesh,
+                              const MatrixFactory<N_PHI, N_DOM> & matfactory,
+                              MultiFab & _X_,
+                              charMultiFab & tags,
+                              const IBVP_CLASS & IBVP)
+    {
+         // PARAMETERS =================================================
+        const int ngr = 1;
+        // ============================================================
+
+        // VARIABLES ==================================================
+        MultiFab Xa(mesh.cc_ba, mesh.dm, N_U, ngr);
+        // ============================================================
+
+        // EVAL THE AVERAGES THAT WILL BE USED AS LIMITERS ============
+        EvalAverages<N_PHI, N_DOM, N_U>(mesh,
+                                        matfactory,
+                                        _X_,
+                                        Xa,
+                                        IBVP);
+        FillInvalidCells<N_PHI, N_DOM, N_U>(t, mesh, Xa, IBVP);
+        // ============================================================
+
+        // IDENTIFY THE TROUBLED CELLS ================================
+        IdentifyTroubledElements<N_PHI, N_DOM, N_U>(t,
+                                                    mesh,
+                                                    matfactory,
+                                                    _X_,
+                                                    tags,
+                                                    IBVP);
+        // ============================================================
+
+        // APPLY THE LIMITER ==========================================
+        ApplySlopeLimiter_DG<N_PHI, N_DOM, N_U>(t,
+                                                mesh,
+                                                matfactory,
+                                                Xa,
+                                                tags,
+                                                _X_,
+                                                IBVP);
+        // ============================================================
+    }
+    
+    template<typename IBVP_CLASS>
     void TakeTimeStepWithSlopeLimiter(const int RK_order,
                                       const Real dt, const Real t,
                                       const ImplicitMesh<N_PHI, N_DOM> & mesh,
                                       const MatrixFactory<N_PHI, N_DOM> & matfactory,
                                       const MultiFab & X_old,
+                                      charMultiFab & tags,
                                       MultiFab & X_new,
                                       const std::string & PDEs_info,
                                       const IBVP_CLASS & IBVP)
@@ -1479,6 +1517,17 @@ struct RungeKutta
         const int ngr = 1;
         const int sNp = matfactory.cube.Np;
         const int X_n_comp = sNp*N_U;
+        // ============================================================
+
+        // VARIABLES ==================================================
+        MultiFab Xa;
+        // ============================================================
+
+        // INIT MEMORY ================================================
+        if (sNp != 1)
+        {
+            Xa.define(mesh.cc_ba, mesh.dm, N_U, ngr);
+        }
         // ============================================================
 
         // UPDATE ACCORDING TO SELECTED RUNGE-KUTTA ORDER =============
@@ -1491,10 +1540,18 @@ struct RungeKutta
             MultiFab::Copy(this->X[1], X_old, 0, 0, X_n_comp, ngr);
             MultiFab::Saxpy(this->X[1], dt, this->dXdt[0], 0, 0, X_n_comp, ngr);
 
-            FillInvalidCells<N_PHI, N_DOM, N_U>(t, mesh, matfactory, this->X[1], IBVP);
-            if (sNp != 1)
+            if (sNp == 1)
             {
-                ApplySlopeLimiter_DG<N_PHI, N_DOM, N_U>(t, mesh, matfactory, this->X[1], IBVP);
+                FillInvalidCells<N_PHI, N_DOM, N_U>(t, mesh, this->X[1], IBVP);
+            }
+            else
+            {
+                SlopeLimiterSteps_DG(t,
+                                     mesh,
+                                     matfactory,
+                                     this->X[1],
+                                     tags,
+                                     IBVP);
             }
 
             // Step 2
@@ -1503,13 +1560,172 @@ struct RungeKutta
             MultiFab::Saxpy(X_new, 0.5*dt, this->dXdt[0], 0, 0, X_n_comp, ngr);
             MultiFab::Saxpy(X_new, 0.5*dt, this->dXdt[1], 0, 0, X_n_comp, ngr);
 
-            FillInvalidCells<N_PHI, N_DOM, N_U>(t+dt, mesh, matfactory, this->X[1], IBVP);
-            if (sNp != 1)
+            if (sNp == 1)
             {
-                ApplySlopeLimiter_DG<N_PHI, N_DOM, N_U>(t, mesh, matfactory, X_new, IBVP);
+                FillInvalidCells<N_PHI, N_DOM, N_U>(t+dt, mesh, X_new, IBVP);
+            }
+            else
+            {
+                SlopeLimiterSteps_DG(t+dt,
+                                     mesh,
+                                     matfactory,
+                                     X_new,
+                                     tags,
+                                     IBVP);
             }
         }
         // ------------------------------------------------------------
+        // RK3 --------------------------------------------------------
+        else if (RK_order == 3)
+        {
+            // Step 1
+            this->Eval_dXdt_SL(t, mesh, matfactory, X_old, this->dXdt[0], PDEs_info, IBVP);
+
+            MultiFab::Copy(this->X[1], X_old, 0, 0, X_n_comp, ngr);
+            MultiFab::Saxpy(this->X[1], dt, this->dXdt[0], 0, 0, X_n_comp, ngr);
+
+            if (sNp == 1)
+            {
+                FillInvalidCells<N_PHI, N_DOM, N_U>(t, mesh, this->X[1], IBVP);
+            }
+            else
+            {
+                SlopeLimiterSteps_DG(t,
+                                     mesh,
+                                     matfactory,
+                                     this->X[1],
+                                     tags,
+                                     IBVP);
+            }
+
+            // Step 2
+            this->Eval_dXdt_SL(t+dt, mesh, matfactory, this->X[1], this->dXdt[1], PDEs_info, IBVP);
+
+            MultiFab::Copy(this->X[2], X_old, 0, 0, X_n_comp, ngr);
+            MultiFab::Saxpy(this->X[2], 0.25*dt, this->dXdt[0], 0, 0, X_n_comp, ngr);
+            MultiFab::Saxpy(this->X[2], 0.25*dt, this->dXdt[1], 0, 0, X_n_comp, ngr);
+
+            if (sNp == 1)
+            {
+                FillInvalidCells<N_PHI, N_DOM, N_U>(t, mesh, this->X[2], IBVP);
+            }
+            else
+            {
+                SlopeLimiterSteps_DG(t+dt,
+                                     mesh,
+                                     matfactory,
+                                     this->X[2],
+                                     tags,
+                                     IBVP);
+            }
+
+            // Step 3
+            this->Eval_dXdt_SL(t+0.5*dt, mesh, matfactory, this->X[2], this->dXdt[2], PDEs_info, IBVP);
+
+            MultiFab::Saxpy(X_new,     dt/6.0, this->dXdt[0], 0, 0, X_n_comp, ngr);
+            MultiFab::Saxpy(X_new,     dt/6.0, this->dXdt[1], 0, 0, X_n_comp, ngr);
+            MultiFab::Saxpy(X_new, 2.0*dt/3.0, this->dXdt[2], 0, 0, X_n_comp, ngr);
+
+            if (sNp == 1)
+            {
+                FillInvalidCells<N_PHI, N_DOM, N_U>(t, mesh, X_new, IBVP);
+            }
+            else
+            {
+                SlopeLimiterSteps_DG(t+0.5*dt,
+                                     mesh,
+                                     matfactory,
+                                     X_new,
+                                     tags,
+                                     IBVP);
+            }
+        }
+        // ------------------------------------------------------------
+        // RK4 --------------------------------------------------------
+        else if (RK_order == 4)
+        {
+            // Step 1
+            this->Eval_dXdt(t, mesh, matfactory, X_old, this->dXdt[0], PDEs_info, IBVP);
+
+            MultiFab::Copy(this->X[1], X_old, 0, 0, X_n_comp, ngr);
+            MultiFab::Saxpy(this->X[1], 0.5*dt, this->dXdt[0], 0, 0, X_n_comp, ngr);
+
+            if (sNp == 1)
+            {
+                FillInvalidCells<N_PHI, N_DOM, N_U>(t, mesh, this->X[1], IBVP);
+            }
+            else
+            {
+                SlopeLimiterSteps_DG(t,
+                                     mesh,
+                                     matfactory,
+                                     this->X[1],
+                                     tags,
+                                     IBVP);
+            }
+
+            // Step 2
+            this->Eval_dXdt(t+0.5*dt, mesh, matfactory, this->X[1], this->dXdt[1], PDEs_info, IBVP);
+
+            MultiFab::Copy(this->X[2], X_old, 0, 0, X_n_comp, ngr);
+            MultiFab::Saxpy(this->X[2], 0.5*dt, this->dXdt[1], 0, 0, X_n_comp, ngr);
+
+            if (sNp == 1)
+            {
+                FillInvalidCells<N_PHI, N_DOM, N_U>(t, mesh, this->X[2], IBVP);
+            }
+            else
+            {
+                SlopeLimiterSteps_DG(t,
+                                     mesh,
+                                     matfactory,
+                                     this->X[2],
+                                     tags,
+                                     IBVP);
+            }
+
+            // Step 3
+            this->Eval_dXdt(t+0.5*dt, mesh, matfactory, this->X[2], this->dXdt[2], PDEs_info, IBVP);
+
+            MultiFab::Copy(this->X[3], X_old, 0, 0, X_n_comp, ngr);
+            MultiFab::Saxpy(this->X[3], dt, this->dXdt[2], 0, 0, X_n_comp, ngr);
+
+            if (sNp == 1)
+            {
+                FillInvalidCells<N_PHI, N_DOM, N_U>(t, mesh, this->X[3], IBVP);
+            }
+            else
+            {
+                SlopeLimiterSteps_DG(t,
+                                     mesh,
+                                     matfactory,
+                                     this->X[3],
+                                     tags,
+                                     IBVP);
+            }
+
+            // Step 4
+            this->Eval_dXdt(t+dt, mesh, matfactory, this->X[3], this->dXdt[3], PDEs_info, IBVP);
+
+            MultiFab::Saxpy(X_new, dt/6.0, this->dXdt[0], 0, 0, X_n_comp, ngr);
+            MultiFab::Saxpy(X_new, dt/3.0, this->dXdt[1], 0, 0, X_n_comp, ngr);
+            MultiFab::Saxpy(X_new, dt/3.0, this->dXdt[2], 0, 0, X_n_comp, ngr);
+            MultiFab::Saxpy(X_new, dt/6.0, this->dXdt[3], 0, 0, X_n_comp, ngr);
+
+            if (sNp == 1)
+            {
+                FillInvalidCells<N_PHI, N_DOM, N_U>(t, mesh, X_new, IBVP);
+            }
+            else
+            {
+                SlopeLimiterSteps_DG(t,
+                                     mesh,
+                                     matfactory,
+                                     X_new,
+                                     tags,
+                                     IBVP);
+            }
+        }
         // ------------------------------------------------------------
         else
         {
@@ -1539,35 +1755,47 @@ struct RungeKutta
         const int sNp = matfactory.cube.Np;
         // ============================================================
 
-        // VARIABLES ==================================================
-        MultiFab dX;
-        // ============================================================
-
         // INITIALIZATION =============================================
         _dXdt_ = 0.0;
-
-        // SLOPE MULTIFAB (FOR FINITE VOLUME SCHEMES)
-        if (sNp == 1)
-        {
-            const int dX_n_comp = AMREX_SPACEDIM*N_U;
-            dX.define(mesh.cc_ba, mesh.dm, dX_n_comp, 1);
-            
-            ApplySlopeLimiter_FV<N_PHI, N_DOM, N_U>(t, mesh, matfactory, _X_, dX, IBVP);
-            //ApplySlopeLimiter_FV_LS<N_PHI, N_DOM, N_U>(t, mesh, matfactory, _X_, dX, IBVP);
-        }
         // ============================================================
 
-        // DOMAIN AND BOUNDARY CONTRIBUTION ===========================
-        if (PDEs_info.compare("Hyperbolic") == 0)
+        // FV SCHEMES =================================================
+        if (sNp == 1)
         {
-            RKE_DOM_H_FV<N_PHI, N_DOM, N_U>(t, mesh, matfactory, _X_, _dXdt_, IBVP);
-            RKE_BOU_H_FV<N_PHI, N_DOM, N_U>(t, mesh, matfactory, _X_, dX, _dXdt_, IBVP);
+            // EVAL LIMITED SLOPES
+            MultiFab dX(mesh.cc_ba, mesh.dm, AMREX_SPACEDIM*N_U, this->dom_data_ngr);
+            ApplySlopeLimiter_FV<N_PHI, N_DOM, N_U>(t, mesh, matfactory, _X_, dX, IBVP);
+
+            if (PDEs_info.compare("Hyperbolic") == 0)
+            {
+                RKE_DOM_H_FV<N_PHI, N_DOM, N_U>(t, mesh, matfactory, _X_, _dXdt_, IBVP);
+                RKE_BOU_H_FV<N_PHI, N_DOM, N_U>(t, mesh, matfactory, _X_, dX, _dXdt_, IBVP);
+            }
+            else
+            {
+                std::string msg;
+                msg  = "\n";
+                msg += "ERROR: AMReX_DG_RungeKutta.H - RungeKutta::Eval_dXdt_SL\n";
+                msg += "| Unexpected type of PDEs: "+PDEs_info+".\n";
+                amrex::Abort(msg);
+            }
         }
+        // DG =========================================================
         else
         {
-            Print() << "ERROR: AMReX_DG_RungeKutta.H - RungeKutta::Eval_dXdt_SL" << std::endl;
-            Print() << "| Unexpected type of PDEs: " << PDEs_info << std::endl;
-            exit(-1);
+            if (PDEs_info.compare("Hyperbolic") == 0)
+            {
+                RKE_DOM_H<N_PHI, N_DOM, N_U>(t, mesh, matfactory, _X_, _dXdt_, IBVP);
+                RKE_BOU_H<N_PHI, N_DOM, N_U>(t, mesh, matfactory, _X_, _dXdt_, IBVP);
+            }
+            else
+            {
+                std::string msg;
+                msg  = "\n";
+                msg += "ERROR: AMReX_DG_RungeKutta.H - RungeKutta::Eval_dXdt_SL\n";
+                msg += "| Unexpected type of PDEs: "+PDEs_info+".\n";
+                amrex::Abort(msg);
+            }
         }
         // ============================================================
 

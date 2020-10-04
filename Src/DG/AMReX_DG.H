@@ -221,7 +221,8 @@ struct DG
 
         if (this->limiter_is_active)
         {
-            EvalAverageOperator<N_PHI, N_DOM>(this->mesh, this->matfactory, IBVP);
+            EvalAverageOperator<N_PHI, N_DOM>(this->mesh, this->matfactory);
+            EvalAuxiliarySlopeLimiterOperator<N_PHI, N_DOM>(this->mesh, this->matfactory);
         }
         // ============================================================
         
@@ -236,11 +237,39 @@ struct DG
         if (this->limiter_is_active)
         {
             const Real t = 0.0;
-            FillInvalidCells<N_PHI, N_DOM, N_U>(t, this->mesh, this->matfactory, this->X_new, IBVP);
 
-            if (this->matfactory.cube.Np != 1)
+            // FINITE-VOLUME-LIKE SCHEMES
+            if (this->matfactory.cube.Np == 1)
             {
-                ApplySlopeLimiter_DG<N_PHI, N_DOM, N_U>(t, this->mesh, this->matfactory, this->X_new, IBVP);
+                FillInvalidCells<N_PHI, N_DOM, N_U>(t, this->mesh, this->X_new, IBVP);
+            }
+            else
+            {
+                // EVAL THE AVERAGES THAT WILL BE USED AS LIMITERS
+                MultiFab Xa(this->mesh.cc_ba, this->mesh.dm, N_U, this->dom_data_ngr);
+                EvalAverages<N_PHI, N_DOM, N_U>(this->mesh,
+                                                this->matfactory,
+                                                this->X_new,
+                                                Xa,
+                                                IBVP);
+                FillInvalidCells<N_PHI, N_DOM, N_U>(t, this->mesh, Xa, IBVP);
+                
+                // IDENTIFY THE TROUBLED CELLS
+                IdentifyTroubledElements<N_PHI, N_DOM, N_U>(t,
+                                                            this->mesh,
+                                                            this->matfactory,
+                                                            this->X_new,
+                                                            this->tags,
+                                                            IBVP);
+                
+                // APPLY THE LIMITER
+                ApplySlopeLimiter_DG<N_PHI, N_DOM, N_U>(t,
+                                                        this->mesh,
+                                                        this->matfactory,
+                                                        Xa,
+                                                        this->tags,
+                                                        this->X_new,
+                                                        IBVP);
             }
         }
         // ============================================================
@@ -303,6 +332,7 @@ struct DG
                                                       this->mesh,
                                                       this->matfactory,
                                                       this->X_old,
+                                                      this->tags,
                                                       this->X_new,
                                                       this->PDEs_info,
                                                       IBVP);
@@ -425,7 +455,7 @@ struct DG
             )
         }
 
-        // STORE WHICH RANK WILL TAKE CARE OF EACH POINT LOCATION
+        // STORE WHICH RANK WILL TAKE CARE OF WHICH POINT LOCATION
         this->point_fields_rank.resize(n_point_locations);
 
         for (int p = 0; p < n_point_locations; ++p)
@@ -459,8 +489,8 @@ struct DG
     template<typename IBVP_CLASS>
     void PrintPointSolution(const std::string & filename,
                             const int n,
-                            const Real time,
-                            const IBVP_CLASS & IBVP) const
+                            const Real /*time*/,
+                            const IBVP_CLASS & /*IBVP*/) const
     {
         // PARAMETERS =================================================
         const int n_point_locations = this->point_fields_location.size();

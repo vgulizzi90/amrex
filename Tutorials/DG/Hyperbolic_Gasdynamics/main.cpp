@@ -2,8 +2,6 @@
 #include <AMReX_ParmParse.H>
 #include <AMReX_Geometry.H>
 
-#include <AMReX_BC_TYPES.H>
-
 #include <AMReX_Print.H>
 
 #include <AMReX_DG_InputReader.H>
@@ -123,13 +121,11 @@ amrex::Print() << "#############################################################
 
             // INIT IBVP DATA STRUCTURE -------------------------------
 #if ((PROBLEM == PROBLEM_SODS_TUBE_REF) || (PROBLEM == PROBLEM_SODS_TUBE))
-            const amrex::Vector<std::string> material_type = {"Ideal gas"};
             const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{1.4}};
 #elif (PROBLEM == PROBLEM_EB_COMPARISON)
-            const amrex::Vector<std::string> material_type = {"Ideal gas"};
             const amrex::Vector<amrex::Vector<amrex::Real>> material_properties = {{5.0/3.0}};
 #endif
-            GASDYNAMICS GD(material_type, material_properties);
+            IDEAL_GAS IG(material_properties);
             // --------------------------------------------------------
 
             // INIT DG OBJECT -----------------------------------------
@@ -137,27 +133,27 @@ amrex::Print() << "#############################################################
             // --------------------------------------------------------
 
             // INIT OUTPUT DATA INFORMATION ---------------------------
-            dG.SetOutput(dst_folder, GD);
+            dG.SetOutput(dst_folder, IG);
             // --------------------------------------------------------
 
             // INIT FIELDS' DATA WITH INITIAL CONDITIONS --------------
-            dG.SetICs(GD);
+            dG.SetICs(IG);
 
             // SOME REPORTS
             dG.PrintMemoryReport();
-            dG.mesh.CheckQuadratureRules(GD);
+            dG.mesh.CheckQuadratureRules(IG);
 
             // WRITE TO OUTPUT
             {
                 int n = 0;
                 amrex::Real time = 0.0;
 
-                dG.PrintPointSolution("PointSolution", n, time, GD);
+                dG.PrintPointSolution("PointSolution", n, time, IG);
 
                 if (inputs.plot_int > 0)
                 {
-                    dG.ExportMesh("Mesh", n, time, GD);
-                    dG.ExportSolution("Solution", n, time, GD);
+                    dG.ExportMesh("Mesh", n, time, IG);
+                    dG.ExportSolution("Solution", n, time, IG);
                 }
             }
             // --------------------------------------------------------
@@ -182,7 +178,7 @@ amrex::Print() << "#############################################################
                 start_clock_time_per_step = amrex::second();
 
                 // COMPUTE NEXT TIME STEP
-                dt = dG.Compute_dt(time+0.5*dt, GD);
+                dt = dG.Compute_dt(time+0.5*dt, IG);
                 dt = std::min(time+dt, inputs.time.T)-time;
 
                 // REPORT TO SCREEN
@@ -192,7 +188,7 @@ amrex::Print() << "#############################################################
                                << ", clock time per time step = " << clock_time_per_time_step << std::endl;
 
                 // TIME STEP
-                dG.TakeTimeStep(dt, time, GD);
+                dG.TakeTimeStep(dt, time, IG);
 
                 // UPDATE TIME AND STEP
                 n += 1;
@@ -209,11 +205,11 @@ amrex::Print() << "#############################################################
                 }
 
                 // WRITE TO OUTPUT
-                dG.PrintPointSolution("PointSolution", n, time, GD);
+                dG.PrintPointSolution("PointSolution", n, time, IG);
 
                 if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(time/inputs.time.T-1.0) < 1.0e-12)))
                 {
-                    dG.ExportSolution("Solution", n, time, GD);
+                    dG.ExportSolution("Solution", n, time, IG);
                 }
 
                 // CLOCK TIME PER TIME STEP TOC

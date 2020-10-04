@@ -177,6 +177,17 @@ public IBVP_BASE<N_PHI, N_DOM, N_U>
     }
     // ================================================================
 
+    // RIEMANN PROBLEM ================================================
+    AMREX_GPU_HOST_DEVICE
+    void F_RIEMANN(const int /*dom*/,
+                   const Real /*t*/, const Real * /*x*/, const Real * /*un*/,
+                   const Real * /*U*/, const Real * /*nbr_U*/,
+                   Real * /*UR*/) const
+    {
+Abort("Hello! IBVP_HYPERBOLIC_BASE.F_RIEMANN (We should not end up in here)");
+    }
+    // ================================================================
+
     // CONSERVED-CHARACTERISTICS VARIABLES RELATIONSHIPS ==============
     AMREX_GPU_HOST_DEVICE
     void F_DU2DC(const int /*dom*/,

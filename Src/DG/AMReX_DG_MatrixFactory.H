@@ -22,13 +22,10 @@ struct MatrixFactory
     static const int dom_data_ngr = 1;
     static const int bou_data_ngr = 0;
     
-    static const int Dom_BF_pos_n_comp = DG_DOM_BF_INFO_N_COMP_PER_DOM*N_DOM;
-    static const int Tri_BF_pos_n_comp = DG_TRI_BF_INFO_N_COMP_PER_DOM*N_DOM;
-    static const int IntBou_BF_pos_n_comp = DG_INT_BOU_BF_INFO_N_COMP_PER_DOM*N_DOM;
-    static const int Bou_BF_pos_n_comp = DG_BOU_BF_INFO_N_COMP_PER_DOM*N_DOM;
     static const int MMCh_pos_n_comp = N_DOM;
     static const int Avg_pos_n_comp = N_DOM;
     static const int Dom_I_pos_n_comp = DG_DOM_INTERPOLATION_N_COMP_PER_DOM*N_DOM;
+    static const int SLOpe_pos_n_comp = N_DOM;
 
     // UNIT CUBE [-1,1]^AMREX_SPACEDIM
     UnitCube<AMREX_SPACEDIM> cube;
@@ -37,18 +34,22 @@ struct MatrixFactory
     longMultiFab space_MMCh_pos;
     longMultiFab space_Avg_pos;
     longMultiFab space_Dom_I_pos;
+    longMultiFab space_SLOpe_pos;
 
     long mem_for_space_MMCh;
     long mem_for_space_Avg;
     long mem_for_space_Dom_I;
+    long mem_for_space_SLOpe;
 
     Gpu::HostVector<Real> space_MMCh_host_mem;
     Gpu::HostVector<Real> space_Avg_host_mem;
     Gpu::HostVector<Real> space_Dom_I_host_mem;
+    Gpu::HostVector<Real> space_SLOpe_host_mem;
 
     Gpu::DeviceVector<Real> space_MMCh_device_mem;
     Gpu::DeviceVector<Real> space_Avg_device_mem;
     Gpu::DeviceVector<Real> space_Dom_I_device_mem;
+    Gpu::DeviceVector<Real> space_SLOpe_device_mem;
     // ################################################################
 
     // CONSTRUCTOR ####################################################
@@ -122,12 +123,16 @@ struct MatrixFactory
 
             this->space_Dom_I_pos.define(cc_ba, dm, this->Dom_I_pos_n_comp, this->dom_data_ngr);
             this->space_Dom_I_pos = -1L;
+
+            this->space_SLOpe_pos.define(cc_ba, dm, this->SLOpe_pos_n_comp, this->dom_data_ngr);
+            this->space_SLOpe_pos = -1L;
         }
         // ------------------------------------------------------------
 
         this->mem_for_space_MMCh = 0L;
         this->mem_for_space_Avg = 0L;
         this->mem_for_space_Dom_I = 0L;
+        this->mem_for_space_SLOpe = 0L;
         // ============================================================
     }
     

@@ -1,4 +1,4 @@
-/* GASDYNAMICS: SODS TUBE TEST */
+/* IDEAL_GAS: SODS TUBE TEST */
 
 #include <IBVP_Base.H>
 
@@ -16,9 +16,9 @@
 
 
 // IBVP CLASS #########################################################
-class GASDYNAMICS
+class IDEAL_GAS
 :
-public GASDYNAMICS_BASE<N_PHI, N_DOM, N_U>
+public IDEAL_GAS_BASE<N_PHI, N_DOM, N_U>
 {
 public:
     // DATA MEMBERS ===================================================
@@ -26,10 +26,9 @@ public:
 
 public:
     // CONSTRUCTOR ====================================================
-    GASDYNAMICS(const amrex::Vector<std::string> & material_type,
-                const amrex::Vector<amrex::Vector<amrex::Real>> material_properties)
+    IDEAL_GAS(const amrex::Vector<amrex::Vector<amrex::Real>> material_properties)
     :
-    GASDYNAMICS_BASE(material_type, material_properties)
+    IDEAL_GAS_BASE(material_properties)
     {}
     // ================================================================
 
@@ -84,7 +83,6 @@ public:
                     amrex::Real * NFn) const
     {
         this->_eval_NFn_ExactRiemann_(dom, un, U, nbr_U, NFn);
-        //this->_eval_NFn_mOsher_(dom, un, U, nbr_U, NFn);
     }
     // ================================================================
 
@@ -161,7 +159,7 @@ public:
     void F_SOL_DESCRIPTION(amrex::Vector<int> & fields_domain, amrex::Vector<std::string> & fields_name) const
     {
         fields_domain = {0, AMREX_D_DECL(0, 0, 0), 0, 0};
-        fields_name = {"rho", AMREX_D_DECL("ux", "uy", "uz"), "M", "p"};
+        fields_name = {"rho", AMREX_D_DECL("u_x", "u_y", "u_z"), "M", "p"};
     }
 
     AMREX_GPU_HOST_DEVICE

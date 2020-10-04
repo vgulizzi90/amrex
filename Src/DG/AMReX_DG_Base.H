@@ -211,9 +211,15 @@ struct UnitCube
     // Basis functions evaluated at the uniformly-spaced grid
     Gpu::ManagedVector<Real> grid_BF;
 
+    // Average
+    Gpu::ManagedVector<Real> Avg;
+
     // Interpolation
     IntVect rr;
     Gpu::ManagedVector<Real> I;
+
+    // Auxiliary slope operator
+    Gpu::ManagedVector<Real> SLOpe;
     // ################################################################
 
     // CONSTRUCTOR ####################################################
@@ -814,9 +820,67 @@ struct UnitCube
     // AVERAGE OPERATOR ###############################################
     void InitAverage()
     {
+        // ALLOCATE MEMORY FOR THE AVERAGE OPERATOR ===================
+        {
+            const int size = 1*this->Np;
+            this->Avg.resize(size);
+            std::fill(this->Avg.begin(), this->Avg.end(), 0.0);
+        }
+        // ============================================================
 
-Print() << "UnitCube::InitAverage" << std::endl;
-exit(-1);
+        // EVAL THE AVERAGE OPERATOR ==================================
+        for (int c = 0; c < (this->Np); ++c)
+        for (int k = 0; k < (this->dom_Nq); ++k)
+        {
+            const int pos = k+c*(this->dom_Nq);
+
+            this->Avg[c] += (AMREX_D_PICK(0.5, 0.25, 0.125))*this->dom_BF[pos]*this->dom_Wq[k];
+        }
+        // ============================================================
+    }
+    // ################################################################
+
+    // AUXILIARY SLOPE LIMITER OPERATOR ###############################
+    void InitSLOpe(const Real * dx)
+    {
+        // VARIABLES ==================================================
+        Vector<Real> tmp;
+        // ============================================================
+
+        // ALLOCATE MEMORY FOR THE AUXILIARY SLOPE LIMITER OPERATOR ===
+        {
+            const int size = (this->Np)*(1+AMREX_SPACEDIM);
+            this->SLOpe.resize(size);
+            
+            // AND THE AUXILIARY ARRAY
+            tmp.resize(size);
+            std::fill(tmp.begin(), tmp.end(), 0.0);
+        }
+        // ============================================================
+
+        // EVAL THE AUXILIARY SLOPE LIMITER OPERATOR ==================
+        for (int r = 0; r < (this->Np); ++r)
+        for (int k = 0; k < (this->dom_Nq); ++k)
+        {
+            const int posr = k+r*(this->dom_Nq);
+
+            // Average
+            tmp[r] += this->dom_BF[posr]*this->dom_Wq[k];
+
+            AMREX_D_TERM
+            (
+                // d()/dx1
+                tmp[r+1*(this->Np)] += this->dom_BF[posr]*(0.5*this->dom_XI1q[k]*dx[0])*this->dom_Wq[k];,
+                // d()/dx2
+                tmp[r+2*(this->Np)] += this->dom_BF[posr]*(0.5*this->dom_XI2q[k]*dx[1])*this->dom_Wq[k];,
+                // d()/dx3
+                tmp[r+3*(this->Np)] += this->dom_BF[posr]*(0.5*this->dom_XI3q[k]*dx[2])*this->dom_Wq[k];
+            )
+        }
+
+        // MULTIPLY BY THE INVERSE MASS MATRIX
+        DG_utils::matmul(this->Np, this->Np, 1+AMREX_SPACEDIM, this->iMM.data(), tmp.data(), this->SLOpe.data());
+        // ============================================================
     }
     // ################################################################
 

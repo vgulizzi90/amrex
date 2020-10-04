@@ -1,4 +1,4 @@
-/* GASDYNAMICS: DOUBLE MACH REFLECTION PROBLEM */
+/* IDEAL_GAS: DOUBLE MACH REFLECTION PROBLEM */
 
 #include <IBVP_Base.H>
 
@@ -16,9 +16,9 @@
 
 
 // IBVP CLASS #########################################################
-class GASDYNAMICS
+class IDEAL_GAS
 :
-public GASDYNAMICS_BASE<N_PHI, N_DOM, N_U>
+public IDEAL_GAS_BASE<N_PHI, N_DOM, N_U>
 {
 public:
     // DATA MEMBERS ===================================================
@@ -26,10 +26,9 @@ public:
 
 public:
     // CONSTRUCTOR ====================================================
-    GASDYNAMICS(const amrex::Vector<std::string> & material_type,
-                const amrex::Vector<amrex::Vector<amrex::Real>> material_properties)
+    IDEAL_GAS(const amrex::Vector<amrex::Vector<amrex::Real>> material_properties)
     :
-    GASDYNAMICS_BASE(material_type, material_properties)
+    IDEAL_GAS_BASE(material_properties)
     {}
     // ================================================================
 
