@@ -1,0 +1,63 @@
+# SPACE ###############################################################
+space.is_periodic = 0 0 0
+space.lo          = 0.0 0.0 0.0
+space.hi          = 1.0 0.1 0.1
+#######################################################################
+# NOTE: Although this is the initial configuration of the space domain,
+#       the Sod's tube problem is analyzed in all the possible
+#       orientations. As an example, in 2d, both the cases
+#
+#       space.hi = 1.0 0.1
+#
+#       and
+#
+#       space.hi = 0.1 1.0
+#
+#       are considered.
+#######################################################################
+
+
+
+# TIME ################################################################
+time.T = 0.2
+time.n_steps = 1000
+#######################################################################
+
+
+
+# DISCRETIZATION ######################################################
+# MESH ================================================================
+mesh.n_cells       = 64 4 4
+mesh.max_grid_size = 4 4 4
+mesh.CFL = 0.3
+# =====================================================================
+#######################################################################
+# NOTE: In accordance with the definition of space.hi, the number of
+#       cells is changed on the basis of the space orientation of the
+#       tube. As an example, in 2d,
+#
+#       space.hi = 1.0 0.1 => mesh.n_cells = 64 4
+#
+#       and
+#
+#       space.hi = 0.1 1.0 => mesh.n_cells = 4 64
+#######################################################################
+
+
+
+# PROBLEM #############################################################
+problem.params = 1.0 0.0 1.0 0.5 0.125 0.0 0.1
+#######################################################################
+# NOTE: params contains the left_state and right_state, which should be
+#       input as follows:
+#
+#       rhoL, uL, pL, xs, rhoR, uR, pR
+#
+#       where xs is the shock location.       
+#######################################################################
+
+
+
+# POST-PROCESSING INFO ################################################
+plot_int = 1
+#######################################################################

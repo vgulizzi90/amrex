@@ -1,17 +1,32 @@
-// AMReX_VTK_utils.H
+//
+// Author : Vincenzo Gulizzi (LBL)
+// Contact: vgulizzi@lbl.gov
+//
+/** \file AMReX_VTK_utils.H
+ * \brief Contains utilities to export in VTK format.
+*/
 
+#include <AMReX_Vector.H>
 #include <AMReX_PlotFileUtil.H>
 
-#ifndef BL_VTK_UTILS_H_
-#define BL_VTK_UTILS_H_
+#ifndef AMREX_VTK_UTILS_H_
+#define AMREX_VTK_UTILS_H_
 
 namespace amrex
 {
 namespace VTK
 {
-// ####################################################################
-// CONSTANTS ##########################################################
-// ####################################################################
+
+// TYPEDEFS AND CONSTANTS #############################################
+#define VTK_LINE_ID 3
+#define VTK_LINE_CONN_LEN 2
+
+#define VTK_QUAD_ID 9
+#define VTK_QUAD_CONN_LEN 4
+
+#define VTK_HEXAHEDRON_ID 12
+#define VTK_HEXAHEDRON_CONN_LEN 8
+
 typedef uint32_t Header_t;
 typedef Real Float_t;
 typedef int Int_t;
@@ -26,83 +41,81 @@ const std::string Cell_conn_t_description = "Int"+std::to_string(sizeof(Cell_con
 const std::string Cell_offs_t_description = "Int"+std::to_string(sizeof(Cell_offs_t)*8);
 const std::string Cell_type_t_description = "UInt"+std::to_string(sizeof(Cell_type_t)*8);
 // ####################################################################
-// ####################################################################
 
-
-// ####################################################################
-// AUXILIARY ROUTINES FOR OUTPUT FILE/FOLDER CREATIONS ################
-// ####################################################################
+// AUXILIARY FUNCTIONS ################################################
 std::string MakeLocalOutputFilename(const std::string & filename_root,
                                     const std::string & file_fmt,
-                                    const int & time_id,
-                                    const int & time_id_max);
+                                    const int n, 
+                                    const int n_steps);
 
 std::string MakeGlobalOutputFilename(const std::string & filename_root,
                                      const std::string & file_fmt,
-                                     const int & time_id,
-                                     const int & time_id_max);
+                                     const int n,
+                                     const int n_steps);
 
-std::string MakeLocalOutputFilepath(const std::string & dst_folder,
+std::string MakeLocalOutputFilepath(const std::string & folderpath,
                                     const std::string & filename_root,
                                     const std::string & file_fmt,
-                                    const int & time_id,
-                                    const int & time_id_max);
+                                    const int n,
+                                    const int n_steps);
 
-std::string MakeGlobalOutputFilepath(const std::string & dst_folder,
+std::string MakeGlobalOutputFilepath(const std::string & folderpath,
                                      const std::string & filename_root,
                                      const std::string & file_fmt,
-                                     const int & time_id, 
-                                     const int & time_id_max);
-// ####################################################################
+                                     const int n, 
+                                     const int n_steps);
 // ####################################################################
 
-
+// VTU CELLS ##########################################################
+Gpu::ManagedVector<int> GriddedQuad_Connectivity(const int ne);
+Gpu::ManagedVector<int> GriddedHexahedron_Connectivity(const int ne);
 // ####################################################################
+
 // VTU OUTPUT #########################################################
-// ####################################################################
-void PrintHeaderFile_VTU(const std::string & dst_folder,
+void PrintHeaderFile_VTU(const std::string & folderpath,
                          const std::string & filename_root,
-                         const int & time_id,
-                         const int & time_id_max,
-                         const amrex::Vector<std::string> & cell_field_name,
-                         const amrex::Vector<std::string> & nodal_field_name);
+                         const int n,
+                         const int n_steps,
+                         const Vector<std::string> & nodal_fields_names,
+                         const Vector<std::string> & cell_fields_names);
+
 void PrintUnstructuredGridData_VTU(const std::string & filepath,
                                    const Cell_conn_t & n_nodes,
                                    const Cell_offs_t & n_cells,
-                                   const amrex::Vector<Float_t> & nodes,
-                                   const amrex::Vector<Cell_conn_t> & cell_conn,
-                                   const amrex::Vector<Cell_offs_t> & cell_offset,
-                                   const amrex::Vector<Cell_type_t> & cell_type,
-                                   const amrex::Vector<amrex::Vector<Int_t>> & cell_field,
-                                   const amrex::Vector<std::string> & cell_field_name,
-                                   const amrex::Vector<amrex::Vector<Float_t>> & nodal_field,
-                                   const amrex::Vector<std::string> & nodal_field_name,
-                                   const std::string & fmt = "ascii");
+                                   const Vector<Float_t> & nodes,
+                                   const Vector<Cell_conn_t> & cell_conn,
+                                   const Vector<Cell_offs_t> & cell_offset,
+                                   const Vector<Cell_type_t> & cell_type,
+                                   const Vector<Vector<Float_t>> & nodal_fields,
+                                   const Vector<std::string> & nodal_fields_names,
+                                   const Vector<Vector<Int_t>> & cell_fields,
+                                   const Vector<std::string> & cell_fields_names,
+                                   const std::string & fmt = "binary");
 void PrintUnstructuredGridData_VTU_ascii(std::ofstream & fp,
                                          const Cell_conn_t & n_nodes,
                                          const Cell_offs_t & n_cells,
-                                         const amrex::Vector<Float_t> & nodes,
-                                         const amrex::Vector<Cell_conn_t> & cell_conn,
-                                         const amrex::Vector<Cell_offs_t> & cell_offset,
-                                         const amrex::Vector<Cell_type_t> & cell_type,
-                                         const amrex::Vector<amrex::Vector<Int_t>> & cell_field,
-                                         const amrex::Vector<std::string> & cell_field_name,
-                                         const amrex::Vector<amrex::Vector<Float_t>> & nodal_field,
-                                         const amrex::Vector<std::string> & nodal_field_name);
+                                         const Vector<Float_t> & nodes,
+                                         const Vector<Cell_conn_t> & cell_conn,
+                                         const Vector<Cell_offs_t> & cell_offset,
+                                         const Vector<Cell_type_t> & cell_type,
+                                         const Vector<Vector<Float_t>> & nodal_fields,
+                                         const Vector<std::string> & nodal_fields_names,
+                                         const Vector<Vector<Int_t>> & cell_fields,
+                                         const Vector<std::string> & cell_fields_names);
 void PrintUnstructuredGridData_VTU_binary(std::ofstream & fp,
                                           const Cell_conn_t & n_nodes,
                                           const Cell_offs_t & n_cells,
-                                          const amrex::Vector<Float_t> & nodes,
-                                          const amrex::Vector<Cell_conn_t> & cell_conn,
-                                          const amrex::Vector<Cell_offs_t> & cell_offset,
-                                          const amrex::Vector<Cell_type_t> & cell_type,
-                                          const amrex::Vector<amrex::Vector<Int_t>> & cell_field,
-                                          const amrex::Vector<std::string> & cell_field_name,
-                                          const amrex::Vector<amrex::Vector<Float_t>> & nodal_field,
-                                          const amrex::Vector<std::string> & nodal_field_name);
+                                          const Vector<Float_t> & nodes,
+                                          const Vector<Cell_conn_t> & cell_conn,
+                                          const Vector<Cell_offs_t> & cell_offset,
+                                          const Vector<Cell_type_t> & cell_type,
+                                          const Vector<Vector<Float_t>> & nodal_fields,
+                                          const Vector<std::string> & nodal_fields_names,
+                                          const Vector<Vector<Int_t>> & cell_fields,
+                                          const Vector<std::string> & cell_fields_names);
 // ####################################################################
-// ####################################################################
-}
-}
+
+} // namespace VTK
+} // namespace amrex
 
 #endif

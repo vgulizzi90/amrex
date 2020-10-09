@@ -1,0 +1,822 @@
+//
+// Author : Vincenzo Gulizzi (LBL)
+// Contact: vgulizzi@lbl.gov
+//
+/** \file IBVP_Base.H
+ * \brief Contains base constants and data structures for IBVP of ideal gases.
+*/
+
+// IBVP PARAMETERS ####################################################
+// NUMBER OF UNKNOWN SOLUTION FIELDS
+#define N_SOL (1+AMREX_SPACEDIM+1)
+
+// SOLUTION FIELDS ORDER
+#if (AMREX_SPACEDIM == 1)
+#define RHO 0
+#define RHOV1 1
+#define TE 2
+#endif
+#if (AMREX_SPACEDIM == 2)
+#define RHO 0
+#define RHOV1 1
+#define RHOV2 2
+#define TE 3
+#endif
+#if (AMREX_SPACEDIM == 3)
+#define RHO 0
+#define RHOV1 1
+#define RHOV2 2
+#define RHOV3 3
+#define TE 4
+#endif
+// ####################################################################
+
+/**
+ * \brief This struct contains constants and methods for the considered IBVP. 
+ *
+*/
+struct IDEAL_GAS_BASE
+{
+    // DATA MEMBERS ###################################################
+    // VARIABLES
+    amrex::Real gamma;
+    // ################################################################
+
+    // CONSTRUCTOR ####################################################
+    /**
+     * \brief This method initializes the IBVP.
+     * 
+     * \param[in] gamma_: ratio of specific heats.
+    */
+    IDEAL_GAS_BASE(const amrex::Real gamma_)
+    :
+    gamma{gamma_}
+    {}
+    // ################################################################
+
+    // AUXILIARY FUNCTIONS ############################################
+    /**
+     * \brief Eval primary variables from conserved variables.
+     * 
+     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[out] rho: density.
+     * \param[out] u1: velocity component in x1 direction.
+     * \param[out] u2: velocity component in x2 direction (non present if AMREX_SPACEDIM < 2).
+     * \param[out] u3: velocity component in x3 direction (non present if AMREX_SPACEDIM < 3).
+     * \param[out] p: pressure.
+    */
+    void eval_primary_variables(const amrex::Real * U, 
+                                amrex::Real & rho,
+                                AMREX_D_DECL(amrex::Real & u1, amrex::Real & u2, amrex::Real & u3),
+                                amrex::Real & p) const
+    {
+        const amrex::Real g = this->gamma;
+
+        rho = U[RHO];
+        AMREX_D_TERM
+        (
+            u1 = U[RHOV1]/rho;,
+            u2 = U[RHOV2]/rho;,
+            u3 = U[RHOV3]/rho;
+        )
+        const amrex::Real e = U[TE];
+        p = (g-1)*(e-0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3)));
+    }
+
+    /**
+     * \brief Eval enthalpy variables from conserved variables.
+     * 
+     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[out] u1: velocity component in x1 direction.
+     * \param[out] u2: velocity component in x2 direction (non present if AMREX_SPACEDIM < 2).
+     * \param[out] u3: velocity component in x3 direction (non present if AMREX_SPACEDIM < 3).
+     * \param[out] p: pressure.
+     * \param[out] a: sound speed.
+     * \param[out] h: enthalpy.
+    */
+    void eval_enthalpy_variables(const amrex::Real * U, 
+                                 AMREX_D_DECL(amrex::Real & u1, amrex::Real & u2, amrex::Real & u3),
+                                 amrex::Real & p, amrex::Real & a, amrex::Real & h) const
+    {
+        const amrex::Real g = this->gamma;
+        const amrex::Real rho = U[RHO];
+
+        AMREX_D_TERM
+        (
+            u1 = U[RHOV1]/rho;,
+            u2 = U[RHOV2]/rho;,
+            u3 = U[RHOV3]/rho;
+        )
+        const amrex::Real e = U[TE];
+        p = (g-1)*(e-0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3)));
+        a = std::sqrt(g*p/rho);
+        h = 0.5*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3))+a*a/(g-1.0);
+    }
+
+    /**
+     * \brief Transform solution from global reference system to unit normal reference system.
+     * 
+     * \param[in] un: pointer to memory containing the unit normal.
+     * \param[in] U: pointer to memory containing the unknown solution fields in the global reference
+     *               system.
+     * \param[out] Un: pointer to memory containing the unknown solution fields in the unit normal
+     *                 reference system.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void eval_U2Un(const amrex::Real * un, const amrex::Real * U, amrex::Real * Un) const
+    {
+#if (AMREX_SPACEDIM == 2)
+        Un[RHO] = U[RHO];
+        Un[RHOV1] =  un[0]*U[RHOV1]+un[1]*U[RHOV2];
+        Un[RHOV2] = -un[1]*U[RHOV1]+un[0]*U[RHOV2];
+        Un[TE] = U[TE];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        // We assume un be written as
+        // un = n1 = cos(phi)*sin(theta)
+        //      n2   sin(phi)*sin(theta)
+        //      n3   cos(theta)
+        const amrex::Real theta = std::acos(un[2]);
+        const amrex::Real phi = std::atan2(un[1], un[0]);
+        const amrex::Real cth = std::cos(theta);
+        const amrex::Real sth = std::sin(theta);
+        const amrex::Real cph = std::cos(phi);
+        const amrex::Real sph = std::sin(phi);
+
+        Un[RHO] = U[RHO];
+        Un[RHOV1] =  cph*sth*U[RHOV1]+sph*sth*U[RHOV2]+cth*U[RHOV3];
+        Un[RHOV2] =     -sph*U[RHOV1]    +cph*U[RHOV2];
+        Un[RHOV3] = -cph*cth*U[RHOV1]-cth*sph*U[RHOV2]+sth*U[RHOV3];
+        Un[TE] = U[TE];
+#endif
+    }
+
+    /**
+     * \brief Transform solution from unit normal reference system to global reference system.
+     * 
+     * \param[in] un: pointer to memory containing the unit normal.
+     * \param[in] Un: pointer to memory containing the unknown solution fields in the unit normal
+     *                reference system.
+     * \param[out] U: pointer to memory containing the unknown solution fields in the global reference
+     *                system.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void eval_Un2U(const amrex::Real * un, const amrex::Real * Un, amrex::Real * U) const
+    {
+#if (AMREX_SPACEDIM == 2)
+        U[RHO] = Un[RHO];
+        U[RHOV1] = un[0]*Un[RHOV1]-un[1]*Un[RHOV2];
+        U[RHOV2] = un[1]*Un[RHOV1]+un[0]*Un[RHOV2];
+        U[TE] = Un[TE];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        // We assume un be written as
+        // un = n1 = cos(phi)*sin(theta)
+        //      n2   sin(phi)*sin(theta)
+        //      n3   cos(theta)
+        const amrex::Real theta = std::acos(un[2]);
+        const amrex::Real phi = std::atan2(un[1], un[0]);
+        const amrex::Real cth = std::cos(theta);
+        const amrex::Real sth = std::sin(theta);
+        const amrex::Real cph = std::cos(phi);
+        const amrex::Real sph = std::sin(phi);
+
+        U[RHO] = Un[RHO];
+        U[RHOV1] = cph*sth*Un[RHOV1]-sph*Un[RHOV2]-cph*cth*Un[RHOV3];
+        U[RHOV2] = sph*sth*Un[RHOV1]+cph*Un[RHOV2]-cth*sph*Un[RHOV3];
+        U[RHOV3] =     cth*Un[RHOV1]                  +sth*Un[RHOV3];
+        U[TE] = Un[TE];
+#endif
+    }
+    // ################################################################
+
+    // TIME STEP ######################################################
+    /**
+     * \brief Eval the maximum time step.
+     *
+     * \param[in] dx: pointer to memory containing the sizes of the grid's element.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] SOL: pointer to memory containing the unknown solution fields at (t,x).
+    */
+    amrex::Real F_DT(const amrex::Real * dx,
+                     const amrex::Real /*t*/, const amrex::Real * /*x*/,
+                     const amrex::Real * SOL) const
+    {
+        // PARAMETERS
+        const amrex::Real g = this->gamma;
+
+        // VARIABLES
+        amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
+        amrex::Real dt;
+
+        // EVAL THE PRIMARY VARIABLES
+        this->eval_primary_variables(SOL, rho, AMREX_D_DECL(u1, u2, u3), p);
+
+        // AND THE LARGEST WAVE SPEED
+        const amrex::Real u = std::sqrt(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3));
+        const amrex::Real a = std::sqrt(g*p/rho);
+        const amrex::Real lam = u+a;
+
+        // SMALLEST ELEMENT SIDE
+#if (AMREX_SPACEDIM == 1)
+        const amrex::Real h = dx[0];
+#endif
+#if (AMREX_SPACEDIM == 2)
+        const amrex::Real h = std::min(dx[0], dx[1]);
+#endif
+#if (AMREX_SPACEDIM == 3)
+        const amrex::Real h = std::min(dx[0], std::min(dx[1], dx[2]));
+#endif
+        dt = h/lam;
+
+        return dt;
+    }
+    // ################################################################
+
+    // RIEMANN PROBLEM ################################################
+    /**
+     * \brief Auxiliary function for Riemann solver.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    amrex::Real _aux_gK_(const amrex::Real g,
+                         const amrex::Real ps,
+                         const amrex::Real rho, const amrex::Real p) const
+    {
+        const amrex::Real A = 2.0/((g+1.0)*rho);
+        const amrex::Real B = (g-1.0)/(g+1.0)*p;
+
+        return std::sqrt(A/(ps+B));
+    }
+
+    /**
+     * \brief Auxiliary function for Riemann solver.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    amrex::Real _aux_fK_(const amrex::Real g,
+                         const amrex::Real ps,
+                         const amrex::Real rho, const amrex::Real p) const
+    {
+        const amrex::Real a = std::sqrt(g*p/rho);
+        const amrex::Real A = 2.0/((g+1.0)*rho);
+        const amrex::Real B = (g-1.0)/(g+1.0)*p;
+        amrex::Real res;
+
+        if (ps > p)
+        {
+            res = (ps-p)*std::sqrt(A/(ps+B));
+        }
+        else
+        {
+            res = 2.0*a/(g-1.0)*(std::pow(ps/p, 0.5*(g-1.0)/g)-1.0);
+        }
+
+        return res;
+    }
+
+    /**
+     * \brief Auxiliary function for Riemann solver.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    amrex::Real _aux_dfK_(const amrex::Real g,
+                          const amrex::Real ps,
+                          const amrex::Real rho, const amrex::Real p) const
+    {
+        const amrex::Real a = std::sqrt(g*p/rho);
+        const amrex::Real A = 2.0/((g+1.0)*rho);
+        const amrex::Real B = (g-1.0)/(g+1.0)*p;
+        amrex::Real res;
+
+        if (ps > p)
+        {
+            res = (1.0-0.5*(ps-p)/(ps+B))*std::sqrt(A/(ps+B));
+        }
+        else
+        {
+            res = (1.0/(a*rho))*std::pow(ps/p, -0.5*(g+1.0)/g);
+        }
+
+        return res;
+    }
+
+    /**
+     * \brief Auxiliary function for Riemann solver.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    amrex::Real _aux_f_(const amrex::Real g,
+                        const amrex::Real ps,
+                        const amrex::Real rhoL, const amrex::Real pL,
+                        const amrex::Real rhoR, const amrex::Real pR,
+                        const amrex::Real dun) const
+    {
+        const amrex::Real res = (this->_aux_fK_(g, ps, rhoL, pL)+this->_aux_fK_(g, ps, rhoR, pR)+dun);
+        return res;
+    }
+
+    /**
+     * \brief Auxiliary function for Riemann solver.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    amrex::Real _aux_df_(const amrex::Real g,
+                         const amrex::Real ps,
+                         const amrex::Real rhoL, const amrex::Real pL,
+                         const amrex::Real rhoR, const amrex::Real pR) const
+    {
+        const amrex::Real res = (this->_aux_dfK_(g, ps, rhoL, pL)+this->_aux_dfK_(g, ps, rhoR, pR));
+        return res;
+    }
+
+    /**
+     * \brief Solves the Riemann problem between left and right states in unit normal reference system.
+     *
+     * \param[in] Un_left: pointer to memory containing the conserved variables at the left of the shock
+     *                     expressed in the unit normal reference system.
+     * \param[in] Un_right: pointer to memory containing the conserved variables at the right of the
+     *                      shock expressed in the unit normal reference system.
+     * \param[out] URP: pointer to memory that will contain the solution of the Riemann problem, i.e.
+     *                  the state at the shock.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void RiemannSolver(const amrex::Real * Un_left, const amrex::Real * Un_right,
+                       amrex::Real * URP) const
+    {
+        // PARAMETERS -------------------------------------------------
+        const amrex::Real g = this->gamma;
+        const amrex::Real gg = (g-1.0)/(g+1.0);
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        // LEFT STATE
+        amrex::Real rhoL, AMREX_D_DECL(u1L, u2L, u3L), pL, aL;
+
+        // RIGHT STATE
+        amrex::Real rhoR, AMREX_D_DECL(u1R, u2R, u3R), pR, aR;
+
+        // INTERFACE STATE
+        amrex::Real rhoI, AMREX_D_DECL(u1I, u2I, u3I), pI;
+
+        // AUXILIARY QUANTITIES
+        amrex::Real dun, us;
+        amrex::Real fs, dfs;
+        amrex::Real pPV, pTS, ps, dps, aux_ps;
+        amrex::Real gL, gR;
+        
+        const int n_max_it = 20;
+        int it;
+        // ------------------------------------------------------------
+
+        // EVAL THE LEFT AND RIGHT STATES -----------------------------
+        this->eval_primary_variables(Un_left, rhoL, AMREX_D_DECL(u1L, u2L, u3L), pL);
+        aL = std::sqrt(g*pL/rhoL);
+
+        this->eval_primary_variables(Un_right, rhoR, AMREX_D_DECL(u1R, u2R, u3R), pR);
+        aR = std::sqrt(g*pR/rhoR);
+
+        // SOME AUXILIARY QUANTITIES
+        dun = u1R-u1L;
+        // ------------------------------------------------------------
+
+        // FIND PRESSURE AND VELOCITY IN STAR REGION ------------------
+        pPV = 0.5*(pL+pR)-0.125*dun*(rhoL+rhoR)*(aL+aR);
+        pPV = std::max(1.0e-10, pPV);
+        gL = this->_aux_gK_(g, pPV, rhoL, pL);
+        gR = this->_aux_gK_(g, pPV, rhoR, pR);
+        pTS = (gL*pL+gR*pR-dun)/(gL+gR);
+
+        // START ITERATION (TO COMPUTE PRESSURE)
+        ps = pTS;
+        it = 0;
+        do
+        {
+            aux_ps = 0.5*ps;
+
+            fs = this->_aux_f_(g, ps, rhoL, pL, rhoR, pR, dun);
+            dfs = this->_aux_df_(g, ps, rhoL, pL, rhoR, pR);
+            dps = -fs/dfs;
+            ps += dps;
+
+            aux_ps += 0.5*ps;
+
+            it += 1;
+        }
+        while ((it < n_max_it) && (std::abs(dps) > aux_ps*1.0e-8));
+
+        // EVAL VELOCITY
+        us = 0.5*(u1L+u1R)+0.5*(this->_aux_fK_(g, ps, rhoR, pR)-this->_aux_fK_(g, ps, rhoL, pL));
+        // ------------------------------------------------------------
+
+        // FIND SOLUTION AT INTERFACE ---------------------------------
+        if (us > 0.0)
+        {
+            // LEFT SHOCK
+            if (ps > pL)
+            {
+                const amrex::Real rhoLs = rhoL*(ps/pL+gg)/(gg*ps/pL+1.0);
+                const amrex::Real SL = u1L-aL*std::sqrt((0.5/g)*((g+1.0)*(ps/pL)+g-1.0));
+
+                if (SL < 0.0)
+                {
+                    rhoI = rhoLs;
+                    AMREX_D_TERM
+                    (
+                        u1I = us;,
+                        u2I = u2L;,
+                        u3I = u3L;
+                    )
+                    pI = ps;
+                }
+                else
+                {
+                    rhoI = rhoL;
+                    AMREX_D_TERM
+                    (
+                        u1I = u1L;,
+                        u2I = u2L;,
+                        u3I = u3L;
+                    )
+                    pI = pL;
+                }
+            }
+            // LEFT FAN
+            else
+            {
+                const amrex::Real rhoLs = rhoL*std::pow(ps/pL, 1.0/g);
+                const amrex::Real aLs = std::sqrt(g*ps/rhoLs);
+
+                if ((us-aLs) < 0.0)
+                {
+                    rhoI = rhoLs;
+                    AMREX_D_TERM
+                    (
+                        u1I = us;,
+                        u2I = u2L;,
+                        u3I = u3L;
+                    )
+                    pI = ps;
+                }
+                else if ((u1L-aL) > 0.0)
+                {
+                    rhoI = rhoL;
+                    AMREX_D_TERM
+                    (
+                        u1I = u1L;,
+                        u2I = u2L;,
+                        u3I = u3L;
+                    )
+                    pI = pL;
+                }
+                else
+                {
+                    rhoI = rhoL*std::pow(2.0/(g+1)+(g-1.0)/(g+1.0)*u1L/aL, 2.0/(g-1.0));
+                    AMREX_D_TERM
+                    (
+                        u1I = 2.0/(g+1.0)*(aL+0.5*(g-1.0)*u1L);,
+                        u2I = u2L;,
+                        u3I = u3L;
+                    )
+                    pI = pL*std::pow(2.0/(g+1)+(g-1.0)/(g+1.0)*u1L/aL, 2.0*g/(g-1.0));
+                }
+            }
+        }
+        else if (us < 0.0)
+        {   
+            // RIGHT SHOCK
+            if (ps > pR)
+            {
+                const amrex::Real rhoRs = rhoR*(ps/pR+gg)/(gg*ps/pR+1.0);
+                const amrex::Real SR = u1R+aR*std::sqrt((0.5/g)*((g+1.0)*(ps/pR)+g-1.0));
+
+                if (SR > 0.0)
+                {
+                    rhoI = rhoRs;
+                    AMREX_D_TERM
+                    (
+                        u1I = us;,
+                        u2I = u2R;,
+                        u3I = u3R;
+                    )
+                    pI = ps;
+                }
+                else
+                {
+                    rhoI = rhoR;
+                    AMREX_D_TERM
+                    (
+                        u1I = u1R;,
+                        u2I = u2R;,
+                        u3I = u3R;
+                    )
+                    pI = pR;
+                }
+            }
+            // RIGHT FAN
+            else
+            {
+                const amrex::Real rhoRs = rhoR*std::pow(ps/pR, 1.0/g);
+                const amrex::Real aRs = std::sqrt(g*ps/rhoRs);
+
+                if ((us+aRs) > 0.0)
+                {
+                    rhoI = rhoRs;
+                    AMREX_D_TERM
+                    (
+                        u1I = us;,
+                        u2I = u2R;,
+                        u3I = u3R;
+                    )
+                    pI = ps;
+                }
+                else if ((u1R+aR) < 0.0)
+                {
+                    rhoI = rhoR;
+                    AMREX_D_TERM
+                    (
+                        u1I = u1R;,
+                        u2I = u2R;,
+                        u3I = u3R;
+                    )
+                    pI = pR;
+                }
+                else
+                {
+                    rhoI = rhoR*std::pow(2.0/(g+1)-(g-1.0)/(g+1.0)*u1R/aR, 2.0/(g-1.0));
+                    AMREX_D_TERM
+                    (
+                        u1I = 2.0/(g+1.0)*(-aR+0.5*(g-1.0)*u1R);,
+                        u2I = u2R;,
+                        u3I = u3R;
+                    )
+                    pI = pR*std::pow(2.0/(g+1)-(g-1.0)/(g+1.0)*u1R/aR, 2.0*g/(g-1.0));
+                }
+            }
+        }
+        else
+        {
+            amrex::Real rhoLs, rhoRs;
+
+            // LEFT SHOCK
+            if (ps > pL)
+            {
+                rhoLs = rhoL*(ps/pL+gg)/(gg*ps/pL+1.0);
+            }
+            // LEFT FAN
+            else
+            {
+                rhoLs = rhoL*std::pow(ps/pL, 1.0/g);
+            }
+            
+            // RIGHT SHOCK
+            if (ps > pR)
+            {
+                rhoRs = rhoR*(ps/pR+gg)/(gg*ps/pR+1.0);
+            }
+            // RIGHT FAN
+            else
+            {
+                rhoRs = rhoR*std::pow(ps/pR, 1.0/g);
+            }
+
+            rhoI = 0.5*(rhoLs+rhoRs);
+            AMREX_D_TERM
+            (
+                u1I = us;,
+                u2I = 0.5*(u2L+u2R);,
+                u3I = 0.5*(u3L+u3R);
+            )
+            pI = ps;
+        }
+
+        URP[RHO] = rhoI;
+        AMREX_D_TERM
+        (
+            URP[RHOV1] = rhoI*u1I;,
+            URP[RHOV2] = rhoI*u2I;,
+            URP[RHOV3] = rhoI*u3I;
+        )
+        URP[TE] = pI/(g-1.0)+0.5*rhoI*(AMREX_D_TERM(u1I*u1I,+u2I*u2I,+u3I*u3I));
+        // ------------------------------------------------------------
+    }
+    
+    /**
+     * \brief Solves the Riemann problem between left and right states.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the unit normal of the shock that separates the two
+     *                states.
+     * \param[in] SOL_left: pointer to memory containing the state to the "left" of the shock, i.e. the
+     *                      state on the same side of the negative unit normal.
+     * \param[in] SOL_right: pointer to memory containing the state to the "right" of the shock, i.e.
+     *                       the state on the same side of the positive unit normal.
+     * \param[out] SOL_RP: pointer to memory that will contain the solution of the Riemann problem, i.e.
+     *                     the state at the shock.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_RIEMANN(const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
+                   const amrex::Real * SOL_left, const amrex::Real * SOL_right,
+                   amrex::Real * SOL_RP) const
+    {
+        // VARIABLES --------------------------------------------------
+        amrex::Real SOLn_left[N_SOL], SOLn_right[N_SOL];
+        amrex::Real SOL_tmp[N_SOL];
+        // ------------------------------------------------------------
+
+        // EXPRESS THE STATE IN THE UNIT NORMAL REFERENCE SYSTEM ------
+        this->eval_U2Un(un, SOL_left, SOLn_left);
+        this->eval_U2Un(un, SOL_right, SOLn_right);
+        // ------------------------------------------------------------
+
+        // CALL THE ACTUAL RIEMANN SOLVER -----------------------------
+        this->RiemannSolver(SOLn_left, SOLn_right, SOL_tmp);
+        // ------------------------------------------------------------
+
+        // GO BACK TO THE ORIGINAL REFERENCE SYSTEM -------------------
+        this->eval_Un2U(un, SOL_tmp, SOL_RP);
+        // ------------------------------------------------------------
+    }
+    // ################################################################
+
+    // CONSERVED VARIABLES VS CHARACTERISTICS VARIABLES ###############
+    /**
+     * \brief Eval jumps in the characteristics along x1 from jumps in the conserved variables along x1.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] U: pointer to memory containing the unknown solution fields.
+     * \param[in] U: pointer to memory containing the unknown solution fields.
+     * \param[in] DU: pointer to memory containing jumps in the conserved variables.
+     * \param[out] DC: pointer to memory that will contain jumps in the characteristics.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_DU2DC_1(const amrex::Real /*t*/, const amrex::Real * /*x*/,
+                   const amrex::Real * U,
+                   const amrex::Real * DU, amrex::Real * DC) const
+    {
+        // PARAMETERS
+        const amrex::Real g = this->gamma;
+        const amrex::Real g1 = g-1.0;
+
+        // VARIABLES
+        amrex::Real AMREX_D_DECL(u1, u2, u3), p, a, h;
+        this->eval_enthalpy_variables(U, AMREX_D_DECL(u1, u2, u3), p, a, h);
+
+#if (AMREX_SPACEDIM == 2)
+        DC[RHO]   =     (h+a*(u1-a)/g1)*DU[RHO]+(-a/g1-u1)*DU[RHOV1]          -u2*DU[RHOV2]    +DU[TE];
+        DC[RHOV1] = (-2.0*h+4.0*a*a/g1)*DU[RHO]    +2.0*u1*DU[RHOV1]      +2.0*u2*DU[RHOV2]-2.0*DU[TE];
+        DC[RHOV2] =    (-2.0*a*a*u2/g1)*DU[RHO]                     +(2.0*a*a/g1)*DU[RHOV2];
+        DC[TE]    =     (h-a*(u1+a)/g1)*DU[RHO]+(+a/g1-u1)*DU[RHOV1]          -u2*DU[RHOV2]    +DU[TE];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        DC[RHO]   =     (h+a*(u1-a)/g1)*DU[RHO]+(-a/g1-u1)*DU[RHOV1]          -u2*DU[RHOV2]          -u3*DU[RHOV3]    +DU[TE];
+        DC[RHOV1] = (-2.0*h+4.0*a*a/g1)*DU[RHO]    +2.0*u1*DU[RHOV1]      +2.0*u2*DU[RHOV2]      +2.0*u3*DU[RHOV3]-2.0*DU[TE];
+        DC[RHOV2] =    (-2.0*a*a*u2/g1)*DU[RHO]                     +(2.0*a*a/g1)*DU[RHOV2];
+        DC[RHOV3] =    (-2.0*a*a*u3/g1)*DU[RHO]                                            +(2.0*a*a/g1)*DU[RHOV3];
+        DC[TE]    =     (h-a*(u1+a)/g1)*DU[RHO]+(+a/g1-u1)*DU[RHOV1]          -u2*DU[RHOV2]          -u3*DU[RHOV3]    +DU[TE];
+#endif
+        const amrex::Real delta = 0.5*g1/(a*a);
+        DC[RHO] *= delta;
+        AMREX_D_TERM
+        (
+            DC[RHOV1] *= delta;,
+            DC[RHOV2] *= delta;,
+            DC[RHOV3] *= delta;
+        )
+        DC[TE] *= delta;
+    }
+    
+    /**
+     * \brief Eval jumps in the characteristics from jumps in the conserved variables.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the unit normal along which the jump is defined.
+     * \param[in] U: pointer to memory containing the unknown solution fields.
+     * \param[in] DU: pointer to memory containing jumps in the conserved variables.
+     * \param[out] DC: pointer to memory that will contain jumps in the characteristics.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_DU2DC(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                 const amrex::Real * U,
+                 const amrex::Real * DU, amrex::Real * DC) const
+    {
+        // VARIABLES
+        amrex::Real Un[N_SOL], DUn[N_SOL];
+        
+        this->eval_U2Un(un, U, Un);
+        this->eval_U2Un(un, DU, DUn);
+        
+        this->F_DU2DC_1(t, x, Un, DUn, DC);
+    }
+
+    /**
+     * \brief Eval jumps in the conserved variables along x1 from jumps in the characteristics along x1.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] U: pointer to memory containing the unknown solution fields.
+     * \param[in] DC: pointer to memory containing jumps in the characteristics.
+     * \param[out] DU: pointer to memory that will contain jumps in the conserved variables.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_DC2DU_1(const amrex::Real /*t*/, const amrex::Real * /*x*/,
+                   const amrex::Real * U,
+                   const amrex::Real * DC, amrex::Real * DU) const
+    {
+        // VARIABLES
+        amrex::Real AMREX_D_DECL(u1, u2, u3), p, a, h;
+        this->eval_enthalpy_variables(U, AMREX_D_DECL(u1, u2, u3), p, a, h);
+
+#if (AMREX_SPACEDIM == 2)
+        DU[RHO]   =          DC[RHO]                  +DC[RHOV1]                      +DC[TE];
+        DU[RHOV1] =  (-a+u1)*DC[RHO]               +u1*DC[RHOV1]               +(a+u1)*DC[TE];
+        DU[RHOV2] =       u2*DC[RHO]               +u2*DC[RHOV1]   +DC[RHOV2]      +u2*DC[TE];
+        DU[TE]    = (h-a*u1)*DC[RHO]+0.5*(u1*u1+u2*u2)*DC[RHOV1]+u2*DC[RHOV2]+(h+a*u1)*DC[TE];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        DU[RHO]   =          DC[RHO]                        +DC[RHOV1]                                   +DC[TE];
+        DU[RHOV1] =  (-a+u1)*DC[RHO]                     +u1*DC[RHOV1]                            +(a+u1)*DC[TE];
+        DU[RHOV2] =       u2*DC[RHO]                     +u2*DC[RHOV1]   +DC[RHOV2]                   +u2*DC[TE];
+        DU[RHOV3] =       u3*DC[RHO]                     +u3*DC[RHOV1]                +DC[RHOV3]      +u3*DC[TE];
+        DU[TE]    = (h-a*u1)*DC[RHO]+0.5*(u1*u1+u2*u2+u3*u3)*DC[RHOV1]+u2*DC[RHOV2]+u3*DC[RHOV3]+(h+a*u1)*DC[TE];
+#endif
+    }
+
+    /**
+     * \brief Eval the jumps in the conserved variables from jumps in the characteristics.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the unit normal along which the jump is defined.
+     * \param[in] U: pointer to memory containing the unknown solution fields.
+     * \param[in] DC: pointer to memory containing jumps in the characteristics.
+     * \param[out] DU: pointer to memory that will contain jumps in the conserved variables.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_DC2DU(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                 const amrex::Real * U,
+                 const amrex::Real * DC, amrex::Real * DU) const
+    {
+        // VARIABLES
+        amrex::Real Un[N_SOL], DUn[N_SOL];
+
+        this->eval_U2Un(un, U, Un);
+        this->F_DC2DU_1(t, x, Un, DC, DUn);
+        this->eval_Un2U(un, DUn, DU);
+    }
+    // ################################################################
+
+    // FLUXES #########################################################
+    /**
+     * \brief Eval the flux F1 for the IBVP.
+     *
+     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[out] F1: pointer to memory that will contain the flux.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_F1(const amrex::Real * SOL, amrex::Real * F1) const
+    {
+        amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
+        this->eval_primary_variables(SOL, rho, AMREX_D_DECL(u1, u2, u3), p);
+
+        F1[RHO] = SOL[RHOV1];
+        AMREX_D_TERM
+        (
+            F1[RHOV1] = SOL[RHOV1]*u1+p;,
+            F1[RHOV2] = SOL[RHOV2]*u1;,
+            F1[RHOV3] = SOL[RHOV3]*u1;
+        )
+        F1[TE] = (SOL[TE]+p)*u1;
+    }
+    // ################################################################
+
+    // NUMERICAL FLUXES ###############################################
+    /**
+     * \brief Eval the numerical flux at the interface between two adjacent states.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the unit normal of the interface.
+     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[in] nbr_SOL: pointer to memory containing the neighbor unknown solution fields.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_ICS(const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
+                  const amrex::Real * SOL, const amrex::Real * nbr_SOL,
+                  amrex::Real * NFn) const
+    {
+        // VARIABLES
+        amrex::Real SOLn[N_SOL], nbr_SOLn[N_SOL];
+        amrex::Real SOL_RP[N_SOL], tmp[N_SOL];
+        
+        // EXPRESS THE STATE IN THE UNIT NORMAL REFERENCE SYSTEM
+        this->eval_U2Un(un, SOL, SOLn);
+        this->eval_U2Un(un, nbr_SOL, nbr_SOLn);
+
+        // CALL THE RIEMANN SOLVER AND THE EVALUATE THE FLUX
+        this->RiemannSolver(SOLn, nbr_SOLn, SOL_RP);
+        this->eval_F1(SOL_RP, tmp);
+        this->eval_Un2U(un, tmp, NFn);
+    }
+    // ################################################################
+};
