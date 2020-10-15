@@ -6,10 +6,10 @@
  * \brief A file containing data structures used for reading input files.
 */
 
+#include <AMReX_ParmParse.H>
+
 #ifndef AMREX_DG_INPUT_READER_H_
 #define AMREX_DG_INPUT_READER_H_
-
-#include <AMReX_ParmParse.H>
 
 namespace amrex
 {
@@ -78,7 +78,50 @@ struct MeshInput
     :
     n_cells(AMREX_D_DECL(0, 0, 0)),
     max_grid_size(AMREX_D_DECL(0, 0, 0)),
-    CFL{0.0}
+    CFL{1.0}
+    {}
+};
+
+/**
+ * \brief Inputs for Grid information
+ *
+*/
+struct GridInput
+{
+    IntVect n_cells, max_box_size;
+    Real CFL;
+    int space_p, time_p;
+    int space_q, time_q;
+    int space_q_im, time_q_im;
+    Real VFT;
+
+    GridInput()
+    :
+    n_cells(AMREX_D_DECL(0, 0, 0)),
+    max_box_size(AMREX_D_DECL(0, 0, 0)),
+    CFL{1.0},
+    space_p{-1},
+    time_p{-1},
+    space_q{-1},
+    time_q{-1},
+    space_q_im{-1},
+    time_q_im{-1},
+    VFT{0.33}
+    {}
+};
+
+/**
+ * \brief Inputs for discontinuous Galerkin information
+ *
+*/
+struct DGInput
+{
+    int space_p, time_p;
+
+    DGInput()
+    :
+    space_p{-1},
+    time_p{-1}
     {}
 };
 
@@ -145,6 +188,8 @@ public InputReaderBase
     SpaceInput space;
     TimeInput time;
     MeshInput mesh;
+    GridInput grid;
+    DGInput dG;
     ProblemInput problem;
     // ################################################################
 
@@ -179,11 +224,13 @@ public InputReaderBase
 
             ParmParse pp("mesh");
 
-            pp.getarr("n_cells", aux);
-            for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+            if (pp.queryarr("n_cells", aux))
             {
-                this->mesh.n_cells[dim] = aux[dim];
-                this->mesh.max_grid_size[dim] = aux[dim];
+                for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+                {
+                    this->mesh.n_cells[dim] = aux[dim];
+                    this->mesh.max_grid_size[dim] = aux[dim];
+                }
             }
 
             if (pp.queryarr("max_grid_size", aux))
@@ -194,7 +241,57 @@ public InputReaderBase
                 }
             }
 
-            pp.get("CFL", this->mesh.CFL);
+            pp.query("CFL", this->mesh.CFL);
+        }
+        // ============================================================
+
+        // GRID =======================================================
+        {
+            Vector<int> aux;
+
+            ParmParse pp("grid");
+
+            if (pp.queryarr("n_cells", aux))
+            {
+                for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+                {
+                    this->grid.n_cells[dim] = aux[dim];
+                    this->grid.max_box_size[dim] = aux[dim];
+                }
+            }
+
+            if (pp.queryarr("max_box_size", aux))
+            {
+                for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+                {
+                    this->grid.max_box_size[dim] = aux[dim];
+                }
+            }
+
+            pp.query("CFL", this->grid.CFL);
+
+            pp.query("space_p", this->grid.space_p);
+            pp.query("time_p", this->grid.time_p);
+            pp.query("space_q", this->grid.space_q);
+            pp.query("time_q", this->grid.time_q);
+            pp.query("space_q_im", this->grid.space_q_im);
+            pp.query("time_q_im", this->grid.time_q_im);
+
+            pp.query("volume_fraction_threshold", this->grid.VFT);
+        }
+        // ============================================================
+
+        // DISCONTINUOUS GALERKIN METHODS =============================
+        {
+            ParmParse pp("dG");
+
+            if (pp.contains("space_p"))
+            {
+                pp.get("space_p", this->dG.space_p);
+                
+                this->dG.time_p = this->dG.space_p;
+                pp.query("time_p", this->dG.time_p);
+            }
         }
         // ============================================================
 

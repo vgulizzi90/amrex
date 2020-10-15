@@ -121,6 +121,35 @@ std::string MakeGlobalOutputFilepath(const std::string & folderpath,
 
 // VTU CELLS ##########################################################
 /**
+ * \brief Return the connectivity of a VTK line divided using ne lines.
+ *
+ * \param[in] ne: grid size.
+ * 
+ * \return the connectivity of the ne lines.
+*/
+Gpu::ManagedVector<int> GriddedLine_Connectivity(const int ne)
+{
+    // PARAMETERS =====================================================
+    const int n_sublines = ne;
+    const int conn_len = 2*n_sublines;
+    // ================================================================
+
+    // VARIABLES ======================================================
+    Gpu::ManagedVector<int> conn(conn_len);
+    // ================================================================
+
+    // EVAL CONNECTIVITY ==============================================
+    for (int i = 0; i < ne; ++i)
+    {
+        conn[2*i] = i;
+        conn[2*i+1] = i+1;
+    }
+    // ================================================================
+
+    return conn;
+}
+
+/**
  * \brief Return the connectivity of a VTK quad divided using a ne x ne grid.
  *
  * \param[in] ne: grid size.
@@ -253,9 +282,11 @@ void PrintHeaderFile_VTU(const std::string & folderpath,
     fp << "<VTKFile type=\"PUnstructuredGrid\" version=\"1.0\" byte_order=\"LittleEndian\" header_type=\"" << Header_t_description << "\">\n";
     fp << "<PUnstructuredGrid GhostLevel=\"0\">\n";
     
-    fp << "  <PPoints>\n";
-    fp << "    <PDataArray type=\"" << Float_t_description << "\" Name=\"Position\" NumberOfComponents=\"3\"/>\n"; 
-    fp << "  </PPoints>\n";
+    {
+        fp << "  <PPoints>\n";
+        fp << "    <PDataArray type=\"" << Float_t_description << "\" Name=\"Position\" NumberOfComponents=\"3\"/>\n"; 
+        fp << "  </PPoints>\n";
+    }
 
     if (n_nodal_fields > 0)
     {
@@ -267,11 +298,13 @@ void PrintHeaderFile_VTU(const std::string & folderpath,
         fp << "  </PPointData>\n";
     }
     
-    fp << "  <PCells>\n"; 
-    fp << "    <PDataArray type=\"" << Cell_conn_t_description << "\" Name=\"connectivity\" NumberOfComponents=\"1\"/>\n";
-    fp << "    <PDataArray type=\"" << Cell_offs_t_description << "\" Name=\"offsets\" NumberOfComponents=\"1\"/>\n";
-    fp << "    <PDataArray type=\"" << Cell_type_t_description << "\" Name=\"types\" NumberOfComponents=\"1\"/>\n";
-    fp << "  </PCells>\n";
+    {
+        fp << "  <PCells>\n"; 
+        fp << "    <PDataArray type=\"" << Cell_conn_t_description << "\" Name=\"connectivity\" NumberOfComponents=\"1\"/>\n";
+        fp << "    <PDataArray type=\"" << Cell_offs_t_description << "\" Name=\"offsets\" NumberOfComponents=\"1\"/>\n";
+        fp << "    <PDataArray type=\"" << Cell_type_t_description << "\" Name=\"types\" NumberOfComponents=\"1\"/>\n";
+        fp << "  </PCells>\n";
+    }
 
     if (n_cell_fields > 0)
     {
@@ -407,8 +440,8 @@ void PrintUnstructuredGridData_VTU_binary(std::ofstream & fp,
                                           const Vector<std::string> & cell_fields_names)
 {
     // PARAMETERS =====================================================
-    const int n_cell_fields = cell_fields.size();
     const int n_nodal_fields = nodal_fields.size();
+    const int n_cell_fields = cell_fields.size();
     // ================================================================
 
     // VARIABLES ======================================================
@@ -426,11 +459,16 @@ void PrintUnstructuredGridData_VTU_binary(std::ofstream & fp,
 
     // NODES ==========================================================
     fp << "<Points>\n";
+
     fp << "  <DataArray type=\"" << Float_t_description << "\" Name=\"Position\" NumberOfComponents=\"3\" format=\"appended\" offset=\"" << binary_offset << "\">\n";
     fp << "  </DataArray>\n";
-    fp << "</Points>\n";
 
-    binary_offset += nodes.size()*sizeof(Float_t)+sizeof(n_bytes);
+    if (n_nodes > 0)
+    {
+        binary_offset += nodes.size()*sizeof(Float_t)+sizeof(n_bytes);
+    }
+
+    fp << "</Points>\n";
     // ================================================================
 
     // CELLS ==========================================================
@@ -440,32 +478,30 @@ void PrintUnstructuredGridData_VTU_binary(std::ofstream & fp,
     fp << "  <DataArray type=\"" << Cell_conn_t_description << "\" Name=\"connectivity\" format=\"appended\" offset=\"" << binary_offset << "\">\n";
     fp << "  </DataArray>\n";
 
-    binary_offset += cell_conn.size()*sizeof(Cell_conn_t)+sizeof(n_bytes);
+    if (n_cells > 0)
+    {
+        binary_offset += cell_conn.size()*sizeof(Cell_conn_t)+sizeof(n_bytes);
+    }
 
     // OFFSET
     fp << "  <DataArray type=\"" << Cell_offs_t_description << "\" Name=\"offsets\" format=\"appended\" offset=\"" << binary_offset << "\">\n";
     fp << "  </DataArray>\n";
 
-    binary_offset += (cell_offset.size()-1)*sizeof(Cell_offs_t)+sizeof(n_bytes);
+    if (n_cells > 0)
+    {
+        binary_offset += (cell_offset.size()-1)*sizeof(Cell_offs_t)+sizeof(n_bytes);
+    }
 
     // TYPE
     fp << "  <DataArray type=\"" << Cell_type_t_description << "\" Name=\"types\" format=\"appended\" offset=\"" << binary_offset << "\">\n";
     fp << " </DataArray>\n";
 
-    binary_offset += cell_type.size()*sizeof(Cell_type_t)+sizeof(n_bytes);
+    if (n_cells > 0)
+    {
+        binary_offset += cell_type.size()*sizeof(Cell_type_t)+sizeof(n_bytes);
+    }
 
     fp << "</Cells>\n";
-    // ================================================================
-
-    // CELLS DATA =====================================================
-    fp << "<CellData Scalars=\"Scalars\">\n";
-    for (int f = 0; f < n_cell_fields; ++f)
-    {
-        fp << "  <DataArray type=\"" << Int_t_description << "\" Name=\""+cell_fields_names[f]+"\" format=\"appended\" offset=\"" << binary_offset << "\">\n";
-        fp << "  </DataArray>\n";
-        binary_offset += cell_fields[f].size()*sizeof(Int_t)+sizeof(n_bytes);
-    }
-    fp << "</CellData>" <<"\n";
     // ================================================================
 
     // POINTS DATA ====================================================
@@ -477,6 +513,17 @@ void PrintUnstructuredGridData_VTU_binary(std::ofstream & fp,
         binary_offset += nodal_fields[f].size()*sizeof(Float_t)+sizeof(n_bytes);
     }
     fp << "</PointData>" <<"\n";
+    // ================================================================
+
+    // CELLS DATA =====================================================
+    fp << "<CellData Scalars=\"Scalars\">\n";
+    for (int f = 0; f < n_cell_fields; ++f)
+    {
+        fp << "  <DataArray type=\"" << Int_t_description << "\" Name=\""+cell_fields_names[f]+"\" format=\"appended\" offset=\"" << binary_offset << "\">\n";
+        fp << "  </DataArray>\n";
+        binary_offset += cell_fields[f].size()*sizeof(Int_t)+sizeof(n_bytes);
+    }
+    fp << "</CellData>" <<"\n";
     // ================================================================
 
     // CLOSING ========================================================
@@ -514,6 +561,16 @@ void PrintUnstructuredGridData_VTU_binary(std::ofstream & fp,
         fp.write((char *)&n_bytes, sizeof(n_bytes));
         fp.write((char *)&cell_type[0], n_bytes);
     }
+
+    for (int f = 0; f < n_nodal_fields; ++f)
+    {
+        n_bytes = nodal_fields[f].size()*sizeof(Float_t);
+        if (n_bytes > 0)
+        {
+            fp.write((char *)&n_bytes, sizeof(n_bytes));
+            fp.write((char *)&nodal_fields[f][0], n_bytes);
+        }
+    }
     
     for (int f = 0; f < n_cell_fields; ++f)
     {
@@ -525,15 +582,6 @@ void PrintUnstructuredGridData_VTU_binary(std::ofstream & fp,
         }
     }
 
-    for (int f = 0; f < n_nodal_fields; ++f)
-    {
-        n_bytes = nodal_fields[f].size()*sizeof(Float_t);
-        if (n_bytes > 0)
-        {
-            fp.write((char *)&n_bytes, sizeof(n_bytes));
-            fp.write((char *)&nodal_fields[f][0], n_bytes);
-        }
-    }
     fp << "\n";
     fp << "</AppendedData>\n";
 

@@ -5,11 +5,11 @@
 // PDES INFORMATION ###################################################
 // SUMMARY:
 // In this tutorial, we solve the Gasdynamics equations for the Sod's
-// tube problem.
+// tube problem in tilted geometries.
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
-#include "IBVP_utils.H"
+//#include "IBVP_utils.H"
 #include "IBVP_SodsTube.H"
 // ====================================================================
 // ####################################################################
@@ -26,7 +26,7 @@ amrex::Print() << "# Author: Vincenzo Gulizzi (vgulizzi@lbl.gov)                
 amrex::Print() << "#######################################################################" << std::endl;
 amrex::Print() << "# SUMMARY:                                                             " << std::endl;
 amrex::Print() << "# In this tutorial, we solve the Gasdynamics equations for the Sod's   " << std::endl;
-amrex::Print() << "# tube problem.                                                        " << std::endl;
+amrex::Print() << "# tube problem in tilted geometries.                                   " << std::endl;
 amrex::Print() << "#                                                                      " << std::endl;
 amrex::Print() << "#######################################################################" << std::endl;
 amrex::Print() << "# The selected space dimension at compile time is                      " << std::endl;
@@ -39,20 +39,6 @@ amrex::Print() << "#############################################################
     const int IOProc = amrex::ParallelDescriptor::IOProcessorNumber();
     
     const std::string problem = "PROBLEM_SodsTube";
-
-    // AUXILIARY TABLES TO TEST THE DIFFERENT ORIENTATIONS
-#if (AMREX_SPACEDIM == 1)
-    const amrex::Real table_hi[1] = {1.0};
-    const int table_n_cells[1] = {64};
-#endif
-#if (AMREX_SPACEDIM == 2)
-    const amrex::Real table_hi[AMREX_SPACEDIM*AMREX_SPACEDIM] = {1.0, 0.1, 0.1, 1.0};
-    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {64, 4, 4, 64};
-#endif
-#if (AMREX_SPACEDIM == 3)
-    const amrex::Real table_hi[AMREX_SPACEDIM*AMREX_SPACEDIM] = {1.0, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 1.0};
-    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {64, 4, 4, 4, 64, 4, 4, 4, 64};
-#endif
 
     // NUMBER OF GHOST ROWS
     const int ngr = 1;
@@ -69,16 +55,6 @@ amrex::Print() << "#############################################################
     // INPUTS
     amrex::DG::InputReader inputs;
 
-    // STANDARD ELEMENT
-    amrex::DG::StandardRectangle<AMREX_SPACEDIM> std_elem;
-
-    // GEOMETRY, BOXARRAY, DISTRIBUTION MAPPING
-    amrex::RealBox rbx;
-    amrex::Box ibx;
-    amrex::Geometry geom;
-    amrex::BoxArray ba;
-    amrex::DistributionMapping dm;
-
     // SOLUTION MULTIFAB
     amrex::MultiFab X;
 
@@ -86,40 +62,21 @@ amrex::Print() << "#############################################################
     IDEAL_GAS IG(gamma, inputs.problem.params);
     // ================================================================
 
-    // WE TEST ALL POSSIBLE ORIENTATIONS OF THE TUBE
-    for (int ori = 0; ori < AMREX_SPACEDIM; ++ori)
+    // DO THE ANALYSIS
     {
-        // SET SOD'S TUBE ORIENTATION =================================
-        IG.set_ori(ori);
-        // ============================================================
-
-        // SET THE PROBLEM SIZE AND THE NUMBER OF CELLS ===============
-#if (AMREX_SPACEDIM == 1)
-        inputs.space.hi[0] = table_hi[ori];
-        inputs.mesh.n_cells[0] = table_n_cells[ori];
-#endif
-#if (AMREX_SPACEDIM == 2)
-        inputs.space.hi[0] = table_hi[ori];
-        inputs.space.hi[1] = table_hi[ori+AMREX_SPACEDIM];
-        inputs.mesh.n_cells[0] = table_n_cells[ori];
-        inputs.mesh.n_cells[1] = table_n_cells[ori+AMREX_SPACEDIM];
-#endif
-#if (AMREX_SPACEDIM == 3)
-        inputs.space.hi[0] = table_hi[ori];
-        inputs.space.hi[1] = table_hi[ori+AMREX_SPACEDIM];
-        inputs.space.hi[2] = table_hi[ori+2*AMREX_SPACEDIM];
-        inputs.mesh.n_cells[0] = table_n_cells[ori];
-        inputs.mesh.n_cells[1] = table_n_cells[ori+AMREX_SPACEDIM];
-        inputs.mesh.n_cells[2] = table_n_cells[ori+2*AMREX_SPACEDIM];
-#endif
-        // ============================================================
-
         // MAKE OUTPUT FOLDER =========================================
         {
-            const std::string mesh_info = AMREX_D_TERM(std::to_string(inputs.mesh.n_cells[0]),+"x"+
-                                                       std::to_string(inputs.mesh.n_cells[1]),+"x"+
-                                                       std::to_string(inputs.mesh.n_cells[2]));
-            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info});
+            const amrex::Real diam = inputs.problem.params[7];
+            const amrex::Real theta = inputs.problem.params[8];
+
+            const std::string mesh_info = AMREX_D_TERM(std::to_string(inputs.grid.n_cells[0]),+"x"+
+                                                       std::to_string(inputs.grid.n_cells[1]),+"x"+
+                                                       std::to_string(inputs.grid.n_cells[2]));
+            const std::string diam_info = "D0"+std::to_string((int) std::round(diam*100));
+            const std::string theta_info = "TH"+std::to_string((int) std::round(theta));
+
+            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+diam_info+"_"+theta_info});
+
             amrex::DG::IO::MakeFolder(output_folderpath);
         }
         // ============================================================
@@ -139,121 +96,63 @@ amrex::Print() << "#############################################################
         // ============================================================
 
         // HEADER =====================================================
-        const char ori_description = ((ori == 0) ? 'X' : ((ori == 1) ? 'Y' : 'Z'));
-        amrex::Print() << std::endl;
-        amrex::Print() << "# SOD'S TUBE TEST #" << ori << " - ORIENTATION: " << ori_description << std::endl;
+        {
+            const amrex::Real diam = inputs.problem.params[7];
+            const amrex::Real theta = inputs.problem.params[8];
+            
+            const std::string diam_info = "0."+std::to_string((int) std::round(diam*100));
+            const std::string theta_info = std::to_string((int) std::round(theta));
+
+            amrex::Print() << std::endl;
+            amrex::Print() << "# SOD'S TUBE TEST" << " - DIAMETER: " << diam_info << " - INCLINATION: " << theta_info << std::endl;
+        }
         // ============================================================
 
         // TIC ========================================================
         start_time = amrex::second();
         // ============================================================
 
-        // INIT THE STANDARD ELEMENT ==================================
-        {
-            AMREX_D_TERM
-            (
-                const amrex::Real dx1 = (inputs.space.hi[0]-inputs.space.lo[0])/inputs.mesh.n_cells[0];,
-                const amrex::Real dx2 = (inputs.space.hi[1]-inputs.space.lo[1])/inputs.mesh.n_cells[1];,
-                const amrex::Real dx3 = (inputs.space.hi[2]-inputs.space.lo[2])/inputs.mesh.n_cells[2];
-            )
-            const amrex::Real dx[AMREX_SPACEDIM] = {AMREX_D_DECL(dx1, dx2, dx3)};
+        // MAKE THE IMPLICIT-MESH =====================================
+        amrex::DG::ImplicitMesh mesh(inputs);
 
-            std_elem.define(dx);
+        mesh.MakeFromScratch(IG);
+
+        // WRITE THE LEVELSETS TO OUTPUT
+        if (inputs.plot_int > 0)
+        {
+            const int n = 0;
+            const amrex::Real t = 0.0;
+            ExportBase_VTK(output_folderpath, "Levelset", n, inputs.time.n_steps,
+                           t, mesh.geom, mesh.std_elem, 1, mesh.PHI, "LS_");
+            ExportImplicitMesh_VTK(output_folderpath, "ImplicitMesh", n, inputs.time.n_steps,
+                                   t, mesh);
         }
         // ============================================================
 
-        // INIT GEOMETRY AND DISTRIBUTION MAPPING =====================
-        rbx.setLo(inputs.space.lo.data());
-        rbx.setHi(inputs.space.hi.data());
+        // INIT THE MATRIX FACTORY ====================================
+        amrex::DG::MatrixFactory matfactory(inputs);
 
-        AMREX_D_TERM
-        (
-            ibx.setSmall(0, 0);,
-            ibx.setSmall(1, 0);,
-            ibx.setSmall(2, 0);
-        )
-        ibx.setBig(inputs.mesh.n_cells-1);
-        geom.define(ibx, &rbx, inputs.space.coord_sys, inputs.space.is_periodic.data());
-
-        // BOX ARRAY
-        ba.define(ibx);
-        ba.maxSize(inputs.mesh.max_grid_size);
-
-        // DISTRIBUTION MAPPING
-        dm.define(ba);
+        matfactory.EvalMassMatrices(mesh);
         // ============================================================
 
         // INIT MULTIFAB ==============================================
-        X.define(ba, dm, X_n_comp, ngr);
+        X.define(mesh.cc_ba, mesh.dm, X_n_comp, ngr);
         // ============================================================
 
         // SET INITIAL CONDITIONS =====================================
-        ProjectInitialConditionsOverGrid(geom, std_elem, N_SOL, X, IG);
-        
+        //ProjectInitialConditions(mesh, N_SOL, X, IG);
+
         // WRITE TO OUTPUT
         if (inputs.plot_int > 0)
         {
             const int n = 0;
             const amrex::Real t = 0.0;
+            /*
             Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                       t, geom, std_elem, N_SOL, X,
+                       t, mesh, N_SOL, X,
                        IG);
+            */
         }
-        // ============================================================
-
-        // ADVANCE IN TIME ============================================
-        amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
-        {
-            int n = 0;
-            amrex::Real t, dt;
-            amrex::Real tps_start, tps_stop, tps;
-
-            // INIT CLOCK TIME PER STEP
-            tps = 0.0;
-
-            // ADVANCE IN TIME
-            n = 0;
-            t = 0.0;
-            while ((t < inputs.time.T*(1.0-1.0e-12)) && (n < inputs.time.n_steps))
-            {
-                // CLOCK TIME PER TIME STEP TIC
-                tps_start = amrex::second();
-
-                // COMPUTE NEXT TIME STEP
-                dt = amrex::DG::Compute_dt(t+0.5*dt, geom, std_elem, N_SOL, X, IG);
-                dt *= inputs.mesh.CFL;
-                dt = std::min(t+dt, inputs.time.T)-t;
-
-                // TIME STEP
-                amrex::DG::TakeTimeStep(dt, t, geom, N_SOL, X, IG);
-
-                // UPDATE TIME STEP
-                n += 1;
-                t += dt;
-
-                // WRITE TO OUTPUT
-                if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(t/inputs.time.T-1.0) < 1.0e-12)))
-                {
-                    Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                               t, geom, std_elem, N_SOL, X,
-                               IG);
-                }
-
-                // CLOCK TIME PER TIME STEP TOC
-                tps_stop = amrex::second();
-                amrex::ParallelDescriptor::ReduceRealMax(tps_stop, IOProc);
-
-                tps = (tps*n+(tps_stop-tps_start))/(n+1);
-
-                // REPORT TO SCREEN
-                amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
-                amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
-                               << dt << ", t = " << t
-                               << ", clock time per time step = " << tps << std::endl;
-            }
-
-        }
-        amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
         // ============================================================
 
         // TOC ========================================================

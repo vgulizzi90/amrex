@@ -17,7 +17,6 @@ public IDEAL_GAS_BASE
 {
     // DATA MEMBERS ###################################################
     amrex::Real params[7];
-    int ori;
     // ################################################################
 
     // CONSTRUCTOR ####################################################
@@ -28,23 +27,13 @@ public IDEAL_GAS_BASE
     */
     IDEAL_GAS(const amrex::Real gamma_, const amrex::Vector<amrex::Real> & params_)
     :
-    IDEAL_GAS_BASE(gamma_),
-    ori{-1}
+    IDEAL_GAS_BASE(gamma_)
     {
         std::copy(params_.begin(), params_.end(), this->params);
     }
     // ################################################################
 
     // AUXILIARY METHODS ##############################################
-    /**
-     * \brief Sets the orientation of the Sod's tube.
-     * 
-     * \param[in] ori_: input orientation.
-    */
-    void set_ori(const int ori_)
-    {
-        this->ori = ori_;
-    }
     // ################################################################
 
     // INITIAL CONDITIONS #############################################
@@ -68,12 +57,9 @@ public IDEAL_GAS_BASE
         const amrex::Real uR = this->params[5];
         const amrex::Real pR = this->params[6];
 
-        const amrex::Real y = x[this->ori];
+        const amrex::Real y = x[0];
         
-        int AMREX_D_DECL(RHOVn, RHOVt1, RHOVt2);
-        if (this->ori == 0) {AMREX_D_TERM(RHOVn = 1;, RHOVt1 = 2;,RHOVt2 = 3;)}
-        else if (this->ori == 1) {AMREX_D_TERM(RHOVn = 2;, RHOVt1 = 1;, RHOVt2 = 3;)}
-        else if (this->ori == 2) {AMREX_D_TERM(RHOVn = 3;, RHOVt1 = 1;, RHOVt2 = 2;)}
+        const int AMREX_D_DECL(RHOVn = 1, RHOVt1 = 2, RHOVt2 = 3);
 
         if (y > xs)
         {
@@ -116,14 +102,68 @@ public IDEAL_GAS_BASE
                const amrex::Real * SOL,
                amrex::Real * bcs_SOL) const
     {
-        bcs_SOL[RHO] = SOL[RHO];
-        AMREX_D_TERM
-        (
-            bcs_SOL[RHOV1] = SOL[RHOV1];,
-            bcs_SOL[RHOV2] = SOL[RHOV2];,
-            bcs_SOL[RHOV3] = SOL[RHOV3];
-        )
-        bcs_SOL[TE] = SOL[TE];
+        // OUTFLOW
+        if (std::abs(un[0]) > 0.5)
+        {
+            bcs_SOL[RHO] = SOL[RHO];
+            AMREX_D_TERM
+            (
+                bcs_SOL[RHOV1] = SOL[RHOV1];,
+                bcs_SOL[RHOV2] = SOL[RHOV2];,
+                bcs_SOL[RHOV3] = SOL[RHOV3];
+            )
+            bcs_SOL[TE] = SOL[TE];
+        }
+        // SYMMETRY
+#if (AMREX_SPACEDIM > 1)
+        else if (std::abs(un[1]) > 0.5)
+        {
+            bcs_SOL[RHO] = SOL[RHO];
+            AMREX_D_TERM
+            (
+                bcs_SOL[RHOV1] = SOL[RHOV1];,
+                bcs_SOL[RHOV2] = SOL[RHOV2];,
+                bcs_SOL[RHOV3] = SOL[RHOV3];
+            )
+            bcs_SOL[TE] = SOL[TE];
+        }
+#endif
+#if (AMREX_SPACEDIM > 2)
+        else if (std::abs(un[2]) > 0.5)
+        {
+            bcs_SOL[RHO] = SOL[RHO];
+            AMREX_D_TERM
+            (
+                bcs_SOL[RHOV1] = SOL[RHOV1];,
+                bcs_SOL[RHOV2] = SOL[RHOV2];,
+                bcs_SOL[RHOV3] = -SOL[RHOV3];
+            )
+            bcs_SOL[TE] = SOL[TE];
+        }
+#endif
+    }
+    // ################################################################
+
+    // NUMERICAL FLUXES ###############################################
+    // NOTE: The function void F_NF_ICS is found in "../IBVP_Base.H".
+    // ################################################################
+    /**
+     * \brief Eval the numerical flux at a grid's boundary.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_BCS(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                  const amrex::Real * SOL,
+                  amrex::Real * NFn) const
+    {
+        amrex::Real bcs_SOL[N_SOL];
+        this->F_BCS(t, x, un, SOL, bcs_SOL);
+        this->F_NF_ICS(t, x, un, SOL, bcs_SOL, NFn);
     }
     // ################################################################
 

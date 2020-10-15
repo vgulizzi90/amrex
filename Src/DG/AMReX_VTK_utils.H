@@ -18,6 +18,9 @@ namespace VTK
 {
 
 // TYPEDEFS AND CONSTANTS #############################################
+#define VTK_VERTEX_ID 1
+#define VTK_VERTEX_CONN_LEN 1
+
 #define VTK_LINE_ID 3
 #define VTK_LINE_CONN_LEN 2
 
@@ -67,6 +70,7 @@ std::string MakeGlobalOutputFilepath(const std::string & folderpath,
 // ####################################################################
 
 // VTU CELLS ##########################################################
+Gpu::ManagedVector<int> GriddedLine_Connectivity(const int ne);
 Gpu::ManagedVector<int> GriddedQuad_Connectivity(const int ne);
 Gpu::ManagedVector<int> GriddedHexahedron_Connectivity(const int ne);
 // ####################################################################

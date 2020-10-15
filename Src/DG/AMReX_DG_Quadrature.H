@@ -6,10 +6,10 @@
  * \brief A file containing quadrature abscissae and weights.
 */
 
+#include <AMReX_REAL.H>
+
 #ifndef AMREX_DG_QUADRATURE_H_
 #define AMREX_DG_QUADRATURE_H_
-
-#include <AMReX_REAL.H>
 
 namespace amrex
 {

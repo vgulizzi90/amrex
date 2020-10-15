@@ -8,6 +8,8 @@
 
 #define DG_N_SOL (1+AMREX_SPACEDIM+1)
 
+#define DG_LIMIT_CP
+
 #define DG_SL_THETA 2.0
 
 namespace amrex
@@ -34,7 +36,7 @@ namespace DG
 template <typename IBVP_CLASS>
 Real Compute_dt(const Real t,
                 const Geometry & geom,
-                const DG::StandardRectangle<AMREX_SPACEDIM> & std_elem,
+                const StandardRectangle<AMREX_SPACEDIM> & std_elem,
                 const int N_SOL,
                 const MultiFab & X,
                 const IBVP_CLASS & IBVP)
@@ -104,7 +106,8 @@ Real Compute_dt(const Real t,
                 )
 
                 // EVAL SOLUTION
-                sol.eval(x, 0, N_SOL, SOL);
+                sol.eval_BF_only_table(x);
+                sol.eval_unsafe(0, N_SOL, SOL);
 
                 // EVAL DT
                 x_dt = IBVP.F_DT(&dx[0], t, x, SOL);
@@ -123,30 +126,13 @@ Real Compute_dt(const Real t,
 }
 
 /**
- * \brief Limit slopes.
-*/
-AMREX_GPU_DEVICE AMREX_FORCE_INLINE
-void LimitSlopes(const int N_SOL, const Real * dCL, const Real * dCR, Real * dC)
-{
-    for (int ru = 0; ru < N_SOL; ++ru)
-    {
-        const Real dc = 0.5*(dCL[ru]+dCR[ru]);
-        const Real sgn = (dc >= 0.0) ? +1.0 : -1.0;
-        const Real slope = DG_SL_THETA*std::min(std::abs(dCL[ru]), std::abs(dCR[ru]));
-        const Real lim = (dCL[ru]*dCR[ru] >= 0.0) ? slope : 0.0;
-        dC[ru] = sgn*std::min(lim, std::abs(dc));
-    }
-}
-
-/**
  * \brief Fill ghost rows using boundary conditions.
  *
  * \param[in] t: time.
  * \param[in] geom: a Geometry object that contains geometry information.
  * \param[in] N_SOL: Number of unknown solution fields.
- * \param[inout] X: a MultiFab object that contains the coefficients of the basis functions for the
- *                  unknown solution fields. On exit, the cells in the ghost rows will have their
- *                  coefficients updated.
+ * \param[inout] X: a MultiFab object that contains unknown solution fields at the cell centers. On
+ *                  exit, the cells in the ghost rows will have their values updated.
  * \param[in] IBVP: a class that must have methods with the following prototypes:
  *
  *                  void F_BCS(const Real t, const Real * x, const Real * un,
@@ -325,7 +311,23 @@ void FillInvalidCells(const Real t,
 }
 
 /**
- * \brief Eval limited slopes.
+ * \brief Limit slopes.
+*/
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+void LimitSlopes(const int N_SOL, const Real * dCL, const Real * dCR, Real * dC)
+{
+    for (int ru = 0; ru < N_SOL; ++ru)
+    {
+        const Real dc = 0.5*(dCL[ru]+dCR[ru]);
+        const Real sgn = (dc >= 0.0) ? +1.0 : -1.0;
+        const Real slope = DG_SL_THETA*std::min(std::abs(dCL[ru]), std::abs(dCR[ru]));
+        const Real lim = (dCL[ru]*dCR[ru] >= 0.0) ? slope : 0.0;
+        dC[ru] = sgn*std::min(lim, std::abs(dc));
+    }
+}
+
+/**
+ * \brief Eval limited slopes and store them. They will be used to reconstruct the solution.
  *
  * \param[in] t: time.
  * \param[in] geom: a Geometry object that contains geometry information.
@@ -340,7 +342,15 @@ void FillInvalidCells(const Real t,
  *                               const Real * SOL, const Real * DU,
  *                               Real * DC) const;
  *                  void F_DC2DU(const Real t, const Real * x, const Real * un,
- *                               const Real * U, const Real * DC, 
+ *                               const Real * SOL, const Real * DC,
+ *                               Real * DU) const;
+ *
+ *                  If DG_LIMIT_CP is defined, the class must also have:
+ *
+ *                  void F_U2P(const Real t, const Real * x,
+ *                             const Real * SOL, Real * P) const;
+ *                  void F_DP2DU(const Real t, const Real * x, const Real * un,
+ *                               const Real * SOL, const Real * DP,
  *                               Real * DU) const;
 */
 template <typename IBVP_CLASS>
@@ -376,12 +386,26 @@ void EvalLimitedSlopes(const Real t,
             Real x[AMREX_SPACEDIM], un[AMREX_SPACEDIM];
             Real SOL[DG_N_SOL], nbr_SOL[DG_N_SOL], dSOL[DG_N_SOL];
             Real dCL[DG_N_SOL], dCR[DG_N_SOL], dC[DG_N_SOL];
+#ifdef DG_LIMIT_CP
+            Real P[DG_N_SOL], nbr_P[DG_N_SOL], dP[DG_N_SOL];
+#endif
+
+            // CURRENT CELL SPACE LOCATION
+            AMREX_D_TERM
+            (
+                x[0] = prob_lo[0]+(i+0.5)*dx[0];,
+                x[1] = prob_lo[1]+(j+0.5)*dx[1];,
+                x[2] = prob_lo[2]+(k+0.5)*dx[2];
+            )
 
             // CURRENT CELL SOLUTION
             for (int ru = 0; ru < N_SOL; ++ru)
             {
                 SOL[ru] = X_fab(i,j,k,ru);
             }
+#ifdef DG_LIMIT_CP
+            IBVP.F_U2P(t, x, SOL, P);
+#endif
 
             // X1 DIRECTION -------------------------------------------
             // UNIT NORMAL
@@ -389,47 +413,53 @@ void EvalLimitedSlopes(const Real t,
             un[0] = +1.0;
 
             // LEFT DIFFERENCES
-            // Space location
-            AMREX_D_TERM
-            (
-                x[0] = prob_lo[0]+(i    )*dx[0];,
-                x[1] = prob_lo[1]+(j+0.5)*dx[1];,
-                x[2] = prob_lo[2]+(k+0.5)*dx[2];
-            )
-
             // Neighbor cell info
             for (int ru = 0; ru < N_SOL; ++ru)
             {
                 nbr_SOL[ru] = X_fab(i-1,j,k,ru);
             }
+#ifdef DG_LIMIT_CP
+            IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
+#endif
 
             // Characteristics
+#ifndef DG_LIMIT_CP
             for (int ru = 0; ru < N_SOL; ++ru)
             {
                 dSOL[ru] = SOL[ru]-nbr_SOL[ru];
             }
+#else
+            for (int ru = 0; ru < N_SOL; ++ru)
+            {
+                dP[ru] = P[ru]-nbr_P[ru];
+            }
+            IBVP.F_DP2DU(t, x, SOL, dP, dSOL);
+#endif
             IBVP.F_DU2DC(t, x, un, SOL, dSOL, dCL);
 
             // RIGHT DIFFERENCES
-            // Space location
-            AMREX_D_TERM
-            (
-                x[0] = prob_lo[0]+(i+1.0)*dx[0];,
-                x[1] = prob_lo[1]+(j+0.5)*dx[1];,
-                x[2] = prob_lo[2]+(k+0.5)*dx[2];
-            )
-
             // Neighbor cell info
             for (int ru = 0; ru < N_SOL; ++ru)
             {
                 nbr_SOL[ru] = X_fab(i+1,j,k,ru);
             }
+#ifdef DG_LIMIT_CP
+            IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
+#endif
 
             // Characteristics
+#ifndef DG_LIMIT_CP
             for (int ru = 0; ru < N_SOL; ++ru)
             {
                 dSOL[ru] = nbr_SOL[ru]-SOL[ru];
             }
+#else
+            for (int ru = 0; ru < N_SOL; ++ru)
+            {
+                dP[ru] = nbr_P[ru]-P[ru];
+            }
+            IBVP.F_DP2DU(t, x, SOL, dP, dSOL);
+#endif
             IBVP.F_DU2DC(t, x, un, SOL, dSOL, dCR);
 
             // LIMITED SLOPES (OF THE CHARACTERISTICS)
@@ -451,47 +481,53 @@ void EvalLimitedSlopes(const Real t,
             un[1] = +1.0;
 
             // LEFT DIFFERENCES
-            // Space location
-            AMREX_D_TERM
-            (
-                x[0] = prob_lo[0]+(i+0.5)*dx[0];,
-                x[1] = prob_lo[1]+(j    )*dx[1];,
-                x[2] = prob_lo[2]+(k+0.5)*dx[2];
-            )
-
             // Neighbor cell info
             for (int ru = 0; ru < N_SOL; ++ru)
             {
                 nbr_SOL[ru] = X_fab(i,j-1,k,ru);
             }
+#ifdef DG_LIMIT_CP
+            IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
+#endif
 
             // Characteristics
+#ifndef DG_LIMIT_CP
             for (int ru = 0; ru < N_SOL; ++ru)
             {
                 dSOL[ru] = SOL[ru]-nbr_SOL[ru];
             }
+#else
+            for (int ru = 0; ru < N_SOL; ++ru)
+            {
+                dP[ru] = P[ru]-nbr_P[ru];
+            }
+            IBVP.F_DP2DU(t, x, SOL, dP, dSOL);
+#endif
             IBVP.F_DU2DC(t, x, un, SOL, dSOL, dCL);
 
             // RIGHT DIFFERENCES
-            // Space location
-            AMREX_D_TERM
-            (
-                x[0] = prob_lo[0]+(i+0.5)*dx[0];,
-                x[1] = prob_lo[1]+(j+1.0)*dx[1];,
-                x[2] = prob_lo[2]+(k+0.5)*dx[2];
-            )
-
             // Neighbor cell info
             for (int ru = 0; ru < N_SOL; ++ru)
             {
                 nbr_SOL[ru] = X_fab(i,j+1,k,ru);
             }
+#ifdef DG_LIMIT_CP
+            IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
+#endif
 
             // Characteristics
+#ifndef DG_LIMIT_CP
             for (int ru = 0; ru < N_SOL; ++ru)
             {
                 dSOL[ru] = nbr_SOL[ru]-SOL[ru];
             }
+#else
+            for (int ru = 0; ru < N_SOL; ++ru)
+            {
+                dP[ru] = nbr_P[ru]-P[ru];
+            }
+            IBVP.F_DP2DU(t, x, SOL, dP, dSOL);
+#endif
             IBVP.F_DU2DC(t, x, un, SOL, dSOL, dCR);
 
             // LIMITED SLOPES (OF THE CHARACTERISTICS)
@@ -514,47 +550,53 @@ void EvalLimitedSlopes(const Real t,
             un[2] = +1.0;
 
             // LEFT DIFFERENCES
-            // Space location
-            AMREX_D_TERM
-            (
-                x[0] = prob_lo[0]+(i+0.5)*dx[0];,
-                x[1] = prob_lo[1]+(j+0.5)*dx[1];,
-                x[2] = prob_lo[2]+(k    )*dx[2];
-            )
-
             // Neighbor cell info
             for (int ru = 0; ru < N_SOL; ++ru)
             {
                 nbr_SOL[ru] = X_fab(i,j,k-1,ru);
             }
+#ifdef DG_LIMIT_CP
+            IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
+#endif
 
             // Characteristics
+#ifndef DG_LIMIT_CP
             for (int ru = 0; ru < N_SOL; ++ru)
             {
                 dSOL[ru] = SOL[ru]-nbr_SOL[ru];
             }
+#else
+            for (int ru = 0; ru < N_SOL; ++ru)
+            {
+                dP[ru] = P[ru]-nbr_P[ru];
+            }
+            IBVP.F_DP2DU(t, x, SOL, dP, dSOL);
+#endif
             IBVP.F_DU2DC(t, x, un, SOL, dSOL, dCL);
 
             // RIGHT DIFFERENCES
-            // Space location
-            AMREX_D_TERM
-            (
-                x[0] = prob_lo[0]+(i+0.5)*dx[0];,
-                x[1] = prob_lo[1]+(j+0.5)*dx[1];,
-                x[2] = prob_lo[2]+(k+1.0)*dx[2];
-            )
-
             // Neighbor cell info
             for (int ru = 0; ru < N_SOL; ++ru)
             {
                 nbr_SOL[ru] = X_fab(i,j,k+1,ru);
             }
+#ifdef DG_LIMIT_CP
+            IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
+#endif
 
             // Characteristics
+#ifndef DG_LIMIT_CP
             for (int ru = 0; ru < N_SOL; ++ru)
             {
                 dSOL[ru] = nbr_SOL[ru]-SOL[ru];
             }
+#else
+            for (int ru = 0; ru < N_SOL; ++ru)
+            {
+                dP[ru] = nbr_P[ru]-P[ru];
+            }
+            IBVP.F_DP2DU(t, x, SOL, dP, dSOL);
+#endif
             IBVP.F_DU2DC(t, x, un, SOL, dSOL, dCR);
 
             // LIMITED SLOPES (OF THE CHARACTERISTICS)
@@ -589,16 +631,22 @@ void EvalLimitedSlopes(const Real t,
  *                   the basis functions for the unknown solution fields.
  * \param[in] IBVP: a class that must have methods with the following prototypes:
  *
- *                  void F_RIEMANN(const Real t, const Real * x, const Real * un,
- *                                 const Real * SOL_left, const Real * SOL_right,
- *                                 Real * SOL_RP) const;
  *                  void F_DU2DC(const Real t, const Real * x, const Real * un,
  *                               const Real * SOL, const Real * DU,
  *                               Real * DC) const;
  *                  void F_DC2DU(const Real t, const Real * x, const Real * un,
- *                               const Real * U, const Real * DC, 
+ *                               const Real * SOL, const Real * DC, 
  *                               Real * DU) const;
+ *                  void F_NF_ICS(const Real t, const Real * x, const Real * un,
+ *                                const Real * SOL, const Real * nbr_SOL, Real * NFn) const;
  *
+ *                  If DG_LIMIT_CP is defined, the class must also have:
+ *
+ *                  void F_U2P(const Real t, const Real * x,
+ *                             const Real * SOL, Real * P) const;
+ *                  void F_DP2DU(const Real t, const Real * x, const Real * un,
+ *                               const Real * SOL, const Real * DP,
+ *                               Real * DU) const;
 */
 template <typename IBVP_CLASS>
 void Eval_dXdt(const Real t,
@@ -692,23 +740,29 @@ void Eval_dXdt(const Real t,
  * \param[in] dt: time step.
  * \param[in] t: time.
  * \param[in] geom: a Geometry object that contains geometry information.
- * \param[in] std_elem: a StandardRectangle<AMREX_SPACEDIM> object that contains evaluation grid
- *                      points and basis functions data.
  * \param[in] N_SOL: Number of unknown solution fields.
- * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
- *               unknown solution fields.
+ * \param[inout] X: a MultiFab object that contains the coefficients of the basis functions for the
+ *                  unknown solution fields. On exit, the coefficients will be updated according to
+ *                  a 2nd-order RungeKutta algorithm.
  * \param[in] IBVP: a class that must have methods with the following prototypes:
  *
  *                  void F_BCS(const Real t, const Real * x, const Real * un,
  *                             const Real * SOL, const Real * bcs_SOL) const;
- *                  void F_RIEMANN(const Real t, const Real * x, const Real * un,
- *                                 const Real * SOL_left, const Real * SOL_right,
- *                                 Real * SOL_RP) const;
  *                  void F_DU2DC(const Real t, const Real * x, const Real * un,
  *                               const Real * SOL, const Real * DU,
  *                               Real * DC) const;
  *                  void F_DC2DU(const Real t, const Real * x, const Real * un,
- *                               const Real * U, const Real * DC, 
+ *                               const Real * SOL, const Real * DC, 
+ *                               Real * DU) const;
+ *                  void F_NF_ICS(const Real t, const Real * x, const Real * un,
+ *                                const Real * SOL, const Real * nbr_SOL, Real * NFn) const;
+ *
+ *                  If DG_LIMIT_CP is defined, the class must also have:
+ *
+ *                  void F_U2P(const Real t, const Real * x,
+ *                             const Real * SOL, Real * P) const;
+ *                  void F_DP2DU(const Real t, const Real * x, const Real * un,
+ *                               const Real * SOL, const Real * DP,
  *                               Real * DU) const;
 */
 template <typename IBVP_CLASS>
@@ -756,17 +810,6 @@ void TakeTimeStep(const Real dt, const Real t,
 
     // dXdt := dXdt(t+dt, X1)
     Eval_dXdt(t+dt, geom, N_SOL, X1, dXdt, IBVP);
-
-    if (X1.contains_nan())
-    {
-        Print() << "HERE WE ARE - X1 contains nan" << std::endl;
-        exit(-1);
-    }
-    if (dXdt.contains_nan())
-    {
-        Print() << "HERE WE ARE - dXdt contains nan" << std::endl;
-        exit(-1);
-    }
 
     // X_new := (1/2)*X_old+(1/2)*X1+(dt/2)*dXdt
     MultiFab::LinComb(X_new, 0.5, X_old, 0, 0.5, X1, 0, 0, n_comp, ngr);

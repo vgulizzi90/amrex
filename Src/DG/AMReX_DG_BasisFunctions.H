@@ -6,10 +6,10 @@
  * \brief Routines for computing the basis functions for discontinuous Galerkin methods.
 */
 
+#include <AMReX_REAL.H>
+
 #ifndef AMREX_DG_BASIS_FUNCTIONS_H_
 #define AMREX_DG_BASIS_FUNCTIONS_H_
-
-#include <AMReX_REAL.H>
 
 #define DG_BASIS_FUNCTIONS_LEGENDRE_P 0
 #define DG_BASIS_FUNCTIONS_CHEBYSHEV_T 1
@@ -34,7 +34,7 @@ namespace DG
  * \param[out] BF: pointer to memory storing the basis functions;
  *
 */
-template<typename T>
+template <typename T>
 AMREX_GPU_HOST_DEVICE
 void DG_BF_1d_Table_NxL(const int N, const int L,
                         const T * x, const Real xlo, const Real xhi,
@@ -72,7 +72,7 @@ void DG_BF_1d_Table_NxL(const int N, const int L,
  * \param[out] BF: pointer to memory storing the basis functions;
  *
 */
-template<typename T>
+template <typename T>
 void DG_BF_1d_Table_NxL__host__(const int N, const int L,
                                 const T * x, const Real xlo, const Real xhi,
                                 T * BF)
@@ -108,7 +108,7 @@ void DG_BF_1d_Table_NxL__host__(const int N, const int L,
  * \param[out] dBF: pointer to memory storing the derivatives of the basis functions;
  *
 */
-template<typename T>
+template <typename T>
 AMREX_GPU_HOST_DEVICE
 void DG_BF_1d_Table_NxL(const int N, const int L,
                         const T * x, const Real xlo, const Real xhi,
@@ -151,7 +151,7 @@ void DG_BF_1d_Table_NxL(const int N, const int L,
  * \param[out] dBF: pointer to memory storing the derivatives of the basis functions;
  *
 */
-template<typename T>
+template <typename T>
 void DG_BF_1d_Table_NxL__host__(const int N, const int L,
                                 const T * x, const Real xlo, const Real xhi,
                                 T * BF, T * dBF)
@@ -394,14 +394,14 @@ void DG_space_3d_BF_Table_NxL(const int N, const int L,
     }
 }
 
-template<typename T>
+template <typename T>
 void DG_space_1d_BF_Table_NxL__host__(const int N, const int L,
                                       const T * x, const Real xlo, const Real xhi,
                                       T * BF)
 {
     DG_BF_1d_Table_NxL__host__(N, L, x, xlo, xhi, BF);
 }
-template<typename T>
+template <typename T>
 AMREX_GPU_HOST_DEVICE
 void DG_space_1d_BF_Table_NxL__host__(const int N, const int L,
                                       const T * x, const Real xlo, const Real xhi,
@@ -410,7 +410,7 @@ void DG_space_1d_BF_Table_NxL__host__(const int N, const int L,
     DG_BF_1d_Table_NxL__host__(N, L, x, xlo, xhi, BF, dBF);
 }
 
-template<typename T>
+template <typename T>
 void DG_space_2d_BF_Table_NxL__host__(const int N, const int L,
                                       const T * x1, const T * x2, const Real * xlo, const Real * xhi,
                                       T * BF1_1d, T * dBF1_1d, T * BF2_1d, T * dBF2_1d,
@@ -434,7 +434,7 @@ void DG_space_2d_BF_Table_NxL__host__(const int N, const int L,
         dBFdx2[pos] = BF1_1d[pos1]*dBF2_1d[pos2];
     }
 }
-template<typename T>
+template <typename T>
 void DG_space_2d_BF_Table_NxL__host__(const int N, const int L,
                                       const T * x1, const T * x2, const Real * xlo, const Real * xhi,
                                       T * BF1_1d, T * BF2_1d,
@@ -457,7 +457,7 @@ void DG_space_2d_BF_Table_NxL__host__(const int N, const int L,
     }
 }
 
-template<typename T>
+template <typename T>
 void DG_space_3d_BF_Table_NxL__host__(const int N, const int L,
                                       const T * x1, const T * x2, const T * x3, const Real * xlo, const Real * xhi,
                                       T * BF1_1d, T * dBF1_1d, T * BF2_1d, T * dBF2_1d, T * BF3_1d, T * dBF3_1d,
@@ -486,7 +486,7 @@ void DG_space_3d_BF_Table_NxL__host__(const int N, const int L,
     }
 }
 
-template<typename T>
+template <typename T>
 void DG_space_3d_BF_Table_NxL__host__(const int N, const int L,
                                       const T * x1, const T * x2, const T * x3, const Real * xlo, const Real * xhi,
                                       T * BF1_1d, T * BF2_1d, T * BF3_1d, T * BF)

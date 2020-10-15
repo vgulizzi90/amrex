@@ -6,13 +6,15 @@
  * \brief Constants and data structures of standard elements for discontinuous Galerkin methods.
 */
 
-#ifndef AMREX_DG_STANDARD_ELEMENTS_H_
-#define AMREX_DG_STANDARD_ELEMENTS_H_
+#include <AMReX_GpuContainers.H>
 
 #include <AMReX_DG_IO.H>
 #include <AMReX_DG_Quadrature.H>
 #include <AMReX_DG_BasisFunctions.H>
 #include <AMReX_DG_LinAlg.H>
+
+#ifndef AMREX_DG_STANDARD_ELEMENTS_H_
+#define AMREX_DG_STANDARD_ELEMENTS_H_
 
 namespace amrex
 {
@@ -62,6 +64,7 @@ struct StandardRectangle
     Gpu::ManagedVector<Real> bou_dBFdXI3;
 
     // MASS MATRIX AND ITS CHOLESKY DECOMPOSITION AND INVERSE
+    const char MM_uplo = 'U';
     Gpu::ManagedVector<Real> MM, MMCh, iMM;
 
     // GRID POINTS
@@ -71,6 +74,9 @@ struct StandardRectangle
     Gpu::ManagedVector<Real> bou_XI1g;
     Gpu::ManagedVector<Real> bou_XI2g;
     Gpu::ManagedVector<Real> bou_XI3g;
+
+    // SLOpe OPERATOR
+    Gpu::ManagedVector<Real> SLOpe;
     // ################################################################
 
     // CONSTRUCTOR ####################################################
@@ -79,22 +85,44 @@ struct StandardRectangle
 
     StandardRectangle(const Real * dx_, const int p_, const int q_)
     {
-        this->Init(dx_, p_, q_);
+        this->define(dx_, p_, q_);
     }
     // ################################################################
 
     // INITIALIZATION #################################################
     /**
-     * \brief This method initializes all the data members of the standard element.
+     * \brief This method initializes the basic data members of the standard element.
      * 
      * \param[in] dx_: pointer to memory containing the sizes of the element.
      * \param[in] p_: order of the basis functions.
      * \param[in] q_: order of the quadrature.
     */
-    void Init(const Real * dx_, const int p_, const int q_)
+    void define(const Real * dx_, const int p_, const int q_)
     {
         // PARAMETERS =================================================
         const int g_ = std::max(1, q_);
+        // ============================================================
+
+        // QUICK CHECKS ===============================================
+        if (p_ < 0)
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::define\n";
+            msg += "| The order of the basis functions must be positive.\n";
+            msg += "| Input order p = "+std::to_string(p_)+"\n";
+            Abort(msg);
+        }
+
+        if (q_ < 0)
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::define\n";
+            msg += "| The order of the quadrature must be positive.\n";
+            msg += "| Input order q = "+std::to_string(q_)+"\n";
+            Abort(msg);   
+        }
         // ============================================================
 
         // ELEMENT SIZE ===============================================
@@ -110,7 +138,7 @@ struct StandardRectangle
         this->q = q_;
         this->dom_Nq = AMREX_D_PICK(1+q_, (1+q_)*(1+q_), (1+q_)*(1+q_)*(1+q_));
         this->bou_Nq = AMREX_D_PICK(1, 1+q_, (1+q_)*(1+q_));
-        this->g = std::max(1, q_);
+        this->g = g_;
         this->dom_Ng = AMREX_D_PICK(1+g_, (1+g_)*(1+g_), (1+g_)*(1+g_)*(1+g_));
         this->bou_Ng = AMREX_D_PICK(1, 1+g_, (1+g_)*(1+g_));
         // ============================================================
@@ -142,7 +170,7 @@ struct StandardRectangle
         {
             std::string msg;
             msg  = "\n";
-            msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::Init\n";
+            msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::define\n";
             msg += "| Quadrature order = "+std::to_string(q_)+" not implemented yet\n";
             Abort(msg);
         }
@@ -352,7 +380,7 @@ struct StandardRectangle
         {
             std::string msg;
             msg  = "\n";
-            msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::Init\n";
+            msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::define\n";
             msg += "| Dimension = "+std::to_string(DIM)+" not implemented yet\n";
             Abort(msg);
         }
@@ -452,7 +480,7 @@ struct StandardRectangle
             {
                 std::string msg;
                 msg  = "\n";
-                msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::Init\n";
+                msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::define\n";
                 msg += "| Dimension = "+std::to_string(DIM)+" not implemented yet\n";
                 Abort(msg);
             }
@@ -485,16 +513,15 @@ struct StandardRectangle
             }
 
             // CHOLESKY DECOMPOSITION
-            const char uplo = 'U';
             int info;
             std::copy(this->MM.begin(), this->MM.end(), this->MMCh.begin());
-            linalg::dpotf2(uplo, this->Np, this->MMCh.data(), this->Np, info);
+            linalg::dpotf2(this->MM_uplo, this->Np, this->MMCh.data(), this->Np, info);
 
             if (info != 0)
             {
                 std::string msg;
                 msg  = "\n";
-                msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::Init\n";
+                msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::define\n";
                 msg += "| Something went wrong with the evaluation of the Cholesky\n";
                 msg += "| decomposition of the mass matrix.\n";
                 Abort(msg);
@@ -506,7 +533,7 @@ struct StandardRectangle
                 this->iMM[r+r*(this->Np)] = 1.0;
             }
 
-            linalg::dpotrs(uplo, this->Np, this->Np, this->MMCh.data(), this->Np,
+            linalg::dpotrs(this->MM_uplo, this->Np, this->Np, this->MMCh.data(), this->Np,
                            this->iMM.data(), this->Np,
                            info);
 
@@ -514,7 +541,7 @@ struct StandardRectangle
             {
                 std::string msg;
                 msg  = "\n";
-                msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::Init\n";
+                msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::define\n";
                 msg += "| Something went wrong with the evaluation of the inverse of the mass\n";
                 msg += "| matrix.\n";
                 Abort(msg);
@@ -527,6 +554,7 @@ struct StandardRectangle
             IO::PrintRealArray2D(this->Np, this->Np, this->MMCh.data());
             Print() << "iMM: " << std::endl;
             IO::PrintRealArray2D(this->Np, this->Np, this->iMM.data());
+            exit(-1);
             */
         }
         // ============================================================
@@ -569,7 +597,7 @@ struct StandardRectangle
         {
             std::string msg;
             msg  = "\n";
-            msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::Init\n";
+            msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::define\n";
             msg += "| Grid order = "+std::to_string(g_)+" not implemented yet\n";
             Abort(msg);
         }
@@ -738,7 +766,7 @@ struct StandardRectangle
             {
                 std::string msg;
                 msg  = "\n";
-                msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::Init\n";
+                msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::define\n";
                 msg += "| Dimension = "+std::to_string(DIM)+" not implemented yet\n";
                 Abort(msg);
             }
@@ -749,15 +777,85 @@ struct StandardRectangle
     /**
      * \brief This method initializes all the data members of the 0th-order standard element.
      *
-     * The method calls the Init(dx_, p_, q_) method with p_ = 0 and q_ = 0.
+     * The method calls the define(dx_, p_, q_) method with p_ = 0 and q_ = 0.
      * 
      * \param[in] dx_: pointer to memory containing the sizes of the element.
     */
-    void Init(const Real * dx_)
+    void define(const Real * dx_)
     {
         const int p_ = 0;
         const int q_ = 0;
-        this->Init(dx_, p_, q_);
+        this->define(dx_, p_, q_);
+    }
+    // ################################################################
+
+    // AUXILIARY SLOPE OPERATOR #######################################
+    /**
+     * \brief This method initializes the SLOpe operator.
+     *
+     * The SLOpe operator allows to express a function of the form:
+     *
+     * u(x) = u(x0)+grad_u dot (x-x0)
+     *
+     * in terms of the dG basis functions.
+     *
+    */
+    void InitSLOpe()
+    {
+        // PARAMETERS =================================================
+        const int size = (this->Np)*(1+AMREX_SPACEDIM);
+        // ============================================================
+        
+        // VARIABLES ==================================================
+        int info;
+        // ============================================================
+
+        // ALLOCATE MEMORY ============================================
+        this->SLOpe.resize(size);
+        std::fill(this->SLOpe.begin(), this->SLOpe.end(), 0.0);
+        // ============================================================
+
+        // EVAL THE AUXILIARY SLOPE LIMITER OPERATOR ==================
+        for (int r = 0; r < (this->Np); ++r)
+        for (int k = 0; k < (this->dom_Nq); ++k)
+        {
+            const int posr = k+r*(this->dom_Nq);
+
+            // Average
+            this->SLOpe[r] += this->dom_BF[posr]*this->dom_Wq[k];
+
+            AMREX_D_TERM
+            (
+                // d()/dx1
+                this->SLOpe[r+1*(this->Np)] += this->dom_BF[posr]*(this->dom_XI1q[k]-0.5*this->dx[0])*this->dom_Wq[k];,
+                // d()/dx2
+                this->SLOpe[r+2*(this->Np)] += this->dom_BF[posr]*(this->dom_XI2q[k]-0.5*this->dx[1])*this->dom_Wq[k];,
+                // d()/dx3
+                this->SLOpe[r+3*(this->Np)] += this->dom_BF[posr]*(this->dom_XI3q[k]-0.5*this->dx[2])*this->dom_Wq[k];
+            )
+        }
+
+        // MULTIPLY BY THE INVERSE MASS MATRIX
+        linalg::dpotrs(this->MM_uplo, this->Np, 1+AMREX_SPACEDIM,
+                       this->MMCh.data(), this->Np,
+                       this->SLOpe.data(), this->Np,
+                       info);
+
+        if (info != 0)
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::InitSLOpe\n";
+            msg += "| Something went wrong with the evaluation of the inverse of the mass\n";
+            msg += "| matrix.\n";
+            Abort(msg);
+        }
+
+        /*
+        Print() << "SLOpe: " << std::endl;
+        IO::PrintRealArray2D(this->Np, 1+AMREX_SPACEDIM, this->SLOpe.data());
+        */
+        // ============================================================
     }
     // ################################################################
 };

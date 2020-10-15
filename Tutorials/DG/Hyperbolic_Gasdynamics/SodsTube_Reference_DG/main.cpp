@@ -37,28 +37,17 @@ amrex::Print() << "#############################################################
 
     // PARAMETERS =====================================================
     const int IOProc = amrex::ParallelDescriptor::IOProcessorNumber();
-    
+
     const std::string problem = "PROBLEM_SodsTube";
 
-    // AUXILIARY TABLES TO TEST THE DIFFERENT ORIENTATIONS
-#if (AMREX_SPACEDIM == 1)
-    const amrex::Real table_hi[1] = {1.0};
-    const int table_n_cells[1] = {64};
-#endif
-#if (AMREX_SPACEDIM == 2)
-    const amrex::Real table_hi[AMREX_SPACEDIM*AMREX_SPACEDIM] = {1.0, 0.1, 0.1, 1.0};
-    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {64, 4, 4, 64};
-#endif
-#if (AMREX_SPACEDIM == 3)
-    const amrex::Real table_hi[AMREX_SPACEDIM*AMREX_SPACEDIM] = {1.0, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 1.0};
-    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {64, 4, 4, 4, 64, 4, 4, 4, 64};
-#endif
+    // AUXILIARY TABLES TO TEST THE DIFFERENT POLYNOMIAL ORDERS
+    const amrex::Vector<int> table_p = {0, 1, 2, 3};
+    const int n_p = table_p.size();
 
     // NUMBER OF GHOST ROWS
     const int ngr = 1;
 
     // IBVP
-    const int X_n_comp = N_SOL;
     const amrex::Real gamma = 1.4;
     // ================================================================
 
@@ -81,45 +70,27 @@ amrex::Print() << "#############################################################
 
     // SOLUTION MULTIFAB
     amrex::MultiFab X;
+    amrex::DG::charMultiFab tags;
 
     // IBVP
     IDEAL_GAS IG(gamma, inputs.problem.params);
     // ================================================================
 
-    // WE TEST ALL POSSIBLE ORIENTATIONS OF THE TUBE
-    for (int ori = 0; ori < AMREX_SPACEDIM; ++ori)
+    // WE TEST DIFFERENT POLYNOMIAL ORDERS
+    for (int ip = 0; ip < n_p; ++ip)
     {
-        // SET SOD'S TUBE ORIENTATION =================================
-        IG.set_ori(ori);
-        // ============================================================
-
-        // SET THE PROBLEM SIZE AND THE NUMBER OF CELLS ===============
-#if (AMREX_SPACEDIM == 1)
-        inputs.space.hi[0] = table_hi[ori];
-        inputs.mesh.n_cells[0] = table_n_cells[ori];
-#endif
-#if (AMREX_SPACEDIM == 2)
-        inputs.space.hi[0] = table_hi[ori];
-        inputs.space.hi[1] = table_hi[ori+AMREX_SPACEDIM];
-        inputs.mesh.n_cells[0] = table_n_cells[ori];
-        inputs.mesh.n_cells[1] = table_n_cells[ori+AMREX_SPACEDIM];
-#endif
-#if (AMREX_SPACEDIM == 3)
-        inputs.space.hi[0] = table_hi[ori];
-        inputs.space.hi[1] = table_hi[ori+AMREX_SPACEDIM];
-        inputs.space.hi[2] = table_hi[ori+2*AMREX_SPACEDIM];
-        inputs.mesh.n_cells[0] = table_n_cells[ori];
-        inputs.mesh.n_cells[1] = table_n_cells[ori+AMREX_SPACEDIM];
-        inputs.mesh.n_cells[2] = table_n_cells[ori+2*AMREX_SPACEDIM];
-#endif
+        // SET THE ORDER IN SPACE AND TIME ============================
+        inputs.dG.space_p = table_p[ip];
+        inputs.dG.time_p = table_p[ip];
         // ============================================================
 
         // MAKE OUTPUT FOLDER =========================================
         {
+            const std::string p_info = "p"+std::to_string(inputs.dG.space_p);
             const std::string mesh_info = AMREX_D_TERM(std::to_string(inputs.mesh.n_cells[0]),+"x"+
                                                        std::to_string(inputs.mesh.n_cells[1]),+"x"+
                                                        std::to_string(inputs.mesh.n_cells[2]));
-            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info});
+            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+p_info});
             amrex::DG::IO::MakeFolder(output_folderpath);
         }
         // ============================================================
@@ -139,13 +110,17 @@ amrex::Print() << "#############################################################
         // ============================================================
 
         // HEADER =====================================================
-        const char ori_description = ((ori == 0) ? 'X' : ((ori == 1) ? 'Y' : 'Z'));
         amrex::Print() << std::endl;
-        amrex::Print() << "# SOD'S TUBE TEST #" << ori << " - ORIENTATION: " << ori_description << std::endl;
+        amrex::Print() << "# SOD'S TUBE TEST #" << ip << " - p: " << inputs.dG.space_p << std::endl;
         // ============================================================
 
         // TIC ========================================================
         start_time = amrex::second();
+        // ============================================================
+
+        // TOC ========================================================
+        stop_time = amrex::second();
+        amrex::ParallelDescriptor::ReduceRealMax(stop_time, IOProc);
         // ============================================================
 
         // INIT THE STANDARD ELEMENT ==================================
@@ -158,8 +133,22 @@ amrex::Print() << "#############################################################
             )
             const amrex::Real dx[AMREX_SPACEDIM] = {AMREX_D_DECL(dx1, dx2, dx3)};
 
-            std_elem.define(dx);
+            const int p = inputs.dG.space_p;
+            const int q = p+1;
+            
+            std_elem.define(dx, p, q);
+
+            // WE NEED THE SLOpe OPERATOR
+            std_elem.InitSLOpe();
         }
+        // ============================================================
+        // NOTE: The SLOpe operator allows to express a function of the
+        //       form:
+        //
+        //       u(x) = u(x0)+grad_u dot (x-x0)
+        //
+        //       in terms of the dG basis functions.
+        //
         // ============================================================
 
         // INIT GEOMETRY AND DISTRIBUTION MAPPING =====================
@@ -184,11 +173,26 @@ amrex::Print() << "#############################################################
         // ============================================================
 
         // INIT MULTIFAB ==============================================
-        X.define(ba, dm, X_n_comp, ngr);
+        {
+            const int X_n_comp = std_elem.Np*N_SOL;
+            X.define(ba, dm, X_n_comp, ngr);
+            
+            tags.define(ba, dm, 1, 1);
+        }
         // ============================================================
 
         // SET INITIAL CONDITIONS =====================================
         ProjectInitialConditionsOverGrid(geom, std_elem, N_SOL, X, IG);
+
+        // WE NEED THE SLOPE LIMITER
+        // NOTE: In actuality we do not need to apply the slope limiter
+        //       because for this problem the jump is aligned with the
+        //       cells' boundaries. However, in general we might need
+        //       to limit the projected initial conditions.
+        if (inputs.dG.space_p != 0)
+        {
+            ApplySlopeLimiter(0.0, geom, std_elem, N_SOL, X, tags, IG);
+        }
         
         // WRITE TO OUTPUT
         if (inputs.plot_int > 0)
@@ -196,14 +200,17 @@ amrex::Print() << "#############################################################
             const int n = 0;
             const amrex::Real t = 0.0;
             Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                       t, geom, std_elem, N_SOL, X,
+                       t, geom, std_elem, N_SOL, X, tags,
                        IG);
         }
         // ============================================================
-
+        
         // ADVANCE IN TIME ============================================
         amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
         {
+            const int p = inputs.dG.space_p;
+            const int RK_order = p+1;
+
             int n = 0;
             amrex::Real t, dt;
             amrex::Real tps_start, tps_stop, tps;
@@ -221,11 +228,11 @@ amrex::Print() << "#############################################################
 
                 // COMPUTE NEXT TIME STEP
                 dt = amrex::DG::Compute_dt(t+0.5*dt, geom, std_elem, N_SOL, X, IG);
-                dt *= inputs.mesh.CFL;
+                dt *= inputs.mesh.CFL/(1.0+2.0*p);
                 dt = std::min(t+dt, inputs.time.T)-t;
 
                 // TIME STEP
-                amrex::DG::TakeTimeStep(dt, t, geom, N_SOL, X, IG);
+                amrex::DG::TakeTimeStep(RK_order, dt, t, geom, std_elem, N_SOL, X, tags, IG);
 
                 // UPDATE TIME STEP
                 n += 1;
@@ -235,7 +242,7 @@ amrex::Print() << "#############################################################
                 if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(t/inputs.time.T-1.0) < 1.0e-12)))
                 {
                     Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                               t, geom, std_elem, N_SOL, X,
+                               t, geom, std_elem, N_SOL, X, tags,
                                IG);
                 }
 
@@ -254,11 +261,6 @@ amrex::Print() << "#############################################################
 
         }
         amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
-        // ============================================================
-
-        // TOC ========================================================
-        stop_time = amrex::second();
-        amrex::ParallelDescriptor::ReduceRealMax(stop_time, IOProc);
         // ============================================================
 
         // CLOSING ====================================================

@@ -1,0 +1,75 @@
+# SPACE ###############################################################
+space.is_periodic = 0 0 0
+space.lo          = 0.0 0.0 0.0
+space.hi          = 1.0 1.0 1.0
+#######################################################################
+
+
+
+# TIME ################################################################
+time.T = 0.2
+time.n_steps = 1000
+#######################################################################
+
+
+
+# DISCRETIZATION ######################################################
+# GRID ================================================================
+grid.n_cells      = 64 64 64
+grid.max_box_size = 4 4 4
+grid.CFL = 0.3
+# =====================================================================
+
+
+# IMPLICITLY-DEFINED MESH =============================================
+grid.space_p = 2
+grid.space_q = 2
+grid.space_q_im = 3
+
+grid.volume_fraction_threshold = 0.3
+# =====================================================================
+
+
+# DISCONTINUOUS GALERKIN METHOD =======================================
+dG.space_p = 0
+# =====================================================================
+# NOTE: In order to activate finite-volume with the implicitly-defined
+#       mesh, it is necessary to set: dG.space_p = 0.
+# =====================================================================
+#######################################################################
+
+
+
+# PROBLEM #############################################################
+problem.params = 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.2 45.0
+#######################################################################
+# NOTE: params contains the left_state and right_state, which should be
+#       input as follows:
+#
+#       rhoL, uL, pL, xis, rhoR, uR, pR, diam, theta (degree)
+#
+#       where:
+#       - (rhoL, uL, pL) is the left state;
+#       - xis is the shock location;
+#       - (rhoR, uR, pR) is the right state;
+#       - diam is the diameter of the tube;
+#       - theta is the inclination of the tube;
+#
+#       The geometry of the tube is defined as follows: given the
+#       [0,1]^AMREX_SPACEDIM container C, the tube is the set of points
+#       of C such that the distance between the generic point x and the
+#       centerline of the tube is less than the tube's radius r, where
+#       r = diam/2. The centerline of the tube is defined by the
+#       following equation:
+#
+#       x2 = m*x1+q
+#
+#       where m = tan(theta) and q = (1-m)/2.
+#
+#######################################################################
+
+
+
+# POST-PROCESSING INFO ################################################
+plot_int = 1
+#######################################################################

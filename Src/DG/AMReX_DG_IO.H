@@ -6,13 +6,13 @@
  * \brief Header file for some auxiliary input/output routines.
 */
 
-#ifndef AMREX_DG_IO_H_
-#define AMREX_DG_IO_H_
-
 #include <string>
 
 #include <AMReX_Print.H>
 #include <AMReX_Utility.H>
+
+#ifndef AMREX_DG_IO_H_
+#define AMREX_DG_IO_H_
 
 namespace amrex
 {

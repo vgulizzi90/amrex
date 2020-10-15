@@ -65,6 +65,7 @@ struct IDEAL_GAS_BASE
      * \param[out] u3: velocity component in x3 direction (non present if AMREX_SPACEDIM < 3).
      * \param[out] p: pressure.
     */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_primary_variables(const amrex::Real * U, 
                                 amrex::Real & rho,
                                 AMREX_D_DECL(amrex::Real & u1, amrex::Real & u2, amrex::Real & u3),
@@ -94,6 +95,7 @@ struct IDEAL_GAS_BASE
      * \param[out] a: sound speed.
      * \param[out] h: enthalpy.
     */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_enthalpy_variables(const amrex::Real * U, 
                                  AMREX_D_DECL(amrex::Real & u1, amrex::Real & u2, amrex::Real & u3),
                                  amrex::Real & p, amrex::Real & a, amrex::Real & h) const
@@ -125,6 +127,11 @@ struct IDEAL_GAS_BASE
     AMREX_GPU_HOST_DEVICE
     void eval_U2Un(const amrex::Real * un, const amrex::Real * U, amrex::Real * Un) const
     {
+#if (AMREX_SPACEDIM == 1)
+        Un[RHO] = U[RHO];
+        Un[RHOV1] = un[0]*U[RHOV1];
+        Un[TE] = U[TE];
+#endif
 #if (AMREX_SPACEDIM == 2)
         Un[RHO] = U[RHO];
         Un[RHOV1] =  un[0]*U[RHOV1]+un[1]*U[RHOV2];
@@ -163,6 +170,11 @@ struct IDEAL_GAS_BASE
     AMREX_GPU_HOST_DEVICE
     void eval_Un2U(const amrex::Real * un, const amrex::Real * Un, amrex::Real * U) const
     {
+#if (AMREX_SPACEDIM == 1)
+        U[RHO] = Un[RHO];
+        U[RHOV1] = un[0]*Un[RHOV1];
+        U[TE] = Un[TE];
+#endif
 #if (AMREX_SPACEDIM == 2)
         U[RHO] = Un[RHO];
         U[RHOV1] = un[0]*Un[RHOV1]-un[1]*Un[RHOV2];
@@ -190,6 +202,27 @@ struct IDEAL_GAS_BASE
     }
     // ################################################################
 
+    // SOUNDNESS OF THE SOLUTION ######################################
+    /**
+     * \brief Check whether the solution at (t,x) is physically acceptable.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] SOL: pointer to memory containing the unknown solution fields at (t,x).
+     *
+     * \return true if the solution is physically acceptable, false otherwide.
+    */
+    AMREX_GPU_HOST_DEVICE
+    bool F_TROUBLED(const amrex::Real /*t*/, const amrex::Real * /*x*/,
+                    const amrex::Real * SOL) const
+    {
+        amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
+        this->eval_primary_variables(SOL, rho, AMREX_D_DECL(u1, u2, u3), p);
+
+        return ((rho < 0.0) || (p < 0.0));
+    }
+    // ################################################################
+
     // TIME STEP ######################################################
     /**
      * \brief Eval the maximum time step.
@@ -199,6 +232,7 @@ struct IDEAL_GAS_BASE
      * \param[in] x: pointer to memory containing the space location.
      * \param[in] SOL: pointer to memory containing the unknown solution fields at (t,x).
     */
+    AMREX_GPU_HOST_DEVICE
     amrex::Real F_DT(const amrex::Real * dx,
                      const amrex::Real /*t*/, const amrex::Real * /*x*/,
                      const amrex::Real * SOL) const
@@ -660,6 +694,11 @@ struct IDEAL_GAS_BASE
         amrex::Real AMREX_D_DECL(u1, u2, u3), p, a, h;
         this->eval_enthalpy_variables(U, AMREX_D_DECL(u1, u2, u3), p, a, h);
 
+#if (AMREX_SPACEDIM == 1)
+        DC[RHO]   =     (h+a*(u1-a)/g1)*DU[RHO]+(-a/g1-u1)*DU[RHOV1]    +DU[TE];
+        DC[RHOV1] = (-2.0*h+4.0*a*a/g1)*DU[RHO]    +2.0*u1*DU[RHOV1]-2.0*DU[TE];
+        DC[TE]    =     (h-a*(u1+a)/g1)*DU[RHO]+(+a/g1-u1)*DU[RHOV1]    +DU[TE];
+#endif
 #if (AMREX_SPACEDIM == 2)
         DC[RHO]   =     (h+a*(u1-a)/g1)*DU[RHO]+(-a/g1-u1)*DU[RHOV1]          -u2*DU[RHOV2]    +DU[TE];
         DC[RHOV1] = (-2.0*h+4.0*a*a/g1)*DU[RHO]    +2.0*u1*DU[RHOV1]      +2.0*u2*DU[RHOV2]-2.0*DU[TE];
@@ -726,6 +765,11 @@ struct IDEAL_GAS_BASE
         amrex::Real AMREX_D_DECL(u1, u2, u3), p, a, h;
         this->eval_enthalpy_variables(U, AMREX_D_DECL(u1, u2, u3), p, a, h);
 
+#if (AMREX_SPACEDIM == 1)
+        DU[RHO]   =          DC[RHO]          +DC[RHOV1]         +DC[TE];
+        DU[RHOV1] =  (-a+u1)*DC[RHO]       +u1*DC[RHOV1]  +(a+u1)*DC[TE];
+        DU[TE]    = (h-a*u1)*DC[RHO]+0.5*u1*u1*DC[RHOV1]+(h+a*u1)*DC[TE];
+#endif
 #if (AMREX_SPACEDIM == 2)
         DU[RHO]   =          DC[RHO]                  +DC[RHOV1]                      +DC[TE];
         DU[RHOV1] =  (-a+u1)*DC[RHO]               +u1*DC[RHOV1]               +(a+u1)*DC[TE];
@@ -765,6 +809,75 @@ struct IDEAL_GAS_BASE
     }
     // ################################################################
 
+    // CONSERVED VARIABLES VS PRIMARY VARIABLES #######################
+    /**
+     * \brief Eval primary variables from conserved variables.
+     * 
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[out] P: pointer to memory that, on exit, will contain the primary variables.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_U2P(const amrex::Real /*t*/, const amrex::Real * /*x*/, 
+               const amrex::Real * U, amrex::Real * P) const
+    {
+        amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
+        this->eval_primary_variables(U, rho, AMREX_D_DECL(u1, u2, u3), p);
+
+        P[RHO] = U[RHO];
+        AMREX_D_TERM
+        (
+            P[RHOV1] = u1;,
+            P[RHOV2] = u2;,
+            P[RHOV3] = u3;
+        )
+        P[TE] = p;
+    }
+    
+    /**
+     * \brief Eval jumps in the conserved variables from jumps in the primary variables.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] U: pointer to memory containing the unknown solution fields.
+     * \param[in] DP: pointer to memory containing jumps in the primary variables.
+     * \param[out] DU: pointer to memory that will contain jumps in the conserved variables.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_DP2DU(const amrex::Real /*t*/, const amrex::Real * /*x*/,
+                 const amrex::Real * U,
+                 const amrex::Real * DP, amrex::Real * DU) const
+    {
+        // PARAMETERS
+        const amrex::Real g = this->gamma;
+        const amrex::Real ig1 = 1.0/(g-1.0);
+
+        // VARIABLES
+        amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
+        this->eval_primary_variables(U, rho, AMREX_D_DECL(u1, u2, u3), p);
+
+#if (AMREX_SPACEDIM == 1)
+        DU[RHO]   =           DP[RHO];
+        DU[RHOV1] =        u1*DP[RHO]   +rho*DP[RHOV1];
+        DU[TE]    = 0.5*u1*u1*DP[RHO]+rho*u1*DP[RHOV1]+ig1*DP[TE];
+#endif
+#if (AMREX_SPACEDIM == 2)
+        DU[RHO]   =                   DP[RHO];
+        DU[RHOV1] =                u1*DP[RHO]   +rho*DP[RHOV1];
+        DU[RHOV2] =                u2*DP[RHO]                    +rho*DP[RHOV2];
+        DU[TE]    = 0.5*(u1*u1+u2*u2)*DP[RHO]+rho*u1*DP[RHOV1]+rho*u2*DP[RHOV2]+ig1*DP[TE];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        DU[RHO]   =                         DP[RHO];
+        DU[RHOV1] =                      u1*DP[RHO]   +rho*DP[RHOV1];
+        DU[RHOV2] =                      u2*DP[RHO]                    +rho*DP[RHOV2];
+        DU[RHOV3] =                      u3*DP[RHO]                                     +rho*DP[RHOV3];
+        DU[TE]    = 0.5*(u1*u1+u2*u2+u3*u3)*DP[RHO]+rho*u1*DP[RHOV1]+rho*u2*DP[RHOV2]+rho*u3*DP[RHOV3]+ig1*DP[TE];
+#endif
+    }
+    // ################################################################
+
     // FLUXES #########################################################
     /**
      * \brief Eval the flux F1 for the IBVP.
@@ -786,6 +899,74 @@ struct IDEAL_GAS_BASE
             F1[RHOV3] = SOL[RHOV3]*u1;
         )
         F1[TE] = (SOL[TE]+p)*u1;
+    }
+
+#if (AMREX_SPACEDIM > 1)
+    /**
+     * \brief Eval the flux F2 for the IBVP.
+     *
+     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[out] F2: pointer to memory that will contain the flux.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_F2(const amrex::Real * SOL, amrex::Real * F2) const
+    {
+        amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
+        this->eval_primary_variables(SOL, rho, AMREX_D_DECL(u1, u2, u3), p);
+
+        F2[RHO] = SOL[RHOV2];
+        AMREX_D_TERM
+        (
+            F2[RHOV1] = SOL[RHOV1]*u2;,
+            F2[RHOV2] = SOL[RHOV2]*u2+p;,
+            F2[RHOV3] = SOL[RHOV3]*u2;
+        )
+        F2[TE] = (SOL[TE]+p)*u2;
+    }
+#endif
+
+#if (AMREX_SPACEDIM > 2)
+    /**
+     * \brief Eval the flux F3 for the IBVP.
+     *
+     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[out] F3: pointer to memory that will contain the flux.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_F3(const amrex::Real * SOL, amrex::Real * F3) const
+    {
+        amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
+        this->eval_primary_variables(SOL, rho, AMREX_D_DECL(u1, u2, u3), p);
+
+        F3[RHO] = SOL[RHOV3];
+        AMREX_D_TERM
+        (
+            F3[RHOV1] = SOL[RHOV1]*u3;,
+            F3[RHOV2] = SOL[RHOV2]*u3;,
+            F3[RHOV3] = SOL[RHOV3]*u3+p;
+        )
+        F3[TE] = (SOL[TE]+p)*u3;
+    }
+#endif
+
+    /**
+     * \brief Eval the fluxes for the IBVP.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[out] F1, F2, F3: pointer to memory that will contain the fluxes.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_F(const amrex::Real /*t*/, const amrex::Real * /*x*/,
+             const amrex::Real * SOL, AMREX_D_DECL(amrex::Real * F1, amrex::Real * F2, amrex::Real * F3)) const
+    {
+        AMREX_D_TERM
+        (
+            this->eval_F1(SOL, F1);,
+            this->eval_F2(SOL, F2);,
+            this->eval_F3(SOL, F3);
+        )
     }
     // ################################################################
 
