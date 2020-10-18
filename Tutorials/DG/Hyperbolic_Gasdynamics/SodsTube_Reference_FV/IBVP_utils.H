@@ -18,7 +18,7 @@ namespace DG
 {
 
 /**
- * \brief Compute the maximum time step according to the CFL conditions. 
+ * \brief Compute the maximum time step 
  *
  * \param[in] t: time.
  * \param[in] geom: a Geometry object that contains geometry information.
@@ -255,7 +255,7 @@ void FillInvalidCells(const Real t,
                 IBVP.F_BCS(t, x, un, SOL, bcs_SOL);
                 for (int ru = 0; ru < N_SOL; ++ru)
                 {
-                    X_fab(i,j+1,k,ru) = SOL[ru];
+                    X_fab(i,j+1,k,ru) = bcs_SOL[ru];
                 }
             }
 #endif
@@ -278,7 +278,7 @@ void FillInvalidCells(const Real t,
                 IBVP.F_BCS(t, x, un, SOL, bcs_SOL);
                 for (int ru = 0; ru < N_SOL; ++ru)
                 {
-                    X_fab(i,j,k-1,ru) = SOL[ru];
+                    X_fab(i,j,k-1,ru) = bcs_SOL[ru];
                 }
             }
             if (k == domain.bigEnd(2))
@@ -299,7 +299,7 @@ void FillInvalidCells(const Real t,
                 IBVP.F_BCS(t, x, un, SOL, bcs_SOL);
                 for (int ru = 0; ru < N_SOL; ++ru)
                 {
-                    X_fab(i,j,k+1,ru) = SOL[ru];
+                    X_fab(i,j,k+1,ru) = bcs_SOL[ru];
                 }
             }
 #endif

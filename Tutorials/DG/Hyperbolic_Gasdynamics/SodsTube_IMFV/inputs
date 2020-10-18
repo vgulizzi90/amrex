@@ -33,15 +33,15 @@ grid.volume_fraction_threshold = 0.3
 # DISCONTINUOUS GALERKIN METHOD =======================================
 dG.space_p = 0
 # =====================================================================
-# NOTE: In order to activate finite-volume with the implicitly-defined
-#       mesh, it is necessary to set: dG.space_p = 0.
+# NOTE: In order to activate finite volumes with the implicitly-defined
+#       mesh, it is necessary to specify: dG.space_p = 0.
 # =====================================================================
 #######################################################################
 
 
 
 # PROBLEM #############################################################
-problem.params = 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.2 45.0
+problem.params = 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.2 60.0
 #######################################################################
 # NOTE: params contains the left_state and right_state, which should be
 #       input as follows:

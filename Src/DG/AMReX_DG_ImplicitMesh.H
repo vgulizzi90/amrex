@@ -9,6 +9,7 @@
 #include <AMReX_iMultiFab.H>
 
 #include <AMReX_DG_InputReader.H>
+#include <AMReX_DG_BFX.H>
 
 #ifndef AMREX_DG_IMPLICIT_MESH_H_
 #define AMREX_DG_IMPLICIT_MESH_H_
@@ -290,6 +291,16 @@ int ELM_BOU_PLUS_QUAD_POS(const int dom)
     return (__DG_ELM_BOU_QUAD_N_COMP_PER_DOM__*dom+1);
 }
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_BOU_QUAD_NQ(const int dom, const int b)
+{
+    return (__DG_ELM_BOU_QUAD_N_COMP_PER_DOM__*dom+1-(b%2));
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_BOU_QUAD_POS(const int dom, const int b)
+{
+    return (__DG_ELM_BOU_QUAD_N_COMP_PER_DOM__*dom+1-(b%2));
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 int ELM_INT_BOU_QUAD_NQ(const int dom)
 {
     return (__DG_ELM_INT_BOU_QUAD_N_COMP_PER_DOM__*dom);
@@ -332,6 +343,8 @@ struct ImplicitMesh
     MultiFab PHI;
 
     // IMPLICIT MESH INFO AND DATA STRUCTURES
+    Gpu::ManagedVector<int> Dom2Phi;
+
     int space_q_im;
     Real volume_fraction_threshold;
 
@@ -446,18 +459,13 @@ struct ImplicitMesh
      *
      * \param[in] N_PHI: number of level sets that will be projected.
      * \param[in] N_DOM: number of domains that will be considered.
-     * \param[in] IBVP: a class that must have a method with the following prototype:
-     *
-     *                  void F_DOM2PHI(const int dom, int * phi_info) const;
-     *
      * \param[in] im_flag: implicit mesh flag. If set to false, all cells are considered as entire
      *                     cells.
-     */
-    template <typename IBVP_CLASS>
-    void Make(const int N_PHI, const int N_DOM, const IBVP_CLASS & IBVP, const bool im_flag = true)
+    */
+    void Make(const int N_PHI, const int N_DOM, const bool im_flag = true)
     {
         // PROFILING ------------------------------------------------------
-        BL_PROFILE("Make(const int, const int, const IBVP_CLASS &, const bool)");
+        BL_PROFILE("Make(const int, const int, const bool)");
         // ----------------------------------------------------------------
 
 #if (AMREX_SPACEDIM == 1)
@@ -493,6 +501,9 @@ struct ImplicitMesh
         const int eBouQuad_pos_n_comp = __DG_ELM_BOU_QUAD_N_COMP_PER_DOM__*N_DOM;
         const int eIntBouQuad_Nq_n_comp = __DG_ELM_INT_BOU_QUAD_N_COMP_PER_DOM__*N_DOM;
         const int eIntBouQuad_pos_n_comp = __DG_ELM_INT_BOU_QUAD_N_COMP_PER_DOM__*N_DOM;
+
+        // DOMAIN-TO-LEVELSETS CORRESPONDENCE
+        int const * Dom2Phi_ptr = this->Dom2Phi.data();
 
         // IMPLICIT MESH VOLUME FRACTION THRESHOLD
         const Real vft = this->volume_fraction_threshold;
@@ -637,15 +648,11 @@ struct ImplicitMesh
                 // LOCAL VARIABLES
                 bool cell_is_empty, cell_is_entire, cell_is_cut;
                 Real cell_volume, volume_fraction;
-                int phi_info[2];
-
-                // WHICH LEVELSET DEFINES THE dom-th DOMAIN
-                IBVP.F_DOM2PHI(dom, phi_info);
 
                 // LEVELSETS
                 algoim_DG_phi_space_BFX phi(p, cell_lo, cell_hi, PHI_fab, i, j, k);
-                phi.set_u(phi_info[0]);
-                phi.set_sign(phi_info[1]);
+                phi.set_u(Dom2Phi_ptr[2*dom]);
+                phi.set_sign(Dom2Phi_ptr[2*dom+1]);
 
                 // ELEMENTS' QUADRATURE POINTS
                 {
@@ -755,12 +762,12 @@ struct ImplicitMesh
                     // EMPTY ELEMENTS ---------------------------------
                     if (cell_is_empty)
                     {
-                        // STORE CENTROID (ALL ZERO)
+                        // STORE CENTROID
                         AMREX_D_TERM
                         (
-                            eInfo_fab(i,j,k,ELM_CENTROID_X1(dom)) = 0.0;,
-                            eInfo_fab(i,j,k,ELM_CENTROID_X2(dom)) = 0.0;,
-                            eInfo_fab(i,j,k,ELM_CENTROID_X3(dom)) = 0.0;
+                            eInfo_fab(i,j,k,ELM_CENTROID_X1(dom)) = cell_m[0];,
+                            eInfo_fab(i,j,k,ELM_CENTROID_X2(dom)) = cell_m[1];,
+                            eInfo_fab(i,j,k,ELM_CENTROID_X3(dom)) = cell_m[2];
                         )
                     }
                     // ------------------------------------------------
@@ -770,9 +777,9 @@ struct ImplicitMesh
                         // STORE CENTROID
                         AMREX_D_TERM
                         (
-                            eInfo_fab(i,j,k,ELM_CENTROID_X1(dom)) += cell_m[0];,
-                            eInfo_fab(i,j,k,ELM_CENTROID_X2(dom)) += cell_m[1];,
-                            eInfo_fab(i,j,k,ELM_CENTROID_X3(dom)) += cell_m[2];
+                            eInfo_fab(i,j,k,ELM_CENTROID_X1(dom)) = cell_m[0];,
+                            eInfo_fab(i,j,k,ELM_CENTROID_X2(dom)) = cell_m[1];,
+                            eInfo_fab(i,j,k,ELM_CENTROID_X3(dom)) = cell_m[2];
                         )
                     }
                     // ------------------------------------------------
@@ -915,9 +922,6 @@ struct ImplicitMesh
                     // ------------------------------------------------
 
                     // LOCAL PARAMETERS
-                    const Real cell_m[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0],
-                                                                      prob_lo[1]+(j+0.5)*dx[1],
-                                                                      prob_lo[2]+(k+0.5)*dx[2])};
                     const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
                                                                        prob_lo[1]+j*dx[1],
                                                                        prob_lo[2]+k*dx[2])};
@@ -935,15 +939,11 @@ struct ImplicitMesh
 
                     // LOCAL VARIABLES
                     Real boundary_surface, surface_fraction;
-                    int phi_info[2];
-
-                    // WHICH LEVELSET DEFINES THE dom-th DOMAIN
-                    IBVP.F_DOM2PHI(dom, phi_info);
 
                     // LEVELSETS
                     algoim_DG_phi_space_BFX phi(p, cell_lo, cell_hi, PHI_fab, i, j, k);
-                    phi.set_u(phi_info[0]);
-                    phi.set_sign(phi_info[1]);
+                    phi.set_u(Dom2Phi_ptr[2*dom]);
+                    phi.set_sign(Dom2Phi_ptr[2*dom+1]);
 
                     // BOUNDARY QUADRATURE POINTS
                     {
@@ -1049,9 +1049,9 @@ struct ImplicitMesh
 
                                 AMREX_D_TERM
                                 (
-                                    this->eBouQuad_host_mem[pos+0] = (quad.nodes[q].x[0]-cell_m[0]);,
-                                    this->eBouQuad_host_mem[pos+1] = (quad.nodes[q].x[1]-cell_m[1]);,
-                                    this->eBouQuad_host_mem[pos+2] = (quad.nodes[q].x[2]-cell_m[2]);
+                                    this->eBouQuad_host_mem[pos+0] = (quad.nodes[q].x[0]-cell_lo[0]);,
+                                    this->eBouQuad_host_mem[pos+1] = (quad.nodes[q].x[1]-cell_lo[1]);,
+                                    this->eBouQuad_host_mem[pos+2] = (quad.nodes[q].x[2]-cell_lo[2]);
                                 )
                                 this->eBouQuad_host_mem[pos+AMREX_SPACEDIM] = quad.nodes[q].w;
                             }
@@ -1116,6 +1116,18 @@ struct ImplicitMesh
                             best_nbr_vf = nbr_vf;
                         }
                     }
+/*
+if (j > i)
+{
+    const int b = 2;
+    eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__+b*10;
+}
+else
+{
+    const int b = 0;
+    eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__+b*10;
+}
+*/
 
                     if (elm_has_been_merged)
                     {
@@ -1435,7 +1447,7 @@ struct ImplicitMesh
      *
      * \param[in] im_flag: implicit mesh flag. If set to false, all cells are considered as entire
      *                     cells.
-     */
+    */
     template <typename IBVP_CLASS>
     void MakeFromScratch(const Real t, const int N_PHI, const int N_DOM, const IBVP_CLASS & IBVP, const bool im_flag = true)
     {
@@ -1452,8 +1464,20 @@ struct ImplicitMesh
         ProjectLevelsetsOverGrid(t, this->geom, this->std_elem, N_PHI, this->PHI, IBVP);
         // ============================================================
 
+        // SET THE CORRESPONDENCE BETWEEN DOMAINS AND LEVELSETS =======
+        this->Dom2Phi.resize(2*N_DOM);
+        for (int dom = 0; dom < N_DOM; ++dom)
+        {
+            int phi_info[2];
+            IBVP.F_DOM2PHI(dom, phi_info);
+
+            this->Dom2Phi[2*dom] = phi_info[0];
+            this->Dom2Phi[2*dom+1] = phi_info[1];
+        }
+        // ============================================================
+
         // MAKE THE IMPLICIT MESH USING THE PROJECTED LEVEL SETS ======
-        this->Make(N_PHI, N_DOM, IBVP, im_flag);
+        this->Make(N_PHI, N_DOM, im_flag);
         // ============================================================
     }
 
@@ -1469,7 +1493,7 @@ struct ImplicitMesh
      * \param[in] im_flag: implicit mesh flag. If set to false, all cells are considered as entire
      *                     cells.
      *
-     */
+    */
     template <typename IBVP_CLASS>
     void MakeFromScratch(const Real t, const IBVP_CLASS & IBVP, const bool im_flag = true)
     {
@@ -1487,11 +1511,272 @@ struct ImplicitMesh
      * \param[in] im_flag: implicit mesh flag. If set to false, all cells are considered as entire
      *                     cells.
      *
-     */
+    */
     template <typename IBVP_CLASS>
     void MakeFromScratch(const IBVP_CLASS & IBVP, const bool im_flag = true)
     {
         this->MakeFromScratch(0.0, 1, 1, IBVP, im_flag);
+    }
+    // ################################################################
+
+    // CHECK THE QUADRATURE RULES #####################################
+    /**
+     * \brief Check the quadrature rules by comparing the domains' volume and surface with exact values.
+     *
+     * \param[in] N_DOM: number of domains to be considered.
+     * \param[in] exact_volume: exact_volume[dom] should contain the exact value of the volume of the
+     *                          dom-th domain.
+     * \param[in] exact_surface: exact_surface[dom] should contain the exact value of the surface of the
+     *                           dom-th domain.
+     *
+    */
+    void CheckQuadratureRules(const int N_DOM,
+                              const Real * exact_volume,
+                              const Real * exact_surface) const
+    {
+        // PARAMETERS =================================================
+        // GRID
+        const GpuArray<Real, AMREX_SPACEDIM> dx = this->geom.CellSizeArray();
+        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = this->geom.ProbLoArray();
+
+        // QUAD CHECK MULTIFAB
+        const int n_comp_per_dom = 3;
+        // ============================================================
+
+        // VARIABLES ==================================================
+#ifdef AMREX_USE_CUDA
+        Real const * eDomQuad_mem_ptr = this->eDomQuad_device_mem.data();
+        Real const * eBouQuad_mem_ptr = this->eBouQuad_device_mem.data();
+        Real const * eIntBouQuad_mem_ptr = this->eIntBouQuad_device_mem.data();
+#else
+        Real const * eDomQuad_mem_ptr = this->eDomQuad_host_mem.data();
+        Real const * eBouQuad_mem_ptr = this->eBouQuad_host_mem.data();
+        Real const * eIntBouQuad_mem_ptr = this->eIntBouQuad_host_mem.data();
+#endif
+
+        MultiFab quad_check;
+
+        // RESULTS
+        Vector<Real> computed_volume(N_DOM);
+        Vector<Real> computed_volume_div(N_DOM);
+        Vector<Real> computed_surface(N_DOM);
+        // ============================================================
+
+        // INITIALIZATION =============================================
+        quad_check.define(this->cc_ba, this->dm, n_comp_per_dom*N_DOM, this->dom_data_ngr);
+        quad_check = 0.0;
+        // ============================================================
+
+        // COMPUTE VOLUME/SURFACE OF EACH DOMAIN ======================
+        for (MFIter mfi(quad_check); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<int const> const & eDomQuad_Nq_fab = this->eDomQuad_Nq.array(mfi);
+            Array4<long const> const & eDomQuad_pos_fab = this->eDomQuad_pos.array(mfi);
+            AMREX_D_TERM
+            (
+                Array4<int const> const & eBouQuad_Nq_fab_0 = this->eBouQuad_Nq[0].array(mfi);
+                Array4<long const> const & eBouQuad_pos_fab_0 = this->eBouQuad_pos[0].array(mfi);,
+                Array4<int const> const & eBouQuad_Nq_fab_1 = this->eBouQuad_Nq[1].array(mfi);
+                Array4<long const> const & eBouQuad_pos_fab_1 = this->eBouQuad_pos[1].array(mfi);,
+                Array4<int const> const & eBouQuad_Nq_fab_2 = this->eBouQuad_Nq[2].array(mfi);
+                Array4<long const> const & eBouQuad_pos_fab_2 = this->eBouQuad_pos[2].array(mfi);
+            )
+            Array4<int const> const & eIntBouQuad_Nq_fab = this->eIntBouQuad_Nq.array(mfi);
+            Array4<long const> const & eIntBouQuad_pos_fab = this->eIntBouQuad_pos.array(mfi);
+
+            Array4<Real> const & quad_check_fab = quad_check.array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // LOCAL PARAMETERS
+                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                   prob_lo[1]+j*dx[1],
+                                                                   prob_lo[2]+k*dx[2])};
+
+                // LOCAL VARIABLES
+                Real x[AMREX_SPACEDIM], w, un[AMREX_SPACEDIM];
+                Real integrand;
+                Real elm_volume, elm_volume_div, elm_surface;
+
+                // INITIALIZATION
+                elm_volume = 0.0;
+                elm_volume_div = 0.0;
+                elm_surface = 0.0;
+
+                // DOMAIN QUADRATURE
+                {
+                    const int dom_Nq = eDomQuad_Nq_fab(i,j,k,ELM_DOM_QUAD_NQ(dom));
+                    const long pos = eDomQuad_pos_fab(i,j,k,ELM_DOM_QUAD_POS(dom));
+                    const Real * xptr = &eDomQuad_mem_ptr[pos];
+
+                    // EVAL THE INTEGRAL
+                    for (int q = 0; q < dom_Nq; ++q)
+                    {
+                        const long x_pos = (AMREX_SPACEDIM+1)*q;
+                        AMREX_D_TERM
+                        (
+                            x[0] = xptr[x_pos+0]+cell_lo[0];,
+                            x[1] = xptr[x_pos+1]+cell_lo[1];,
+                            x[2] = xptr[x_pos+2]+cell_lo[2];
+                        )
+                        w = xptr[x_pos+AMREX_SPACEDIM];
+
+                        integrand = 1.0;
+                        elm_volume += integrand*w;
+                    }
+                }
+
+                // BOUNDARY QUADRATURE
+                for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                {
+                    const int dir = b/2;
+                    int fi, fj, fk;
+                    int bou_Nq;
+                    long pos;
+
+                    // WHICH FACE
+                    GRID_FACE(i, j, k, b, fi, fj, fk);
+
+                    // QUADRATURE INFO
+                    if (dir == 0)
+                    {
+                        bou_Nq = eBouQuad_Nq_fab_0(fi,fj,fk,ELM_BOU_QUAD_NQ(dom, b));
+                        pos = eBouQuad_pos_fab_0(fi,fj,fk,ELM_BOU_QUAD_POS(dom, b));
+                    }
+#if (AMREX_SPACEDIM > 1)
+                    else if (dir == 1)
+                    {
+                        bou_Nq = eBouQuad_Nq_fab_1(fi,fj,fk,ELM_BOU_QUAD_NQ(dom, b));
+                        pos = eBouQuad_pos_fab_1(fi,fj,fk,ELM_BOU_QUAD_POS(dom, b));
+                    }
+#endif
+#if (AMREX_SPACEDIM > 2)
+                    else
+                    {
+                        bou_Nq = eBouQuad_Nq_fab_2(fi,fj,fk,ELM_BOU_QUAD_NQ(dom, b));
+                        pos = eBouQuad_pos_fab_2(fi,fj,fk,ELM_BOU_QUAD_POS(dom, b));
+                    }
+#endif
+                    const Real * xptr = &eBouQuad_mem_ptr[pos];
+
+                    // UNIT NORMAL
+                    AMREX_D_TERM(un[0] = 0.0;, un[1] = 0.0;, un[2] = 0.0;)
+                    un[dir] = 2.0*(b%2)-1.0;
+
+                    // EVAL THE INTEGRAL
+                    for (int q = 0; q < bou_Nq; ++q)
+                    {
+                        const long x_pos = (AMREX_SPACEDIM+1)*q;
+                        AMREX_D_TERM
+                        (
+                            x[0] = xptr[x_pos+0]+cell_lo[0];,
+                            x[1] = xptr[x_pos+1]+cell_lo[1];,
+                            x[2] = xptr[x_pos+2]+cell_lo[2];
+                        )
+                        w = xptr[x_pos+AMREX_SPACEDIM];
+                        
+                        integrand = x[0]*un[0];
+                        elm_volume_div += integrand*w;
+                    }
+                }
+
+                // INTERNAL BOUNDARY QUADRATURE
+                {
+                    const int bou_Nq = eIntBouQuad_Nq_fab(i,j,k,ELM_INT_BOU_QUAD_NQ(dom));
+                    const long pos = eIntBouQuad_pos_fab(i,j,k,ELM_INT_BOU_QUAD_POS(dom));
+                    const Real * xptr = &eIntBouQuad_mem_ptr[pos];
+
+                    // EVAL THE INTEGRAL
+                    for (int q = 0; q < bou_Nq; ++q)
+                    {
+                        const long x_pos = (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*q;
+                        AMREX_D_TERM
+                        (
+                            x[0] = xptr[x_pos+0];,
+                            x[1] = xptr[x_pos+1];,
+                            x[2] = xptr[x_pos+2];
+                        )
+                        w = xptr[x_pos+AMREX_SPACEDIM];
+
+                        // UNIT NORMAL
+                        AMREX_D_TERM
+                        (
+                            un[0] = xptr[x_pos+AMREX_SPACEDIM+1+0];,
+                            un[1] = xptr[x_pos+AMREX_SPACEDIM+1+1];,
+                            un[2] = xptr[x_pos+AMREX_SPACEDIM+1+2];
+                        )
+
+                        integrand = x[0]*un[0];
+                        elm_volume_div += integrand*w;
+
+                        integrand = 1.0;
+                        elm_surface += integrand*w;
+                    }
+                }
+
+                // STORE COMPUTED VALUES
+                quad_check_fab(i,j,k,n_comp_per_dom*dom) = elm_volume;
+                quad_check_fab(i,j,k,n_comp_per_dom*dom+1) = elm_volume_div;
+                quad_check_fab(i,j,k,n_comp_per_dom*dom+2) = elm_surface;
+            });
+            Gpu::synchronize();
+        }
+        // ============================================================
+
+        // SUM CONTRIBUTION ===========================================
+        for (int dom = 0; dom < N_DOM; ++dom)
+        {
+            computed_volume[dom] = quad_check.sum(n_comp_per_dom*dom);
+            computed_volume_div[dom] = quad_check.sum(n_comp_per_dom*dom+1);
+            computed_surface[dom] = quad_check.sum(n_comp_per_dom*dom+2);
+        }
+        // ============================================================
+
+        // PRINT REPORT ===============================================
+        Print() << "IMPLICIT-MESH QUADRATURE REPORT:" << std::endl;
+        for (int dom = 0; dom < N_DOM; ++dom)
+        {
+            Real err;
+
+            Print() << "| Domain " << dom << std::endl;
+            
+            Print() << "|  Volume: " << std::endl;
+            
+            Print() << "|  - Reference: " << exact_volume[dom] << std::endl;
+
+            err = 100.0*std::abs(computed_volume[dom]-exact_volume[dom])/exact_volume[dom];
+            Print() << "|  - Computed via dom. quadrature: " << computed_volume[dom] << ", error (%): " << err << std::endl;
+            
+            err = 100.0*std::abs(computed_volume_div[dom]-exact_volume[dom])/exact_volume[dom];
+            Print() << "|  - Computed via bou. quadrature: " << computed_volume_div[dom] << ", error (%): " << err << std::endl;
+
+            Print() << "|  Surface: " << std::endl;
+            
+            Print() << "|  - Reference: " << exact_surface[dom] << std::endl;
+
+            err = 100.0*std::abs(computed_surface[dom]-exact_surface[dom])/exact_surface[dom];
+            Print() << "|  - Computed: " << computed_surface[dom] << ", error (%): " << err << std::endl;
+        }
+        Print() << std::endl;
+        // ============================================================
+    }
+
+    /**
+     * \brief Check the quadrature rules by comparing the domains' volume and surface with exact values.
+     *
+     * \param[in] exact_volume: exact value of the volume of the domain.
+     * \param[in] exact_surface: exact value of the surface of the domain.
+     *
+    */
+    void CheckQuadratureRules(const Real exact_volume,
+                              const Real exact_surface) const
+    {
+        const int N_DOM = 1;
+        
+        this->CheckQuadratureRules(N_DOM, &exact_volume, &exact_surface);
     }
     // ################################################################
 };

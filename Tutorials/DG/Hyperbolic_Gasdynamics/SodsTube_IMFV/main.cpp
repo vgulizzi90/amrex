@@ -9,7 +9,7 @@
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
-//#include "IBVP_utils.H"
+#include "IBVP_utils.H"
 #include "IBVP_SodsTube.H"
 // ====================================================================
 // ####################################################################
@@ -129,6 +129,59 @@ amrex::Print() << "#############################################################
         }
         // ============================================================
 
+        // CHECK THE COMPUTED QUADRATURE RULES ========================
+        {
+            const amrex::Real diam = inputs.problem.params[7];
+            const amrex::Real theta = inputs.problem.params[8]*M_PI/180.0;
+            const amrex::Real cth = std::cos(theta);
+            const amrex::Real sth = std::sin(theta);
+            const amrex::Real tth = std::tan(theta);
+
+            const amrex::Real Ay = 0.5*(1.0-diam/cth+tth);
+            const amrex::Real By = 0.5*(1.0+diam/cth+tth);
+
+            amrex::Real volume = 0.0;
+            amrex::Real surface = 0.0;
+
+            // We assume theta >= 0
+            if (Ay > 1.0)
+            {
+#if (AMREX_SPACEDIM == 2)
+                volume = diam/sth;
+                surface = 2.0/sth;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                volume = 0.25*M_PI*diam*diam/sth;
+                surface = M_PI*diam/sth;
+#endif
+            }
+            else if (By < 1.0)
+            {
+#if (AMREX_SPACEDIM == 2)
+                volume = diam/cth;
+                surface = 2.0/cth;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                volume = 0.25*M_PI*diam*diam/cth;
+                surface = M_PI*diam/cth;
+#endif
+            }
+            else
+            {
+#if (AMREX_SPACEDIM == 2)
+                const amrex::Real xc = 0.5*(1.0+1.0/tth-diam/sth);
+
+                volume = 0.25*(2.0+2.0*diam/sth+2.0*diam/cth-(1.0+diam*diam)/(cth*sth));
+                surface = 2.0*xc/cth;
+#endif
+#if (AMREX_SPACEDIM == 3)
+#endif
+            }
+
+            mesh.CheckQuadratureRules(volume, surface);
+        }
+        // ============================================================
+
         // INIT THE MATRIX FACTORY ====================================
         amrex::DG::MatrixFactory matfactory(inputs);
 
@@ -140,19 +193,81 @@ amrex::Print() << "#############################################################
         // ============================================================
 
         // SET INITIAL CONDITIONS =====================================
-        //ProjectInitialConditions(mesh, N_SOL, X, IG);
+        ProjectInitialConditions(mesh, matfactory, N_SOL, X, IG);
 
         // WRITE TO OUTPUT
         if (inputs.plot_int > 0)
         {
             const int n = 0;
             const amrex::Real t = 0.0;
-            /*
             Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                       t, mesh, N_SOL, X,
+                       t, mesh, matfactory, N_SOL, X,
                        IG);
-            */
         }
+
+        if (X.contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: main.cpp\n";
+            msg += "| X contains nans.\n";
+            amrex::Abort(msg);
+        }
+        // ============================================================
+
+        // ADVANCE IN TIME ============================================
+        amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
+        {
+            int n = 0;
+            amrex::Real t, dt;
+            amrex::Real tps_start, tps_stop, tps;
+
+            // INIT CLOCK TIME PER STEP
+            tps = 0.0;
+
+            // ADVANCE IN TIME
+            n = 0;
+            t = 0.0;
+            while ((t < inputs.time.T*(1.0-1.0e-12)) && (n < inputs.time.n_steps))
+            {
+                // CLOCK TIME PER TIME STEP TIC
+                tps_start = amrex::second();
+
+                // COMPUTE NEXT TIME STEP
+                dt = amrex::DG::Compute_dt(t+0.5*dt, mesh, matfactory, N_SOL, X, IG);
+                dt *= inputs.grid.CFL;
+                dt = std::min(t+dt, inputs.time.T)-t;
+
+                // TIME STEP
+                amrex::DG::TakeTimeStep(dt, t, mesh, matfactory, N_SOL, X, IG);
+
+                // UPDATE TIME STEP
+                n += 1;
+                t += dt;
+
+                // WRITE TO OUTPUT
+                if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(t/inputs.time.T-1.0) < 1.0e-12)))
+                {
+                    Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
+                               t, mesh, matfactory, N_SOL, X,
+                               IG);
+                }
+
+                // CLOCK TIME PER TIME STEP TOC
+                tps_stop = amrex::second();
+                amrex::ParallelDescriptor::ReduceRealMax(tps_stop, IOProc);
+
+                tps = (tps*n+(tps_stop-tps_start))/(n+1);
+
+                // REPORT TO SCREEN
+                amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
+                amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
+                               << dt << ", t = " << t
+                               << ", clock time per time step = " << tps << std::endl;
+            }
+
+        }
+        amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
         // ============================================================
 
         // TOC ========================================================

@@ -223,7 +223,7 @@ struct MatrixFactory
                     const int dom_Nq = eDomQuad_Nq_fab(i,j,k,ELM_DOM_QUAD_NQ(dom));
                     const long pos = eDomQuad_pos_fab(i,j,k,ELM_DOM_QUAD_POS(dom));
                     const Real * xptr = &eDomQuad_mem_ptr[pos];
-                    long qi_pos;
+                    long x_pos;
 
                     // Store memory offset
                     eMMCh_pos_fab(i,j,k,dom) = eMMCh_mem_pos;
@@ -236,14 +236,14 @@ struct MatrixFactory
 
                     for (int q = 0; q < dom_Nq; ++q)
                     {
-                        qi_pos = (AMREX_SPACEDIM+1)*q;
+                        x_pos = (AMREX_SPACEDIM+1)*q;
                         AMREX_D_TERM
                         (
-                            x[0] = xptr[qi_pos+0]; x[0] = x[0]+cell_lo[0];,
-                            x[1] = xptr[qi_pos+1]; x[1] = x[1]+cell_lo[1];,
-                            x[2] = xptr[qi_pos+2]; x[2] = x[2]+cell_lo[2];
+                            x[0] = xptr[x_pos+0]+cell_lo[0];,
+                            x[1] = xptr[x_pos+1]+cell_lo[1];,
+                            x[2] = xptr[x_pos+2]+cell_lo[2];
                         )
-                        w = xptr[qi_pos+AMREX_SPACEDIM];
+                        w = xptr[x_pos+AMREX_SPACEDIM];
 
                         bf.eval_BF_only_table(x);
 
@@ -356,6 +356,12 @@ struct MatrixFactory
                 // SPECIAL ELEMENTS
                 if (elm_is_special)
                 {
+                    for (int rs = 0; rs < (sNp*sNp); ++rs)
+                    {
+                        // Mass matrix
+                        eMMCh_mem_ptr[pos+rs] = MM[rs];
+                    }
+
                     linalg::dpotf2('U', sNp, &eMMCh_mem_ptr[pos], sNp, info);
                 }
             });

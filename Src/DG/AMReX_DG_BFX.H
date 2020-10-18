@@ -302,9 +302,9 @@ public DG_space_BF<N, DG_MAX_p, DG_MAX_Np>
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_grad(const Real * x, Real * res)
     {
-        this->_eval_BF_table_(x);
+        this->eval_BF_table(x);
 
-        this->_eval_grad_unsafe_(res);
+        this->eval_grad_unsafe(res);
     }
 
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -319,9 +319,31 @@ public DG_space_BF<N, DG_MAX_p, DG_MAX_Np>
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_grad(const Real * x, const int u_lo, const int u_hi, Real * SOL_grad)
     {
-        this->_eval_BF_table_(x);
+        this->eval_BF_table(x);
 
         this->eval_grad_unsafe(u_lo, u_hi, SOL_grad);
+    }
+
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_un(const Real * x, Real * un)
+    {
+        this->eval_grad(x, un);
+
+#if (AMREX_SPACEDIM == 1)
+        const Real tmp = 1.0/std::sqrt(un[0]*un[0]);
+#endif
+#if (AMREX_SPACEDIM == 2)
+        const Real tmp = 1.0/std::sqrt(un[0]*un[0]+un[1]*un[1]);
+#endif
+#if (AMREX_SPACEDIM == 3)
+        const Real tmp = 1.0/std::sqrt(un[0]*un[0]+un[1]*un[1]+un[2]*un[2]);
+#endif
+        AMREX_D_TERM
+        (
+            un[0] *= tmp;,
+            un[1] *= tmp;,
+            un[2] *= tmp;
+        )
     }
     // ================================================================
 };
@@ -363,7 +385,6 @@ struct algoim_DG_space_BFX
     // ================================================================
 
     // MISC ===========================================================
-    // MISC ===========================================================
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void set_fab_ptrs(const int i_, const int j_, const int k_)
     {
@@ -381,7 +402,6 @@ struct algoim_DG_space_BFX
     {
         this->sgn = sgn_;
     }
-    // ================================================================
     // ================================================================
 
     // METHODS REQUIRED BY ALGOIM =====================================

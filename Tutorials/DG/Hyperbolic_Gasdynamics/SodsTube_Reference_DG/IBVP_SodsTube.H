@@ -122,7 +122,7 @@ public IDEAL_GAS_BASE
             AMREX_D_TERM
             (
                 bcs_SOL[RHOV1] = SOL[RHOV1];,
-                bcs_SOL[RHOV2] = SOL[RHOV2];,
+                bcs_SOL[RHOV2] = -SOL[RHOV2];,
                 bcs_SOL[RHOV3] = SOL[RHOV3];
             )
             bcs_SOL[TE] = SOL[TE];

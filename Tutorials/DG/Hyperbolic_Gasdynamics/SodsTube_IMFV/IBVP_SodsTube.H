@@ -137,11 +137,24 @@ public IDEAL_GAS_BASE
      *             phi_info[1] = -1 means that the dom-th domain is defined where the ph-th levelset is negative;
      *             phi_info[1] = +1 means that the dom-th domain is defined where the ph-th levelset is positive;
     */
-    AMREX_GPU_HOST_DEVICE
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void F_DOM2PHI(const int /*dom*/, int * phi_info) const
     {
         phi_info[0] = 0;
         phi_info[1] = -1;
+    }
+
+    /**
+     * \brief Returns the domain index dom where the unknown solution field ru is defined.
+     * 
+     * \param[in] ru: index of the unknown solution field.
+     *
+     * \return the index of the domain where the unknown solution field ru is defined.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    int F_SOL2DOM(const int /*ru*/) const
+    {
+        return 0;
     }
     // ################################################################
     
@@ -156,8 +169,58 @@ public IDEAL_GAS_BASE
     AMREX_GPU_HOST_DEVICE
     void F_SOL0(const amrex::Real * x, amrex::Real * SOL) const
     {
-        amrex::Print() << "HERE WE ARE - F_SOL0" << std::endl;
-        exit(-1);
+        // SPACE LOCATION
+        const amrex::Real y[AMREX_SPACEDIM] = {AMREX_D_DECL(x[0]-0.5, x[1]-0.5, x[2]-0.5)};
+        const amrex::Real theta = (this->params[8])*M_PI/180.0;
+        const amrex::Real cth = std::cos(theta);
+        const amrex::Real sth = std::sin(theta);
+        const amrex::Real xi_dir[AMREX_SPACEDIM] = {AMREX_D_DECL(cth, sth, 0.0)};
+#if (AMREX_SPACEDIM == 2)
+        const amrex::Real xi[2] = { cth*y[0]+sth*y[1],
+                                   -sth*y[0]+cth*y[1]};
+#endif
+#if (AMREX_SPACEDIM == 3)
+        const amrex::Real xi[3] = { cth*y[0]+sth*y[1],
+                                   -sth*y[0]+cth*y[1],
+                                   y[2]};
+#endif
+
+        // STATES
+        const amrex::Real g = this->gamma;
+        const amrex::Real rhoL = this->params[0];
+        const amrex::Real uL = this->params[1];
+        const amrex::Real pL = this->params[2];
+        const amrex::Real xis = this->params[3];
+        const amrex::Real rhoR = this->params[4];
+        const amrex::Real uR = this->params[5];
+        const amrex::Real pR = this->params[6];
+
+        amrex::Real SOLxi[N_SOL];
+
+        if (xi[0] > xis)
+        {
+            SOLxi[RHO] = rhoR;
+            AMREX_D_TERM
+            (
+                SOLxi[RHOV1] = rhoR*uR;,
+                SOLxi[RHOV2] = 0.0;,
+                SOLxi[RHOV3] = 0.0;
+            )
+            SOLxi[TE] = pR/(g-1.0)+0.5*rhoR*uR*uR;
+        }
+        else
+        {
+            SOLxi[RHO] = rhoL;
+            AMREX_D_TERM
+            (
+                SOLxi[RHOV1] = rhoL*uL;,
+                SOLxi[RHOV2] = 0.0;,
+                SOLxi[RHOV3] = 0.0;
+            )
+            SOLxi[TE] = pL/(g-1.0)+0.5*rhoL*uL*uL;
+        }
+
+        this->eval_Un2U(xi_dir, SOLxi, SOL);
     }
     // ################################################################
 
@@ -177,8 +240,78 @@ public IDEAL_GAS_BASE
                const amrex::Real * SOL,
                amrex::Real * bcs_SOL) const
     {
-        amrex::Print() << "HERE WE ARE - F_BCS" << std::endl;
-        exit(-1);
+        bcs_SOL[RHO] = SOL[RHO];
+        AMREX_D_TERM
+        (
+            bcs_SOL[RHOV1] = SOL[RHOV1];,
+            bcs_SOL[RHOV2] = SOL[RHOV2];,
+            bcs_SOL[RHOV3] = SOL[RHOV3];
+        )
+        bcs_SOL[TE] = SOL[TE];
+    }
+    
+    /**
+     * \brief Fill bcs_SOL memory to enforce boundary conditions on boundaries of the levelsets.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the boundary outward unit normal.
+     * \param[in] SOL: pointer to memory that stores the unknown solution fields at (t,x).
+     * \param[out] bcs_SOL: pointer to memory that will be filled with values suitably chosen to
+     *                      enforce the bcs at (t,x).
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_PHI_BCS(const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
+                   const amrex::Real * SOL,
+                   amrex::Real * bcs_SOL) const
+    {
+        amrex::Real SOLn[N_SOL];
+
+        this->eval_U2Un(un, SOL, SOLn);
+        SOLn[RHOV1] = -SOLn[RHOV1];
+        this->eval_Un2U(un, SOLn, bcs_SOL);
+    }
+    // ################################################################
+
+    // NUMERICAL FLUXES ###############################################
+    // NOTE: The function void F_NF_ICS is found in "../IBVP_Base.H".
+    // ################################################################
+    /**
+     * \brief Eval the numerical flux at a grid's boundary.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_BCS(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                  const amrex::Real * SOL,
+                  amrex::Real * NFn) const
+    {
+        amrex::Real bcs_SOL[N_SOL];
+        this->F_BCS(t, x, un, SOL, bcs_SOL);
+        this->F_NF_ICS(t, x, un, SOL, bcs_SOL, NFn);
+    }
+
+    /**
+     * \brief Eval the numerical flux at a levelset's boundary.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_PHI_BCS(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                      const amrex::Real * SOL,
+                      amrex::Real * NFn) const
+    {
+        amrex::Real bcs_SOL[N_SOL];
+        this->F_PHI_BCS(t, x, un, SOL, bcs_SOL);
+        this->F_NF_ICS(t, x, un, SOL, bcs_SOL, NFn);
     }
     // ################################################################
 
@@ -190,8 +323,18 @@ public IDEAL_GAS_BASE
     */
     void F_FIELDS_NAMES(amrex::Vector<std::string> & fields_names) const
     {
-        amrex::Print() << "HERE WE ARE - F_FIELDS_NAMES" << std::endl;
-        exit(-1);
+        fields_names = {"rho", AMREX_D_DECL("u_x", "u_y", "u_z"), "p", "mach", "e", AMREX_D_DECL("u_xi", "u_eta", "u_zeta")};
+    }
+
+    /**
+     * \brief Set the domains where the output fields are defined.
+     * 
+     * \param[out] fields_domains: vector of ints containing the domains where the output fields are
+     *                             defined.
+    */
+    void F_FIELDS_DOMAINS(amrex::Vector<int> & fields_domains) const
+    {
+        fields_domains = {0, AMREX_D_DECL(0, 0, 0), 0, 0, 0, AMREX_D_DECL(0, 0, 0)};
     }
 
     /**
@@ -208,8 +351,41 @@ public IDEAL_GAS_BASE
                   const amrex::Real * SOL,
                   amrex::Real * F) const
     {
-        amrex::Print() << "HERE WE ARE - F_FIELDS" << std::endl;
-        exit(-1);
+        const amrex::Real g = this->gamma;
+        const amrex::Real theta = (this->params[8])*M_PI/180.0;
+
+        // PRIMARY VARIABLES
+        amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
+        this->eval_primary_variables(SOL, rho, AMREX_D_DECL(u1, u2, u3), p);
+
+        // SOUND SPEED AND MACH NUMBER
+        const amrex::Real a = std::sqrt(g*p/rho);
+        const amrex::Real M = std::sqrt(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3))/a;
+
+        // VELOCITY COMPONENTS ALONG THE TUBE'S CENTERLINE
+#if (AMREX_SPACEDIM == 2)
+        const amrex::Real xi[2] = {std::cos(theta), std::sin(theta)};
+#endif
+        amrex::Real SOLn[N_SOL];
+        this->eval_U2Un(xi, SOL, SOLn);
+
+        // OUTPUT FIELDS
+        F[RHO] = rho;
+        AMREX_D_TERM
+        (
+            F[RHOV1] = u1;,
+            F[RHOV2] = u2;,
+            F[RHOV3] = u3;
+        )
+        F[TE] = p;
+        F[TE+1] = M;
+        F[TE+2] = SOL[TE];
+        AMREX_D_TERM
+        (
+            F[TE+3] = SOLn[RHOV1]/rho;,
+            F[TE+4] = SOLn[RHOV2]/rho;,
+            F[TE+5] = SOLn[RHOV3]/rho;
+        )
     }
     // ################################################################
 };
