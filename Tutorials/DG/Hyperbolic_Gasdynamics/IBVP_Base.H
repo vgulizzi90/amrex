@@ -402,9 +402,11 @@ struct IDEAL_GAS_BASE
         // EVAL THE LEFT AND RIGHT STATES -----------------------------
         this->eval_primary_variables(Un_left, rhoL, AMREX_D_DECL(u1L, u2L, u3L), pL);
         aL = std::sqrt(g*pL/rhoL);
+        pL = std::max(1.0e-10, pL);
 
         this->eval_primary_variables(Un_right, rhoR, AMREX_D_DECL(u1R, u2R, u3R), pR);
         aR = std::sqrt(g*pR/rhoR);
+        pR = std::max(1.0e-10, pR);
 
         // SOME AUXILIARY QUANTITIES
         dun = u1R-u1L;
@@ -998,6 +1000,22 @@ struct IDEAL_GAS_BASE
         this->RiemannSolver(SOLn, nbr_SOLn, SOL_RP);
         this->eval_F1(SOL_RP, tmp);
         this->eval_Un2U(un, tmp, NFn);
+
+
+if (amrex::DG::linalg::contains_nan(N_SOL, NFn))
+{
+amrex::Print() << "    SOL: "; amrex::DG::IO::PrintRealArray2D(1, N_SOL, SOL);
+amrex::Print() << "nbr_SOL: "; amrex::DG::IO::PrintRealArray2D(1, N_SOL, nbr_SOL);
+amrex::Print() << "    un: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, un);
+amrex::Print() << "    SOLn: "; amrex::DG::IO::PrintRealArray2D(1, N_SOL, SOLn);
+amrex::Print() << "nbr_SOLn: "; amrex::DG::IO::PrintRealArray2D(1, N_SOL, nbr_SOLn);
+amrex::Print() << "SOL_RP: "; amrex::DG::IO::PrintRealArray2D(1, N_SOL, SOL_RP);
+amrex::Print() << "NFn: "; amrex::DG::IO::PrintRealArray2D(1, N_SOL, NFn);
+exit(-1);
+}
+
+
+
     }
     // ################################################################
 };

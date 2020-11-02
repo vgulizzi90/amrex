@@ -1594,6 +1594,59 @@ void dpotrs(const char uplo, const int n, const int nrhs,
 // DERIVED ROUTINES ###################################################
 // ####################################################################
 /**
+ * \brief Fill a buffer with zeros.
+ *
+ * \param[in] m: length of the buffer;
+ * \param[in] a: Pointer to memory containing the values to be filled;
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void zeros(const int m, Real * a)
+{
+    for (int i = 0; i < m; ++i)
+    {
+        a[i] = 0.0;
+    }
+}
+
+/**
+ * \brief Fill a buffer with entries of an identity matrix.
+ *
+ * \param[in] m: number of rows (and columns of the matrix);
+ * \param[in] a: Pointer to memory containing the values to be filled;
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void eye(const int m, Real * a)
+{
+    for (int i = 0; i < m*m; ++i)
+    {
+        a[i] = 0.0;
+    }
+    for (int i = 0; i < m; ++i)
+    {
+        a[i+i*m] = 1.0;
+    }
+}
+
+/**
+ * \brief Check whether a buffer contains not-a-number values.
+ *
+ * \param[in] m: length of the buffer;
+ * \param[in] a: Pointer to memory containing the values to be checked;
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool contains_nan(const int m, Real * a)
+{
+    for (int i = 0; i < m; ++i)
+    {
+        if (std::isnan(a[i])) return true;
+    }
+    return false;
+}
+
+/**
  * \brief Performs matrix-matrix operations.
  *
  * Performs the matrix-matrix operations
@@ -1623,6 +1676,109 @@ void matmul(const int m, const int k, const int n, const Real * a, const Real * 
     for (int j = 0; j < k; ++j)
     {
         c[i+r*m] += a[i+j*m]*b[j+r*k];
+    }
+}
+// ####################################################################
+// ####################################################################
+
+
+// ####################################################################
+// ROUTINES FOR 2X2 MATRICES ##########################################
+// ####################################################################
+/**
+ * \brief Solve a 2x2 symmetric linear system with n right-hand sides.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void dpo2s(const int n, const Real * a, const Real * b, Real * x)
+{
+    const Real id = 1.0/(a[0+0*2]*a[1+1*2]-a[0+1*2]*a[0+1*2]);
+
+    for (int c = 0; c < n; ++c)
+    {
+        x[0+c*2] = ( a[1+1*2]*b[0+c*2]-a[0+1*2]*b[1+c*2])*id;
+        x[1+c*2] = (-a[0+1*2]*b[0+c*2]+a[0+0*2]*b[1+c*2])*id;
+    }
+}
+
+/**
+ * \brief Compute eigenvalues and (right) eigenvectors of a 2x2 symmetric matrix.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void dsy2ev(const int n, const Real * a, Real * lam, Real * ev)
+{
+    const Real a11 = a[0+0*2];
+    const Real a12 = a[0+1*2];
+    const Real a22 = a[1+1*2];
+    const bool a12_is_zero = (std::abs(a12/a11) < 1.0e-12);
+    const bool a11_equals_a22 = (std::abs(a11/a22-1.0) < 1.0e-12);
+
+    Real tmp;
+
+    if (a12_is_zero)
+    {
+        lam[0] = a11;
+        lam[1] = a22;
+        ev[0+0*2] = 1.0; ev[0+1*2] = 0.0;
+        ev[1+0*2] = 0.0; ev[1+1*2] = 1.0;
+    }
+    else if (a11_equals_a22)
+    {
+        lam[0] = a11-a22;
+        lam[1] = a11+a22;
+
+        tmp = 0.5*std::sqrt(2.0);
+        ev[0+0*2] =  tmp; ev[0+1*2] = tmp;
+        ev[1+0*2] = -tmp; ev[1+1*2] = tmp;
+    }
+    else
+    {
+        tmp = std::sqrt(4.0*a12*a12+(a11-a22)*(a11-a22));
+        lam[0] = 0.5*(a11+a22-tmp);
+        lam[1] = 0.5*(a11+a22+tmp);
+
+        tmp = 0.5*std::atan(2.0*a12/(a11-a22));
+        if (tmp < 0.0) tmp += 0.5*M_PI;
+        ev[0+0*2] = std::cos(tmp); ev[0+1*2] = std::sin(tmp);
+        ev[1+0*2] = -ev[0+1*2];    ev[1+1*2] = ev[0+0*2];
+    }
+}
+// ####################################################################
+// ####################################################################
+
+
+
+// ####################################################################
+// ROUTINES FOR 3x3 MATRICES ##########################################
+// ####################################################################
+/**
+ * \brief Solve a 3x3 symmetric linear system with n right-hand sides.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void dpo3s(const int n, const Real * a, const Real * b, Real * x)
+{
+    const Real id = 1.0/(    a[0+0*3]*a[1+1*3]*a[2+2*3]+
+                         2.0*a[0+1*3]*a[0+2*3]*a[1+2*3]-
+                             a[0+2*3]*a[0+2*3]*a[1+1*3]-
+                             a[0+0*3]*a[1+2*3]*a[1+2*3]-
+                             a[0+1*3]*a[0+1*3]*a[2+2*3]);
+
+    for (int c = 0; c < n; ++c)
+    {
+        x[0+c*3]  = (a[1+1*3]*a[2+2*3]-a[1+2*3]*a[1+2*3])*b[0+c*3];
+        x[1+c*3]  = (a[0+2*3]*a[1+2*3]-a[0+1*3]*a[2+2*3])*b[0+c*3];
+        x[2+c*3]  = (a[0+1*3]*a[1+2*3]-a[0+2*3]*a[1+1*3])*b[0+c*3];
+
+        x[0+c*3] += (a[0+2*3]*a[1+2*3]-a[0+1*3]*a[2+2*3])*b[1+c*3];
+        x[1+c*3] += (a[0+0*3]*a[2+2*3]-a[0+2*3]*a[0+2*3])*b[1+c*3];
+        x[2+c*3] += (a[0+1*3]*a[0+2*3]-a[0+0*3]*a[1+2*3])*b[1+c*3];
+
+        x[0+c*3] += (a[0+1*3]*a[1+2*3]-a[0+2*3]*a[1+1*3])*b[2+c*3];
+        x[1+c*3] += (a[0+1*3]*a[0+2*3]-a[0+0*3]*a[1+2*3])*b[2+c*3];
+        x[2+c*3] += (a[0+0*3]*a[1+1*3]-a[0+1*3]*a[0+1*3])*b[2+c*3];
+
+        x[0+c*3] *= id;
+        x[1+c*3] *= id;
+        x[2+c*3] *= id;
     }
 }
 // ####################################################################

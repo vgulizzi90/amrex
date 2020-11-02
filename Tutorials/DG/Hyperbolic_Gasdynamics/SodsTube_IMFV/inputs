@@ -41,7 +41,7 @@ dG.space_p = 0
 
 
 # PROBLEM #############################################################
-problem.params = 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.2 60.0
+problem.params = 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.2 30.0
 #######################################################################
 # NOTE: params contains the left_state and right_state, which should be
 #       input as follows:

@@ -10,6 +10,7 @@
 
 #include <AMReX_Print.H>
 #include <AMReX_Utility.H>
+#include <AMReX_MultiFab.H>
 
 #ifndef AMREX_DG_IO_H_
 #define AMREX_DG_IO_H_
@@ -33,6 +34,8 @@ void PrintRealArray2D(const int /*Nr*/, const int /*Nc*/, const Real *, std::ost
 
 std::string MakePath(const std::initializer_list<std::string>);
 void MakeFolder(const std::string &);
+
+void PrintMultiFabEntry(const MultiFab & /*mf*/, const int /*ii*/, const int /*jj*/, const int /*kk*/, const int /*comp*/);
 
 
 } // namespace IO

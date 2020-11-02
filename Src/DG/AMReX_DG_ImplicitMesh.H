@@ -261,6 +261,53 @@ int ELM_CENTROID_X3(const int dom)
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_BOU_CENTROID_X1(const int dom)
+{
+    return (__DG_ELM_BOU_INFO_N_COMP_PER_DOM__*dom+0);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_BOU_CENTROID_X2(const int dom)
+{
+    return (__DG_ELM_BOU_INFO_N_COMP_PER_DOM__*dom+1);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_BOU_CENTROID_X3(const int dom)
+{
+    return (__DG_ELM_BOU_INFO_N_COMP_PER_DOM__*dom+2);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_INT_BOU_CENTROID_X1(const int dom)
+{
+    return (__DG_ELM_INT_BOU_INFO_N_COMP_PER_DOM__*dom+0);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_INT_BOU_CENTROID_X2(const int dom)
+{
+    return (__DG_ELM_INT_BOU_INFO_N_COMP_PER_DOM__*dom+1);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_INT_BOU_CENTROID_X3(const int dom)
+{
+    return (__DG_ELM_INT_BOU_INFO_N_COMP_PER_DOM__*dom+2);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_INT_BOU_UN1(const int dom)
+{
+    return (__DG_ELM_INT_BOU_INFO_N_COMP_PER_DOM__*dom+AMREX_SPACEDIM+0);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_INT_BOU_UN2(const int dom)
+{
+    return (__DG_ELM_INT_BOU_INFO_N_COMP_PER_DOM__*dom+AMREX_SPACEDIM+1);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_INT_BOU_UN3(const int dom)
+{
+    return (__DG_ELM_INT_BOU_INFO_N_COMP_PER_DOM__*dom+AMREX_SPACEDIM+2);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 int ELM_DOM_QUAD_NQ(const int dom)
 {
     return (__DG_ELM_DOM_QUAD_N_COMP_PER_DOM__*dom);
@@ -310,6 +357,239 @@ int ELM_INT_BOU_QUAD_POS(const int dom)
 {
     return (__DG_ELM_INT_BOU_QUAD_N_COMP_PER_DOM__*dom);
 }
+
+/**
+ * \brief Given a point x, find the nearest on the zero level of the level set function.
+ *
+ * \param[in] prob_lo: pointer to memory containing the lower ends of the grid.
+ * \param[in] dx: pointer to memory containing the grid spacing.
+ * \param[in] phi: object that evaluates the level set function.
+ * \param[in] x: pointer to memory containing the location of the query point.
+ * \param[inout] (n_i,n_j,n_k): On entry, indices of the cell containing x; on exit, indices of the
+ *                              cell containing nx.
+ * \param[out] nx: pointer to memory that, on exit, will contain the location of the nearest query point.
+ * \param[in] tol: geometric tolerance used to stop the iterative search.
+ * \param[in] it_max: maximum number of iterations.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void NEAREST_POINT(const Real * prob_lo, const Real * dx,
+                   DG_PHI_space_BFX & phi,
+                   const Real * x, int & n_i, int & n_j, int & n_k,
+                   Real * nx,
+                   const Real tol, const int it_max)
+{
+    int it;
+    Real err;
+    Real cell_lo[AMREX_SPACEDIM], cell_hi[AMREX_SPACEDIM];
+    Real PHI, grad_PHI[AMREX_SPACEDIM];
+    Real d1[AMREX_SPACEDIM], d2[AMREX_SPACEDIM], tmp, tmp2;
+
+    AMREX_D_TERM
+    (
+        nx[0] = x[0];,
+        nx[1] = x[1];,
+        nx[2] = x[2];
+    )
+    it = 0;
+    err = 1.0;
+    while ((it < it_max) && (err > tol))
+    {
+        AMREX_D_TERM
+        (
+            cell_lo[0] = prob_lo[0]+n_i*dx[0];,
+            cell_lo[1] = prob_lo[1]+n_j*dx[1];,
+            cell_lo[2] = prob_lo[2]+n_k*dx[2];
+        )
+        AMREX_D_TERM
+        (
+            cell_hi[0] = cell_lo[0]+dx[0];,
+            cell_hi[1] = cell_lo[1]+dx[1];,
+            cell_hi[2] = cell_lo[2]+dx[2];
+        )
+
+        phi.set_fab_ptrs(n_i, n_j, n_k);
+        phi.set_support(cell_lo, cell_hi);
+        
+        phi.eval_BF_table(nx);
+        PHI = phi.eval_unsafe();
+        phi.eval_grad_unsafe(grad_PHI);
+
+        // d1
+        AMREX_D_TERM
+        (
+            tmp  = grad_PHI[0]*grad_PHI[0];,
+            tmp += grad_PHI[1]*grad_PHI[1];,
+            tmp += grad_PHI[2]*grad_PHI[2];
+        )
+        tmp = -PHI/tmp;
+        AMREX_D_TERM
+        (
+            d1[0] = tmp*grad_PHI[0];,
+            d1[1] = tmp*grad_PHI[1];,
+            d1[2] = tmp*grad_PHI[2];
+        )
+
+        // d2
+        AMREX_D_TERM
+        (
+            tmp  = grad_PHI[0]*grad_PHI[0];,
+            tmp += grad_PHI[1]*grad_PHI[1];,
+            tmp += grad_PHI[2]*grad_PHI[2];
+        )
+        AMREX_D_TERM
+        (
+            tmp2  = (x[0]-nx[0])*grad_PHI[0];,
+            tmp2 += (x[1]-nx[1])*grad_PHI[1];,
+            tmp2 += (x[2]-nx[2])*grad_PHI[2];
+        )
+        tmp = tmp2/tmp;
+        AMREX_D_TERM
+        (
+            d2[0] = (x[0]-nx[0])-tmp*grad_PHI[0];,
+            d2[1] = (x[1]-nx[1])-tmp*grad_PHI[1];,
+            d2[2] = (x[2]-nx[2])-tmp*grad_PHI[2];
+        )
+
+        // nx^{k+1}
+        AMREX_D_TERM
+        (
+            nx[0] += d1[0]+d2[0];,
+            nx[1] += d1[1]+d2[1];,
+            nx[2] += d1[2]+d2[2];
+        )
+#if (AMREX_SPACEDIM == 1)
+        n_i = (int) std::floor((nx[0]-prob_lo[0])/dx[0]);
+
+        err  = d1[0]*d1[0];
+        err += d2[0]*d2[0];
+#endif
+#if (AMREX_SPACEDIM == 2)
+        n_i = (int) std::floor((nx[0]-prob_lo[0])/dx[0]);
+        n_j = (int) std::floor((nx[1]-prob_lo[1])/dx[1]);
+
+        err  = d1[0]*d1[0]+d1[1]*d1[1];
+        err += d2[0]*d2[0]+d2[1]*d2[1];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        n_i = (int) std::floor((nx[0]-prob_lo[0])/dx[0]);
+        n_j = (int) std::floor((nx[1]-prob_lo[1])/dx[1]);
+        n_k = (int) std::floor((nx[2]-prob_lo[2])/dx[2]);
+
+        err  = d1[0]*d1[0]+d1[1]*d1[1]+d1[2]*d1[2];
+        err += d2[0]*d2[0]+d2[1]*d2[1]+d2[2]*d2[2];
+#endif
+
+        err = std::sqrt(err);
+
+        it += 1;
+    }
+}
+
+/**
+ * \brief Given the etype, return the corresponding description as a string.
+ *
+ * \param[in] etype: element type.
+ *
+ * \return a string describing the element type
+ *
+*/
+AMREX_FORCE_INLINE
+std::string ELM_TYPE_DESCRIPTION(const int etype)
+{
+    const bool elm_is_undefined = (etype == __DG_ELM_TYPE_UNDEFINED__);
+    const bool elm_is_empty = (etype == __DG_ELM_TYPE_EMPTY__);
+    const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
+    const bool elm_is_large = (etype%10 == __DG_ELM_TYPE_LARGE__);
+    const bool elm_is_small = (etype%10 == __DG_ELM_TYPE_SMALL__);
+    const bool elm_is_partial = (etype == __DG_ELM_TYPE_PARTIAL__);
+    const bool elm_is_valid = elm_is_entire || elm_is_large;
+    const bool elm_is_extended = elm_is_valid && (etype/10 == 1);
+    const int merged_b = (elm_is_small) ? (etype/10) : -1;
+
+    std::string etype_description;
+    if (elm_is_undefined) etype_description = "Undefined";
+    if (elm_is_empty) etype_description = "Empty";
+    if (elm_is_entire) etype_description = "Entire";
+    if (elm_is_large) etype_description = "Large";
+    if (elm_is_small) etype_description = "Small - Merged through boundary: "+std::to_string(merged_b);
+    if (elm_is_partial) etype_description = "Partial";
+    if (elm_is_valid) etype_description += " - Valid";
+    if (elm_is_extended) etype_description += " - Extended";
+
+    return etype_description;
+}
+
+/**
+ * \brief Given the etype, return true if the element is small, false otherwise.
+ *
+ * \param[in] etype: element type.
+ *
+ * \return true if the element is small, false otherwise.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_SMALL(const int etype)
+{
+    const bool elm_is_small = (etype%10 == __DG_ELM_TYPE_SMALL__);
+
+    return elm_is_small;
+}
+
+/**
+ * \brief Given the etype, return true if the element is not empty, false otherwise.
+ *
+ * \param[in] etype: element type.
+ *
+ * \return true if the element is not empty, false otherwise.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_NOT_EMPTY(const int etype)
+{
+    const bool elm_is_not_empty = (etype != __DG_ELM_TYPE_EMPTY__);
+
+    return elm_is_not_empty;
+}
+
+/**
+ * \brief Given the etype, return true if the element is entire or large, false otherwise.
+ *
+ * \param[in] etype: element type.
+ *
+ * \return true if the element is entire or large, false otherwise.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_VALID(const int etype)
+{
+    const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
+    const bool elm_is_large = (etype%10 == __DG_ELM_TYPE_LARGE__);
+    const bool elm_is_valid = elm_is_entire || elm_is_large;
+
+    return elm_is_valid;
+}
+
+/**
+ * \brief Given the etype, return true if the element is large or extended, false otherwise.
+ *
+ * \param[in] etype: element type.
+ *
+ * \return true if the element is large or extended, false otherwise.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_LARGE_OR_EXTENDED(const int etype)
+{
+    const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
+    const bool elm_is_large = (etype%10 == __DG_ELM_TYPE_LARGE__);
+    const bool elm_is_valid = elm_is_entire || elm_is_large;
+    const bool elm_is_extended = elm_is_valid && (etype/10 == 1);
+
+    return elm_is_large || elm_is_extended;
+}
+
+
 // ####################################################################
 
 
@@ -352,6 +632,8 @@ struct ImplicitMesh
     Array<shortMultiFab, AMREX_SPACEDIM> eBouType;
 
     MultiFab eInfo;
+    Array<MultiFab, AMREX_SPACEDIM> eBouInfo;
+    MultiFab eIntBouInfo;
 
     iMultiFab eDomQuad_Nq;
     longMultiFab eDomQuad_pos;
@@ -480,8 +762,10 @@ struct ImplicitMesh
 
         // PARAMETERS =================================================
         // GRID
+        const Box domain = this->geom.Domain();
         const GpuArray<Real, AMREX_SPACEDIM> dx = this->geom.CellSizeArray();
         const GpuArray<Real, AMREX_SPACEDIM> prob_lo = this->geom.ProbLoArray();
+        const GpuArray<int, AMREX_SPACEDIM> is_periodic = this->geom.isPeriodicArray();
         const Real atol = this->abs_tol;
 
         // STANDARD ELEMENT
@@ -494,6 +778,8 @@ struct ImplicitMesh
         const int eBouType_n_comp = __DG_ELM_BOU_TYPE_N_COMP_PER_DOM__*N_DOM;
 
         const int eInfo_n_comp = __DG_ELM_INFO_N_COMP_PER_DOM__*N_DOM;
+        const int eBouInfo_n_comp = __DG_ELM_BOU_INFO_N_COMP_PER_DOM__*N_DOM;
+        const int eIntBouInfo_n_comp = __DG_ELM_INT_BOU_INFO_N_COMP_PER_DOM__*N_DOM;
 
         const int eDomQuad_Nq_n_comp = __DG_ELM_DOM_QUAD_N_COMP_PER_DOM__*N_DOM;
         const int eDomQuad_pos_n_comp = __DG_ELM_DOM_QUAD_N_COMP_PER_DOM__*N_DOM;
@@ -528,6 +814,15 @@ struct ImplicitMesh
         
         this->eInfo.define(this->cc_ba, this->dm, eInfo_n_comp, this->dom_data_ngr);
         this->eInfo = 0.0;
+
+        for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+        {
+            this->eBouInfo[dim].define(this->fc_ba[dim], this->dm, eBouInfo_n_comp, this->bou_data_ngr);
+            this->eBouInfo[dim] = 0.0;
+        }
+
+        this->eIntBouInfo.define(this->cc_ba, this->dm, eIntBouInfo_n_comp, this->dom_data_ngr);
+        this->eIntBouInfo = 0.0;
 
         this->eDomQuad_Nq.define(this->cc_ba, this->dm, eDomQuad_Nq_n_comp, this->dom_data_ngr);
         this->eDomQuad_Nq = -1;
@@ -623,6 +918,7 @@ struct ImplicitMesh
 
             Array4<short> const & eType_fab = this->eType.array(mfi);
             Array4<Real> const & eInfo_fab = this->eInfo.array(mfi);
+            Array4<Real> const & eIntBouInfo_fab = this->eIntBouInfo.array(mfi);
             Array4<int> const & eDomQuad_Nq_fab = this->eDomQuad_Nq.array(mfi);
             Array4<long> const & eDomQuad_pos_fab = this->eDomQuad_pos.array(mfi);
             Array4<int> const & eIntBouQuad_Nq_fab = this->eIntBouQuad_Nq.array(mfi);
@@ -881,6 +1177,54 @@ struct ImplicitMesh
                     // unit normal components)
                     eIntBouQuad_mem_pos += (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*bou_Nq;
                 }
+
+                // INTERNAL BOUNDARY CENTROID (?)
+                if (cell_is_cut)
+                {
+                    iQuadRule quad = iQuadGen(phi, cell_lo, cell_hi, AMREX_SPACEDIM, -1, 1);
+
+                    GpuArray<Real, AMREX_SPACEDIM> un;
+                    Real tmp;
+
+                    const int q = 0;
+
+                    un = phi.grad(quad.nodes[q].x);
+                    tmp = 1.0/std::sqrt(AMREX_D_PICK(un[0]*un[0], un[0]*un[0]+un[1]*un[1], un[0]*un[0]+un[1]*un[1]+un[2]*un[2]));
+                    AMREX_D_TERM
+                    (
+                        un[0] *= tmp;,
+                        un[1] *= tmp;,
+                        un[2] *= tmp;
+                    )
+
+                    AMREX_D_TERM
+                    (
+                        eIntBouInfo_fab(i,j,k,ELM_INT_BOU_CENTROID_X1(dom)) = quad.nodes[q].x[0];,
+                        eIntBouInfo_fab(i,j,k,ELM_INT_BOU_CENTROID_X2(dom)) = quad.nodes[q].x[1];,
+                        eIntBouInfo_fab(i,j,k,ELM_INT_BOU_CENTROID_X3(dom)) = quad.nodes[q].x[2];
+                    )
+                    AMREX_D_TERM
+                    (
+                        eIntBouInfo_fab(i,j,k,ELM_INT_BOU_UN1(dom)) = un[0];,
+                        eIntBouInfo_fab(i,j,k,ELM_INT_BOU_UN2(dom)) = un[1];,
+                        eIntBouInfo_fab(i,j,k,ELM_INT_BOU_UN3(dom)) = un[2];
+                    )
+                }
+                else
+                {
+                    AMREX_D_TERM
+                    (
+                        eIntBouInfo_fab(i,j,k,ELM_INT_BOU_CENTROID_X1(dom)) = 0.0;,
+                        eIntBouInfo_fab(i,j,k,ELM_INT_BOU_CENTROID_X2(dom)) = 0.0;,
+                        eIntBouInfo_fab(i,j,k,ELM_INT_BOU_CENTROID_X3(dom)) = 0.0;
+                    )
+                    AMREX_D_TERM
+                    (
+                        eIntBouInfo_fab(i,j,k,ELM_INT_BOU_UN1(dom)) = 0.0;,
+                        eIntBouInfo_fab(i,j,k,ELM_INT_BOU_UN2(dom)) = 0.0;,
+                        eIntBouInfo_fab(i,j,k,ELM_INT_BOU_UN3(dom)) = 0.0;
+                    )
+                }
             }
         }
         // ============================================================
@@ -907,6 +1251,7 @@ struct ImplicitMesh
                 Array4<Real const> const & PHI_fab = this->PHI.array(mfi);
 
                 Array4<short> const & eBouType_fab = this->eBouType[dir].array(mfi);
+                Array4<Real> const & eBouInfo_fab = this->eBouInfo[dir].array(mfi);
                 Array4<int> const & eBouQuad_Nq_fab = this->eBouQuad_Nq[dir].array(mfi);
                 Array4<long> const & eBouQuad_pos_fab = this->eBouQuad_pos[dir].array(mfi);
 
@@ -938,6 +1283,7 @@ struct ImplicitMesh
                     const Real entire_boundary_surface = AMREX_D_PICK(1.0, dx[ii], dx[ii]*dx[jj]);
 
                     // LOCAL VARIABLES
+                    bool face_is_empty, face_is_entire, face_is_cut;
                     Real boundary_surface, surface_fraction;
 
                     // LEVELSETS
@@ -965,6 +1311,10 @@ struct ImplicitMesh
                         // EMPTY BOUNDARY -----------------------------
                         if (surface_fraction < atol)
                         {
+                            face_is_empty = true;
+                            face_is_entire = false;
+                            face_is_cut = false;
+
                             // ELEMENT BOUNDARY TYPE
                             eBouType_fab(i,j,k,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_EMPTY__;
 
@@ -981,6 +1331,10 @@ struct ImplicitMesh
                         // ENTIRE BOUNDARY ----------------------------
                         else if (surface_fraction > (1.0-atol))
                         {
+                            face_is_empty = false;
+                            face_is_entire = true;
+                            face_is_cut = false;
+
                             // ELEMENT BOUNDARY TYPE
                             eBouType_fab(i,j,k,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_ENTIRE__;
 
@@ -999,6 +1353,10 @@ struct ImplicitMesh
                         // PARTIAL BOUNDARY ---------------------------
                         else
                         {
+                            face_is_empty = false;
+                            face_is_entire = false;
+                            face_is_cut = true;
+
                             // ELEMENT BOUNDARY TYPE
                             eBouType_fab(i,j,k,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_PARTIAL__;
 
@@ -1061,6 +1419,80 @@ struct ImplicitMesh
                         }
                         // --------------------------------------------
                     }
+
+                    // BOUNDARY CENTROID
+                    {
+                        // EMPTY BOUNDARY -----------------------------
+                        if (face_is_empty) 
+                        {
+                            // STORE CENTROID
+                            AMREX_D_TERM
+                            (
+                                eBouInfo_fab(i,j,k,ELM_BOU_CENTROID_X1(dom)) = cell_lo[0]+0.5*(dx[0]-delta[0]);,
+                                eBouInfo_fab(i,j,k,ELM_BOU_CENTROID_X2(dom)) = cell_lo[1]+0.5*(dx[1]-delta[1]);,
+                                eBouInfo_fab(i,j,k,ELM_BOU_CENTROID_X3(dom)) = cell_lo[2]+0.5*(dx[2]-delta[2]);
+                            )
+                        }
+                        // --------------------------------------------
+                        // ENTIRE BOUNDARY ----------------------------
+                        else if (face_is_entire)
+                        {
+                            // STORE CENTROID
+                            AMREX_D_TERM
+                            (
+                                eBouInfo_fab(i,j,k,ELM_BOU_CENTROID_X1(dom)) = cell_lo[0]+0.5*(dx[0]-delta[0]);,
+                                eBouInfo_fab(i,j,k,ELM_BOU_CENTROID_X2(dom)) = cell_lo[1]+0.5*(dx[1]-delta[1]);,
+                                eBouInfo_fab(i,j,k,ELM_BOU_CENTROID_X3(dom)) = cell_lo[2]+0.5*(dx[2]-delta[2]);
+                            )
+                        }
+                        // --------------------------------------------
+                        // PARTIAL BOUNDARY ---------------------------
+                        else if (face_is_cut)
+                        {
+                            const int bou_Nq = eBouQuad_Nq_fab(i,j,k,ELM_BOU_PLUS_QUAD_NQ(dom));
+                            const long pos0 = eBouQuad_pos_fab(i,j,k,ELM_BOU_PLUS_QUAD_POS(dom));
+
+                            // VARIABLES
+                            Real x[AMREX_SPACEDIM], w, S[AMREX_SPACEDIM], face_measure;
+
+                            // EVAL THE STATIC MOMENTS
+                            AMREX_D_TERM
+                            (
+                                S[0] = 0.0;,
+                                S[1] = 0.0;,
+                                S[2] = 0.0;
+                            )
+                            face_measure = 0.0;
+
+                            for (int q = 0; q < bou_Nq; ++q)
+                            {
+                                const long pos = pos0+(AMREX_SPACEDIM+1)*q;
+                                AMREX_D_TERM
+                                (
+                                    x[0] = this->eBouQuad_host_mem[pos+0]+cell_lo[0];,
+                                    x[1] = this->eBouQuad_host_mem[pos+1]+cell_lo[1];,
+                                    x[2] = this->eBouQuad_host_mem[pos+2]+cell_lo[2];
+                                )
+                                w = this->eBouQuad_host_mem[pos+AMREX_SPACEDIM];
+                                AMREX_D_TERM
+                                (
+                                    S[0] += x[0]*w;,
+                                    S[1] += x[1]*w;,
+                                    S[2] += x[2]*w;
+                                )
+                                face_measure += w;
+                            }
+
+                            // EVAL AND STORE CENTROID
+                            AMREX_D_TERM
+                            (
+                                eBouInfo_fab(i,j,k,ELM_BOU_CENTROID_X1(dom)) += S[0]/face_measure;,
+                                eBouInfo_fab(i,j,k,ELM_BOU_CENTROID_X2(dom)) += S[1]/face_measure;,
+                                eBouInfo_fab(i,j,k,ELM_BOU_CENTROID_X3(dom)) += S[2]/face_measure;
+                            )
+                        }
+                        // --------------------------------------------
+                    }
                 }
             }
         }
@@ -1076,6 +1508,12 @@ struct ImplicitMesh
             const Box & bx = mfi.validbox();
 
             Array4<short> const & eType_fab = this->eType.array(mfi);
+            AMREX_D_TERM
+            (
+                Array4<short> const & eBouType_fab_0 = this->eBouType[0].array(mfi);,
+                Array4<short> const & eBouType_fab_1 = this->eBouType[1].array(mfi);,
+                Array4<short> const & eBouType_fab_2 = this->eBouType[2].array(mfi);
+            )
             
             Array4<Real const> const & eInfo_fab = this->eInfo.array(mfi);
 
@@ -1129,8 +1567,31 @@ else
 }
 */
 
+                    // MARK THE BOUNDARY AS INVALID
                     if (elm_has_been_merged)
                     {
+                        const int b = (eType_fab(i,j,k,ELM_TYPE(dom))/10);
+                        int fi, fj, fk;
+
+                        GRID_FACE(i, j, k, b, fi, fj, fk);
+
+                        if ((b == 0) || (b == 1))
+                        {
+                            eBouType_fab_0(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_PARTIAL_INVALID__;
+                        }
+#if (AMREX_SPACEDIM > 1)
+                        if ((b == 2) || (b == 3))
+                        {
+                            eBouType_fab_1(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_PARTIAL_INVALID__;
+                        }
+#endif
+#if (AMREX_SPACEDIM > 2)
+                        if ((b == 4) || (b == 5))
+                        {
+                            eBouType_fab_2(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_PARTIAL_INVALID__;
+                        }
+#endif
+
                         // I would like to mark an element as extended
                         // without falling into any raise condition. The
                         // conflict can be raised because an element can be
@@ -1164,6 +1625,111 @@ else
             Gpu::synchronize();
         }
         this->eType.FillBoundary(this->geom.periodicity());
+        // ============================================================
+
+        // SET ALL PARTIAL GHOST CELLS AS LARGE =======================
+        for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.fabbox();
+
+            Array4<short> const & eType_fab = this->eType.array(mfi);
+            Array4<Real const> const & eInfo_fab = this->eInfo.array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // LOCAL PARAMETERS
+                const bool elm_is_partial = (eType_fab(i,j,k,ELM_TYPE(dom)) == __DG_ELM_TYPE_PARTIAL__);
+                const Real vf = eInfo_fab(i,j,k,ELM_VOLUME_FRACTION(dom));
+
+                if (elm_is_partial)
+                {
+                    if ((i == (domain.smallEnd(0)-1)) && (is_periodic[0] == 0))
+                    {
+                        /*
+                        if (vf < vft)
+                        {
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__;
+                        }
+                        else
+                        */
+                        {
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
+                        }
+                    }
+                    if ((i == (domain.bigEnd(0)+1)) && (is_periodic[0] == 0))
+                    {
+                        /*
+                        if (vf < vft)
+                        {
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__;
+                        }
+                        else
+                        */
+                        {
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
+                        }
+                    }
+#if (AMREX_SPACEDIM > 1)
+                    if ((j == (domain.smallEnd(1)-1)) && (is_periodic[1] == 0))
+                    {
+                        /*
+                        if (vf < vft)
+                        {
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__;
+                        }
+                        else
+                        */
+                        {
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
+                        }
+                    }
+                    if ((j == (domain.bigEnd(1)+1)) && (is_periodic[1] == 0))
+                    {
+                        /*
+                        if (vf < vft)
+                        {
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__;
+                        }
+                        else
+                        */
+                        {
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
+                        }
+                    }
+#endif
+#if (AMREX_SPACEDIM > 2)
+                    if ((k == (domain.smallEnd(2)-1)) && (is_periodic[2] == 0))
+                    {
+                        /*
+                        if (vf < vft)
+                        {
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__;
+                        }
+                        else
+                        */
+                        {
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
+                        }
+                    }
+                    if ((k == (domain.bigEnd(2)+1)) && (is_periodic[2] == 0))
+                    {
+                        /*
+                        if (vf < vft)
+                        {
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__;
+                        }
+                        else
+                        */
+                        {
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
+                        }
+                    }
+#endif
+                }
+            });
+            Gpu::synchronize();
+        }
         // ============================================================
 
         // UPDATE THE CENTROIDS OF THE EXTENDED ELEMENTS ==============
@@ -1363,6 +1929,11 @@ else
                 this->eInfo.define(new_cc_ba, new_dm, eInfo_n_comp, ngr);
                 MultiFab::Copy(this->eInfo, real_mf, 0, 0, eInfo_n_comp, ngr);
 
+                real_mf.define(new_cc_ba, new_dm, eIntBouInfo_n_comp, ngr);
+                real_mf.ParallelCopy(this->eIntBouInfo, 0, 0, eIntBouInfo_n_comp, ngr, ngr, this->geom.periodicity());
+                this->eIntBouInfo.define(new_cc_ba, new_dm, eIntBouInfo_n_comp, ngr);
+                MultiFab::Copy(this->eIntBouInfo, real_mf, 0, 0, eIntBouInfo_n_comp, ngr);
+
                 int_mf.define(new_cc_ba, new_dm, eDomQuad_Nq_n_comp, ngr);
                 int_mf.ParallelCopy(this->eDomQuad_Nq, 0, 0, eDomQuad_Nq_n_comp, ngr, ngr, this->geom.periodicity());
                 this->eDomQuad_Nq.define(new_cc_ba, new_dm, eDomQuad_Nq_n_comp, ngr);
@@ -1392,11 +1963,17 @@ else
                 shortMultiFab short_mf;
                 iMultiFab int_mf;
                 longMultiFab long_mf;
+                MultiFab real_mf;
 
                 short_mf.define(new_fc_ba[dim], new_dm, eBouType_n_comp, ngr);
                 short_mf.ParallelCopy(this->eBouType[dim], 0, 0, eBouType_n_comp, ngr, ngr, this->geom.periodicity());
                 this->eBouType[dim].define(new_fc_ba[dim], new_dm, eBouType_n_comp, ngr);
                 Copy(this->eBouType[dim], short_mf, 0, 0, eBouType_n_comp, ngr);
+
+                real_mf.define(new_fc_ba[dim], new_dm, eBouInfo_n_comp, ngr);
+                real_mf.ParallelCopy(this->eBouInfo[dim], 0, 0, eBouInfo_n_comp, ngr, ngr, this->geom.periodicity());
+                this->eBouInfo[dim].define(new_fc_ba[dim], new_dm, eBouInfo_n_comp, ngr);
+                Copy(this->eBouInfo[dim], real_mf, 0, 0, eBouInfo_n_comp, ngr);
 
                 int_mf.define(new_fc_ba[dim], new_dm, eBouQuad_Nq_n_comp, ngr);
                 int_mf.ParallelCopy(this->eBouQuad_Nq[dim], 0, 0, eBouQuad_Nq_n_comp, ngr, ngr, this->geom.periodicity());
