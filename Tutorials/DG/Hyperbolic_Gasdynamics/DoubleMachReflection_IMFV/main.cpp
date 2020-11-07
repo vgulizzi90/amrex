@@ -4,13 +4,13 @@
 
 // PDES INFORMATION ###################################################
 // SUMMARY:
-// In this tutorial, we solve the Gasdynamics equations for the Sod's
-// tube problem in tilted geometries.
+// In this tutorial, we solve the Gasdynamics equations for the double
+// Mach reflection problem.
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
 #include "IBVP_utils.H"
-#include "IBVP_SodsTube.H"
+#include "IBVP_DoubleMachReflection.H"
 // ====================================================================
 // ####################################################################
 
@@ -25,8 +25,8 @@ amrex::Print() << "# AMREX & DG PROJECT                                         
 amrex::Print() << "# Author: Vincenzo Gulizzi (vgulizzi@lbl.gov)                          " << std::endl;
 amrex::Print() << "#######################################################################" << std::endl;
 amrex::Print() << "# SUMMARY:                                                             " << std::endl;
-amrex::Print() << "# In this tutorial, we solve the Gasdynamics equations for the Sod's   " << std::endl;
-amrex::Print() << "# tube problem in tilted geometries.                                   " << std::endl;
+amrex::Print() << "# In this tutorial, we solve the Gasdynamics equations for the double  " << std::endl;
+amrex::Print() << "# Mach reflection problem.                                             " << std::endl;
 amrex::Print() << "#                                                                      " << std::endl;
 amrex::Print() << "#######################################################################" << std::endl;
 amrex::Print() << "# The selected space dimension at compile time is                      " << std::endl;
@@ -34,6 +34,16 @@ amrex::Print() << "# AMREX_SPACEDIM = " << AMREX_SPACEDIM << std::endl;
 amrex::Print() << "#                                                                      " << std::endl;
 amrex::Print() << "#######################################################################" << std::endl;
     // ================================================================
+
+#if (AMREX_SPACEDIM != 2)
+    // THIS TEST CAN BE RUN ONLY FOR AMREX_SPACEDIM = 2 ===============
+    std::string msg;
+    msg  = "\n";
+    msg += "ERROR: main.cpp\n";
+    msg += "| This problem can be run only for AMREX_SPACEDIM = 2.\n";
+    amrex::Abort(msg);
+    // ================================================================
+#endif
 
     // PARAMETERS =====================================================
     const int IOProc = amrex::ParallelDescriptor::IOProcessorNumber();
@@ -45,7 +55,7 @@ amrex::Print() << "#############################################################
 
     // IBVP
     const int X_n_comp = N_SOL;
-    const amrex::Real gamma = 1.4;
+    const amrex::Real gamma = 5.0/3.0;
     // ================================================================
 
     // VARIABLES ======================================================
@@ -66,27 +76,14 @@ amrex::Print() << "#############################################################
     {
         // MAKE OUTPUT FOLDER =========================================
         {
-            const amrex::Real diam = inputs.problem.params[7];
             const amrex::Real theta = inputs.problem.params[8];
-#if (AMREX_SPACEDIM == 3)
-            const amrex::Real phi = inputs.problem.params[9];
-#endif
 
             const std::string mesh_info = AMREX_D_TERM(std::to_string(inputs.grid.n_cells[0]),+"x"+
                                                        std::to_string(inputs.grid.n_cells[1]),+"x"+
                                                        std::to_string(inputs.grid.n_cells[2]));
-            const std::string diam_info = "D0"+std::to_string((int) std::round(diam*100));
             const std::string theta_info = "TH"+std::to_string((int) std::round(theta));
-#if (AMREX_SPACEDIM == 3)
-            const std::string phi_info = "PH"+std::to_string((int) std::round(phi));
-#endif
 
-#if (AMREX_SPACEDIM == 2)
-            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+diam_info+"_"+theta_info});
-#endif
-#if (AMREX_SPACEDIM == 3)
-            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+diam_info+"_"+theta_info+"_"+phi_info});
-#endif
+            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+theta_info});
 
             amrex::DG::IO::MakeFolder(output_folderpath);
         }
@@ -108,25 +105,12 @@ amrex::Print() << "#############################################################
 
         // HEADER =====================================================
         {
-            const amrex::Real diam = inputs.problem.params[7];
             const amrex::Real theta = inputs.problem.params[8];
-#if (AMREX_SPACEDIM == 3)
-            const amrex::Real phi = inputs.problem.params[9];
-#endif
             
-            const std::string diam_info = "0."+std::to_string((int) std::round(diam*100));
             const std::string theta_info = std::to_string((int) std::round(theta));
-#if (AMREX_SPACEDIM == 3)
-            const std::string phi_info = std::to_string((int) std::round(phi));
-#endif
 
             amrex::Print() << std::endl;
-#if (AMREX_SPACEDIM == 2)
-            amrex::Print() << "# SOD'S TUBE TEST" << " - DIAMETER: " << diam_info << " - INCLINATION: " << theta_info << std::endl;
-#endif
-#if (AMREX_SPACEDIM == 3)
-            amrex::Print() << "# SOD'S TUBE TEST" << " - DIAMETER: " << diam_info << " - AZIMUTH: " << theta_info << " - ELEVATION: " << phi_info << std::endl;
-#endif
+            amrex::Print() << "# DOUBLE MACH REFLECTION TEST" << " - INCLINATION: " << theta_info << std::endl;
         }
         // ============================================================
 
@@ -144,8 +128,6 @@ amrex::Print() << "#############################################################
         {
             const int n = 0;
             const amrex::Real t = 0.0;
-            ExportBase_VTK(output_folderpath, "Levelset", n, inputs.time.n_steps,
-                           t, mesh.geom, mesh.std_elem, 1, mesh.PHI, "LS_");
             ExportImplicitMesh_VTK(output_folderpath, "ImplicitMesh", n, inputs.time.n_steps,
                                    t, mesh);
         }
@@ -153,51 +135,28 @@ amrex::Print() << "#############################################################
 
         // CHECK THE COMPUTED QUADRATURE RULES ========================
         {
-            const amrex::Real diam = inputs.problem.params[7];
-            const amrex::Real theta = inputs.problem.params[8]*M_PI/180.0;
-            const amrex::Real cth = std::cos(theta);
-            const amrex::Real sth = std::sin(theta);
-            const amrex::Real tth = std::tan(theta);
+            const amrex::Real theta = (inputs.problem.params[8])*M_PI/180.0;
+            const amrex::Real Px = inputs.problem.params[7];
+            const amrex::Real L = inputs.space.hi[0]-Px;
+            const amrex::Real H = inputs.space.hi[1];
+            const amrex::Real alpha = std::atan(H/L);
 
-            const amrex::Real Ay = 0.5*(1.0-diam/cth+tth);
-            const amrex::Real By = 0.5*(1.0+diam/cth+tth);
-
-            amrex::Real volume = 0.0;
-            amrex::Real surface = 0.0;
-
-            // We assume theta >= 0
-            if (Ay > 1.0)
+            amrex::Real volume;
+            amrex::Real surface;
+            
+            if (theta < alpha)
             {
-#if (AMREX_SPACEDIM == 2)
-                volume = diam/sth;
-                surface = 2.0/sth;
-#endif
-#if (AMREX_SPACEDIM == 3)
-                volume = 0.25*M_PI*diam*diam/sth;
-                surface = M_PI*diam/sth;
-#endif
-            }
-            else if (By < 1.0)
-            {
-#if (AMREX_SPACEDIM == 2)
-                volume = diam/cth;
-                surface = 2.0/cth;
-#endif
-#if (AMREX_SPACEDIM == 3)
-                volume = 0.25*M_PI*diam*diam/cth;
-                surface = M_PI*diam/cth;
-#endif
+                const amrex::Real h = L*std::tan(theta);
+
+                volume = (Px+L)*H-0.5*L*h;
+                surface = L/std::cos(theta);
             }
             else
             {
-#if (AMREX_SPACEDIM == 2)
-                const amrex::Real xc = 0.5*(1.0+1.0/tth-diam/sth);
+                const amrex::Real l = H/std::tan(theta);
 
-                volume = 0.25*(2.0+2.0*diam/sth+2.0*diam/cth-(1.0+diam*diam)/(cth*sth));
-                surface = 2.0*xc/cth;
-#endif
-#if (AMREX_SPACEDIM == 3)
-#endif
+                volume = 0.5*(Px+Px+l)*H;
+                surface = H/std::sin(theta);
             }
 
             mesh.CheckQuadratureRules(volume, surface);
@@ -261,6 +220,10 @@ amrex::Print() << "#############################################################
                 dt *= inputs.grid.CFL;
                 dt = std::min(t+dt, inputs.time.T)-t;
 
+amrex::Print() << "HERE WE ARE" << std::endl;
+exit(-1);
+
+                /*
                 // TIME STEP
                 amrex::DG::TakeTimeStep(dt, t, mesh, matfactory, N_SOL, X, IG);
 
@@ -287,6 +250,7 @@ amrex::Print() << "#############################################################
                 amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
                                << dt << ", t = " << t
                                << ", clock time per time step = " << tps << std::endl;
+                */
             }
 
         }
@@ -309,6 +273,7 @@ amrex::Print() << "#############################################################
         }
         // ============================================================
     }
+
 
     // CLOSING ========================================================
 amrex::Print() << std::endl;
