@@ -68,14 +68,25 @@ amrex::Print() << "#############################################################
         {
             const amrex::Real diam = inputs.problem.params[7];
             const amrex::Real theta = inputs.problem.params[8];
+#if (AMREX_SPACEDIM == 3)
+            const amrex::Real phi = inputs.problem.params[9];
+#endif
 
             const std::string mesh_info = AMREX_D_TERM(std::to_string(inputs.grid.n_cells[0]),+"x"+
                                                        std::to_string(inputs.grid.n_cells[1]),+"x"+
                                                        std::to_string(inputs.grid.n_cells[2]));
             const std::string diam_info = "D0"+std::to_string((int) std::round(diam*100));
             const std::string theta_info = "TH"+std::to_string((int) std::round(theta));
+#if (AMREX_SPACEDIM == 3)
+            const std::string phi_info = "PH"+std::to_string((int) std::round(phi));
+#endif
 
+#if (AMREX_SPACEDIM == 2)
             output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+diam_info+"_"+theta_info});
+#endif
+#if (AMREX_SPACEDIM == 3)
+            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+diam_info+"_"+theta_info+"_"+phi_info});
+#endif
 
             amrex::DG::IO::MakeFolder(output_folderpath);
         }
@@ -99,12 +110,23 @@ amrex::Print() << "#############################################################
         {
             const amrex::Real diam = inputs.problem.params[7];
             const amrex::Real theta = inputs.problem.params[8];
+#if (AMREX_SPACEDIM == 3)
+            const amrex::Real phi = inputs.problem.params[9];
+#endif
             
             const std::string diam_info = "0."+std::to_string((int) std::round(diam*100));
             const std::string theta_info = std::to_string((int) std::round(theta));
+#if (AMREX_SPACEDIM == 3)
+            const std::string phi_info = std::to_string((int) std::round(phi));
+#endif
 
             amrex::Print() << std::endl;
+#if (AMREX_SPACEDIM == 2)
             amrex::Print() << "# SOD'S TUBE TEST" << " - DIAMETER: " << diam_info << " - INCLINATION: " << theta_info << std::endl;
+#endif
+#if (AMREX_SPACEDIM == 3)
+            amrex::Print() << "# SOD'S TUBE TEST" << " - DIAMETER: " << diam_info << " - AZIMUTH: " << theta_info << " - ELEVATION: " << phi_info << std::endl;
+#endif
         }
         // ============================================================
 

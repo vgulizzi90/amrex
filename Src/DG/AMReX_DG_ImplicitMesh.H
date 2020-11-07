@@ -1544,7 +1544,7 @@ struct ImplicitMesh
                         // Neighboring cell id and boundary
                         NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
 
-                        nbr_is_valid = true;
+                        nbr_is_valid = domain.contains(IntVect(AMREX_D_DECL(nbr_i, nbr_j, nbr_k)));
                         nbr_vf = eInfo_fab(nbr_i,nbr_j,nbr_k,ELM_VOLUME_FRACTION(dom));
 
                         if ((nbr_vf > best_nbr_vf) && nbr_is_valid)
@@ -1554,6 +1554,25 @@ struct ImplicitMesh
                             best_nbr_vf = nbr_vf;
                         }
                     }
+
+/*
+if (i == 2 && j == 3 && k == 0)
+{
+const int r = ParallelDescriptor::MyProc();
+
+Print(r) << "HELLO " << std::endl;
+Print(r) << "etype: " << ELM_TYPE_DESCRIPTION(eType_fab(i,j,k,ELM_TYPE(dom))) << std::endl;
+
+BF_CELL(i, j, k, eType_fab(i,j,k,ELM_TYPE(dom)), nbr_i, nbr_j, nbr_k);
+
+Print(r) << "nbr: (" << nbr_i << "," << nbr_j << "," << nbr_k << ")" << std::endl;
+
+Print(r) << "domain.contains(nbr): " << domain.contains(IntVect(nbr_i, nbr_j, nbr_k)) << std::endl;
+
+exit(-1);
+}
+*/
+
 /*
 if (j > i)
 {
@@ -1633,97 +1652,43 @@ else
             const Box & bx = mfi.fabbox();
 
             Array4<short> const & eType_fab = this->eType.array(mfi);
-            Array4<Real const> const & eInfo_fab = this->eInfo.array(mfi);
+            //Array4<Real const> const & eInfo_fab = this->eInfo.array(mfi);
 
             ParallelFor(bx, N_DOM,
             [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
             {
                 // LOCAL PARAMETERS
                 const bool elm_is_partial = (eType_fab(i,j,k,ELM_TYPE(dom)) == __DG_ELM_TYPE_PARTIAL__);
-                const Real vf = eInfo_fab(i,j,k,ELM_VOLUME_FRACTION(dom));
+                //const Real vf = eInfo_fab(i,j,k,ELM_VOLUME_FRACTION(dom));
 
                 if (elm_is_partial)
                 {
                     if ((i == (domain.smallEnd(0)-1)) && (is_periodic[0] == 0))
                     {
-                        /*
-                        if (vf < vft)
-                        {
-                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__;
-                        }
-                        else
-                        */
-                        {
-                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
-                        }
+                         eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
                     }
                     if ((i == (domain.bigEnd(0)+1)) && (is_periodic[0] == 0))
                     {
-                        /*
-                        if (vf < vft)
-                        {
-                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__;
-                        }
-                        else
-                        */
-                        {
-                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
-                        }
+                        eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
                     }
 #if (AMREX_SPACEDIM > 1)
                     if ((j == (domain.smallEnd(1)-1)) && (is_periodic[1] == 0))
                     {
-                        /*
-                        if (vf < vft)
-                        {
-                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__;
-                        }
-                        else
-                        */
-                        {
-                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
-                        }
+                        eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
                     }
                     if ((j == (domain.bigEnd(1)+1)) && (is_periodic[1] == 0))
                     {
-                        /*
-                        if (vf < vft)
-                        {
-                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__;
-                        }
-                        else
-                        */
-                        {
-                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
-                        }
+                        eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
                     }
 #endif
 #if (AMREX_SPACEDIM > 2)
                     if ((k == (domain.smallEnd(2)-1)) && (is_periodic[2] == 0))
                     {
-                        /*
-                        if (vf < vft)
-                        {
-                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__;
-                        }
-                        else
-                        */
-                        {
-                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
-                        }
+                        eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
                     }
                     if ((k == (domain.bigEnd(2)+1)) && (is_periodic[2] == 0))
                     {
-                        /*
-                        if (vf < vft)
-                        {
-                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__;
-                        }
-                        else
-                        */
-                        {
-                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
-                        }
+                        eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
                     }
 #endif
                 }
@@ -1838,7 +1803,7 @@ else
         // REMOVE ALL BOXES WHOSE ELEMENTS ARE EMPTY
         // (THE ELEMENTS MUST BE EMPTY FOR EACH AND EVERY DOMAIN)
         // ============================================================
-        if (true)
+        if (false)
         {
             BoxList bl;
 

@@ -1002,18 +1002,26 @@ struct IDEAL_GAS_BASE
         this->eval_Un2U(un, tmp, NFn);
 
 
+/*
 if (amrex::DG::linalg::contains_nan(N_SOL, NFn))
 {
-amrex::Print() << "    SOL: "; amrex::DG::IO::PrintRealArray2D(1, N_SOL, SOL);
-amrex::Print() << "nbr_SOL: "; amrex::DG::IO::PrintRealArray2D(1, N_SOL, nbr_SOL);
-amrex::Print() << "    un: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, un);
-amrex::Print() << "    SOLn: "; amrex::DG::IO::PrintRealArray2D(1, N_SOL, SOLn);
-amrex::Print() << "nbr_SOLn: "; amrex::DG::IO::PrintRealArray2D(1, N_SOL, nbr_SOLn);
-amrex::Print() << "SOL_RP: "; amrex::DG::IO::PrintRealArray2D(1, N_SOL, SOL_RP);
-amrex::Print() << "NFn: "; amrex::DG::IO::PrintRealArray2D(1, N_SOL, NFn);
-exit(-1);
+const int rank = amrex::ParallelDescriptor::MyProc();
+//if (rank == 1)
+{
+amrex::Print(rank) << "I am rank: " << rank << std::endl;
+amrex::Print(rank) << "    SOL: "; amrex::DG::IO::PrintRealArray2D(rank, 1, N_SOL, SOL);
+amrex::Print(rank) << "nbr_SOL: "; amrex::DG::IO::PrintRealArray2D(rank, 1, N_SOL, nbr_SOL);
+amrex::Print(rank) << "    un: "; amrex::DG::IO::PrintRealArray2D(rank, 1, AMREX_SPACEDIM, un);
+amrex::Print(rank) << "    SOLn: "; amrex::DG::IO::PrintRealArray2D(rank, 1, N_SOL, SOLn);
+amrex::Print(rank) << "nbr_SOLn: "; amrex::DG::IO::PrintRealArray2D(rank, 1, N_SOL, nbr_SOLn);
+amrex::Print(rank) << "SOL_RP: "; amrex::DG::IO::PrintRealArray2D(rank, 1, N_SOL, SOL_RP);
+amrex::Print(rank) << "NFn: "; amrex::DG::IO::PrintRealArray2D(rank, 1, N_SOL, NFn);
 }
 
+//exit(-1);
+}
+
+*/
 
 
     }

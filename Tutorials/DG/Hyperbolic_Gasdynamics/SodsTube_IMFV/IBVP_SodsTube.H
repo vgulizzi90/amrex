@@ -16,7 +16,7 @@ struct IDEAL_GAS
 public IDEAL_GAS_BASE
 {
     // DATA MEMBERS ###################################################
-    amrex::Real params[9];
+    amrex::Real params[10];
     // ################################################################
     // NOTE: params must store:
     //       - params[0]: rhoL, i.e. density at the left of the shock;
@@ -28,6 +28,7 @@ public IDEAL_GAS_BASE
     //       - params[6]: pR, i.e. pressure at the right of the shock;
     //       - params[7]: diameter of the tube;
     //       - params[8]: inclination of the tube;
+    //       - params[9]: elevation of the tube;
     // ################################################################
 
     // CONSTRUCTOR ####################################################
@@ -45,57 +46,6 @@ public IDEAL_GAS_BASE
     // ################################################################
 
     // AUXILIARY FUNCTIONS ############################################
-    /**
-     * \brief Euclidean norm of a vector in 3D space.
-     * 
-     * \param[in] v: pointer to memory containing the vector's components.
-     *
-     * \return the Euclidean norm of the vector.
-    */
-    AMREX_GPU_HOST_DEVICE
-    amrex::Real norm2_3D(const amrex::Real * v) const
-    {
-        amrex::Real res;
-        res =  v[0]*v[0];
-        res += v[1]*v[1];
-        res += v[2]*v[2];
-
-        return std::sqrt(res);
-    }
-
-    /**
-     * \brief Dot product of two vectors in 3D space.
-     * 
-     * \param[in] v1: pointer to memory containing the first vector's components.
-     * \param[in] v2: pointer to memory containing the second vector's components.
-     *
-     * \return the dot product between the two vectors.
-    */
-    AMREX_GPU_HOST_DEVICE
-    amrex::Real dot_3D(const amrex::Real * v1, const amrex::Real * v2) const
-    {
-        amrex::Real res;
-        res =  v1[0]*v2[0];
-        res += v1[1]*v2[1];
-        res += v1[2]*v2[2];
-
-        return res;
-    }
-
-    /**
-     * \brief Cross product between two vector in 3D space.
-     * 
-     * \param[in] v1: pointer to memory containing the first vector's components.
-     * \param[in] v2: pointer to memory containing the second vector's components.
-     * \param[out] res: pointer to memory that will be filled with the result.
-    */
-    AMREX_GPU_HOST_DEVICE
-    void cross(const amrex::Real * v1, const amrex::Real * v2, amrex::Real * res) const
-    {
-        res[0] = v1[1]*v2[2]-v1[2]*v2[1];
-        res[1] = v1[2]*v2[0]-v1[0]*v2[2];
-        res[2] = v1[0]*v2[1]-v1[1]*v2[0];
-    }
     // ################################################################
 
     // LEVEL SET FUNCTIONS ############################################
@@ -106,23 +56,27 @@ public IDEAL_GAS_BASE
      * \param[in] x: pointer to memory containing the space location.
      * \param[out] PHI: pointer to memory that will be filled with the value of the level sets at (t,x).
     */
-    AMREX_GPU_HOST_DEVICE
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void F_PHI(const amrex::Real /*t*/, const amrex::Real * x, amrex::Real * PHI) const
     {
         const amrex::Real diam = this->params[7];
+
+#if (AMREX_SPACEDIM == 2)
         const amrex::Real theta = (this->params[8])*M_PI/180.0;
-        const amrex::Real m = std::tan(theta);
-        const amrex::Real q = 0.5*(1.0-m);
-        const amrex::Real A[3] = {0.0, q, 0.5};
-        const amrex::Real B[3] = {1.0, m+q, 0.5};
-        const amrex::Real X[3] = {x[0], x[1], (AMREX_SPACEDIM == 3) ? x[2] : 0.5};
-        const amrex::Real AB[3] = {B[0]-A[0], B[1]-A[1], B[2]-A[2]};
-        const amrex::Real AX[3] = {X[0]-A[0], X[1]-A[1], X[2]-A[2]};
-        const amrex::Real BX[3] = {X[0]-B[0], X[1]-B[1], X[2]-B[2]};
-        
-        amrex::Real tmp[3], res;
-        this->cross(BX, AX, tmp);
-        res = this->norm2_3D(tmp)/this->norm2_3D(AB)-0.5*diam;
+        const amrex::Real xi[2] = {std::cos(theta), std::sin(theta)};
+        const amrex::Real s = (x[0]-0.5)*xi[0]+(x[1]-0.5)*xi[1];
+        const amrex::Real y[2] = {0.5+s*xi[0], 0.5+s*xi[1]};
+        const amrex::Real d2 = (x[0]-y[0])*(x[0]-y[0])+(x[1]-y[1])*(x[1]-y[1]);
+#endif
+#if (AMREX_SPACEDIM == 3)
+        const amrex::Real theta = (this->params[8])*M_PI/180.0;
+        const amrex::Real phi = (this->params[9])*M_PI/180.0;
+        const amrex::Real xi[3] = {std::cos(theta)*std::cos(phi), std::sin(theta)*std::cos(phi), std::sin(phi)};
+        const amrex::Real s = (x[0]-0.5)*xi[0]+(x[1]-0.5)*xi[1]+(x[2]-0.5)*xi[2];
+        const amrex::Real y[3] = {0.5+s*xi[0], 0.5+s*xi[1], 0.5+s*xi[2]};
+        const amrex::Real d2 = (x[0]-y[0])*(x[0]-y[0])+(x[1]-y[1])*(x[1]-y[1])+(x[2]-y[2])*(x[2]-y[2]);
+#endif
+        const amrex::Real res = d2-0.25*diam*diam;
         
         PHI[0] = res;
     }
@@ -170,20 +124,23 @@ public IDEAL_GAS_BASE
     void F_SOL0(const amrex::Real * x, amrex::Real * SOL) const
     {
         // SPACE LOCATION
-        const amrex::Real y[AMREX_SPACEDIM] = {AMREX_D_DECL(x[0]-0.5, x[1]-0.5, x[2]-0.5)};
         const amrex::Real theta = (this->params[8])*M_PI/180.0;
         const amrex::Real cth = std::cos(theta);
         const amrex::Real sth = std::sin(theta);
-        const amrex::Real xi_dir[AMREX_SPACEDIM] = {AMREX_D_DECL(cth, sth, 0.0)};
+#if (AMREX_SPACEDIM == 3)
+        const amrex::Real phi = (this->params[9])*M_PI/180.0;
+        const amrex::Real cph = std::cos(phi);
+        const amrex::Real sph = std::sin(phi);
+#endif
 #if (AMREX_SPACEDIM == 2)
-        const amrex::Real xi[2] = { cth*y[0]+sth*y[1],
-                                   -sth*y[0]+cth*y[1]};
+        const amrex::Real xi_dir[AMREX_SPACEDIM] = {AMREX_D_DECL(cth, sth, 0.0)};
 #endif
 #if (AMREX_SPACEDIM == 3)
-        const amrex::Real xi[3] = { cth*y[0]+sth*y[1],
-                                   -sth*y[0]+cth*y[1],
-                                   y[2]};
+        const amrex::Real xi_dir[AMREX_SPACEDIM] = {AMREX_D_DECL(cth*cph, sth*cph, sph)};
 #endif
+        const amrex::Real y[AMREX_SPACEDIM] = {AMREX_D_DECL(x[0]-0.5, x[1]-0.5, x[2]-0.5)};
+
+        const amrex::Real xi = AMREX_D_TERM(xi_dir[0]*y[0],+xi_dir[1]*y[1],+xi_dir[2]*y[2]);
 
         // STATES
         const amrex::Real g = this->gamma;
@@ -197,7 +154,7 @@ public IDEAL_GAS_BASE
 
         amrex::Real SOLxi[N_SOL];
 
-        if (xi[0] > xis)
+        if (xi > xis)
         {
             SOLxi[RHO] = rhoR;
             AMREX_D_TERM
@@ -353,6 +310,9 @@ public IDEAL_GAS_BASE
     {
         const amrex::Real g = this->gamma;
         const amrex::Real theta = (this->params[8])*M_PI/180.0;
+#if (AMREX_SPACEDIM == 3)
+        const amrex::Real phi = (this->params[9])*M_PI/180.0;
+#endif
 
         // PRIMARY VARIABLES
         amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
@@ -365,6 +325,9 @@ public IDEAL_GAS_BASE
         // VELOCITY COMPONENTS ALONG THE TUBE'S CENTERLINE
 #if (AMREX_SPACEDIM == 2)
         const amrex::Real xi[2] = {std::cos(theta), std::sin(theta)};
+#endif
+#if (AMREX_SPACEDIM == 3)
+        const amrex::Real xi[3] = {std::cos(theta)*std::cos(phi), std::sin(theta)*std::cos(phi), std::sin(phi)};
 #endif
         amrex::Real SOLn[N_SOL];
         this->eval_U2Un(xi, SOL, SOLn);

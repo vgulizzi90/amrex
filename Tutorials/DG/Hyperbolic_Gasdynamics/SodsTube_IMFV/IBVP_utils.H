@@ -10,7 +10,7 @@
 
 #define DG_LIMIT_P
 
-#define DG_SL_THETA 2.0
+#define DG_SL_THETA 1.0
 
 #define DG_LIMIT_BY_LS
 
@@ -517,6 +517,7 @@ void FillInvalidCells(const Real t,
             
             if (elm_is_not_valid && elm_is_not_isolated)
             {
+//Print() << std::endl << "i,j,k: " << i << " " << j << " " << k << std::endl;
                 // CELL'S CENTROID
                 AMREX_D_TERM
                 (
@@ -831,6 +832,14 @@ void EvalLimitedSlopes(const Real t,
                 IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
 #endif
 
+/**/
+if (i == 27 && j == 34 && k == 32)
+{
+const int r = ParallelDescriptor::MyProc();
+Print(r) << "nbr_P(" << i-1 << "," << j << "," << k << ")"; IO::PrintRealArray2D(r, 1, DG_N_SOL, nbr_P);
+}
+/**/
+
                 // Characteristics
 #ifndef DG_LIMIT_P
                 for (int ru = 0; ru < N_SOL; ++ru)
@@ -855,6 +864,14 @@ void EvalLimitedSlopes(const Real t,
 #ifdef DG_LIMIT_P
                 IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
 #endif
+
+/**/
+if (i == 27 && j == 34 && k == 32)
+{
+const int r = ParallelDescriptor::MyProc();
+Print(r) << "nbr_P(" << i+1 << "," << j << "," << k << ")"; IO::PrintRealArray2D(r, 1, DG_N_SOL, nbr_P);
+}
+/**/
 
                 // Characteristics
 #ifndef DG_LIMIT_P
@@ -899,6 +916,14 @@ void EvalLimitedSlopes(const Real t,
                 IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
 #endif
 
+/**/
+if (i == 27 && j == 34 && k == 32)
+{
+const int r = ParallelDescriptor::MyProc();
+Print(r) << "nbr_P(" << i << "," << j-1 << "," << k << ")"; IO::PrintRealArray2D(r, 1, DG_N_SOL, nbr_P);
+}
+/**/
+
                 // Characteristics
 #ifndef DG_LIMIT_P
                 for (int ru = 0; ru < N_SOL; ++ru)
@@ -923,6 +948,14 @@ void EvalLimitedSlopes(const Real t,
 #ifdef DG_LIMIT_P
                 IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
 #endif
+
+/**/
+if (i == 27 && j == 34 && k == 32)
+{
+const int r = ParallelDescriptor::MyProc();
+Print(r) << "nbr_P(" << i << "," << j+1 << "," << k << ")"; IO::PrintRealArray2D(r, 1, DG_N_SOL, nbr_P);
+}
+/**/
 
                 // Characteristics
 #ifndef DG_LIMIT_P
@@ -968,6 +1001,14 @@ void EvalLimitedSlopes(const Real t,
                 IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
 #endif
 
+/**/
+if (i == 27 && j == 34 && k == 32)
+{
+const int r = ParallelDescriptor::MyProc();
+Print(r) << "nbr_P(" << i << "," << j << "," << k-1 << ")"; IO::PrintRealArray2D(r, 1, DG_N_SOL, nbr_P);
+}
+/**/
+
                 // Characteristics
 #ifndef DG_LIMIT_P
                 for (int ru = 0; ru < N_SOL; ++ru)
@@ -993,7 +1034,15 @@ void EvalLimitedSlopes(const Real t,
                 IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
 #endif
 
-            // Characteristics
+/**/
+if (i == 27 && j == 34 && k == 32)
+{
+const int r = ParallelDescriptor::MyProc();
+Print(r) << "nbr_P(" << i << "," << j << "," << k+1 << ")"; IO::PrintRealArray2D(r, 1, DG_N_SOL, nbr_P);
+}
+/**/
+
+                // Characteristics
 #ifndef DG_LIMIT_P
                 for (int ru = 0; ru < N_SOL; ++ru)
                 {
@@ -1023,8 +1072,9 @@ void EvalLimitedSlopes(const Real t,
 #endif
 
 
-if (i == 34 && j == 27)
+if (i == 27 && j == 34 && k == 32)
 {
+const int r = ParallelDescriptor::MyProc();
 
 Real dU[DG_N_SOL*AMREX_SPACEDIM];
 
@@ -1033,7 +1083,7 @@ for (int ru = 0; ru < N_SOL; ++ru)
 {
     dU[ru+d1*DG_N_SOL] = dX_fab(i,j,k,d1+AMREX_SPACEDIM*ru);
 }
-Print() << "dU: " << std::endl; IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dU);
+Print(r) << "dU: " << std::endl; IO::PrintRealArray2D(r, DG_N_SOL, AMREX_SPACEDIM, dU);
 exit(-1);
 }
 
@@ -1052,7 +1102,7 @@ exit(-1);
         msg  = "\n";
         msg += "ERROR: IBVP_utils.H - EvalLimitedSlopes\n";
         msg += "| dX contains nans.\n";
-        amrex::Abort(msg);
+        Abort(msg);
     }
     // ================================================================
 }
@@ -1320,11 +1370,17 @@ void EvalLimitedSlopesByLeastSquares(const Real t,
                 // ----------------------------------------------------
 
                 // DIAGONALIZE ----------------------------------------
+/*
+Print() << std::endl << "etype(" << i << "," << j << "," << k << "): " << ELM_TYPE_DESCRIPTION(etype) << std::endl;
+Print() << "S: " << std::endl;
+IO::PrintRealArray2D(3, 3, S);
+*/
+
 #if (AMREX_SPACEDIM == 2)
-                linalg::dsy2ev(AMREX_SPACEDIM, S, LAM, EV);
+                linalg::dsy2ev(S, LAM, EV);
 #endif
 #if (AMREX_SPACEDIM == 3)
-                linalg::dsy3ev(AMREX_SPACEDIM, S, LAM, EV);
+                linalg::dsy3ev(S, LAM, EV);
 #endif
                 //linalg::eye(AMREX_SPACEDIM, EV);
                 // ----------------------------------------------------
@@ -1368,16 +1424,19 @@ void EvalLimitedSlopesByLeastSquares(const Real t,
                     Add2dU(DG_N_SOL, SOL, y, nbr_SOL, y2L, y2R, dUL, dUR);
 #endif
 /*
-if (i == 35 && j == 26)
+if (i == 27 && j == 34 && k == 32)
 {
-Print() << "nearest point: " << std::endl;
-Print() << "nxc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nxc);
-Print() << "nbr_xc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_xc);
-Print() << "un: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, un);
-Print() << "y: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, y);
-//Print() << "nbr_SOL: "; IO::PrintRealArray2D(1, DG_N_SOL, nbr_SOL);
-Print() << "nbr_P: "; IO::PrintRealArray2D(1, DG_N_SOL, nbr_P);
-Print() << std::endl;
+const int r = ParallelDescriptor::MyProc();
+
+Print(r) << std::endl;
+Print(r) << "nearest point: " << std::endl;
+Print(r) << "nxc: "; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, nxc);
+Print(r) << "nbr_xc: "; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, nbr_xc);
+Print(r) << "un: "; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, un);
+Print(r) << "y: "; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, y);
+//Print(r) << "nbr_SOL: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, nbr_SOL);
+Print(r) << "nbr_P: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, nbr_P);
+Print(r) << std::endl;
 }
 */
                 }
@@ -1421,15 +1480,17 @@ Print() << std::endl;
 #endif
 
 /*
-if (i == 35 && j == 26)
+if (i == 27 && j == 34 && k == 32)
 {
-Print() << "nbr_etype(" << nbr_i << "," << nbr_j << "," << nbr_k << "): " << ELM_TYPE_DESCRIPTION(nbr_etype) << std::endl;
-Print() << "nbr_xc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_xc);
-Print() << "y: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, y);
-//Print() << "nbr_SOL: "; IO::PrintRealArray2D(1, DG_N_SOL, nbr_SOL);
-Print() << "nbr_P: "; IO::PrintRealArray2D(1, DG_N_SOL, nbr_P);
-//Print() << "dUL: " << std::endl; IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dUL);
-Print() << std::endl;
+const int r = ParallelDescriptor::MyProc();
+
+Print(r) << "nbr_etype(" << nbr_i << "," << nbr_j << "," << nbr_k << "): " << ELM_TYPE_DESCRIPTION(nbr_etype) << std::endl;
+Print(r) << "nbr_xc: "; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, nbr_xc);
+Print(r) << "y: "; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, y);
+//Print(r) << "nbr_SOL: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, nbr_SOL);
+Print(r) << "nbr_P: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, nbr_P);
+//Print(r) << "dUL: " << std::endl; IO::PrintRealArray2D(r, DG_N_SOL, AMREX_SPACEDIM, dUL);
+Print(r) << std::endl;
 }
 */
 
@@ -1503,39 +1564,53 @@ Print() << std::endl;
 
 if (linalg::contains_nan(DG_N_SOL*AMREX_SPACEDIM, dCL) ||
     linalg::contains_nan(DG_N_SOL*AMREX_SPACEDIM, dCR) /*||
-    (i == 35 && j == 26)*/)
+    (i == 27 && j == 34 && k == 32)*/)
 {
-Print() << "etype(" << i << "," << j << "," << k << "): " << ELM_TYPE_DESCRIPTION(etype) << std::endl;
-Print() << "xc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, xc);
-Print() << "SOL: "; IO::PrintRealArray2D(1, DG_N_SOL, SOL);
-Print() << "P: "; IO::PrintRealArray2D(1, DG_N_SOL, P);
+const int r = ParallelDescriptor::MyProc();
 
-Print() << "S: " << std::endl; IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, S);
-Print() << "LAM: " << std::endl; IO::PrintRealArray2D(1, AMREX_SPACEDIM, LAM);
-Print() << "EV: " << std::endl; IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, EV);
-Print() << "theta: " << std::acos(EV[0])*180.0/M_PI << std::endl;
+Print(r) << "etype(" << i << "," << j << "," << k << "): " << ELM_TYPE_DESCRIPTION(etype) << std::endl;
+Print(r) << "xc: "; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, xc);
+Print(r) << "SOL: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, SOL);
+Print(r) << "P: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, P);
 
-Print() << "y2L: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, y2L);
-Print() << "y2R: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, y2R);
+Print(r) << "S: " << std::endl; IO::PrintRealArray2D(r, AMREX_SPACEDIM, AMREX_SPACEDIM, S);
+Print(r) << "LAM: " << std::endl; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, LAM);
+Print(r) << "EV: " << std::endl; IO::PrintRealArray2D(r, AMREX_SPACEDIM, AMREX_SPACEDIM, EV);
+//Print(r) << "theta: " << std::acos(EV[0])*180.0/M_PI << std::endl;
 
-Print() << "dUL: " << std::endl; IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dUL);
-Print() << "dUR: " << std::endl; IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dUR);
+Real aux;
+Real tmp[AMREX_SPACEDIM*AMREX_SPACEDIM];
+Real tmp2[AMREX_SPACEDIM*AMREX_SPACEDIM];
+linalg::matmul(AMREX_SPACEDIM, AMREX_SPACEDIM, AMREX_SPACEDIM, EV, S, tmp);
+{
+    aux = EV[0+1*3]; EV[0+1*3] = EV[1+0*3]; EV[1+0*3] = aux;
+    aux = EV[0+2*3]; EV[0+2*3] = EV[2+0*3]; EV[2+0*3] = aux;
+    aux = EV[1+2*3]; EV[1+2*3] = EV[2+1*3]; EV[2+1*3] = aux;
+}
+linalg::matmul(AMREX_SPACEDIM, AMREX_SPACEDIM, AMREX_SPACEDIM, tmp, EV, tmp2);
+Print(r) << "EV*S*EV': " << std::endl; IO::PrintRealArray2D(r, AMREX_SPACEDIM, AMREX_SPACEDIM, tmp2);
 
-Print() << "dCL: " << std::endl; IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dCL);
-Print() << "dCR: " << std::endl; IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dCR);
-Print() << "dC: " << std::endl; IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dC);
+Print(r) << "y2L: "; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, y2L);
+Print(r) << "y2R: "; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, y2R);
 
-Print() << "dU: " << std::endl; IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dU);
+Print(r) << "dUL: " << std::endl; IO::PrintRealArray2D(r, DG_N_SOL, AMREX_SPACEDIM, dUL);
+Print(r) << "dUR: " << std::endl; IO::PrintRealArray2D(r, DG_N_SOL, AMREX_SPACEDIM, dUR);
+
+Print(r) << "dCL: " << std::endl; IO::PrintRealArray2D(r, DG_N_SOL, AMREX_SPACEDIM, dCL);
+Print(r) << "dCR: " << std::endl; IO::PrintRealArray2D(r, DG_N_SOL, AMREX_SPACEDIM, dCR);
+Print(r) << "dC: " << std::endl; IO::PrintRealArray2D(r, DG_N_SOL, AMREX_SPACEDIM, dC);
+
+Print(r) << "dU: " << std::endl; IO::PrintRealArray2D(r, DG_N_SOL, AMREX_SPACEDIM, dU);
 
 for (int d1 = 0; d1 < AMREX_SPACEDIM; ++d1)
 for (int ru = 0; ru < N_SOL; ++ru)
 {
     dU[ru+d1*DG_N_SOL] = dX_fab(i,j,k,d1+AMREX_SPACEDIM*ru);
 }
-Print() << "dU: " << std::endl; IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dU);
+Print(r) << "dU: " << std::endl; IO::PrintRealArray2D(r, DG_N_SOL, AMREX_SPACEDIM, dU);
 
-Print() << "HERE WE ARE - EvalLimitedSlopesByLeastSquares" << std::endl;
-exit(-1);
+Print(r) << "HERE WE ARE - EvalLimitedSlopesByLeastSquares" << std::endl << std::endl;
+//exit(-1);
 }
             }
         });
@@ -1552,7 +1627,7 @@ exit(-1);
         msg  = "\n";
         msg += "ERROR: IBVP_utils.H - EvalLimitedSlopesByLeastSquares\n";
         msg += "| dX contains nans.\n";
-        amrex::Abort(msg);
+        Abort(msg);
     }
     // ================================================================
 }
@@ -1808,12 +1883,33 @@ void Eval_dXdt_BouContrib(const Real t,
 
 if (linalg::contains_nan(N_SOL, NFn))
 {
-Print() << "intraphase" << std::endl;
-Print() << "etype(" << i << "," << j << "," << k << "): " << ELM_TYPE_DESCRIPTION(etype) << std::endl;
-Print() << "    SOL: "; IO::PrintRealArray2D(1, DG_N_SOL, SOL);
-Print() << "nbr_SOL: "; IO::PrintRealArray2D(1, DG_N_SOL, nbr_SOL);
-Print() << "NFn: "; IO::PrintRealArray2D(1, DG_N_SOL, NFn);
+const int r = ParallelDescriptor::MyProc();
+if (i == 27)
+{
+Print(r) << "intraphase: " << b << std::endl;
+Print(r) << "etype(" << i << "," << j << "," << k << "): " << ELM_TYPE_DESCRIPTION(etype) << std::endl;
+Print(r) << "    SOL: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, SOL);
+Print(r) << "nbr_SOL: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, nbr_SOL);
+Print(r) << "NFn: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, NFn);
+
+
+for (int cu = 0; cu < DG_N_SOL; ++cu)
+{
+    SOL[cu] = X_fab(BF_i,BF_j,BF_k,cu);
+}
+
+Real dU[DG_N_SOL*AMREX_SPACEDIM];
+for (int d1 = 0; d1 < AMREX_SPACEDIM; ++d1)
+for (int rru = 0; rru < N_SOL; ++rru)
+{
+    dU[rru+d1*DG_N_SOL] = dX_fab(BF_i,BF_j,BF_k,d1+AMREX_SPACEDIM*rru);
+}
+Print(r) << "SOL: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, SOL);
+Print(r) << "dU: " << std::endl; IO::PrintRealArray2D(r, DG_N_SOL, AMREX_SPACEDIM, dU);
+Print(r) << "x: " << std::endl; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, x);
+Print(r) << "xc: " << std::endl; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, xc);
 exit(-1);
+}
 }
 
                         }
@@ -1857,10 +1953,11 @@ exit(-1);
 
 if (linalg::contains_nan(N_SOL, NFn))
 {
-Print() << "grid boundary" << std::endl;
-Print() << "etype(" << i << "," << j << "," << k << "): " << ELM_TYPE_DESCRIPTION(etype) << std::endl;
-Print() << "SOL: "; IO::PrintRealArray2D(1, DG_N_SOL, SOL);
-Print() << "NFn: "; IO::PrintRealArray2D(1, DG_N_SOL, NFn);
+const int r = ParallelDescriptor::MyProc();
+Print(r) << "grid boundary: " << b << std::endl;
+Print(r) << "etype(" << i << "," << j << "," << k << "): " << ELM_TYPE_DESCRIPTION(etype) << std::endl;
+Print(r) << "SOL: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, SOL);
+Print(r) << "NFn: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, NFn);
 exit(-1);
 }
 
@@ -1908,8 +2005,36 @@ exit(-1);
                             )
                         }
 
-                        // NUMERICAL FLUX FOR INTRAPHASE
+                        // NUMERICAL FLUX FOR INTERPHASE
                         IBVP.F_NF_PHI_BCS(t, x, un, SOL, NFn);
+
+if (linalg::contains_nan(N_SOL, NFn))
+{
+const int r = ParallelDescriptor::MyProc();
+Print(r) << "interphase: " << std::endl;
+Print(r) << "etype(" << i << "," << j << "," << k << "): " << ELM_TYPE_DESCRIPTION(etype) << std::endl;
+Print(r) << "SOL: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, SOL);
+Print(r) << "NFn: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, NFn);
+
+
+for (int cu = 0; cu < DG_N_SOL; ++cu)
+{
+    SOL[cu] = X_fab(BF_i,BF_j,BF_k,cu);
+}
+
+Real dU[DG_N_SOL*AMREX_SPACEDIM];
+for (int d1 = 0; d1 < AMREX_SPACEDIM; ++d1)
+for (int rru = 0; rru < N_SOL; ++rru)
+{
+    dU[rru+d1*DG_N_SOL] = dX_fab(BF_i,BF_j,BF_k,d1+AMREX_SPACEDIM*rru);
+}
+Print(r) << "SOL: "; IO::PrintRealArray2D(r, 1, DG_N_SOL, SOL);
+Print(r) << "dU: " << std::endl; IO::PrintRealArray2D(r, DG_N_SOL, AMREX_SPACEDIM, dU);
+Print(r) << "x: " << std::endl; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, x);
+Print(r) << "xc: " << std::endl; IO::PrintRealArray2D(r, 1, AMREX_SPACEDIM, xc);
+
+exit(-1);
+}
 
                         // INTEGRAL CONTRIBUTION
                         integrand = NFn[ru];
@@ -1931,7 +2056,7 @@ exit(-1);
         msg  = "\n";
         msg += "ERROR: IBVP_utils.H - Eval_dXdt_BouContrib\n";
         msg += "| dXdt contains nans.\n";
-        amrex::Abort(msg);
+        Abort(msg);
     }
     // ================================================================
 }
@@ -2076,7 +2201,10 @@ void TakeTimeStep(const Real dt, const Real t,
 
     // RK2 STEP 1 =====================================================
     FillBoundaryCells(t, mesh, N_SOL, X_old, IBVP);
+#ifdef DG_LIMIT_BY_LS
+#else
     FillInvalidCells(t, mesh, N_SOL, X_old, IBVP);
+#endif
 
     // dXdt := dXdt(t, X_old)
     Eval_dXdt(t, mesh, matfactory, N_SOL, X_old, dXdt, IBVP);
@@ -2087,7 +2215,10 @@ void TakeTimeStep(const Real dt, const Real t,
 
     // RK2 STEP 2 =====================================================
     FillBoundaryCells(t, mesh, N_SOL, X1, IBVP);
+#ifdef DG_LIMIT_BY_LS
+#else
     FillInvalidCells(t, mesh, N_SOL, X1, IBVP);
+#endif
 
     // dXdt := dXdt(t+dt, X1)
     Eval_dXdt(t+dt, mesh, matfactory, N_SOL, X1, dXdt, IBVP);

@@ -13,6 +13,8 @@
 #ifndef AMREX_DG_LINALG_H_
 #define AMREX_DG_LINALG_H_
 
+#define THIRD (1.0/3.0)
+
 namespace amrex
 {
 namespace DG
@@ -1591,7 +1593,7 @@ void dpotrs(const char uplo, const int n, const int nrhs,
 
 
 // ####################################################################
-// DERIVED ROUTINES ###################################################
+// AUXILIARY ROUTINES #################################################
 // ####################################################################
 /**
  * \brief Fill a buffer with zeros.
@@ -1678,6 +1680,40 @@ void matmul(const int m, const int k, const int n, const Real * a, const Real * 
         c[i+r*m] += a[i+j*m]*b[j+r*k];
     }
 }
+
+/**
+ * \brief Dot product of two vectors in 3D space.
+ * 
+ * \param[in] v1: pointer to memory containing the first vector's components.
+ * \param[in] v2: pointer to memory containing the second vector's components.
+ *
+ * \return the dot product between the two vectors.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+Real dot3(const Real * v1, const Real * v2)
+{
+    Real res;
+    res =  v1[0]*v2[0];
+    res += v1[1]*v2[1];
+    res += v1[2]*v2[2];
+
+    return res;
+}
+
+/**
+ * \brief Cross product between two vector in 3D space.
+ * 
+ * \param[in] v1: pointer to memory containing the first vector's components.
+ * \param[in] v2: pointer to memory containing the second vector's components.
+ * \param[out] res: pointer to memory that will be filled with the result.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void cross3(const Real * v1, const Real * v2, Real * res)
+{
+    res[0] = v1[1]*v2[2]-v1[2]*v2[1];
+    res[1] = v1[2]*v2[0]-v1[0]*v2[2];
+    res[2] = v1[0]*v2[1]-v1[1]*v2[0];
+}
 // ####################################################################
 // ####################################################################
 
@@ -1704,7 +1740,7 @@ void dpo2s(const int n, const Real * a, const Real * b, Real * x)
  * \brief Compute eigenvalues and (right) eigenvectors of a 2x2 symmetric matrix.
 */
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void dsy2ev(const int n, const Real * a, Real * lam, Real * ev)
+void dsy2ev(const Real * a, Real * lam, Real * ev)
 {
     const Real a11 = a[0+0*2];
     const Real a12 = a[0+1*2];
@@ -1779,6 +1815,229 @@ void dpo3s(const int n, const Real * a, const Real * b, Real * x)
         x[0+c*3] *= id;
         x[1+c*3] *= id;
         x[2+c*3] *= id;
+    }
+}
+
+/**
+ * \brief Compute eigenvalues and (right) eigenvectors of a 3x3 symmetric matrix.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void dsy3ev(const Real * a, Real * lam, Real * ev)
+{
+    const Real a11 = a[0+0*3];
+    const Real a12 = a[0+1*3];
+    const Real a13 = a[0+2*3];
+    const Real a22 = a[1+1*3];
+    const Real a23 = a[1+2*3];
+    const Real a33 = a[2+2*3];
+
+    const Real q = THIRD*(a11+a22+a33);
+    const Real p1 = a12*a12+a13*a13+a23*a23;
+    const bool a_is_diagonal = (std::sqrt(p1)/q < 1.0e-12);
+    const Real p = std::sqrt(a11*a11+a22*a22+a33*a33+3.0*p1-a22*a33-a11*a22-a11*a33)*THIRD;
+
+    if (a_is_diagonal)
+    {
+        lam[0] = a11;
+        lam[1] = a22;
+        lam[2] = a33;
+        ev[0+0*3] = 1.0; ev[0+1*3] = 0.0; ev[0+2*3] = 0.0;
+        ev[1+0*3] = 0.0; ev[1+1*3] = 1.0; ev[1+2*3] = 0.0;
+        ev[2+0*3] = 0.0; ev[2+1*3] = 0.0; ev[2+2*3] = 1.0;
+    }
+    else
+    {
+        int i;
+        Real tmp;
+        Real b[9];
+
+        tmp = 1.0/p;
+        b[0+0*3] = (a11-q)*tmp;
+        b[0+1*3] = (a12  )*tmp;
+        b[0+2*3] = (a13  )*tmp;
+        b[1+1*3] = (a22-q)*tmp;
+        b[1+2*3] = (a23  )*tmp;
+        b[2+2*3] = (a33-q)*tmp;
+        
+        tmp = 0.5*(    -b[0+2*3]*b[0+2*3]*b[1+1*3]
+                   +2.0*b[0+1*3]*b[0+2*3]*b[1+2*3]
+                       -b[0+0*3]*b[1+2*3]*b[1+2*3]
+                       -b[0+1*3]*b[0+1*3]*b[2+2*3]
+                       +b[0+0*3]*b[1+1*3]*b[2+2*3]);
+
+        if (tmp <= -1.0)
+        {
+            tmp = M_PI*THIRD;
+        }
+        else if (tmp >= +1.0)
+        {
+            tmp = 0.0;
+        }
+        else
+        {
+            tmp = std::acos(tmp)*THIRD;
+        }
+
+        lam[0] = q+2.0*p*std::cos(tmp+2.0*M_PI*THIRD);
+        lam[2] = q+2.0*p*std::cos(tmp);
+        lam[1] = 3.0*q-lam[0]-lam[2];
+
+        // Compute eigenvector corresponding to lam[0] ----------------
+        b[0+0*3] = a11-lam[0]; b[0+1*3] = a12;        b[0+2*3] = a13;
+        b[1+0*3] = a12;        b[1+1*3] = a22-lam[0]; b[1+2*3] = a23;
+        b[2+0*3] = a13;        b[2+1*3] = a23;        b[2+2*3] = a33-lam[0];
+        
+        cross3(&b[0*3], &b[1*3], &ev[0*3]);
+        cross3(&b[0*3], &b[2*3], &ev[1*3]);
+        cross3(&b[1*3], &b[2*3], &ev[2*3]);
+
+        b[0] = dot3(&ev[0*3], &ev[0*3]);
+        b[1] = dot3(&ev[1*3], &ev[1*3]);
+        b[2] = dot3(&ev[2*3], &ev[2*3]);
+
+        tmp = b[0];
+
+        i = 0;
+        if (b[1] > tmp)
+        {
+            tmp = b[1];
+            i = 1;
+        }
+        if (b[2] > tmp)
+        {
+            i = 2;
+        }
+
+        if (i == 0)
+        {
+            tmp = 1.0/std::sqrt(b[0]);
+            ev[0] *= tmp;
+            ev[1] *= tmp;
+            ev[2] *= tmp;
+        }
+        else if (i == 1)
+        {
+            tmp = 1.0/std::sqrt(b[1]);
+            ev[0] = tmp*ev[0+1*3];
+            ev[1] = tmp*ev[1+1*3];
+            ev[2] = tmp*ev[2+1*3];
+
+        }
+        else
+        {
+            tmp = 1.0/std::sqrt(b[2]);
+            ev[0] = tmp*ev[0+2*3];
+            ev[1] = tmp*ev[1+2*3];
+            ev[2] = tmp*ev[2+2*3];
+        }
+        // ------------------------------------------------------------
+
+        // Compute eigenvector corresponding to lam[1] ----------------
+        if (std::abs(ev[0]) > std::abs(ev[1]))
+        {
+            tmp = 1.0/std::sqrt(ev[0]*ev[0]+ev[2]*ev[2]);
+            ev[0+1*3] = -ev[2]*tmp;
+            ev[1+1*3] = 0.0;
+            ev[2+1*3] = +ev[0]*tmp;
+        }
+        else
+        {
+            tmp = 1.0/std::sqrt(ev[1]*ev[1]+ev[2]*ev[2]);
+            ev[0+1*3] = 0.0;
+            ev[1+1*3] = +ev[2]*tmp;
+            ev[2+1*3] = -ev[1]*tmp;
+        }
+        cross3(&ev[0*3], &ev[1*3], &ev[2*3]);
+
+        b[0+0*3] = a11*ev[0+1*3]+a12*ev[1+1*3]+a13*ev[2+1*3];
+        b[1+0*3] = a12*ev[0+1*3]+a22*ev[1+1*3]+a23*ev[2+1*3];
+        b[2+0*3] = a13*ev[0+1*3]+a23*ev[1+1*3]+a33*ev[2+1*3];
+
+        b[0+1*3] = a11*ev[0+2*3]+a12*ev[1+2*3]+a13*ev[2+2*3];
+        b[1+1*3] = a12*ev[0+2*3]+a22*ev[1+2*3]+a23*ev[2+2*3];
+        b[2+1*3] = a13*ev[0+2*3]+a23*ev[1+2*3]+a33*ev[2+2*3];
+
+        b[0+2*3] = dot3(&ev[1*3], &b[0*3])-lam[1];
+        b[1+2*3] = dot3(&ev[1*3], &b[1*3]);
+        b[2+2*3] = dot3(&ev[2*3], &b[1*3])-lam[1];
+
+        if (std::abs(b[0+2*3]) >= std::abs(b[2+2*3]))
+        {
+            tmp = std::max(std::abs(b[0+2*3]), std::abs(b[1+2*3]));
+
+            if (tmp > 0.0)
+            {
+                if (std::abs(b[0+2*3]) > std::abs(b[1+2*3]))
+                {
+                    b[1+2*3] /= b[0+2*3];
+                    b[0+2*3] = 1.0/std::sqrt(1.0+b[1+2*3]*b[1+2*3]);
+                    b[1+2*3] *= b[0+2*3];
+                }
+                else
+                {
+                    b[0+2*3] /= b[1+2*3];
+                    b[1+2*3] = 1.0/std::sqrt(1.0+b[0+2*3]*b[0+2*3]);
+                    b[0+2*3] *= b[1+2*3];
+                }
+                
+                ev[0+1*3] = b[1+2*3]*ev[0+1*3]-b[0+2*3]*ev[0+2*3];
+                ev[1+1*3] = b[1+2*3]*ev[1+1*3]-b[0+2*3]*ev[1+2*3];
+                ev[2+1*3] = b[1+2*3]*ev[2+1*3]-b[0+2*3]*ev[2+2*3];
+            }
+            else
+            {
+                // &ev[1*3] already contains the eigenvector
+            }
+        }
+        else
+        {
+            tmp = std::max(std::abs(b[2+2*3]), std::abs(b[1+2*3]));
+
+            if (tmp > 0.0)
+            {
+                if (std::abs(b[2+2*3]) > std::abs(b[1+2*3]))
+                {
+                    b[1+2*3] /= b[2+2*3];
+                    b[2+2*3] = 1.0/std::sqrt(1.0+b[1+2*3]*b[1+2*3]);
+                    b[1+2*3] *= b[2+2*3];
+                }
+                else
+                {
+                    b[2+2*3] /= b[1+2*3];
+                    b[1+2*3] = 1.0/std::sqrt(1.0+b[2+2*3]*b[2+2*3]);
+                    b[2+2*3] *= b[1+2*3];
+                }
+
+                ev[0+1*3] = b[2+2*3]*ev[0+1*3]-b[1+2*3]*ev[0+2*3];
+                ev[1+1*3] = b[2+2*3]*ev[1+1*3]-b[1+2*3]*ev[1+2*3];
+                ev[2+1*3] = b[2+2*3]*ev[2+1*3]-b[1+2*3]*ev[2+2*3];
+            }
+            else
+            {
+                // &ev[1*3] already contains the eigenvector
+            }
+        }
+        // ------------------------------------------------------------
+
+        // Compute eigenvector corresponding to lam[2] ----------------
+        cross3(&ev[0*3], &ev[1*3], &ev[2*3]);
+        // ------------------------------------------------------------
+
+        // TRANSPOSE --------------------------------------------------
+        tmp = ev[0+1*3]; ev[0+1*3] = ev[1+0*3]; ev[1+0*3] = tmp;
+        tmp = ev[0+2*3]; ev[0+2*3] = ev[2+0*3]; ev[2+0*3] = tmp;
+        tmp = ev[1+2*3]; ev[1+2*3] = ev[2+1*3]; ev[2+1*3] = tmp;
+        // ------------------------------------------------------------
+/*
+Print() << "q: " << q << std::endl;
+Print() << "p: " << p << std::endl;
+Print() << "lam[0]: " << lam[0] << std::endl;
+Print() << "lam[1]: " << lam[1] << std::endl;
+Print() << "lam[2]: " << lam[2] << std::endl;
+Print() << "ev[0]: " << ev[0] << " " << ev[1] << " " << ev[2] << std::endl;
+Print() << "ev[1]: " << ev[0+1*3] << " " << ev[1+1*3] << " " << ev[2+1*3] << std::endl;
+Print() << "ev[2]: " << ev[0+2*3] << " " << ev[1+2*3] << " " << ev[2+2*3] << std::endl;
+*/
     }
 }
 // ####################################################################
