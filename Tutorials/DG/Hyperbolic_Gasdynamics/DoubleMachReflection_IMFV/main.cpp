@@ -48,7 +48,7 @@ amrex::Print() << "#############################################################
     // PARAMETERS =====================================================
     const int IOProc = amrex::ParallelDescriptor::IOProcessorNumber();
     
-    const std::string problem = "PROBLEM_SodsTube";
+    const std::string problem = "PROBLEM_DoubleMachReflection";
 
     // NUMBER OF GHOST ROWS
     const int ngr = 1;
@@ -174,16 +174,16 @@ amrex::Print() << "#############################################################
         // ============================================================
 
         // SET INITIAL CONDITIONS =====================================
-        ProjectInitialConditions(mesh, matfactory, N_SOL, X, IG);
+        amrex::DG::ProjectInitialConditions(mesh, matfactory, N_SOL, X, IG);
 
         // WRITE TO OUTPUT
         if (inputs.plot_int > 0)
         {
             const int n = 0;
             const amrex::Real t = 0.0;
-            Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                       t, mesh, matfactory, N_SOL, X,
-                       IG);
+            amrex::DG::Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
+                                  t, mesh, matfactory, N_SOL, X,
+                                  IG);
         }
 
         if (X.contains_nan())
@@ -220,10 +220,6 @@ amrex::Print() << "#############################################################
                 dt *= inputs.grid.CFL;
                 dt = std::min(t+dt, inputs.time.T)-t;
 
-amrex::Print() << "HERE WE ARE" << std::endl;
-exit(-1);
-
-                /*
                 // TIME STEP
                 amrex::DG::TakeTimeStep(dt, t, mesh, matfactory, N_SOL, X, IG);
 
@@ -234,9 +230,9 @@ exit(-1);
                 // WRITE TO OUTPUT
                 if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(t/inputs.time.T-1.0) < 1.0e-12)))
                 {
-                    Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                               t, mesh, matfactory, N_SOL, X,
-                               IG);
+                    amrex::DG::Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
+                                          t, mesh, matfactory, N_SOL, X,
+                                          IG);
                 }
 
                 // CLOCK TIME PER TIME STEP TOC
@@ -250,7 +246,6 @@ exit(-1);
                 amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
                                << dt << ", t = " << t
                                << ", clock time per time step = " << tps << std::endl;
-                */
             }
 
         }

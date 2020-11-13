@@ -15,15 +15,15 @@ time.n_steps = 10000
 
 # DISCRETIZATION ######################################################
 # GRID ================================================================
-grid.n_cells      = 256 128
-grid.max_box_size = 4 4
+grid.n_cells      = 1024 512
+grid.max_box_size = 64 64
 grid.CFL = 0.3
 # =====================================================================
 
 # IMPLICITLY-DEFINED MESH =============================================
-grid.space_p = 2
-grid.space_q = 2
-grid.space_q_im = 2
+grid.space_p = 1
+grid.space_q = 1
+grid.space_q_im = 1
 
 grid.volume_fraction_threshold = 0.3
 # =====================================================================
@@ -39,7 +39,8 @@ dG.space_p = 0
 
 
 # PROBLEM #############################################################
-problem.params = 3.61e-4 0.0 7.42e6 4.2 3.29e-5 0.0 1.95e4 5.2 41.0
+problem.params = 3.61e-4 0.0 7.42e6 4.2041015625 3.29e-5 0.0 1.95e4 5.2 49.0
+#problem.params = 3.61e-4 0.0 7.42e6 4.21875 3.29e-5 0.0 1.95e4 5.2 49.0
 #######################################################################
 # NOTE: params contains the left_state, right_state, and some geometry
 #       information which should be input as follows:
@@ -56,5 +57,5 @@ problem.params = 3.61e-4 0.0 7.42e6 4.2 3.29e-5 0.0 1.95e4 5.2 41.0
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 1
+plot_int = 100
 #######################################################################

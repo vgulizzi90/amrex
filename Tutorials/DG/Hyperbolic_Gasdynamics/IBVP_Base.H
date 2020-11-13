@@ -29,6 +29,10 @@
 #define RHOV3 3
 #define TE 4
 #endif
+
+// AUXILIARY PARAMETERS
+#define SMALL_p 1.0e-10
+#define SMALL_rho 1.0e-19
 // ####################################################################
 
 /**
@@ -73,7 +77,7 @@ struct IDEAL_GAS_BASE
     {
         const amrex::Real g = this->gamma;
 
-        rho = U[RHO];
+        rho = U[RHO]; rho = std::max(rho, SMALL_rho);
         AMREX_D_TERM
         (
             u1 = U[RHOV1]/rho;,
@@ -81,7 +85,7 @@ struct IDEAL_GAS_BASE
             u3 = U[RHOV3]/rho;
         )
         const amrex::Real e = U[TE];
-        p = (g-1)*(e-0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3)));
+        p = (g-1)*(e-0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3))); p = std::max(p, SMALL_p);
     }
 
     /**
@@ -101,7 +105,7 @@ struct IDEAL_GAS_BASE
                                  amrex::Real & p, amrex::Real & a, amrex::Real & h) const
     {
         const amrex::Real g = this->gamma;
-        const amrex::Real rho = U[RHO];
+        const amrex::Real rho = std::max(U[RHO], SMALL_rho);
 
         AMREX_D_TERM
         (
@@ -110,7 +114,7 @@ struct IDEAL_GAS_BASE
             u3 = U[RHOV3]/rho;
         )
         const amrex::Real e = U[TE];
-        p = (g-1)*(e-0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3)));
+        p = (g-1)*(e-0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3))); p = std::max(p, SMALL_p);
         a = std::sqrt(g*p/rho);
         h = 0.5*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3))+a*a/(g-1.0);
     }
@@ -371,7 +375,7 @@ struct IDEAL_GAS_BASE
      *                  the state at the shock.
     */
     AMREX_GPU_HOST_DEVICE
-    void RiemannSolver(const amrex::Real * Un_left, const amrex::Real * Un_right,
+    void RiemannSolver_old(const amrex::Real * Un_left, const amrex::Real * Un_right,
                        amrex::Real * URP) const
     {
         // PARAMETERS -------------------------------------------------
@@ -612,7 +616,8 @@ struct IDEAL_GAS_BASE
                 rhoRs = rhoR*std::pow(ps/pR, 1.0/g);
             }
 
-            rhoI = 0.5*(rhoLs+rhoRs);
+            //rhoI = 0.5*(rhoLs+rhoRs);
+            rhoI = 2.0*rhoLs*rhoRs/(rhoLs+rhoRs);
             AMREX_D_TERM
             (
                 u1I = us;,
@@ -631,6 +636,178 @@ struct IDEAL_GAS_BASE
         )
         URP[TE] = pI/(g-1.0)+0.5*rhoI*(AMREX_D_TERM(u1I*u1I,+u2I*u2I,+u3I*u3I));
         // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Solves the Riemann problem between left and right states in unit normal reference system.
+     *
+     * \param[in] Un_left: pointer to memory containing the conserved variables at the left of the shock
+     *                     expressed in the unit normal reference system.
+     * \param[in] Un_right: pointer to memory containing the conserved variables at the right of the
+     *                      shock expressed in the unit normal reference system.
+     * \param[out] URP: pointer to memory that will contain the solution of the Riemann problem, i.e.
+     *                  the state at the shock.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void RiemannSolver(const amrex::Real * Un_left, const amrex::Real * Un_right,
+                       amrex::Real * URP) const
+    {
+        const amrex::Real weakwv = 1.e-03, small = 1.e-6;
+        const int itno = 3;
+
+        amrex::Real rl, AMREX_D_DECL(ul, ut1l, ut2l), pl;
+        this->eval_primary_variables(Un_left, rl, AMREX_D_DECL(ul, ut1l, ut2l), pl);
+        
+        amrex::Real rr, AMREX_D_DECL(ur, ut1r, ut2r), pr;
+        this->eval_primary_variables(Un_right, rr, AMREX_D_DECL(ur, ut1r, ut2r), pr);
+
+        const amrex::Real clsql = gamma*pl*rl;
+        const amrex::Real clsqr = gamma*pr*rr;
+        amrex::Real wl = std::sqrt(clsql);
+        amrex::Real wr = std::sqrt(clsqr);
+        const amrex::Real cleft = wl/rl;
+        const amrex::Real cright = wr/rr;
+        
+        amrex::Real pstar, pstnm1, wlsq, wrsq, ustarp, ustarm, ustnm1, ustnp1;
+        amrex::Real dpditer, zp, zm, denom;
+        amrex::Real ustar;
+
+        amrex::Real ro, uo, po, sgnm, utrans1, utrans2;
+        amrex::Real wosq, co, wo, dpjmp, rstar, cstar, spout, spin, frac;
+        amrex::Real rgdnv, ugdnv, pgdnv;
+
+        pstar = (wl*pr + wr*pl - wr*wl*(ur-ul))/(wl+wr);
+        pstar = std::max(pstar, SMALL_p);
+        pstnm1 = pstar;
+
+        wlsq = (0.5*(gamma-1.0)*(pstar+pl)+pstar)*rl;
+        wrsq = (0.5*(gamma-1.0)*(pstar+pr)+pstar)*rr;
+
+        wl = std::sqrt(wlsq);
+        wr = std::sqrt(wrsq);
+
+        ustarp = ul-(pstar-pl)/wl;
+        ustarm = ur+(pstar-pr)/wr;
+
+        pstar = (wl*pr + wr*pl - wr*wl*(ur-ul))/(wl+wr);
+        pstar = std::max(pstar, SMALL_p);
+
+        for (int it = 0; it < itno; ++it)
+        {
+            wlsq = (0.5*(gamma-1.0)*(pstar+pl)+pstar)*rl;
+            wrsq = (0.5*(gamma-1.0)*(pstar+pr)+pstar)*rr;
+
+            wl = 1.0/std::sqrt(wlsq);
+            wr = 1.0/std::sqrt(wrsq);
+
+            ustnm1 = ustarm;
+            ustnp1 = ustarp;
+
+            ustarm = ur - (pr - pstar)*wr;
+            ustarp = ul + (pl - pstar)*wl;
+
+            dpditer = std::abs(pstnm1-pstar);
+            zp = std::abs(ustarp-ustnp1);
+            if (zp-weakwv*cleft < 0.0 )
+            {
+                zp = dpditer*wl;
+            }
+            zm = std::abs(ustarm-ustnm1);
+            if (zm-weakwv*cright < 0.0 )
+            {
+                zm = dpditer*wr;
+            }
+
+            denom = dpditer/std::max(zp+zm,small*(cleft+cright));
+            pstnm1 = pstar;
+            pstar = pstar - denom*(ustarm-ustarp);
+            pstar = std::max(pstar,SMALL_p);
+            ustar = 0.5*(ustarm+ustarp);
+        }
+
+        if (ustar > 0.0)
+        {
+            ro = rl;
+            uo = ul;
+            po = pl;
+            sgnm = 1.0;
+            AMREX_D_TERM
+            (
+                ,
+                utrans1 = ut1l;,
+                utrans2 = ut2l;
+            )
+        }
+        else if (ustar < 0.0)
+        {
+            ro = rr;
+            uo = ur;
+            po = pr;
+            sgnm = -1.0;
+            AMREX_D_TERM
+            (
+                ,
+                utrans1 = ut1r;,
+                utrans2 = ut2r;
+            )
+        }
+        else
+        {
+            uo = 0.50*(ur+ul);
+            po = 0.50*(pr+pl);
+            ro = 2.0*(rl*rr)/(rl+rr);
+            sgnm = 1.0;
+            AMREX_D_TERM
+            (
+                ,
+                utrans1 = 0.50*(ut1l+ut1r);,
+                utrans2 = 0.50*(ut2l+ut2r);
+            )
+        }
+        
+        wosq = (.5*(gamma-1.0)*(pstar+po)+pstar)*ro;
+        co = std::sqrt(gamma * po / ro);
+        wo = std::sqrt(wosq);
+        dpjmp = pstar-po;
+        rstar = ro/(1.0-ro*dpjmp/wosq);
+        cstar = std::sqrt(gamma * pstar / rstar);
+        spout = co-sgnm*uo;
+        spin = cstar - sgnm*uo;
+
+        if (pstar >= po)
+        {
+            spin = wo/ro-sgnm*uo;
+            spout = spin;
+        }
+        frac = 0.50*(1.0+(spin+spout)/std::max(spout-spin,std::max(spin+spout,small*(cleft+cright))));
+
+        if (spout < 0.0)
+        {
+            rgdnv = ro;
+            ugdnv = uo;
+            pgdnv = po;
+        }
+        else if (spin >= 0.0)
+        {
+            rgdnv = rstar;
+            ugdnv = ustar;
+            pgdnv = pstar;
+        }
+        else
+        {
+            rgdnv = frac*rstar + (1.0 - frac)* ro;
+            ugdnv = frac*ustar + (1.0 - frac)* uo;
+            pgdnv = frac*pstar + (1.0 - frac)* po;
+        }
+
+        URP[RHO] = rgdnv;
+        AMREX_D_TERM
+        (
+            URP[RHOV1] = rgdnv*ugdnv;,
+            URP[RHOV2] = rgdnv*utrans1;,
+            URP[RHOV3] = rgdnv*utrans2;
+        )
+        URP[TE] = pgdnv/(gamma-1.0)+0.5*rgdnv*(AMREX_D_TERM(ugdnv*ugdnv,+utrans1*utrans1,+utrans2*utrans2));
     }
     
     /**
@@ -678,7 +855,6 @@ struct IDEAL_GAS_BASE
      *
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
-     * \param[in] U: pointer to memory containing the unknown solution fields.
      * \param[in] U: pointer to memory containing the unknown solution fields.
      * \param[in] DU: pointer to memory containing jumps in the conserved variables.
      * \param[out] DC: pointer to memory that will contain jumps in the characteristics.
@@ -811,6 +987,143 @@ struct IDEAL_GAS_BASE
     }
     // ################################################################
 
+    // PRIMARY VARIABLES VS CHARACTERISTICS VARIABLES #################
+    /**
+     * \brief Eval jumps in the characteristics along x1 from jumps in the primary variables along x1.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] P: pointer to memory containing the primary variables.
+     * \param[in] DP: pointer to memory containing jumps in the conserved variables.
+     * \param[out] DC: pointer to memory that will contain jumps in the characteristics (of the
+     *                 primary variables).
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_DP2DC_1(const amrex::Real /*t*/, const amrex::Real * /*x*/,
+                   const amrex::Real * P,
+                   const amrex::Real * DP, amrex::Real * DC) const
+    {
+        // PARAMETERS
+        const amrex::Real g = this->gamma;
+
+        const amrex::Real rho = P[RHO];
+        const amrex::Real p = P[TE];
+        const amrex::Real a = std::sqrt(g*p/rho);
+        const amrex::Real inv_a = 1.0/a;
+
+#if (AMREX_SPACEDIM == 1)
+        DC[RHO]   =        -0.5*inv_a*rho*DP[RHOV1]+0.5*inv_a*inv_a*DP[TE];
+        DC[RHOV1] = DP[RHO]                            -inv_a*inv_a*DP[TE];
+        DC[TE]    =        +0.5*inv_a*rho*DP[RHOV1]+0.5*inv_a*inv_a*DP[TE];
+#endif
+#if (AMREX_SPACEDIM == 2)
+        DC[RHO]   =        -0.5*inv_a*rho*DP[RHOV1]              +0.5*inv_a*inv_a*DP[TE];
+        DC[RHOV1] = DP[RHO]                                          -inv_a*inv_a*DP[TE];
+        DC[RHOV2] =                                +rho*DP[RHOV2];
+        DC[TE]    =        +0.5*inv_a*rho*DP[RHOV1]              +0.5*inv_a*inv_a*DP[TE];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        DC[RHO]   =        -0.5*inv_a*rho*DP[RHOV1]                            +0.5*inv_a*inv_a*DP[TE];
+        DC[RHOV1] = DP[RHO]                                                        -inv_a*inv_a*DP[TE];
+        DC[RHOV2] =                                +rho*DP[RHOV2];
+        DC[RHOV3] =                                              +rho*DP[RHOV3];
+        DC[TE]    =        +0.5*inv_a*rho*DP[RHOV1]                            +0.5*inv_a*inv_a*DP[TE];
+#endif  
+    }
+
+    /**
+     * \brief Eval jumps in the characteristics from jumps in the primary variables.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the unit normal along which the jump is defined.
+     * \param[in] P: pointer to memory containing the primary variables.
+     * \param[in] DP: pointer to memory containing jumps in the primary variables.
+     * \param[out] DC: pointer to memory that will contain jumps in the characteristics (of the
+     *                 primary variables).
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_DP2DC(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                 const amrex::Real * P,
+                 const amrex::Real * DP, amrex::Real * DC) const
+    {
+        // VARIABLES
+        amrex::Real Pn[N_SOL], DPn[N_SOL];
+        
+        this->eval_U2Un(un, P, Pn);
+        this->eval_U2Un(un, DP, DPn);
+        
+        this->F_DU2DC_1(t, x, Pn, DPn, DC);
+    }
+
+    /**
+     * \brief Eval jumps in the primary variables along x1 from jumps in the characteristics along x1.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] P: pointer to memory containing the primary variables.
+     * \param[in] DC: pointer to memory containing jumps in the characteristics (of the primary
+     *                variables).
+     * \param[out] DP: pointer to memory that will contain jumps in the primary variables.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_DC2DP_1(const amrex::Real /*t*/, const amrex::Real * /*x*/,
+                   const amrex::Real * P,
+                   const amrex::Real * DC, amrex::Real * DP) const
+    {
+        // PARAMETERS
+        const amrex::Real g = this->gamma;
+
+        const amrex::Real rho = P[RHO];
+        const amrex::Real p = P[TE];
+        const amrex::Real a = std::sqrt(g*p/rho);
+        const amrex::Real inv_rho = 1.0/rho;
+        
+#if (AMREX_SPACEDIM == 1)
+        DP[RHO]   =            DC[RHO]+DC[RHOV1]          +DC[TE];
+        DP[RHOV1] = -inv_rho*a*DC[RHO]          +inv_rho*a*DC[TE];
+        DP[TE]    =        a*a*DC[RHO]                +a*a*DC[TE];
+#endif
+#if (AMREX_SPACEDIM == 2)
+        DP[RHO]   =            DC[RHO]+DC[RHOV1]                            +DC[TE];
+        DP[RHOV1] = -inv_rho*a*DC[RHO]                            +inv_rho*a*DC[TE];
+        DP[RHOV2] =                             +inv_rho*DC[RHOV2];
+        DP[TE]    =        a*a*DC[RHO]                                  +a*a*DC[TE];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        DP[RHO]   =            DC[RHO]+DC[RHOV1]                                              +DC[TE];
+        DP[RHOV1] = -inv_rho*a*DC[RHO]                                              +inv_rho*a*DC[TE];
+        DP[RHOV2] =                             +inv_rho*DC[RHOV2];
+        DP[RHOV3] =                                               +inv_rho*DC[RHOV3];
+        DP[TE]    =        a*a*DC[RHO]                                                    +a*a*DC[TE];
+#endif
+    }
+
+    /**
+     * \brief Eval the jumps in the primary variables from jumps in the characteristics.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the unit normal along which the jump is defined.
+     * \param[in] P: pointer to memory containing the primary variables.
+     * \param[in] DC: pointer to memory containing jumps in the characteristics (of the primary
+     *                variables).
+     * \param[out] DP: pointer to memory that will contain jumps in the primary variables.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_DC2DP(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                 const amrex::Real * P,
+                 const amrex::Real * DC, amrex::Real * DP) const
+    {
+        // VARIABLES
+        amrex::Real Pn[N_SOL], DPn[N_SOL];
+
+        this->eval_U2Un(un, P, Pn);
+        this->F_DC2DP_1(t, x, Pn, DC, DPn);
+        this->eval_Un2U(un, DPn, DP);
+    }
+    // ################################################################
+
     // CONSERVED VARIABLES VS PRIMARY VARIABLES #######################
     /**
      * \brief Eval primary variables from conserved variables.
@@ -876,6 +1189,49 @@ struct IDEAL_GAS_BASE
         DU[RHOV2] =                      u2*DP[RHO]                    +rho*DP[RHOV2];
         DU[RHOV3] =                      u3*DP[RHO]                                     +rho*DP[RHOV3];
         DU[TE]    = 0.5*(u1*u1+u2*u2+u3*u3)*DP[RHO]+rho*u1*DP[RHOV1]+rho*u2*DP[RHOV2]+rho*u3*DP[RHOV3]+ig1*DP[TE];
+#endif
+    }
+
+    /**
+     * \brief Eval jumps in the primary variables from jumps in the conserved variables.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] U: pointer to memory containing the unknown solution fields.
+     * \param[in] DU: pointer to memory containing jumps in the conserved variables.
+     * \param[out] DP: pointer to memory that will contain jumps in the primary variables.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_DU2DP(const amrex::Real /*t*/, const amrex::Real * /*x*/,
+                 const amrex::Real * U,
+                 const amrex::Real * DU, amrex::Real * DP) const
+    {
+        // PARAMETERS
+        const amrex::Real g = this->gamma;
+        const amrex::Real g1 = (g-1.0);
+
+        // VARIABLES
+        amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
+        this->eval_primary_variables(U, rho, AMREX_D_DECL(u1, u2, u3), p);
+        const amrex::Real inv_rho = 1.0/rho;
+
+#if (AMREX_SPACEDIM == 1)
+        DP[RHO]   =              DU[RHO];
+        DP[RHOV1] =  -u1*inv_rho*DU[RHO]+inv_rho*DU[RHOV1];
+        DP[TE]    = 0.5*g1*u1*u1*DU[RHO]  -g1*u1*DU[RHOV1]+g1*DU[TE];
+#endif
+#if (AMREX_SPACEDIM == 2)
+        DP[RHO]   =                      DU[RHO];
+        DP[RHOV1] =          -u1*inv_rho*DU[RHO]+inv_rho*DU[RHOV1];
+        DP[RHOV2] =          -u2*inv_rho*DU[RHO]                  +inv_rho*DU[RHOV2];
+        DP[TE]    = 0.5*g1*(u1*u1+u2*u2)*DU[RHO]  -g1*u1*DU[RHOV1]  -g1*u2*DU[RHOV2]+g1*DU[TE];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        DP[RHO]   =                            DU[RHO];
+        DP[RHOV1] =                -u1*inv_rho*DU[RHO]+inv_rho*DU[RHOV1];
+        DP[RHOV2] =                -u2*inv_rho*DU[RHO]                  +inv_rho*DU[RHOV2];
+        DP[RHOV3] =                -u3*inv_rho*DU[RHO]                                    +inv_rho*DU[RHOV3];
+        DP[TE]    = 0.5*g1*(u1*u1+u2*u2+u3*u3)*DU[RHO]  -g1*u1*DU[RHOV1]  -g1*u2*DU[RHOV2]  -g1*u3*DU[RHOV3]+g1*DU[TE];
 #endif
     }
     // ################################################################
@@ -1000,30 +1356,6 @@ struct IDEAL_GAS_BASE
         this->RiemannSolver(SOLn, nbr_SOLn, SOL_RP);
         this->eval_F1(SOL_RP, tmp);
         this->eval_Un2U(un, tmp, NFn);
-
-
-/*
-if (amrex::DG::linalg::contains_nan(N_SOL, NFn))
-{
-const int rank = amrex::ParallelDescriptor::MyProc();
-//if (rank == 1)
-{
-amrex::Print(rank) << "I am rank: " << rank << std::endl;
-amrex::Print(rank) << "    SOL: "; amrex::DG::IO::PrintRealArray2D(rank, 1, N_SOL, SOL);
-amrex::Print(rank) << "nbr_SOL: "; amrex::DG::IO::PrintRealArray2D(rank, 1, N_SOL, nbr_SOL);
-amrex::Print(rank) << "    un: "; amrex::DG::IO::PrintRealArray2D(rank, 1, AMREX_SPACEDIM, un);
-amrex::Print(rank) << "    SOLn: "; amrex::DG::IO::PrintRealArray2D(rank, 1, N_SOL, SOLn);
-amrex::Print(rank) << "nbr_SOLn: "; amrex::DG::IO::PrintRealArray2D(rank, 1, N_SOL, nbr_SOLn);
-amrex::Print(rank) << "SOL_RP: "; amrex::DG::IO::PrintRealArray2D(rank, 1, N_SOL, SOL_RP);
-amrex::Print(rank) << "NFn: "; amrex::DG::IO::PrintRealArray2D(rank, 1, N_SOL, NFn);
-}
-
-//exit(-1);
-}
-
-*/
-
-
     }
     // ################################################################
 };

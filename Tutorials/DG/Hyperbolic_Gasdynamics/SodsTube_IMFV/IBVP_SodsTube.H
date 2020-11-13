@@ -179,6 +179,65 @@ public IDEAL_GAS_BASE
 
         this->eval_Un2U(xi_dir, SOLxi, SOL);
     }
+
+    AMREX_GPU_HOST_DEVICE
+    void F_SOL0_smooth(const amrex::Real * x, amrex::Real * SOL) const
+    {
+        // SPACE LOCATION
+        const amrex::Real theta = (this->params[8])*M_PI/180.0;
+        const amrex::Real cth = std::cos(theta);
+        const amrex::Real sth = std::sin(theta);
+#if (AMREX_SPACEDIM == 3)
+        const amrex::Real phi = (this->params[9])*M_PI/180.0;
+        const amrex::Real cph = std::cos(phi);
+        const amrex::Real sph = std::sin(phi);
+#endif
+#if (AMREX_SPACEDIM == 2)
+        const amrex::Real xi_dir[AMREX_SPACEDIM] = {AMREX_D_DECL(cth, sth, 0.0)};
+#endif
+#if (AMREX_SPACEDIM == 3)
+        const amrex::Real xi_dir[AMREX_SPACEDIM] = {AMREX_D_DECL(cth*cph, sth*cph, sph)};
+#endif
+        const amrex::Real y[AMREX_SPACEDIM] = {AMREX_D_DECL(x[0]-0.5, x[1]-0.5, x[2]-0.5)};
+
+        const amrex::Real xi = AMREX_D_TERM(xi_dir[0]*y[0],+xi_dir[1]*y[1],+xi_dir[2]*y[2]);
+
+        // STATES
+        const amrex::Real g = this->gamma;
+        const amrex::Real rhoL = this->params[0];
+        const amrex::Real uL = this->params[1];
+        const amrex::Real pL = this->params[2];
+        const amrex::Real xis = this->params[3];
+        const amrex::Real rhoR = this->params[4];
+        const amrex::Real uR = this->params[5];
+        const amrex::Real pR = this->params[6];
+
+        amrex::Real SOLxi[N_SOL];
+
+        const amrex::Real k = 50.0;
+        amrex::Real alpha, beta;
+        amrex::Real rho, u, p;
+
+        alpha = 0.5*(rhoL+rhoR); beta = 1.0/M_PI*(rhoR-rhoL);
+        rho = alpha+beta*std::atan(k*xi);
+
+        alpha = 0.5*(uL+uR); beta = 1.0/M_PI*(uR-uL);
+        u = alpha+beta*std::atan(k*xi);
+
+        alpha = 0.5*(pL+pR); beta = 1.0/M_PI*(pR-pL);
+        p = alpha+beta*std::atan(k*xi);
+
+        SOLxi[RHO] = rho;
+        AMREX_D_TERM
+        (
+            SOLxi[RHOV1] = rho*u;,
+            SOLxi[RHOV2] = 0.0;,
+            SOLxi[RHOV3] = 0.0;
+        )
+        SOLxi[TE] = p/(g-1.0)+0.5*rho*u*u;
+
+        this->eval_Un2U(xi_dir, SOLxi, SOL);
+    }
     // ################################################################
 
     // BOUNDARY CONDITIONS ############################################

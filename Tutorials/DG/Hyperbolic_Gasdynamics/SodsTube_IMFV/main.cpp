@@ -144,10 +144,10 @@ amrex::Print() << "#############################################################
         {
             const int n = 0;
             const amrex::Real t = 0.0;
-            ExportBase_VTK(output_folderpath, "Levelset", n, inputs.time.n_steps,
-                           t, mesh.geom, mesh.std_elem, 1, mesh.PHI, "LS_");
-            ExportImplicitMesh_VTK(output_folderpath, "ImplicitMesh", n, inputs.time.n_steps,
-                                   t, mesh);
+            amrex::DG::ExportBase_VTK(output_folderpath, "Levelset", n, inputs.time.n_steps,
+                                      t, mesh.geom, mesh.std_elem, 1, mesh.PHI, "LS_");
+            amrex::DG::ExportImplicitMesh_VTK(output_folderpath, "ImplicitMesh", n, inputs.time.n_steps,
+                                              t, mesh);
         }
         // ============================================================
 
@@ -215,16 +215,16 @@ amrex::Print() << "#############################################################
         // ============================================================
 
         // SET INITIAL CONDITIONS =====================================
-        ProjectInitialConditions(mesh, matfactory, N_SOL, X, IG);
+        amrex::DG::ProjectInitialConditions(mesh, matfactory, N_SOL, X, IG);
 
         // WRITE TO OUTPUT
         if (inputs.plot_int > 0)
         {
             const int n = 0;
             const amrex::Real t = 0.0;
-            Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                       t, mesh, matfactory, N_SOL, X,
-                       IG);
+            amrex::DG::Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
+                                  t, mesh, matfactory, N_SOL, X,
+                                  IG);
         }
 
         if (X.contains_nan())
@@ -271,9 +271,9 @@ amrex::Print() << "#############################################################
                 // WRITE TO OUTPUT
                 if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(t/inputs.time.T-1.0) < 1.0e-12)))
                 {
-                    Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                               t, mesh, matfactory, N_SOL, X,
-                               IG);
+                    amrex::DG::Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
+                                          t, mesh, matfactory, N_SOL, X,
+                                          IG);
                 }
 
                 // CLOCK TIME PER TIME STEP TOC

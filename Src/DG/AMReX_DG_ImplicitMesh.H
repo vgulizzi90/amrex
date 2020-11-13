@@ -571,6 +571,25 @@ bool ELM_IS_VALID(const int etype)
 }
 
 /**
+ * \brief Given the etype, return true if the element is extended, false otherwise.
+ *
+ * \param[in] etype: element type.
+ *
+ * \return true if the element is extended, false otherwise.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_EXTENDED(const int etype)
+{
+    const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
+    const bool elm_is_large = (etype%10 == __DG_ELM_TYPE_LARGE__);
+    const bool elm_is_valid = elm_is_entire || elm_is_large;
+    const bool elm_is_extended = elm_is_valid && (etype/10 == 1);
+
+    return elm_is_extended;
+}
+
+/**
  * \brief Given the etype, return true if the element is large or extended, false otherwise.
  *
  * \param[in] etype: element type.
@@ -588,8 +607,20 @@ bool ELM_IS_LARGE_OR_EXTENDED(const int etype)
 
     return elm_is_large || elm_is_extended;
 }
+// ####################################################################
 
 
+
+// AUXILIARY FUNCTIONS FOR LOOPS OVER QUADRATURE POINTS ###############
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+/**
+ * \brief In progress.
+ *
+*/
+void BUO_QUAD_INFO()
+{
+
+}
 // ####################################################################
 
 
@@ -795,7 +826,7 @@ struct ImplicitMesh
         const Real vft = this->volume_fraction_threshold;
 
         // IMPLICIT MESH QUADRATURE ORDER
-        const int qo = this->space_q_im;
+        const int qo = this->space_q_im+1;
         // ============================================================
         
         // VARIABLES ==================================================

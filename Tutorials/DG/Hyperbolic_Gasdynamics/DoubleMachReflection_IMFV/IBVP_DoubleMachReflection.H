@@ -65,6 +65,7 @@ public IDEAL_GAS_BASE
         const amrex::Real s = (x[0]-P[0])*eta[0]+(x[1]-P[1])*eta[1];
 
         PHI[0] = -s;
+        //PHI[0] = -1.0;
     }
 
     /**
@@ -141,6 +142,111 @@ public IDEAL_GAS_BASE
             )
             SOL[TE] = pL/(g-1.0)+0.5*rhoL*uL*uL;
         }
+    }
+    // ################################################################
+
+    // BOUNDARY CONDITIONS ############################################
+    /**
+     * \brief Fill bcs_SOL memory to enforce boundary conditions.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the boundary outward unit normal.
+     * \param[in] SOL: pointer to memory that stores the unknown solution fields at (t,x).
+     * \param[out] bcs_SOL: pointer to memory that will be filled with values suitably chosen to
+     *                      enforce the bcs at (t,x).
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_BCS(const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
+               const amrex::Real * SOL,
+               amrex::Real * bcs_SOL) const
+    {
+        if (un[1] < -0.5)
+        {
+            bcs_SOL[RHO] = SOL[RHO];
+            AMREX_D_TERM
+            (
+                bcs_SOL[RHOV1] = SOL[RHOV1];,
+                bcs_SOL[RHOV2] = -SOL[RHOV2];,
+                bcs_SOL[RHOV3] = SOL[RHOV3];
+            )
+            bcs_SOL[TE] = SOL[TE];
+        }
+        else
+        {
+            bcs_SOL[RHO] = SOL[RHO];
+            AMREX_D_TERM
+            (
+                bcs_SOL[RHOV1] = SOL[RHOV1];,
+                bcs_SOL[RHOV2] = SOL[RHOV2];,
+                bcs_SOL[RHOV3] = SOL[RHOV3];
+            )
+            bcs_SOL[TE] = SOL[TE];
+        }
+    }
+    
+    /**
+     * \brief Fill bcs_SOL memory to enforce boundary conditions on boundaries of the levelsets.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the boundary outward unit normal.
+     * \param[in] SOL: pointer to memory that stores the unknown solution fields at (t,x).
+     * \param[out] bcs_SOL: pointer to memory that will be filled with values suitably chosen to
+     *                      enforce the bcs at (t,x).
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_PHI_BCS(const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
+                   const amrex::Real * SOL,
+                   amrex::Real * bcs_SOL) const
+    {
+        amrex::Real SOLn[N_SOL];
+
+        this->eval_U2Un(un, SOL, SOLn);
+        SOLn[RHOV1] = -SOLn[RHOV1];
+        this->eval_Un2U(un, SOLn, bcs_SOL);
+    }
+    // ################################################################
+
+    // NUMERICAL FLUXES ###############################################
+    // NOTE: The function void F_NF_ICS is found in "../IBVP_Base.H".
+    // ################################################################
+    /**
+     * \brief Eval the numerical flux at a grid's boundary.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_BCS(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                  const amrex::Real * SOL,
+                  amrex::Real * NFn) const
+    {
+        amrex::Real bcs_SOL[N_SOL];
+        this->F_BCS(t, x, un, SOL, bcs_SOL);
+        this->F_NF_ICS(t, x, un, SOL, bcs_SOL, NFn);
+    }
+
+    /**
+     * \brief Eval the numerical flux at a levelset's boundary.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_PHI_BCS(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                      const amrex::Real * SOL,
+                      amrex::Real * NFn) const
+    {
+        amrex::Real bcs_SOL[N_SOL];
+        this->F_PHI_BCS(t, x, un, SOL, bcs_SOL);
+        this->F_NF_ICS(t, x, un, SOL, bcs_SOL, NFn);
     }
     // ################################################################
 
