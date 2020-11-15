@@ -8,7 +8,7 @@
 
 // IBVP PARAMETERS ####################################################
 // NUMBER OF UNKNOWN SOLUTION FIELDS
-#define N_SOL (1+AMREX_SPACEDIM+1)
+#define FV_N_SOL (1+AMREX_SPACEDIM+1)
 
 // SOLUTION FIELDS ORDER
 #if (AMREX_SPACEDIM == 1)
@@ -212,16 +212,16 @@ struct IDEAL_GAS_BASE
      *
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
-     * \param[in] SOL: pointer to memory containing the unknown solution fields at (t,x).
+     * \param[in] U: pointer to memory containing the conserved variables fields at (t,x).
      *
      * \return true if the solution is physically acceptable, false otherwide.
     */
     AMREX_GPU_HOST_DEVICE
     bool F_TROUBLED(const amrex::Real /*t*/, const amrex::Real * /*x*/,
-                    const amrex::Real * SOL) const
+                    const amrex::Real * U) const
     {
         amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
-        this->eval_primary_variables(SOL, rho, AMREX_D_DECL(u1, u2, u3), p);
+        this->eval_primary_variables(U, rho, AMREX_D_DECL(u1, u2, u3), p);
 
         return ((rho < 0.0) || (p < 0.0));
     }
@@ -234,12 +234,12 @@ struct IDEAL_GAS_BASE
      * \param[in] dx: pointer to memory containing the sizes of the grid's element.
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
-     * \param[in] SOL: pointer to memory containing the unknown solution fields at (t,x).
+     * \param[in] U: pointer to memory containing the conserved variables at (t,x).
     */
     AMREX_GPU_HOST_DEVICE
     amrex::Real F_DT(const amrex::Real * dx,
                      const amrex::Real /*t*/, const amrex::Real * /*x*/,
-                     const amrex::Real * SOL) const
+                     const amrex::Real * U) const
     {
         // PARAMETERS
         const amrex::Real g = this->gamma;
@@ -249,7 +249,7 @@ struct IDEAL_GAS_BASE
         amrex::Real dt;
 
         // EVAL THE PRIMARY VARIABLES
-        this->eval_primary_variables(SOL, rho, AMREX_D_DECL(u1, u2, u3), p);
+        this->eval_primary_variables(U, rho, AMREX_D_DECL(u1, u2, u3), p);
 
         // AND THE LARGEST WAVE SPEED
         const amrex::Real u = std::sqrt(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3));
@@ -817,34 +817,34 @@ struct IDEAL_GAS_BASE
      * \param[in] x: pointer to memory containing the space location.
      * \param[in] un: pointer to memory containing the unit normal of the shock that separates the two
      *                states.
-     * \param[in] SOL_left: pointer to memory containing the state to the "left" of the shock, i.e. the
-     *                      state on the same side of the negative unit normal.
-     * \param[in] SOL_right: pointer to memory containing the state to the "right" of the shock, i.e.
-     *                       the state on the same side of the positive unit normal.
-     * \param[out] SOL_RP: pointer to memory that will contain the solution of the Riemann problem, i.e.
-     *                     the state at the shock.
+     * \param[in] U_left: pointer to memory containing the state to the "left" of the shock, i.e. the
+     *                    state on the same side of the negative unit normal.
+     * \param[in] U_right: pointer to memory containing the state to the "right" of the shock, i.e.
+     *                     the state on the same side of the positive unit normal.
+     * \param[out] U_RP: pointer to memory that will contain the solution of the Riemann problem, i.e.
+     *                   the state at the shock.
     */
     AMREX_GPU_HOST_DEVICE
     void F_RIEMANN(const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
-                   const amrex::Real * SOL_left, const amrex::Real * SOL_right,
-                   amrex::Real * SOL_RP) const
+                   const amrex::Real * U_left, const amrex::Real * U_right,
+                   amrex::Real * U_RP) const
     {
         // VARIABLES --------------------------------------------------
-        amrex::Real SOLn_left[N_SOL], SOLn_right[N_SOL];
-        amrex::Real SOL_tmp[N_SOL];
+        amrex::Real Un_left[FV_N_SOL], Un_right[FV_N_SOL];
+        amrex::Real SOL_tmp[FV_N_SOL];
         // ------------------------------------------------------------
 
         // EXPRESS THE STATE IN THE UNIT NORMAL REFERENCE SYSTEM ------
-        this->eval_U2Un(un, SOL_left, SOLn_left);
-        this->eval_U2Un(un, SOL_right, SOLn_right);
+        this->eval_U2Un(un, U_left, Un_left);
+        this->eval_U2Un(un, U_right, Un_right);
         // ------------------------------------------------------------
 
         // CALL THE ACTUAL RIEMANN SOLVER -----------------------------
-        this->RiemannSolver(SOLn_left, SOLn_right, SOL_tmp);
+        this->RiemannSolver(Un_left, Un_right, SOL_tmp);
         // ------------------------------------------------------------
 
         // GO BACK TO THE ORIGINAL REFERENCE SYSTEM -------------------
-        this->eval_Un2U(un, SOL_tmp, SOL_RP);
+        this->eval_Un2U(un, SOL_tmp, U_RP);
         // ------------------------------------------------------------
     }
     // ################################################################
@@ -917,7 +917,7 @@ struct IDEAL_GAS_BASE
                  const amrex::Real * DU, amrex::Real * DC) const
     {
         // VARIABLES
-        amrex::Real Un[N_SOL], DUn[N_SOL];
+        amrex::Real Un[FV_N_SOL], DUn[FV_N_SOL];
         
         this->eval_U2Un(un, U, Un);
         this->eval_U2Un(un, DU, DUn);
@@ -979,7 +979,7 @@ struct IDEAL_GAS_BASE
                  const amrex::Real * DC, amrex::Real * DU) const
     {
         // VARIABLES
-        amrex::Real Un[N_SOL], DUn[N_SOL];
+        amrex::Real Un[FV_N_SOL], DUn[FV_N_SOL];
 
         this->eval_U2Un(un, U, Un);
         this->F_DC2DU_1(t, x, Un, DC, DUn);
@@ -1048,12 +1048,12 @@ struct IDEAL_GAS_BASE
                  const amrex::Real * DP, amrex::Real * DC) const
     {
         // VARIABLES
-        amrex::Real Pn[N_SOL], DPn[N_SOL];
+        amrex::Real Pn[FV_N_SOL], DPn[FV_N_SOL];
         
         this->eval_U2Un(un, P, Pn);
         this->eval_U2Un(un, DP, DPn);
         
-        this->F_DU2DC_1(t, x, Pn, DPn, DC);
+        this->F_DP2DC_1(t, x, Pn, DPn, DC);
     }
 
     /**
@@ -1116,7 +1116,7 @@ struct IDEAL_GAS_BASE
                  const amrex::Real * DC, amrex::Real * DP) const
     {
         // VARIABLES
-        amrex::Real Pn[N_SOL], DPn[N_SOL];
+        amrex::Real Pn[FV_N_SOL], DPn[FV_N_SOL];
 
         this->eval_U2Un(un, P, Pn);
         this->F_DC2DP_1(t, x, Pn, DC, DPn);
@@ -1148,6 +1148,39 @@ struct IDEAL_GAS_BASE
             P[RHOV3] = u3;
         )
         P[TE] = p;
+    }
+
+    /**
+     * \brief Eval conserved variables from primary variables.
+     * 
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] P: pointer to memory containing the primary variables.
+     * \param[out] U: pointer to memory that, on exit, will contain the conserved variables.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_P2U(const amrex::Real /*t*/, const amrex::Real * /*x*/, 
+               const amrex::Real * P, amrex::Real * U) const
+    {
+        const amrex::Real g = this->gamma;
+        const amrex::Real ig1 = 1.0/(g-1.0);
+        const amrex::Real rho = std::max(P[RHO], SMALL_rho);
+        AMREX_D_TERM
+        (
+            const amrex::Real u1 = P[RHOV1];,
+            const amrex::Real u2 = P[RHOV2];,
+            const amrex::Real u3 = P[RHOV3];
+        )
+        const amrex::Real p = std::max(P[TE], SMALL_p);
+
+        U[RHO] = rho;
+        AMREX_D_TERM
+        (
+            U[RHOV1] = rho*u1;,
+            U[RHOV2] = rho*u2;,
+            U[RHOV3] = rho*u3;
+        )
+        U[TE] = ig1*p+0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3));
     }
     
     /**
@@ -1240,46 +1273,46 @@ struct IDEAL_GAS_BASE
     /**
      * \brief Eval the flux F1 for the IBVP.
      *
-     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[in] U: pointer to memory containing the conserved variables.
      * \param[out] F1: pointer to memory that will contain the flux.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_F1(const amrex::Real * SOL, amrex::Real * F1) const
+    void eval_F1(const amrex::Real * U, amrex::Real * F1) const
     {
         amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
-        this->eval_primary_variables(SOL, rho, AMREX_D_DECL(u1, u2, u3), p);
+        this->eval_primary_variables(U, rho, AMREX_D_DECL(u1, u2, u3), p);
 
-        F1[RHO] = SOL[RHOV1];
+        F1[RHO] = U[RHOV1];
         AMREX_D_TERM
         (
-            F1[RHOV1] = SOL[RHOV1]*u1+p;,
-            F1[RHOV2] = SOL[RHOV2]*u1;,
-            F1[RHOV3] = SOL[RHOV3]*u1;
+            F1[RHOV1] = U[RHOV1]*u1+p;,
+            F1[RHOV2] = U[RHOV2]*u1;,
+            F1[RHOV3] = U[RHOV3]*u1;
         )
-        F1[TE] = (SOL[TE]+p)*u1;
+        F1[TE] = (U[TE]+p)*u1;
     }
 
 #if (AMREX_SPACEDIM > 1)
     /**
      * \brief Eval the flux F2 for the IBVP.
      *
-     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[in] U: pointer to memory containing the conserved variables.
      * \param[out] F2: pointer to memory that will contain the flux.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_F2(const amrex::Real * SOL, amrex::Real * F2) const
+    void eval_F2(const amrex::Real * U, amrex::Real * F2) const
     {
         amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
-        this->eval_primary_variables(SOL, rho, AMREX_D_DECL(u1, u2, u3), p);
+        this->eval_primary_variables(U, rho, AMREX_D_DECL(u1, u2, u3), p);
 
-        F2[RHO] = SOL[RHOV2];
+        F2[RHO] = U[RHOV2];
         AMREX_D_TERM
         (
-            F2[RHOV1] = SOL[RHOV1]*u2;,
-            F2[RHOV2] = SOL[RHOV2]*u2+p;,
-            F2[RHOV3] = SOL[RHOV3]*u2;
+            F2[RHOV1] = U[RHOV1]*u2;,
+            F2[RHOV2] = U[RHOV2]*u2+p;,
+            F2[RHOV3] = U[RHOV3]*u2;
         )
-        F2[TE] = (SOL[TE]+p)*u2;
+        F2[TE] = (U[TE]+p)*u2;
     }
 #endif
 
@@ -1287,23 +1320,23 @@ struct IDEAL_GAS_BASE
     /**
      * \brief Eval the flux F3 for the IBVP.
      *
-     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[in] U: pointer to memory containing the conserved variables.
      * \param[out] F3: pointer to memory that will contain the flux.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_F3(const amrex::Real * SOL, amrex::Real * F3) const
+    void eval_F3(const amrex::Real * U, amrex::Real * F3) const
     {
         amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
-        this->eval_primary_variables(SOL, rho, AMREX_D_DECL(u1, u2, u3), p);
+        this->eval_primary_variables(U, rho, AMREX_D_DECL(u1, u2, u3), p);
 
-        F3[RHO] = SOL[RHOV3];
+        F3[RHO] = U[RHOV3];
         AMREX_D_TERM
         (
-            F3[RHOV1] = SOL[RHOV1]*u3;,
-            F3[RHOV2] = SOL[RHOV2]*u3;,
-            F3[RHOV3] = SOL[RHOV3]*u3+p;
+            F3[RHOV1] = U[RHOV1]*u3;,
+            F3[RHOV2] = U[RHOV2]*u3;,
+            F3[RHOV3] = U[RHOV3]*u3+p;
         )
-        F3[TE] = (SOL[TE]+p)*u3;
+        F3[TE] = (U[TE]+p)*u3;
     }
 #endif
 
@@ -1312,18 +1345,18 @@ struct IDEAL_GAS_BASE
      *
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
-     * \param[in] SOL: pointer to memory containing the unknown solution fields.
+     * \param[in] U: pointer to memory containing the conserved variables.
      * \param[out] F1, F2, F3: pointer to memory that will contain the fluxes.
     */
     AMREX_GPU_HOST_DEVICE
     void F_F(const amrex::Real /*t*/, const amrex::Real * /*x*/,
-             const amrex::Real * SOL, AMREX_D_DECL(amrex::Real * F1, amrex::Real * F2, amrex::Real * F3)) const
+             const amrex::Real * U, AMREX_D_DECL(amrex::Real * F1, amrex::Real * F2, amrex::Real * F3)) const
     {
         AMREX_D_TERM
         (
-            this->eval_F1(SOL, F1);,
-            this->eval_F2(SOL, F2);,
-            this->eval_F3(SOL, F3);
+            this->eval_F1(U, F1);,
+            this->eval_F2(U, F2);,
+            this->eval_F3(U, F3);
         )
     }
     // ################################################################
@@ -1335,26 +1368,26 @@ struct IDEAL_GAS_BASE
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
      * \param[in] un: pointer to memory containing the unit normal of the interface.
-     * \param[in] SOL: pointer to memory containing the unknown solution fields.
-     * \param[in] nbr_SOL: pointer to memory containing the neighbor unknown solution fields.
+     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[in] nbr_U: pointer to memory containing the neighbor conserved variables.
      * \param[out] NFn: pointer to memory that will contain the numerical flux.
     */
     AMREX_GPU_HOST_DEVICE
     void F_NF_ICS(const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
-                  const amrex::Real * SOL, const amrex::Real * nbr_SOL,
+                  const amrex::Real * U, const amrex::Real * nbr_U,
                   amrex::Real * NFn) const
     {
         // VARIABLES
-        amrex::Real SOLn[N_SOL], nbr_SOLn[N_SOL];
-        amrex::Real SOL_RP[N_SOL], tmp[N_SOL];
+        amrex::Real Un[FV_N_SOL], nbr_Un[FV_N_SOL];
+        amrex::Real U_RP[FV_N_SOL], tmp[FV_N_SOL];
         
         // EXPRESS THE STATE IN THE UNIT NORMAL REFERENCE SYSTEM
-        this->eval_U2Un(un, SOL, SOLn);
-        this->eval_U2Un(un, nbr_SOL, nbr_SOLn);
+        this->eval_U2Un(un, U, Un);
+        this->eval_U2Un(un, nbr_U, nbr_Un);
 
         // CALL THE RIEMANN SOLVER AND THE EVALUATE THE FLUX
-        this->RiemannSolver(SOLn, nbr_SOLn, SOL_RP);
-        this->eval_F1(SOL_RP, tmp);
+        this->RiemannSolver(Un, nbr_Un, U_RP);
+        this->eval_F1(U_RP, tmp);
         this->eval_Un2U(un, tmp, NFn);
     }
     // ################################################################

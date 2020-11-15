@@ -9,8 +9,8 @@
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
-#include "IBVP_utils.H"
 #include "IBVP_SodsTube.H"
+#include "IBVP_utils.H"
 // ====================================================================
 // ####################################################################
 
@@ -44,7 +44,7 @@ amrex::Print() << "#############################################################
     const int ngr = 1;
 
     // IBVP
-    const int X_n_comp = N_SOL;
+    const int X_n_comp = FV_N_SOL;
     const amrex::Real gamma = 1.4;
     // ================================================================
 
@@ -215,7 +215,7 @@ amrex::Print() << "#############################################################
         // ============================================================
 
         // SET INITIAL CONDITIONS =====================================
-        amrex::DG::ProjectInitialConditions(mesh, matfactory, N_SOL, X, IG);
+        amrex::DG::ProjectInitialConditions(mesh, matfactory, FV_N_SOL, X, IG);
 
         // WRITE TO OUTPUT
         if (inputs.plot_int > 0)
@@ -223,7 +223,7 @@ amrex::Print() << "#############################################################
             const int n = 0;
             const amrex::Real t = 0.0;
             amrex::DG::Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                                  t, mesh, matfactory, N_SOL, X,
+                                  t, mesh, matfactory, FV_N_SOL, X,
                                   IG);
         }
 
@@ -257,12 +257,12 @@ amrex::Print() << "#############################################################
                 tps_start = amrex::second();
 
                 // COMPUTE NEXT TIME STEP
-                dt = amrex::DG::Compute_dt(t+0.5*dt, mesh, matfactory, N_SOL, X, IG);
+                dt = amrex::FV::IdealGas::Compute_dt(t+0.5*dt, mesh, X, IG);
                 dt *= inputs.grid.CFL;
                 dt = std::min(t+dt, inputs.time.T)-t;
 
                 // TIME STEP
-                amrex::DG::TakeTimeStep(dt, t, mesh, matfactory, N_SOL, X, IG);
+                amrex::FV::IdealGas::TakeTimeStep(dt, t, mesh, matfactory, X, IG);
 
                 // UPDATE TIME STEP
                 n += 1;
@@ -272,7 +272,7 @@ amrex::Print() << "#############################################################
                 if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(t/inputs.time.T-1.0) < 1.0e-12)))
                 {
                     amrex::DG::Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                                          t, mesh, matfactory, N_SOL, X,
+                                          t, mesh, matfactory, FV_N_SOL, X,
                                           IG);
                 }
 

@@ -4,13 +4,13 @@
 
 // PDES INFORMATION ###################################################
 // SUMMARY:
-// In this tutorial, we solve the Gasdynamics equations for the double
-// Mach reflection problem.
+// In this tutorial, we solve the Gasdynamics equations for the Sod's
+// tube problem on regular grids.
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
+#include "IBVP_SodsTube.H"
 #include "IBVP_utils.H"
-#include "IBVP_DoubleMachReflection.H"
 // ====================================================================
 // ####################################################################
 
@@ -25,8 +25,8 @@ amrex::Print() << "# AMREX & DG PROJECT                                         
 amrex::Print() << "# Author: Vincenzo Gulizzi (vgulizzi@lbl.gov)                          " << std::endl;
 amrex::Print() << "#######################################################################" << std::endl;
 amrex::Print() << "# SUMMARY:                                                             " << std::endl;
-amrex::Print() << "# In this tutorial, we solve the Gasdynamics equations for the double  " << std::endl;
-amrex::Print() << "# Mach reflection problem.                                             " << std::endl;
+amrex::Print() << "# In this tutorial, we solve the Gasdynamics equations for the Sod's   " << std::endl;
+amrex::Print() << "# tube problem on regular grids.                                       " << std::endl;
 amrex::Print() << "#                                                                      " << std::endl;
 amrex::Print() << "#######################################################################" << std::endl;
 amrex::Print() << "# The selected space dimension at compile time is                      " << std::endl;
@@ -35,26 +35,30 @@ amrex::Print() << "#                                                            
 amrex::Print() << "#######################################################################" << std::endl;
     // ================================================================
 
-#if (AMREX_SPACEDIM != 2)
-    // THIS TEST CAN BE RUN ONLY FOR AMREX_SPACEDIM = 2 ===============
-    std::string msg;
-    msg  = "\n";
-    msg += "ERROR: main.cpp\n";
-    msg += "| This problem can be run only for AMREX_SPACEDIM = 2.\n";
-    amrex::Abort(msg);
-    // ================================================================
-#endif
-
     // PARAMETERS =====================================================
     const int IOProc = amrex::ParallelDescriptor::IOProcessorNumber();
     
-    const std::string problem = "PROBLEM_DoubleMachReflection";
+    const std::string problem = "PROBLEM_SodsTube";
+
+    // AUXILIARY TABLES TO TEST THE DIFFERENT ORIENTATIONS
+#if (AMREX_SPACEDIM == 1)
+    const amrex::Real table_hi[1] = {1.0};
+    const int table_n_cells[1] = {64};
+#endif
+#if (AMREX_SPACEDIM == 2)
+    const amrex::Real table_hi[AMREX_SPACEDIM*AMREX_SPACEDIM] = {1.0, 0.1, 0.1, 1.0};
+    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {64, 4, 4, 64};
+#endif
+#if (AMREX_SPACEDIM == 3)
+    const amrex::Real table_hi[AMREX_SPACEDIM*AMREX_SPACEDIM] = {1.0, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 1.0};
+    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {64, 4, 4, 4, 64, 4, 4, 4, 64};
+#endif
 
     // NUMBER OF GHOST ROWS
     const int ngr = 1;
 
     // IBVP
-    const int X_n_comp = N_SOL;
+    const int X_n_comp = FV_N_SOL;
     const amrex::Real gamma = 1.4;
     // ================================================================
 
@@ -82,19 +86,40 @@ amrex::Print() << "#############################################################
     IDEAL_GAS IG(gamma, inputs.problem.params);
     // ================================================================
 
-    // DO THE ANALYSIS
+    // WE TEST ALL POSSIBLE ORIENTATIONS OF THE TUBE
+    for (int ori = 0; ori < AMREX_SPACEDIM; ++ori)
     {
+        // SET SOD'S TUBE ORIENTATION =================================
+        IG.set_ori(ori);
+        // ============================================================
+
+        // SET THE PROBLEM SIZE AND THE NUMBER OF CELLS ===============
+#if (AMREX_SPACEDIM == 1)
+        inputs.space.hi[0] = table_hi[ori];
+        inputs.mesh.n_cells[0] = table_n_cells[ori];
+#endif
+#if (AMREX_SPACEDIM == 2)
+        inputs.space.hi[0] = table_hi[ori];
+        inputs.space.hi[1] = table_hi[ori+AMREX_SPACEDIM];
+        inputs.mesh.n_cells[0] = table_n_cells[ori];
+        inputs.mesh.n_cells[1] = table_n_cells[ori+AMREX_SPACEDIM];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        inputs.space.hi[0] = table_hi[ori];
+        inputs.space.hi[1] = table_hi[ori+AMREX_SPACEDIM];
+        inputs.space.hi[2] = table_hi[ori+2*AMREX_SPACEDIM];
+        inputs.mesh.n_cells[0] = table_n_cells[ori];
+        inputs.mesh.n_cells[1] = table_n_cells[ori+AMREX_SPACEDIM];
+        inputs.mesh.n_cells[2] = table_n_cells[ori+2*AMREX_SPACEDIM];
+#endif
+        // ============================================================
+
         // MAKE OUTPUT FOLDER =========================================
         {
-            const amrex::Real theta = inputs.problem.params[4];
-
             const std::string mesh_info = AMREX_D_TERM(std::to_string(inputs.mesh.n_cells[0]),+"x"+
                                                        std::to_string(inputs.mesh.n_cells[1]),+"x"+
                                                        std::to_string(inputs.mesh.n_cells[2]));
-            const std::string theta_info = "TH"+std::to_string((int) std::round(theta));
-
-            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+theta_info});
-
+            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info});
             amrex::DG::IO::MakeFolder(output_folderpath);
         }
         // ============================================================
@@ -112,7 +137,13 @@ amrex::Print() << "#############################################################
             fp << std::endl << "ANALYSIS STATISTICS - " << date_and_time_ << "\n";
         }
         // ============================================================
-        
+
+        // HEADER =====================================================
+        const char ori_description = ((ori == 0) ? 'X' : ((ori == 1) ? 'Y' : 'Z'));
+        amrex::Print() << std::endl;
+        amrex::Print() << "# SOD'S TUBE TEST #" << ori << " - ORIENTATION: " << ori_description << std::endl;
+        // ============================================================
+
         // TIC ========================================================
         start_time = amrex::second();
         // ============================================================
@@ -157,16 +188,16 @@ amrex::Print() << "#############################################################
         // ============================================================
 
         // SET INITIAL CONDITIONS =====================================
-        ProjectInitialConditionsOverGrid(geom, std_elem, N_SOL, X, IG);
+        amrex::DG::ProjectInitialConditionsOverGrid(geom, std_elem, FV_N_SOL, X, IG);
         
         // WRITE TO OUTPUT
         if (inputs.plot_int > 0)
         {
             const int n = 0;
             const amrex::Real t = 0.0;
-            Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                       t, geom, std_elem, N_SOL, X,
-                       IG);
+            amrex::DG::Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
+                                  t, geom, std_elem, FV_N_SOL, X,
+                                  IG);
         }
         // ============================================================
 
@@ -189,12 +220,12 @@ amrex::Print() << "#############################################################
                 tps_start = amrex::second();
 
                 // COMPUTE NEXT TIME STEP
-                dt = amrex::DG::Compute_dt(t+0.5*dt, geom, std_elem, N_SOL, X, IG);
+                dt = amrex::FV::IdealGas::Compute_dt(t+0.5*dt, geom, X, IG);
                 dt *= inputs.mesh.CFL;
                 dt = std::min(t+dt, inputs.time.T)-t;
 
                 // TIME STEP
-                amrex::DG::TakeTimeStep(dt, t, geom, N_SOL, X, IG);
+                amrex::FV::IdealGas::TakeTimeStep(dt, t, geom, X, IG);
 
                 // UPDATE TIME STEP
                 n += 1;
@@ -203,9 +234,9 @@ amrex::Print() << "#############################################################
                 // WRITE TO OUTPUT
                 if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(t/inputs.time.T-1.0) < 1.0e-12)))
                 {
-                    Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                               t, geom, std_elem, N_SOL, X,
-                               IG);
+                    amrex::DG::Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
+                                          t, geom, std_elem, FV_N_SOL, X,
+                                          IG);
                 }
 
                 // CLOCK TIME PER TIME STEP TOC

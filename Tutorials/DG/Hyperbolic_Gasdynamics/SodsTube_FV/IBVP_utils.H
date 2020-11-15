@@ -6,16 +6,90 @@
  * \brief Contains routines for the solution of the IBVP.
 */
 
-#define DG_N_SOL (1+AMREX_SPACEDIM+1)
-
-#define DG_LIMIT_CP
-
-#define DG_SL_THETA 2.0
+#define MCD_THETA 2.0
 
 namespace amrex
 {
-namespace DG
+namespace FV
 {
+namespace IdealGas
+{
+
+/**
+ * \brief Extract the conserved variables state vector from a fab. 
+ *
+ * \param[in] X_fab: fab containing the data.
+ * \param[in] (i,j,k): indices of the cell.
+ * \param[out] U: pointer to memory that will contain the conserved variables state vector.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void Fab2U(Array4<Real const> const & X_fab,
+           const int i, const int j, const int k,
+           Real * U)
+{
+    U[RHO] = X_fab(i,j,k,RHO);
+    AMREX_D_TERM
+    (
+        U[RHOV1] = X_fab(i,j,k,RHOV1);,
+        U[RHOV2] = X_fab(i,j,k,RHOV2);,
+        U[RHOV3] = X_fab(i,j,k,RHOV3);
+    )
+    U[TE] = X_fab(i,j,k,TE);
+}
+
+/**
+ * \brief Fill fab from a conserved variables state vector. 
+ *
+ * \param[in] U: pointer to memory containing the conserved variables state vector.
+ * \param[in] (i,j,k): indices of the cell.
+ * \param[out] X_fab: fab that will contain the updated data.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void U2Fab(const Real * U,
+             const int i, const int j, const int k,
+             Array4<Real> const & X_fab)
+{
+    X_fab(i,j,k,RHO) = U[RHO];
+    AMREX_D_TERM
+    (
+        X_fab(i,j,k,RHOV1) = U[RHOV1];,
+        X_fab(i,j,k,RHOV2) = U[RHOV2];,
+        X_fab(i,j,k,RHOV3) = U[RHOV3];
+    )
+    X_fab(i,j,k,TE) = U[TE];
+}
+
+/**
+ * \brief Extract the primary variables state vector from a fab. 
+ *
+ * \param[in] X_fab: fab containing the data.
+ * \param[in] (i,j,k): indices of the cell.
+ * \param[out] P: pointer to memory that will contain the primary variables state vector.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void Fab2P(const Real gamma,
+           Array4<Real const> const & X_fab,
+           const int i, const int j, const int k,
+           Real * P)
+{
+    const Real rho = X_fab(i,j,k,RHO);
+    AMREX_D_TERM
+    (
+        const Real u1 = X_fab(i,j,k,RHOV1)/rho;,
+        const Real u2 = X_fab(i,j,k,RHOV2)/rho;,
+        const Real u3 = X_fab(i,j,k,RHOV3)/rho;
+    )
+    const Real p = (gamma-1.0)*(X_fab(i,j,k,TE)-0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3)));
+
+    P[RHO] = rho;
+    AMREX_D_TERM
+    (
+        P[RHOV1] = u1;,
+        P[RHOV2] = u2;,
+        P[RHOV3] = u3;
+    )
+    P[TE] = p;
+}
 
 /**
  * \brief Compute the maximum time step 
@@ -24,20 +98,17 @@ namespace DG
  * \param[in] geom: a Geometry object that contains geometry information.
  * \param[in] std_elem: a StandardRectangle<AMREX_SPACEDIM> object that contains evaluation grid
  *                      points and basis functions data.
- * \param[in] N_SOL: Number of unknown solution fields.
  * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
  *               unknown solution fields.
  * \param[in] IBVP: a class that must have a method with the following prototype:
  *
- *                  Real F_DT(const Real * dx, const Real t, const Real * x, const Real * SOL) const;
+ *                  Real F_DT(const Real * dx, const Real t, const Real * x, const Real * U) const;
  *
  * \return the maximum time step.
 */
 template <typename IBVP_CLASS>
 Real Compute_dt(const Real t,
                 const Geometry & geom,
-                const StandardRectangle<AMREX_SPACEDIM> & std_elem,
-                const int N_SOL,
                 const MultiFab & X,
                 const IBVP_CLASS & IBVP)
 {
@@ -45,18 +116,6 @@ Real Compute_dt(const Real t,
     // GRID
     const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
-
-    // STANDARD ELEMENT
-    const int dom_Ng = std_elem.dom_Ng;
-    AMREX_D_TERM
-    (
-        Real const * dom_XI1g_ptr = std_elem.dom_XI1g.data();,
-        Real const * dom_XI2g_ptr = std_elem.dom_XI2g.data();,
-        Real const * dom_XI3g_ptr = std_elem.dom_XI3g.data();
-    )
-
-    // DG
-    const int sp = std_elem.p;
     // ================================================================
 
     // VARIABLES ======================================================
@@ -78,43 +137,18 @@ Real Compute_dt(const Real t,
         [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
         {
             // LOCAL PARAMETERS
-            const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
-                                                               prob_lo[1]+j*dx[1],
-                                                               prob_lo[2]+k*dx[2])};
-            const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+1)*dx[0],
-                                                               prob_lo[1]+(j+1)*dx[1],
-                                                               prob_lo[2]+(k+1)*dx[2])};
+            const Real cell_x[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0],
+                                                              prob_lo[1]+(j+0.5)*dx[1],
+                                                              prob_lo[2]+(k+0.5)*dx[2])};
 
             // LOCAL VARIABLES
-            Real elm_dt, x_dt;
-            Real x[AMREX_SPACEDIM];
-            Real SOL[DG_N_SOL];
+            Real U[FV_N_SOL];
 
-            // SOLUTION
-            DG_SOL_space_BFX sol(sp, cell_lo, cell_hi, X_fab, i, j, k);
+            // ELEMENT SOLUTION
+            Fab2U(X_fab, i, j, k, U);
 
-            // LOOP OVER THE GRID POINTS
-            elm_dt = std::numeric_limits<Real>::max();
-            for (int g = 0; g < dom_Ng; ++g)
-            {
-                // GRID POINT
-                AMREX_D_TERM
-                (
-                    x[0] = dom_XI1g_ptr[g]+cell_lo[0];,
-                    x[1] = dom_XI2g_ptr[g]+cell_lo[1];,
-                    x[2] = dom_XI3g_ptr[g]+cell_lo[2];
-                )
-
-                // EVAL SOLUTION
-                sol.eval_BF_only_table(x);
-                sol.eval_unsafe(0, N_SOL, SOL);
-
-                // EVAL DT
-                x_dt = IBVP.F_DT(&dx[0], t, x, SOL);
-                elm_dt = std::min(elm_dt, x_dt);
-            }
-
-            dt_fab(i,j,k,0) = std::min(dt_fab(i,j,k,0), elm_dt);
+            // EVAL DT
+            dt_fab(i,j,k,0) = IBVP.F_DT(&dx[0], t, cell_x, U);
         });
         Gpu::synchronize();
     }
@@ -130,18 +164,16 @@ Real Compute_dt(const Real t,
  *
  * \param[in] t: time.
  * \param[in] geom: a Geometry object that contains geometry information.
- * \param[in] N_SOL: Number of unknown solution fields.
  * \param[inout] X: a MultiFab object that contains unknown solution fields at the cell centers. On
  *                  exit, the cells in the ghost rows will have their values updated.
  * \param[in] IBVP: a class that must have methods with the following prototypes:
  *
  *                  void F_BCS(const Real t, const Real * x, const Real * un,
- *                             const Real * SOL, const Real * bcs_SOL) const;
+ *                             const Real * U, const Real * bcs_U) const;
 */
 template <typename IBVP_CLASS>
 void FillInvalidCells(const Real t,
                       const Geometry & geom,
-                      const int N_SOL,
                       MultiFab & X,
                       const IBVP_CLASS & IBVP)
 {
@@ -165,13 +197,10 @@ void FillInvalidCells(const Real t,
         {
             // LOCAL VARIABLES
             Real x[AMREX_SPACEDIM], un[AMREX_SPACEDIM];
-            Real SOL[DG_N_SOL], bcs_SOL[DG_N_SOL];
+            Real U[FV_N_SOL], bcs_U[FV_N_SOL];
 
             // CURRENT CELL SOLUTION
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                SOL[ru] = X_fab(i,j,k,ru);
-            }
+            Fab2U(X_fab, i, j, k, U);
 
             // UPDATE GRID BOUNDARY VALUES
             if ((i == domain.smallEnd(0)) && (is_periodic[0] == 0))
@@ -188,11 +217,9 @@ void FillInvalidCells(const Real t,
                     un[1] =  0.0;,
                     un[2] =  0.0;
                 )
-                IBVP.F_BCS(t, x, un, SOL, bcs_SOL);
-                for (int ru = 0; ru < N_SOL; ++ru)
-                {
-                    X_fab(i-1,j,k,ru) = bcs_SOL[ru];
-                }
+                IBVP.F_BCS(t, x, un, U, bcs_U);
+
+                U2Fab(bcs_U, i-1, j, k, X_fab);
             }
             if ((i == domain.bigEnd(0)) && (is_periodic[0] == 0))
             {
@@ -208,12 +235,9 @@ void FillInvalidCells(const Real t,
                     un[1] =  0.0;,
                     un[2] =  0.0;
                 )
+                IBVP.F_BCS(t, x, un, U, bcs_U);
 
-                IBVP.F_BCS(t, x, un, SOL, bcs_SOL);
-                for (int ru = 0; ru < N_SOL; ++ru)
-                {
-                    X_fab(i+1,j,k,ru) = bcs_SOL[ru];
-                }
+                U2Fab(bcs_U, i+1, j, k, X_fab);
             }
 #if (AMREX_SPACEDIM > 1)
             if (j == domain.smallEnd(1))
@@ -230,12 +254,9 @@ void FillInvalidCells(const Real t,
                     un[1] = -1.0;,
                     un[2] =  0.0;
                 )
+                IBVP.F_BCS(t, x, un, U, bcs_U);
 
-                IBVP.F_BCS(t, x, un, SOL, bcs_SOL);
-                for (int ru = 0; ru < N_SOL; ++ru)
-                {
-                    X_fab(i,j-1,k,ru) = SOL[ru];
-                }
+                U2Fab(bcs_U, i, j-1, k, X_fab);
             }
             if (j == domain.bigEnd(1))
             {
@@ -251,12 +272,9 @@ void FillInvalidCells(const Real t,
                     un[1] = +1.0;,
                     un[2] =  0.0;
                 )
-
-                IBVP.F_BCS(t, x, un, SOL, bcs_SOL);
-                for (int ru = 0; ru < N_SOL; ++ru)
-                {
-                    X_fab(i,j+1,k,ru) = bcs_SOL[ru];
-                }
+                IBVP.F_BCS(t, x, un, U, bcs_U);
+                
+                U2Fab(bcs_U, i, j+1, k, X_fab);
             }
 #endif
 #if (AMREX_SPACEDIM > 2)
@@ -274,12 +292,9 @@ void FillInvalidCells(const Real t,
                     un[1] =  0.0;,
                     un[2] = -1.0;
                 )
-
-                IBVP.F_BCS(t, x, un, SOL, bcs_SOL);
-                for (int ru = 0; ru < N_SOL; ++ru)
-                {
-                    X_fab(i,j,k-1,ru) = bcs_SOL[ru];
-                }
+                IBVP.F_BCS(t, x, un, U, bcs_U);
+                
+                U2Fab(bcs_U, i, j, k-1, X_fab);
             }
             if (k == domain.bigEnd(2))
             {
@@ -295,12 +310,9 @@ void FillInvalidCells(const Real t,
                     un[1] =  0.0;,
                     un[2] = +1.0;
                 )
-
-                IBVP.F_BCS(t, x, un, SOL, bcs_SOL);
-                for (int ru = 0; ru < N_SOL; ++ru)
-                {
-                    X_fab(i,j,k+1,ru) = bcs_SOL[ru];
-                }
+                IBVP.F_BCS(t, x, un, U, bcs_U);
+                
+                U2Fab(bcs_U, i, j, k+1, X_fab);
             }
 #endif
         });
@@ -311,16 +323,16 @@ void FillInvalidCells(const Real t,
 }
 
 /**
- * \brief Limit slopes.
+ * \brief Monotonized Central Difference (MCD) limiter.
 */
 AMREX_GPU_DEVICE AMREX_FORCE_INLINE
-void LimitSlopes(const int N_SOL, const Real * dCL, const Real * dCR, Real * dC)
+void MCDLimiter(const Real * dCL, const Real * dCR, Real * dC)
 {
-    for (int ru = 0; ru < N_SOL; ++ru)
+    for (int ru = 0; ru < FV_N_SOL; ++ru)
     {
         const Real dc = 0.5*(dCL[ru]+dCR[ru]);
         const Real sgn = (dc >= 0.0) ? +1.0 : -1.0;
-        const Real slope = DG_SL_THETA*std::min(std::abs(dCL[ru]), std::abs(dCR[ru]));
+        const Real slope = MCD_THETA*std::min(std::abs(dCL[ru]), std::abs(dCR[ru]));
         const Real lim = (dCL[ru]*dCR[ru] >= 0.0) ? slope : 0.0;
         dC[ru] = sgn*std::min(lim, std::abs(dc));
     }
@@ -332,43 +344,31 @@ void LimitSlopes(const int N_SOL, const Real * dCL, const Real * dCR, Real * dC)
  * \param[in] t: time.
  * \param[in] geom: a Geometry object that contains geometry information.
  * \param[in] N_SOL: Number of unknown solution fields.
- * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
- *               unknown solution fields.
- * \param[out] dX: a MultiFab object that contains the limited slopes for the unknown solution
- *                 fields.
+ * \param[in] X: a MultiFab object that contains the state vector for each cell.
+ * \param[out] dXP: a MultiFab object that contains the limited slopes for PRIMARY variables.
  * \param[in] IBVP: a class that must have methods with the following prototypes:
  *
- *                  void F_DU2DC(const Real t, const Real * x, const Real * un,
- *                               const Real * SOL, const Real * DU,
- *                               Real * DC) const;
- *                  void F_DC2DU(const Real t, const Real * x, const Real * un,
- *                               const Real * SOL, const Real * DC,
- *                               Real * DU) const;
- *
- *                  If DG_LIMIT_CP is defined, the class must also have:
- *
- *                  void F_U2P(const Real t, const Real * x,
- *                             const Real * SOL, Real * P) const;
- *                  void F_DP2DU(const Real t, const Real * x, const Real * un,
- *                               const Real * SOL, const Real * DP,
- *                               Real * DU) const;
+ *                 void F_DP2DC(const Real t, const Real * x, const Real * un,
+ *                              const Real * P, const Real * DP, Real * DC) const;
+ *                 void F_DC2DP(const Real t, const Real * x, const Real * un,
+ *                              const Real * P, const Real * DC, Real * DP) const;
 */
 template <typename IBVP_CLASS>
 void EvalLimitedSlopes(const Real t,
                        const Geometry & geom,
-                       const int N_SOL,
                        const MultiFab & X,
-                       MultiFab & dX,
+                       MultiFab & dXP,
                        const IBVP_CLASS & IBVP)
 {
     // PARAMETERS =====================================================
     // GRID
     const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> idx = geom.InvCellSizeArray();
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
     // ================================================================
 
     // INITIALIZATION
-    dX = 0.0;
+    dXP = 0.0;
     // ==============
     
     // COMPUTE LIMITED SLOPES =========================================
@@ -377,20 +377,17 @@ void EvalLimitedSlopes(const Real t,
         const Box & bx = mfi.validbox();
 
         Array4<Real const> const & X_fab = X.array(mfi);
-        Array4<Real> const & dX_fab = dX.array(mfi);
+        Array4<Real> const & dXP_fab = dXP.array(mfi);
 
         ParallelFor(bx,
         [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
         {
             // LOCAL VARIABLES
             Real x[AMREX_SPACEDIM], un[AMREX_SPACEDIM];
-            Real SOL[DG_N_SOL], nbr_SOL[DG_N_SOL], dSOL[DG_N_SOL];
-            Real dCL[DG_N_SOL], dCR[DG_N_SOL], dC[DG_N_SOL];
-#ifdef DG_LIMIT_CP
-            Real P[DG_N_SOL], nbr_P[DG_N_SOL], dP[DG_N_SOL];
-#endif
+            Real P[FV_N_SOL], nbr_P[FV_N_SOL], dP[FV_N_SOL];
+            Real dCL[FV_N_SOL], dCR[FV_N_SOL], dC[FV_N_SOL];
 
-            // CURRENT CELL SPACE LOCATION
+            // CURRENT CELL CENTROID
             AMREX_D_TERM
             (
                 x[0] = prob_lo[0]+(i+0.5)*dx[0];,
@@ -398,81 +395,66 @@ void EvalLimitedSlopes(const Real t,
                 x[2] = prob_lo[2]+(k+0.5)*dx[2];
             )
 
-            // CURRENT CELL SOLUTION
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                SOL[ru] = X_fab(i,j,k,ru);
-            }
-#ifdef DG_LIMIT_CP
-            IBVP.F_U2P(t, x, SOL, P);
-#endif
+            // CURRENT CELL SOLUTION (PRIMARY VARIABLES)
+            Fab2P(IBVP.gamma, X_fab, i, j, k, P);
 
             // X1 DIRECTION -------------------------------------------
             // UNIT NORMAL
             AMREX_D_TERM(un[0] = 0.0;, un[1] = 0.0;, un[2] = 0.0;)
             un[0] = +1.0;
 
-            // LEFT DIFFERENCES
-            // Neighbor cell info
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                nbr_SOL[ru] = X_fab(i-1,j,k,ru);
-            }
-#ifdef DG_LIMIT_CP
-            IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
-#endif
+            // NEIGHBOR CELL SOLUTION (PRIMARY VARIABLES)
+            Fab2P(IBVP.gamma, X_fab, i-1, j, k, nbr_P);
 
-            // Characteristics
-#ifndef DG_LIMIT_CP
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                dSOL[ru] = SOL[ru]-nbr_SOL[ru];
-            }
-#else
-            for (int ru = 0; ru < N_SOL; ++ru)
+            // LEFT DIFFERENCES
+            for (int ru = 0; ru < FV_N_SOL; ++ru)
             {
                 dP[ru] = P[ru]-nbr_P[ru];
             }
-            IBVP.F_DP2DU(t, x, SOL, dP, dSOL);
-#endif
-            IBVP.F_DU2DC(t, x, un, SOL, dSOL, dCL);
 
-            // RIGHT DIFFERENCES
-            // Neighbor cell info
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                nbr_SOL[ru] = X_fab(i+1,j,k,ru);
-            }
-#ifdef DG_LIMIT_CP
-            IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
-#endif
+if (i == 32)
+{
+    const int r = ParallelDescriptor::MyProc();
+    Print(r) << std::endl;
+    Print(r) << std::endl << "(" << i << "," << j << "," << k << "): " << std::endl;
+    Print(r) << "P("; DG::IO::PrintReals(r, AMREX_SPACEDIM, x); Print(r) << "): "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, P);
 
-            // Characteristics
-#ifndef DG_LIMIT_CP
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                dSOL[ru] = nbr_SOL[ru]-SOL[ru];
-            }
-#else
-            for (int ru = 0; ru < N_SOL; ++ru)
+    Real dP_[FV_N_SOL];
+    
+    for (int ru = 0; ru < FV_N_SOL; ++ru)
+    {
+        dP_[ru] = dP[ru]*idx[0];
+    }
+    Print(r) << "dPL: " << std::endl; DG::IO::PrintRealArray2D(r, FV_N_SOL, AMREX_SPACEDIM, dP_);
+}
+
+            // CHARACTERISTICS
+            IBVP.F_DP2DC(t, x, un, P, dP, dCL);
+
+            // NEIGHBOR CELL SOLUTION (PRIMARY VARIABLES)
+            Fab2P(IBVP.gamma, X_fab, i+1, j, k, nbr_P);
+
+            // RIGHT DIFFERENCE
+            for (int ru = 0; ru < FV_N_SOL; ++ru)
             {
                 dP[ru] = nbr_P[ru]-P[ru];
             }
-            IBVP.F_DP2DU(t, x, SOL, dP, dSOL);
-#endif
-            IBVP.F_DU2DC(t, x, un, SOL, dSOL, dCR);
+
+            // CHARACTERISTICS
+            IBVP.F_DP2DC(t, x, un, P, dP, dCR);
 
             // LIMITED SLOPES (OF THE CHARACTERISTICS)
-            LimitSlopes(N_SOL, dCL, dCR, dC);
+            MCDLimiter(dCL, dCR, dC);
 
-            // BACK TO THE CONSERVED VARIABLES
-            IBVP.F_DC2DU(t, x, un, SOL, dC, dSOL);
+            // BACK TO THE PRIMARY VARIABLES
+            IBVP.F_DC2DP(t, x, un, P, dC, dP);
 
-            // AND TO THE MULTIFAB
-            for (int ru = 0; ru < N_SOL; ++ru)
+            // STORE IN THE MULTIFAB
+            for (int ru = 0; ru < FV_N_SOL; ++ru)
             {
-                dX_fab(i,j,k,0+AMREX_SPACEDIM*ru) = dSOL[ru]/dx[0];
+                dXP_fab(i,j,k,0+AMREX_SPACEDIM*ru) = dP[ru]*idx[0];
             }
+
             // --------------------------------------------------------
 #if (AMREX_SPACEDIM > 1)
             // X2 DIRECTION -------------------------------------------
@@ -480,66 +462,40 @@ void EvalLimitedSlopes(const Real t,
             AMREX_D_TERM(un[0] = 0.0;, un[1] = 0.0;, un[2] = 0.0;)
             un[1] = +1.0;
 
-            // LEFT DIFFERENCES
-            // Neighbor cell info
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                nbr_SOL[ru] = X_fab(i,j-1,k,ru);
-            }
-#ifdef DG_LIMIT_CP
-            IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
-#endif
+            // NEIGHBOR CELL SOLUTION (PRIMARY VARIABLES)
+            Fab2P(IBVP.gamma, X_fab, i, j-1, k, nbr_P);
 
-            // Characteristics
-#ifndef DG_LIMIT_CP
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                dSOL[ru] = SOL[ru]-nbr_SOL[ru];
-            }
-#else
-            for (int ru = 0; ru < N_SOL; ++ru)
+            // LEFT DIFFERENCES
+            for (int ru = 0; ru < FV_N_SOL; ++ru)
             {
                 dP[ru] = P[ru]-nbr_P[ru];
             }
-            IBVP.F_DP2DU(t, x, SOL, dP, dSOL);
-#endif
-            IBVP.F_DU2DC(t, x, un, SOL, dSOL, dCL);
 
-            // RIGHT DIFFERENCES
-            // Neighbor cell info
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                nbr_SOL[ru] = X_fab(i,j+1,k,ru);
-            }
-#ifdef DG_LIMIT_CP
-            IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
-#endif
+            // CHARACTERISTICS
+            IBVP.F_DP2DC(t, x, un, P, dP, dCL);
 
-            // Characteristics
-#ifndef DG_LIMIT_CP
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                dSOL[ru] = nbr_SOL[ru]-SOL[ru];
-            }
-#else
-            for (int ru = 0; ru < N_SOL; ++ru)
+            // NEIGHBOR CELL SOLUTION (PRIMARY VARIABLES)
+            Fab2P(IBVP.gamma, X_fab, i, j+1, k, nbr_P);
+
+            // RIGHT DIFFERENCE
+            for (int ru = 0; ru < FV_N_SOL; ++ru)
             {
                 dP[ru] = nbr_P[ru]-P[ru];
             }
-            IBVP.F_DP2DU(t, x, SOL, dP, dSOL);
-#endif
-            IBVP.F_DU2DC(t, x, un, SOL, dSOL, dCR);
+
+            // CHARACTERISTICS
+            IBVP.F_DP2DC(t, x, un, P, dP, dCR);
 
             // LIMITED SLOPES (OF THE CHARACTERISTICS)
-            LimitSlopes(N_SOL, dCL, dCR, dC);
+            MCDLimiter(dCL, dCR, dC);
 
-            // BACK TO THE CONSERVED VARIABLES
-            IBVP.F_DC2DU(t, x, un, SOL, dC, dSOL);
+            // BACK TO THE PRIMARY VARIABLES
+            IBVP.F_DC2DP(t, x, un, P, dC, dP);
 
-            // AND TO THE MULTIFAB
-            for (int ru = 0; ru < N_SOL; ++ru)
+            // STORE IN THE MULTIFAB
+            for (int ru = 0; ru < FV_N_SOL; ++ru)
             {
-                dX_fab(i,j,k,1+AMREX_SPACEDIM*ru) = dSOL[ru]/dx[1];
+                dXP_fab(i,j,k,1+AMREX_SPACEDIM*ru) = dP[ru]*idx[1];
             }
             // --------------------------------------------------------
 #endif
@@ -549,109 +505,77 @@ void EvalLimitedSlopes(const Real t,
             AMREX_D_TERM(un[0] = 0.0;, un[1] = 0.0;, un[2] = 0.0;)
             un[2] = +1.0;
 
-            // LEFT DIFFERENCES
-            // Neighbor cell info
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                nbr_SOL[ru] = X_fab(i,j,k-1,ru);
-            }
-#ifdef DG_LIMIT_CP
-            IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
-#endif
+            // NEIGHBOR CELL SOLUTION (PRIMARY VARIABLES)
+            Fab2P(IBVP.gamma, X_fab, i, j, k-1, nbr_P);
 
-            // Characteristics
-#ifndef DG_LIMIT_CP
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                dSOL[ru] = SOL[ru]-nbr_SOL[ru];
-            }
-#else
-            for (int ru = 0; ru < N_SOL; ++ru)
+            // LEFT DIFFERENCES
+            for (int ru = 0; ru < FV_N_SOL; ++ru)
             {
                 dP[ru] = P[ru]-nbr_P[ru];
             }
-            IBVP.F_DP2DU(t, x, SOL, dP, dSOL);
-#endif
-            IBVP.F_DU2DC(t, x, un, SOL, dSOL, dCL);
 
-            // RIGHT DIFFERENCES
-            // Neighbor cell info
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                nbr_SOL[ru] = X_fab(i,j,k+1,ru);
-            }
-#ifdef DG_LIMIT_CP
-            IBVP.F_U2P(t, x, nbr_SOL, nbr_P);
-#endif
+            // CHARACTERISTICS
+            IBVP.F_DP2DC(t, x, un, P, dP, dCL);
 
-            // Characteristics
-#ifndef DG_LIMIT_CP
-            for (int ru = 0; ru < N_SOL; ++ru)
-            {
-                dSOL[ru] = nbr_SOL[ru]-SOL[ru];
-            }
-#else
-            for (int ru = 0; ru < N_SOL; ++ru)
+            // NEIGHBOR CELL SOLUTION (PRIMARY VARIABLES)
+            Fab2P(IBVP.gamma, X_fab, i, j, k+1, nbr_P);
+
+            // RIGHT DIFFERENCE
+            for (int ru = 0; ru < FV_N_SOL; ++ru)
             {
                 dP[ru] = nbr_P[ru]-P[ru];
             }
-            IBVP.F_DP2DU(t, x, SOL, dP, dSOL);
-#endif
-            IBVP.F_DU2DC(t, x, un, SOL, dSOL, dCR);
+
+            // CHARACTERISTICS
+            IBVP.F_DP2DC(t, x, un, P, dP, dCR);
 
             // LIMITED SLOPES (OF THE CHARACTERISTICS)
-            LimitSlopes(N_SOL, dCL, dCR, dC);
+            MCDLimiter(dCL, dCR, dC);
 
-            // BACK TO THE CONSERVED VARIABLES
-            IBVP.F_DC2DU(t, x, un, SOL, dC, dSOL);
+            // BACK TO THE PRIMARY VARIABLES
+            IBVP.F_DC2DP(t, x, un, P, dC, dP);
 
-            // AND TO THE MULTIFAB
-            for (int ru = 0; ru < N_SOL; ++ru)
+            // STORE IN THE MULTIFAB
+            for (int ru = 0; ru < FV_N_SOL; ++ru)
             {
-                dX_fab(i,j,k,2+AMREX_SPACEDIM*ru) = dSOL[ru]/dx[2];
+                dXP_fab(i,j,k,2+AMREX_SPACEDIM*ru) = dP[ru]*idx[2];
             }
             // --------------------------------------------------------
 #endif
         });
         Gpu::synchronize();
     }
-    dX.FillBoundary(geom.periodicity());
+    dXP.FillBoundary(geom.periodicity());
+    // ================================================================
+
+    // CHECK ==========================================================
+    if (dXP.contains_nan())
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: IBVP_utils.H - EvalLimitedSlopes\n";
+        msg += "| dXP contains nans.\n";
+        Abort(msg);
+    }
     // ================================================================
 }
 
 /**
- * \brief Eval dXdt.
+ * \brief Eval time derivatives of the state vectors.
  *
  * \param[in] t: time.
  * \param[in] geom: a Geometry object that contains geometry information.
- * \param[in] N_SOL: Number of unknown solution fields.
- * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
- *               unknown solution fields.
- * \param[out] dXdt: a MultiFab object that will contain the time derivative of the coefficients of
- *                   the basis functions for the unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the state vector for each cell.
+ * \param[out] dXdt: a MultiFab object that will contain the time derivative of state vectors.
  * \param[in] IBVP: a class that must have methods with the following prototypes:
  *
- *                  void F_DU2DC(const Real t, const Real * x, const Real * un,
- *                               const Real * SOL, const Real * DU,
- *                               Real * DC) const;
- *                  void F_DC2DU(const Real t, const Real * x, const Real * un,
- *                               const Real * SOL, const Real * DC, 
- *                               Real * DU) const;
- *                  void F_NF_ICS(const Real t, const Real * x, const Real * un,
- *                                const Real * SOL, const Real * nbr_SOL, Real * NFn) const;
- *
- *                  If DG_LIMIT_CP is defined, the class must also have:
- *
- *                  void F_U2P(const Real t, const Real * x,
- *                             const Real * SOL, Real * P) const;
- *                  void F_DP2DU(const Real t, const Real * x, const Real * un,
- *                               const Real * SOL, const Real * DP,
- *                               Real * DU) const;
+ *                 void F_P2U(const Real t, const Real * x, const Real * P, Real * U) const;
+ *                 void F_NF_ICS(const Real t, const Real * x, const Real * un,
+ *                               const Real * U, const Real * nbr_U, Real * NFn) const;
 */
 template <typename IBVP_CLASS>
 void Eval_dXdt(const Real t,
                const Geometry & geom,
-               const int N_SOL,
                const MultiFab & X,
                MultiFab & dXdt,
                const IBVP_CLASS & IBVP)
@@ -667,7 +591,7 @@ void Eval_dXdt(const Real t,
     // ================================================================
 
     // VARIABLES ======================================================
-    MultiFab dX(ba, dm, AMREX_SPACEDIM*N_SOL, 1);
+    MultiFab dXP(ba, dm, AMREX_SPACEDIM*FV_N_SOL, 1);
     // ================================================================
 
     // INITIALIZATION
@@ -675,7 +599,7 @@ void Eval_dXdt(const Real t,
     // ==============
 
     // EVAL LIMITED SLOPES ============================================
-    EvalLimitedSlopes(t, geom, N_SOL, X, dX, IBVP);
+    EvalLimitedSlopes(t, geom, X, dXP, IBVP);
     // ================================================================
 
     // EVAL THE TIME DERIVATIVES ======================================
@@ -684,10 +608,10 @@ void Eval_dXdt(const Real t,
         const Box & bx = mfi.validbox();
 
         Array4<Real const> const & X_fab = X.array(mfi);
-        Array4<Real const> const & dX_fab = dX.array(mfi);
+        Array4<Real const> const & dXP_fab = dXP.array(mfi);
         Array4<Real> const & dXdt_fab = dXdt.array(mfi);
 
-        ParallelFor(bx, N_SOL,
+        ParallelFor(bx, FV_N_SOL,
         [=] AMREX_GPU_DEVICE (int i, int j, int k, int ru) noexcept
         {
             // LOCAL PARAMETERS
@@ -695,7 +619,8 @@ void Eval_dXdt(const Real t,
             // LOCAL VARIABLES
             Real un[AMREX_SPACEDIM];
             int nbr_i, nbr_j, nbr_k, nbr_b;
-            Real SOL[DG_N_SOL], nbr_SOL[DG_N_SOL], NFn[DG_N_SOL];
+            Real P[FV_N_SOL], nbr_P[FV_N_SOL];
+            Real U[FV_N_SOL], nbr_U[FV_N_SOL], NFn[FV_N_SOL];
 
             for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
             {
@@ -706,24 +631,37 @@ void Eval_dXdt(const Real t,
                 un[dir] = 2.0*(b%2)-1.0;
 
                 // RECONSTRUCTED SOLUTION AT CURRENT CELL
-                for (int cu = 0; cu < N_SOL; ++cu)
+                Fab2P(IBVP.gamma, X_fab, i, j, k, P);
+                for (int cu = 0; cu < FV_N_SOL; ++cu)
                 {
-                    SOL[cu] = X_fab(i,j,k,cu);
-                    SOL[cu] += un[dir]*0.5*dX_fab(i,j,k,dir+AMREX_SPACEDIM*cu)*dx[dir];
+                    P[cu] += un[dir]*0.5*dXP_fab(i,j,k,dir+AMREX_SPACEDIM*cu)*dx[dir];
                 }
+                IBVP.F_P2U(t, nullptr, P, U);
 
                 // NEIGHBOR CELL INDICES
-                NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+                DG::NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
 
                 // RECONSTRUCTED SOLUTION AT NEIGHBOR CELL
-                for (int cu = 0; cu < N_SOL; ++cu)
+                Fab2P(IBVP.gamma, X_fab, nbr_i, nbr_j, nbr_k, nbr_P);
+                for (int cu = 0; cu < FV_N_SOL; ++cu)
                 {
-                    nbr_SOL[cu] = X_fab(nbr_i,nbr_j,nbr_k,cu);
-                    nbr_SOL[cu] -= un[dir]*0.5*dX_fab(nbr_i,nbr_j,nbr_k,dir+AMREX_SPACEDIM*cu)*dx[dir];
+                    nbr_P[cu] -= un[dir]*0.5*dXP_fab(nbr_i,nbr_j,nbr_k,dir+AMREX_SPACEDIM*cu)*dx[dir];
                 }
+                IBVP.F_P2U(t, nullptr, nbr_P, nbr_U);
 
+/*
+if (i == 33)
+{
+const int r = ParallelDescriptor::MyProc();
+Print(r) << "b " << b << "     P: "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, P);
+Print(r) << "b " << b << " nbr_P: "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, nbr_P);
+Print(r) << "b " << b << "     U: "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, U);
+Print(r) << "b " << b << " nbr_U: "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, nbr_U);
+Print(r) << "b " << b << " NFn: "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, NFn);
+}
+*/
                 // NUMERICAL FLUX
-                IBVP.F_NF_ICS(t, nullptr, un, SOL, nbr_SOL, NFn);
+                IBVP.F_NF_ICS(t, nullptr, un, U, nbr_U, NFn);
 
                 dXdt_fab(i,j,k,ru) -= NFn[ru]*idx[dir];
             }
@@ -740,35 +678,13 @@ void Eval_dXdt(const Real t,
  * \param[in] dt: time step.
  * \param[in] t: time.
  * \param[in] geom: a Geometry object that contains geometry information.
- * \param[in] N_SOL: Number of unknown solution fields.
- * \param[inout] X: a MultiFab object that contains the coefficients of the basis functions for the
- *                  unknown solution fields. On exit, the coefficients will be updated according to
- *                  a 2nd-order RungeKutta algorithm.
- * \param[in] IBVP: a class that must have methods with the following prototypes:
- *
- *                  void F_BCS(const Real t, const Real * x, const Real * un,
- *                             const Real * SOL, const Real * bcs_SOL) const;
- *                  void F_DU2DC(const Real t, const Real * x, const Real * un,
- *                               const Real * SOL, const Real * DU,
- *                               Real * DC) const;
- *                  void F_DC2DU(const Real t, const Real * x, const Real * un,
- *                               const Real * SOL, const Real * DC, 
- *                               Real * DU) const;
- *                  void F_NF_ICS(const Real t, const Real * x, const Real * un,
- *                                const Real * SOL, const Real * nbr_SOL, Real * NFn) const;
- *
- *                  If DG_LIMIT_CP is defined, the class must also have:
- *
- *                  void F_U2P(const Real t, const Real * x,
- *                             const Real * SOL, Real * P) const;
- *                  void F_DP2DU(const Real t, const Real * x, const Real * un,
- *                               const Real * SOL, const Real * DP,
- *                               Real * DU) const;
+ * \param[inout] X: a MultiFab object that contains the state vector for each cell. On exit, the
+ *                  state vector will be updated according to a 2nd-order RungeKutta algorithm.
+ * \param[in] IBVP: the Initial Boundary Value Problem class.
 */
 template <typename IBVP_CLASS>
 void TakeTimeStep(const Real dt, const Real t,
                   const Geometry & geom,
-                  const int N_SOL,
                   MultiFab & X_new,
                   const IBVP_CLASS & IBVP)
 {
@@ -782,7 +698,7 @@ void TakeTimeStep(const Real dt, const Real t,
     const IntVect ngr = X_new.n_grow;
     // ================================================================
     // NOTE: In this case, the number of components coincides with the
-    //       number of unknown solution fields, namely N_SOL.
+    //       number of unknown solution fields.
     // ================================================================
 
     // VARIABLES ======================================================
@@ -795,21 +711,22 @@ void TakeTimeStep(const Real dt, const Real t,
     MultiFab::Copy(X_old, X_new, 0, 0, n_comp, ngr);
     // ================================================================
 
+
     // RK2 STEP 1 =====================================================
-    FillInvalidCells(t, geom, N_SOL, X_old, IBVP);
+    FillInvalidCells(t, geom, X_old, IBVP);
 
     // dXdt := dXdt(t, X_old)
-    Eval_dXdt(t, geom, N_SOL, X_old, dXdt, IBVP);
-
+    Eval_dXdt(t, geom, X_old, dXdt, IBVP);
+    
     // X1 := X_old+dt*dXdt
     MultiFab::LinComb(X1, 1.0, X_old, 0, dt, dXdt, 0, 0, n_comp, ngr);
     // ================================================================
 
     // RK2 STEP 2 =====================================================
-    FillInvalidCells(t, geom, N_SOL, X1, IBVP);
-
+    FillInvalidCells(t, geom, X1, IBVP);
+    
     // dXdt := dXdt(t+dt, X1)
-    Eval_dXdt(t+dt, geom, N_SOL, X1, dXdt, IBVP);
+    Eval_dXdt(t+dt, geom, X1, dXdt, IBVP);
 
     // X_new := (1/2)*X_old+(1/2)*X1+(dt/2)*dXdt
     MultiFab::LinComb(X_new, 0.5, X_old, 0, 0.5, X1, 0, 0, n_comp, ngr);
@@ -828,5 +745,6 @@ void TakeTimeStep(const Real dt, const Real t,
     // ================================================================
 }
 
-} // namespace DG
+} // namespace IdealGas
+} // namespace FV
 } // namespace amrex

@@ -521,6 +521,22 @@ std::string ELM_TYPE_DESCRIPTION(const int etype)
 }
 
 /**
+ * \brief Given the etype, return true if the element is large, false otherwise.
+ *
+ * \param[in] etype: element type.
+ *
+ * \return true if the element is large, false otherwise.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_LARGE(const int etype)
+{
+    const bool elm_is_large = (etype%10 == __DG_ELM_TYPE_LARGE__);
+
+    return elm_is_large;
+}
+
+/**
  * \brief Given the etype, return true if the element is small, false otherwise.
  *
  * \param[in] etype: element type.

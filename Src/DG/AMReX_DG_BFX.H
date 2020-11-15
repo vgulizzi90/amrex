@@ -411,13 +411,15 @@ struct algoim_DG_space_BFX
         T T_BF[DG_MAX_Np];
         AMREX_D_TERM
         (
-            T T_P1[1+DG_MAX_p];,
+            ,
+            T T_P1[1+DG_MAX_p];
             T T_P2[1+DG_MAX_p];,
             T T_P3[1+DG_MAX_p];
         )
         AMREX_D_TERM
         (
-            T T_dP1[1+DG_MAX_p];,
+            ,
+            T T_dP1[1+DG_MAX_p];
             T T_dP2[1+DG_MAX_p];,
             T T_dP3[1+DG_MAX_p];
         )
@@ -461,13 +463,15 @@ struct algoim_DG_space_BFX
         T T_BF[DG_MAX_Np];
         AMREX_D_TERM
         (
-            T T_P1[1+DG_MAX_p];,
+            ,
+            T T_P1[1+DG_MAX_p];
             T T_P2[1+DG_MAX_p];,
             T T_P3[1+DG_MAX_p];
         )
         AMREX_D_TERM
         (
-            T T_dP1[1+DG_MAX_p];,
+            ,
+            T T_dP1[1+DG_MAX_p];
             T T_dP2[1+DG_MAX_p];,
             T T_dP3[1+DG_MAX_p];
         )
