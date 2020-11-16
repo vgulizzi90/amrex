@@ -40,26 +40,12 @@ amrex::Print() << "#############################################################
     
     const std::string problem = "PROBLEM_SodsTube";
 
-    // AUXILIARY TABLES TO TEST THE DIFFERENT ORIENTATIONS
-#if (AMREX_SPACEDIM == 1)
-    const amrex::Real table_hi[1] = {1.0};
-    const int table_n_cells[1] = {64};
-#endif
-#if (AMREX_SPACEDIM == 2)
-    const amrex::Real table_hi[AMREX_SPACEDIM*AMREX_SPACEDIM] = {1.0, 0.1, 0.1, 1.0};
-    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {64, 4, 4, 64};
-#endif
-#if (AMREX_SPACEDIM == 3)
-    const amrex::Real table_hi[AMREX_SPACEDIM*AMREX_SPACEDIM] = {1.0, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 1.0};
-    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {64, 4, 4, 4, 64, 4, 4, 4, 64};
-#endif
-
     // NUMBER OF GHOST ROWS
     const int ngr = 1;
 
     // IBVP
     const int X_n_comp = FV_N_SOL;
-    const amrex::Real gamma = 1.4;
+    const amrex::Real gamma = 5.0/3.0;
     // ================================================================
 
     // VARIABLES ======================================================
@@ -84,6 +70,27 @@ amrex::Print() << "#############################################################
 
     // IBVP
     IDEAL_GAS IG(gamma, inputs.problem.params);
+    // ================================================================
+
+    // AUXILIARY TABLES TO TEST THE DIFFERENT ORIENTATIONS ============
+#if (AMREX_SPACEDIM == 1)
+    const amrex::Real table_hi[1] = {inputs.space.hi[0]};
+    const int table_n_cells[1] = {inputs.mesh.n_cells[0]};
+#endif
+#if (AMREX_SPACEDIM == 2)
+    const amrex::Real table_hi[AMREX_SPACEDIM*AMREX_SPACEDIM] = {inputs.space.hi[0], inputs.space.hi[1],
+                                                                 inputs.space.hi[1], inputs.space.hi[0]};
+    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {inputs.mesh.n_cells[0], inputs.mesh.n_cells[1],
+                                                              inputs.mesh.n_cells[1], inputs.mesh.n_cells[0]};
+#endif
+#if (AMREX_SPACEDIM == 3)
+    const amrex::Real table_hi[AMREX_SPACEDIM*AMREX_SPACEDIM] = {inputs.space.hi[0], inputs.space.hi[1], inputs.space.hi[2],
+                                                                 inputs.space.hi[1], inputs.space.hi[0], inputs.space.hi[2],
+                                                                 inputs.space.hi[1], inputs.space.hi[2], inputs.space.hi[0]};
+    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {inputs.mesh.n_cells[0], inputs.mesh.n_cells[1], inputs.mesh.n_cells[2],
+                                                              inputs.mesh.n_cells[1], inputs.mesh.n_cells[0], inputs.mesh.n_cells[2],
+                                                              inputs.mesh.n_cells[1], inputs.mesh.n_cells[2], inputs.mesh.n_cells[0]};
+#endif
     // ================================================================
 
     // WE TEST ALL POSSIBLE ORIENTATIONS OF THE TUBE

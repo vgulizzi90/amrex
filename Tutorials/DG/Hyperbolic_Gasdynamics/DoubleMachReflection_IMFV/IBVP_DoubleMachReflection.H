@@ -228,6 +228,25 @@ public IDEAL_GAS_BASE
     }
 
     /**
+     * \brief Eval the numerical flux at a grid's boundary.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] P: pointer to memory that stores the primary variables.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_BCS_P(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                    const amrex::Real * P,
+                    amrex::Real * NFn) const
+    {
+        amrex::Real bcs_P[FV_N_SOL];
+        this->F_BCS(t, x, un, P, bcs_P);
+        this->F_NF_ICS_P(t, x, un, P, bcs_P, NFn);
+    }
+
+    /**
      * \brief Eval the numerical flux at a levelset's boundary.
      *
      * \param[in] t: time.
@@ -244,6 +263,25 @@ public IDEAL_GAS_BASE
         amrex::Real bcs_U[FV_N_SOL];
         this->F_PHI_BCS(t, x, un, U, bcs_U);
         this->F_NF_ICS(t, x, un, U, bcs_U, NFn);
+    }
+
+    /**
+     * \brief Eval the numerical flux at a levelset's boundary.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] P: pointer to memory that stores the primary variables.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_PHI_BCS_P(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                        const amrex::Real * P,
+                        amrex::Real * NFn) const
+    {
+        amrex::Real bcs_P[FV_N_SOL];
+        this->F_PHI_BCS(t, x, un, P, bcs_P);
+        this->F_NF_ICS_P(t, x, un, P, bcs_P, NFn);
     }
     // ################################################################
 

@@ -652,14 +652,32 @@ struct IDEAL_GAS_BASE
     void RiemannSolver(const amrex::Real * Un_left, const amrex::Real * Un_right,
                        amrex::Real * URP) const
     {
-        const amrex::Real weakwv = 1.e-03, small = 1.e-6;
-        const int itno = 3;
-
         amrex::Real rl, AMREX_D_DECL(ul, ut1l, ut2l), pl;
         this->eval_primary_variables(Un_left, rl, AMREX_D_DECL(ul, ut1l, ut2l), pl);
         
         amrex::Real rr, AMREX_D_DECL(ur, ut1r, ut2r), pr;
         this->eval_primary_variables(Un_right, rr, AMREX_D_DECL(ur, ut1r, ut2r), pr);
+
+        this->RiemannSolver_P(rl, AMREX_D_DECL(ul, ut1l, ut2l), pl,
+                              rr, AMREX_D_DECL(ur, ut1r, ut2r), pr,
+                              URP);
+    }
+    
+    /**
+     * \brief Solves the Riemann problem between left and right states in unit normal reference system.
+     *
+     * \param[in] (rl, ul, ut1l, ut2l, pl): primary variables at the left of the shock.
+     * \param[in] (rr, ur, ut1r, ut2r, pr): primary variables at the right of the shock.
+     * \param[out] URP: pointer to memory that will contain the solution of the Riemann problem, i.e.
+     *                  the state at the shock.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void RiemannSolver_P(const amrex::Real rl, AMREX_D_DECL(const amrex::Real ul, const amrex::Real ut1l, const amrex::Real ut2l), const amrex::Real pl,
+                         const amrex::Real rr, AMREX_D_DECL(const amrex::Real ur, const amrex::Real ut1r, const amrex::Real ut2r), const amrex::Real pr,
+                         amrex::Real * URP) const
+    {
+        const amrex::Real weakwv = 1.e-03, small = 1.e-6;
+        const int itno = 3;
 
         const amrex::Real clsql = gamma*pl*rl;
         const amrex::Real clsqr = gamma*pr*rr;
@@ -808,44 +826,6 @@ struct IDEAL_GAS_BASE
             URP[RHOV3] = rgdnv*utrans2;
         )
         URP[TE] = pgdnv/(gamma-1.0)+0.5*rgdnv*(AMREX_D_TERM(ugdnv*ugdnv,+utrans1*utrans1,+utrans2*utrans2));
-    }
-    
-    /**
-     * \brief Solves the Riemann problem between left and right states.
-     *
-     * \param[in] t: time.
-     * \param[in] x: pointer to memory containing the space location.
-     * \param[in] un: pointer to memory containing the unit normal of the shock that separates the two
-     *                states.
-     * \param[in] U_left: pointer to memory containing the state to the "left" of the shock, i.e. the
-     *                    state on the same side of the negative unit normal.
-     * \param[in] U_right: pointer to memory containing the state to the "right" of the shock, i.e.
-     *                     the state on the same side of the positive unit normal.
-     * \param[out] U_RP: pointer to memory that will contain the solution of the Riemann problem, i.e.
-     *                   the state at the shock.
-    */
-    AMREX_GPU_HOST_DEVICE
-    void F_RIEMANN(const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
-                   const amrex::Real * U_left, const amrex::Real * U_right,
-                   amrex::Real * U_RP) const
-    {
-        // VARIABLES --------------------------------------------------
-        amrex::Real Un_left[FV_N_SOL], Un_right[FV_N_SOL];
-        amrex::Real SOL_tmp[FV_N_SOL];
-        // ------------------------------------------------------------
-
-        // EXPRESS THE STATE IN THE UNIT NORMAL REFERENCE SYSTEM ------
-        this->eval_U2Un(un, U_left, Un_left);
-        this->eval_U2Un(un, U_right, Un_right);
-        // ------------------------------------------------------------
-
-        // CALL THE ACTUAL RIEMANN SOLVER -----------------------------
-        this->RiemannSolver(Un_left, Un_right, SOL_tmp);
-        // ------------------------------------------------------------
-
-        // GO BACK TO THE ORIGINAL REFERENCE SYSTEM -------------------
-        this->eval_Un2U(un, SOL_tmp, U_RP);
-        // ------------------------------------------------------------
     }
     // ################################################################
 
@@ -1387,6 +1367,37 @@ struct IDEAL_GAS_BASE
 
         // CALL THE RIEMANN SOLVER AND THE EVALUATE THE FLUX
         this->RiemannSolver(Un, nbr_Un, U_RP);
+        this->eval_F1(U_RP, tmp);
+        this->eval_Un2U(un, tmp, NFn);
+    }
+
+    /**
+     * \brief Eval the numerical flux at the interface between two adjacent states.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the unit normal of the interface.
+     * \param[in] P: pointer to memory containing the primary variables.
+     * \param[in] nbr_P: pointer to memory containing the neighbor primary variables.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_ICS_P(const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
+                    const amrex::Real * P, const amrex::Real * nbr_P,
+                    amrex::Real * NFn) const
+    {
+        // VARIABLES
+        amrex::Real Pn[FV_N_SOL], nbr_Pn[FV_N_SOL];
+        amrex::Real U_RP[FV_N_SOL], tmp[FV_N_SOL];
+        
+        // EXPRESS THE STATE IN THE UNIT NORMAL REFERENCE SYSTEM
+        this->eval_U2Un(un, P, Pn);
+        this->eval_U2Un(un, nbr_P, nbr_Pn);
+
+        // CALL THE RIEMANN SOLVER AND THE EVALUATE THE FLUX
+        this->RiemannSolver_P(std::max(    Pn[RHO], SMALL_rho), AMREX_D_DECL(    Pn[RHOV1],     Pn[RHOV2],     Pn[RHOV3]), std::max(    Pn[TE], SMALL_p),
+                              std::max(nbr_Pn[RHO], SMALL_rho), AMREX_D_DECL(nbr_Pn[RHOV1], nbr_Pn[RHOV2], nbr_Pn[RHOV3]), std::max(nbr_Pn[TE], SMALL_p),
+                              U_RP);
         this->eval_F1(U_RP, tmp);
         this->eval_Un2U(un, tmp, NFn);
     }

@@ -384,6 +384,485 @@ void FillBoundaryCells(const Real t,
     // ================================================================
 }
 
+/** \brief Apply Barth-Jespersen Limiter to avoid under- and overshoots.
+ *
+*/
+template <typename IBVP_CLASS>
+void ApplyBarthJespersenLimiter(const Real t,
+                                const DG::ImplicitMesh & mesh,
+                                const MultiFab & X,
+                                MultiFab & dXP,
+                                const IBVP_CLASS & IBVP)
+{
+    // PARAMETERS =====================================================
+    // DOMAINS
+    const int dom = 0;
+    // ================================================================
+
+    // VARIABLES ======================================================
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+    // AUXILIARY MULTIFABS FOR LIMITING
+    MultiFab alpha(X.boxarray, X.distributionMap, FV_N_SOL, X.n_grow);
+    MultiFab bounds(X.boxarray, X.distributionMap, 2*FV_N_SOL, X.n_grow);
+
+    // IMPLICIT MESH
+#ifdef AMREX_USE_CUDA
+    Real const * eBouQuad_mem_ptr = mesh.eBouQuad_device_mem.data();
+    Real const * eIntBouQuad_mem_ptr = mesh.eIntBouQuad_device_mem.data();
+#else
+    Real const * eBouQuad_mem_ptr = mesh.eBouQuad_host_mem.data();
+    Real const * eIntBouQuad_mem_ptr = mesh.eIntBouQuad_host_mem.data();
+#endif
+    // ================================================================
+
+    // INITIALIZATION
+    alpha = 0.0;
+    bounds = 0.0;
+    // ==============
+
+    // COMPUTE THE BOUNDS =============================================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+        
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<int const> const & eIntBouQuad_Nq_fab = mesh.eIntBouQuad_Nq.array(mfi);
+        Array4<long const> const & eIntBouQuad_pos_fab = mesh.eIntBouQuad_pos.array(mfi);
+        
+        Array4<Real const> const & X_fab = X.array(mfi);
+
+        Array4<Real> const & b_fab = bounds.array(mfi);
+
+        ParallelFor(bx,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+        {
+            // CHECK WHETHER ELEMENT IS NOT EMPTY
+            const short etype = eType_fab(i,j,k,DG::ELM_TYPE(dom));
+
+            if (DG::ELM_IS_NOT_EMPTY(etype))
+            {
+                // LOCAL PARAMETERS
+                const bool elm_is_small = DG::ELM_IS_SMALL(etype);
+                const int merged_b = (elm_is_small) ? (etype/10) : -1;
+
+                // LOCAL VARIABLES
+                int BF_i, BF_j, BF_k;
+                Real x[AMREX_SPACEDIM], un[AMREX_SPACEDIM];
+                Real P[FV_N_SOL], nbr_P[FV_N_SOL];
+
+                // SUPPORT OF THE BASIS FUNCTIONS (CURRENT CELL)
+                DG::BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+
+                // SOLUTION AT THE CURRENT ELEMENT
+                Fab2P(IBVP.gamma, X_fab, BF_i, BF_j, BF_k, P);
+
+                // INIT BOUNDS ----------------------------------------
+                for (int ru = 0; ru < FV_N_SOL; ++ru)
+                {
+                    b_fab(i,j,k,ru) = P[ru];
+                    b_fab(i,j,k,ru+FV_N_SOL) = P[ru];
+                }
+                // ----------------------------------------------------
+
+                // FIND THE BOUNDS ------------------------------------
+                // CYCLE OVER THE BOUNDARIES
+                for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                {
+                    int nbr_i, nbr_j, nbr_k, nbr_b;
+                    int nbr_BF_i, nbr_BF_j, nbr_BF_k;
+
+                    // NEIGHBOR CELL INFO
+                    DG::NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+                    const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG::ELM_TYPE(dom));
+                    const bool nbr_is_small = DG::ELM_IS_SMALL(nbr_etype);
+                    const int nbr_merged_b = (nbr_is_small) ? (nbr_etype/10) : -1;
+
+                    // Conditions for NOT considering the boundary
+                    // i) the current cell extends to the neighboring
+                    //    cell;
+                    // ii) the current cell is small and the
+                    //     neighboring cell extends into it;
+                    // iii) the neighboring cell is empty (it means
+                    //      that the cell must be separated by the zero
+                    //      level set of a function; this case is
+                    //      handled by the INTERPHASE case.
+                    //
+                    const bool cells_are_merged = ((nbr_merged_b == nbr_b) || (merged_b == b));
+                    const bool nbr_is_empty = (nbr_etype == __DG_ELM_TYPE_EMPTY__);
+                    if (cells_are_merged || nbr_is_empty) continue;
+
+                    // SUPPORT OF THE BASIS FUNCTIONS (NEIGHBOR CELL)
+                    DG::BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                    // SOLUTION AT THE NEIGHBOR ELEMENT
+                    Fab2P(IBVP.gamma, X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_P);
+
+                    for (int ru = 0; ru < FV_N_SOL; ++ru)
+                    {
+                        b_fab(i,j,k,ru) = std::min(b_fab(i,j,k,ru), nbr_P[ru]);
+                        b_fab(i,j,k,ru+FV_N_SOL) = std::max(b_fab(i,j,k,ru+FV_N_SOL), nbr_P[ru]);
+                    }
+                }
+
+                // ZERO LEVEL OF THE LEVEL SET
+                {
+                    const int bou_Nq = eIntBouQuad_Nq_fab(i,j,k,DG::ELM_INT_BOU_QUAD_NQ(dom));
+                    const long pos = eIntBouQuad_pos_fab(i,j,k,DG::ELM_INT_BOU_QUAD_POS(dom));
+                    const Real * xptr = &eIntBouQuad_mem_ptr[pos];
+
+                    // CYCLE OVER THE QUADRATURE POINTS
+                    for (int q = 0; q < bou_Nq; ++q)
+                    {
+                        // QUADRATURE POINT
+                        const long x_pos = (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*q;
+                        AMREX_D_TERM
+                        (
+                            x[0] = xptr[x_pos+0];,
+                            x[1] = xptr[x_pos+1];,
+                            x[2] = xptr[x_pos+2];
+                        )
+
+                        // UNIT NORMAL
+                        AMREX_D_TERM
+                        (
+                            un[0] = xptr[x_pos+AMREX_SPACEDIM+1+0];,
+                            un[1] = xptr[x_pos+AMREX_SPACEDIM+1+1];,
+                            un[2] = xptr[x_pos+AMREX_SPACEDIM+1+2];
+                        )
+
+                        IBVP.F_PHI_BCS(t, x, un, P, nbr_P);
+
+                        for (int ru = 0; ru < FV_N_SOL; ++ru)
+                        {
+                            b_fab(i,j,k,ru) = std::min(b_fab(i,j,k,ru), nbr_P[ru]);
+                            b_fab(i,j,k,ru+FV_N_SOL) = std::max(b_fab(i,j,k,ru+FV_N_SOL), nbr_P[ru]);
+                        }
+                    }
+                }
+                // ---------------------------------------------------
+            }
+        });
+        Gpu::synchronize();
+    }
+    bounds.FillBoundary(mesh.geom.periodicity());
+    // ================================================================
+
+    // HANDLE EXTENDED ELEMENTS =======================================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+        
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        
+        Array4<Real> const & b_fab = bounds.array(mfi);
+
+        ParallelFor(bx,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+        {
+            // CHECK WHETHER ELEMENT IS EXTENDED
+            const short etype = eType_fab(i,j,k,DG::ELM_TYPE(dom));
+
+            if (DG::ELM_IS_EXTENDED(etype))
+            {
+                int nbr_i, nbr_j, nbr_k, nbr_b;
+
+                for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                {
+                    // NEIGHBOR CELL INFO
+                    DG::NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+                    const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG::ELM_TYPE(dom));
+                    const bool nbr_is_small = DG::ELM_IS_SMALL(nbr_etype);
+                    const int nbr_merged_b = (nbr_is_small) ? (nbr_etype/10) : -1;
+                    const bool cells_are_merged = (nbr_merged_b == nbr_b);
+
+                    if (cells_are_merged)
+                    {
+                        for (int ru = 0; ru < FV_N_SOL; ++ru)
+                        {
+                            b_fab(i,j,k,ru) = std::min(b_fab(i,j,k,ru), b_fab(nbr_i,nbr_j,nbr_k,ru));
+                            b_fab(i,j,k,ru+FV_N_SOL) = std::max(b_fab(i,j,k,ru+FV_N_SOL), b_fab(nbr_i,nbr_j,nbr_k,ru+FV_N_SOL));
+                        }
+                    }
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+    bounds.FillBoundary(mesh.geom.periodicity());
+    // ================================================================
+
+    // APPLY BARTH-JESPERSEN LIMITER ==================================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
+        AMREX_D_TERM
+        (
+            Array4<int const> const & eBouQuad_Nq_fab_0 = mesh.eBouQuad_Nq[0].array(mfi);
+            Array4<long const> const & eBouQuad_pos_fab_0 = mesh.eBouQuad_pos[0].array(mfi);,
+            Array4<int const> const & eBouQuad_Nq_fab_1 = mesh.eBouQuad_Nq[1].array(mfi);
+            Array4<long const> const & eBouQuad_pos_fab_1 = mesh.eBouQuad_pos[1].array(mfi);,
+            Array4<int const> const & eBouQuad_Nq_fab_2 = mesh.eBouQuad_Nq[2].array(mfi);
+            Array4<long const> const & eBouQuad_pos_fab_2 = mesh.eBouQuad_pos[2].array(mfi);
+        )
+        Array4<int const> const & eIntBouQuad_Nq_fab = mesh.eIntBouQuad_Nq.array(mfi);
+        Array4<long const> const & eIntBouQuad_pos_fab = mesh.eIntBouQuad_pos.array(mfi);
+        
+        Array4<Real const> const & X_fab = X.array(mfi);
+        Array4<Real const> const & dXP_fab = dXP.array(mfi);
+
+        Array4<Real> const & a_fab = alpha.array(mfi);
+        Array4<Real const> const & b_fab = bounds.array(mfi);
+
+        ParallelFor(bx,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+        {
+            // CHECK WHETHER ELEMENT IS NOT EMPTY
+            const short etype = eType_fab(i,j,k,DG::ELM_TYPE(dom));
+
+            if (DG::ELM_IS_NOT_EMPTY(etype))
+            {
+                // LOCAL PARAMETERS
+                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                   prob_lo[1]+j*dx[1],
+                                                                   prob_lo[2]+k*dx[2])};
+
+                // LOCAL VARIABLES
+                int BF_i, BF_j, BF_k;
+                Real xc[AMREX_SPACEDIM];
+                Real x[AMREX_SPACEDIM];
+                Real P[FV_N_SOL], Px[FV_N_SOL];
+                Real min_[FV_N_SOL], max_[FV_N_SOL];
+                Real u0, u_lo, u_hi, a;
+
+                // SUPPORT OF THE BASIS FUNCTIONS (CURRENT CELL)
+                DG::BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+
+                // CENTROID OF THE CURRENT ELEMENT
+                AMREX_D_TERM
+                (
+                    xc[0] = eInfo_fab(BF_i,BF_j,BF_k,DG::ELM_CENTROID_X1(dom));,
+                    xc[1] = eInfo_fab(BF_i,BF_j,BF_k,DG::ELM_CENTROID_X2(dom));,
+                    xc[2] = eInfo_fab(BF_i,BF_j,BF_k,DG::ELM_CENTROID_X3(dom));
+                )
+
+                // SOLUTION AT THE CURRENT ELEMENT
+                Fab2P(IBVP.gamma, X_fab, BF_i, BF_j, BF_k, P);
+
+                for (int cu = 0; cu < FV_N_SOL; ++cu)
+                {
+                    min_[cu] = P[cu];
+                    max_[cu] = P[cu];
+                }
+
+                // CYCLE OVER THE BOUNDARIES
+                for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                {
+                    const int dir = b/2;
+
+                    int fi, fj, fk;
+                    int bou_Nq;
+                    long pos;
+
+                    // WHICH FACE
+                    DG::GRID_FACE(i, j, k, b, fi, fj, fk);
+
+                    if (dir == 0)
+                    {
+                        bou_Nq = eBouQuad_Nq_fab_0(fi,fj,fk,DG::ELM_BOU_QUAD_NQ(dom, b));
+                        pos = eBouQuad_pos_fab_0(fi,fj,fk,DG::ELM_BOU_QUAD_POS(dom, b));
+                    }
+#if (AMREX_SPACEDIM > 1)
+                    else if (dir == 1)
+                    {
+                        bou_Nq = eBouQuad_Nq_fab_1(fi,fj,fk,DG::ELM_BOU_QUAD_NQ(dom, b));
+                        pos = eBouQuad_pos_fab_1(fi,fj,fk,DG::ELM_BOU_QUAD_POS(dom, b));
+                    }
+#endif
+#if (AMREX_SPACEDIM > 2)
+                    else
+                    {
+                        bou_Nq = eBouQuad_Nq_fab_2(fi,fj,fk,DG::ELM_BOU_QUAD_NQ(dom, b));
+                        pos = eBouQuad_pos_fab_2(fi,fj,fk,DG::ELM_BOU_QUAD_POS(dom, b));
+                    }
+#endif
+                    const Real * xptr = &eBouQuad_mem_ptr[pos];
+
+                    // CYCLE OVER THE QUADRATURE POINTS
+                    for (int q = 0; q < bou_Nq; ++q)
+                    {
+                        // QUADRATURE POINT
+                        const long x_pos = (AMREX_SPACEDIM+1)*q;
+                        AMREX_D_TERM
+                        (
+                            x[0] = xptr[x_pos+0]+cell_lo[0];,
+                            x[1] = xptr[x_pos+1]+cell_lo[1];,
+                            x[2] = xptr[x_pos+2]+cell_lo[2];
+                        )
+                        
+                        // SOLUTION
+                        for (int cu = 0; cu < FV_N_SOL; ++cu)
+                        {
+                            Px[cu] = P[cu];
+                            AMREX_D_TERM
+                            (
+                                Px[cu] += dXP_fab(BF_i,BF_j,BF_k,0+AMREX_SPACEDIM*cu)*(x[0]-xc[0]);,
+                                Px[cu] += dXP_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*cu)*(x[1]-xc[1]);,
+                                Px[cu] += dXP_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-xc[2]);
+                            )
+                        }
+                        
+                        for (int cu = 0; cu < FV_N_SOL; ++cu)
+                        {
+                            min_[cu] = std::min(min_[cu], Px[cu]);
+                            max_[cu] = std::max(max_[cu], Px[cu]);
+                        }
+                    }
+                }
+
+                // BOUNDARY CONDITIONS: ZERO LEVEL OF THE LEVELSET
+                {
+                    const int bou_Nq = eIntBouQuad_Nq_fab(i,j,k,DG::ELM_INT_BOU_QUAD_NQ(dom));
+                    const long pos = eIntBouQuad_pos_fab(i,j,k,DG::ELM_INT_BOU_QUAD_POS(dom));
+                    const Real * xptr = &eIntBouQuad_mem_ptr[pos];
+
+                    // CYCLE OVER THE QUADRATURE POINTS
+                    for (int q = 0; q < bou_Nq; ++q)
+                    {
+                        // QUADRATURE POINT
+                        const long x_pos = (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*q;
+                        AMREX_D_TERM
+                        (
+                            x[0] = xptr[x_pos+0];,
+                            x[1] = xptr[x_pos+1];,
+                            x[2] = xptr[x_pos+2];
+                        )
+
+                        // SOLUTION
+                        for (int cu = 0; cu < FV_N_SOL; ++cu)
+                        {
+                            Px[cu] = P[cu];
+                            AMREX_D_TERM
+                            (
+                                Px[cu] += dXP_fab(BF_i,BF_j,BF_k,0+AMREX_SPACEDIM*cu)*(x[0]-xc[0]);,
+                                Px[cu] += dXP_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*cu)*(x[1]-xc[1]);,
+                                Px[cu] += dXP_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-xc[2]);
+                            )
+                        }
+
+                        for (int cu = 0; cu < FV_N_SOL; ++cu)
+                        {
+                            min_[cu] = std::min(min_[cu], Px[cu]);
+                            max_[cu] = std::max(max_[cu], Px[cu]);
+                        }
+                    }
+                }
+                
+                // EVAL THE COEFFICIENTS USED TO SCALE THE SLOPES -----
+                for (int cu = 0; cu < FV_N_SOL; ++cu)
+                {
+                    a = 1.0;
+
+                    u0 = P[cu];
+                    u_lo = b_fab(BF_i,BF_j,BF_k,cu);
+                    u_hi = b_fab(BF_i,BF_j,BF_k,cu+FV_N_SOL);
+
+                    if ((min_[cu] < u_lo) && (min_[cu] != u0))
+                    {
+                        a = std::min(a, ((u_lo-u0)/(min_[cu]-u0)));
+                    }
+
+                    if ((max_[cu] > u_hi) && (max_[cu] != u0))
+                    {
+                        a = std::min(a, ((u_hi-u0)/(max_[cu]-u0)));
+                    }
+
+                    a_fab(i,j,k,cu) = a;
+                }
+                // ----------------------------------------------------
+            }
+        });
+        Gpu::synchronize();
+
+    }
+    bounds.FillBoundary(mesh.geom.periodicity());
+    // ================================================================
+
+    // EVENTUALLY FIX THE SLOPES ======================================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+        Array4<Real const> const & a_fab = alpha.array(mfi);
+        
+        Array4<Real> const & dXP_fab = dXP.array(mfi);
+
+        ParallelFor(bx,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+        {
+            // LOCAL PARAMETERS
+            const short etype = eType_fab(i,j,k,DG::ELM_TYPE(dom));
+            const bool elm_is_valid = DG::ELM_IS_VALID(etype);
+            const bool elm_is_extended = DG::ELM_IS_EXTENDED(etype);
+
+            // LOCAL VARIABLES
+            int nbr_i, nbr_j, nbr_k, nbr_b;
+            Real a[FV_N_SOL];
+
+            if (elm_is_valid)
+            {
+                for (int cu = 0; cu < FV_N_SOL; ++cu)
+                {
+                    a[cu] = a_fab(i,j,k,cu);
+                }
+            }
+
+            // MAKE SURE EXTENDED ELEMENTS ACCOUNT FOR SMALL ELEMENTS
+            if (elm_is_extended)
+            {
+                for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                {
+                    // NEIGHBOR CELL INFO
+                    DG::NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+                    const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG::ELM_TYPE(dom));
+                    const bool nbr_is_small = (nbr_etype%10 == __DG_ELM_TYPE_SMALL__);
+                    const int nbr_merged_b = (nbr_is_small) ? (nbr_etype/10) : -1;
+                    const bool cells_are_merged = (nbr_merged_b == nbr_b);
+
+                    if (cells_are_merged)
+                    {
+                        for (int cu = 0; cu < FV_N_SOL; ++cu)
+                        {
+                            a[cu] = std::min(a[cu], a_fab(nbr_i,nbr_j,nbr_k,cu));
+                        }
+                    }
+                }
+            }
+
+            if (elm_is_valid)
+            {
+                for (int d = 0; d < AMREX_SPACEDIM; ++d)
+                {
+                    for (int cu = 0; cu < FV_N_SOL; ++cu)
+                    {
+                        dXP_fab(i,j,k,d+AMREX_SPACEDIM*cu) *= a[cu];
+                    }
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+    dXP.FillBoundary(mesh.geom.periodicity());
+    // ================================================================
+}
+
 /** \brief Add contribution to the Least-square matrix.
  *
 */
@@ -959,7 +1438,6 @@ void Eval_dXdt_BouContrib(const Real t,
                 Real x[AMREX_SPACEDIM], w, un[AMREX_SPACEDIM];
                 Real xc[AMREX_SPACEDIM], nbr_xc[AMREX_SPACEDIM];
                 Real P[FV_N_SOL], nbr_P[FV_N_SOL], NFn[FV_N_SOL];
-                Real U[FV_N_SOL], nbr_U[FV_N_SOL];
                 Real integrand;
                 
                 // SUPPORT OF THE BASIS FUNCTIONS (CURRENT CELL)
@@ -1098,23 +1576,10 @@ void Eval_dXdt_BouContrib(const Real t,
                                     nbr_P[cu] += dXP_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-nbr_xc[2]);
                                 )
                             }
-                            IBVP.F_P2U(t, x, P, U);
-                            IBVP.F_P2U(t, x, nbr_P, nbr_U);
 
                             // NUMERICAL FLUX FOR INTRAPHASE
-                            IBVP.F_NF_ICS(t, x, un, U, nbr_U, NFn);
+                            IBVP.F_NF_ICS_P(t, x, un, P, nbr_P, NFn);
 
-/*
-if (i == 32 && j == 25 && b == 1)
-{
-const int r = ParallelDescriptor::MyProc();
-Print(r) << "b " << b << "     P("; DG::IO::PrintReals(r, AMREX_SPACEDIM, x); Print(r) << "): "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, P);
-Print(r) << "b " << b << " nbr_P("; DG::IO::PrintReals(r, AMREX_SPACEDIM, x); Print(r) << "): "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, nbr_P);
-Print(r) << "b " << b << "     U("; DG::IO::PrintReals(r, AMREX_SPACEDIM, x); Print(r) << "): "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, U);
-Print(r) << "b " << b << " nbr_U("; DG::IO::PrintReals(r, AMREX_SPACEDIM, x); Print(r) << "): "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, nbr_U);
-Print(r) << "b " << b << " NFn("; DG::IO::PrintReals(r, AMREX_SPACEDIM, x); Print(r) << "): "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, NFn);
-}
-*/
                             // INTEGRAL CONTRIBUTION
                             integrand = NFn[ru];
                             dXdt_fab(i,j,k,ru) -= integrand*w;
@@ -1148,22 +1613,13 @@ Print(r) << "b " << b << " NFn("; DG::IO::PrintReals(r, AMREX_SPACEDIM, x); Prin
                                     P[cu] += dXP_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-xc[2]);
                                 )
                             }
-                            IBVP.F_P2U(t, x, P, U);
 
                             // NUMERICAL FLUX FOR GRID'S BOUNDARY
-                            IBVP.F_NF_BCS(t, x, un, U, NFn);
+                            IBVP.F_NF_BCS_P(t, x, un, P, NFn);
 
                             // INTEGRAL CONTRIBUTION
                             integrand = NFn[ru];
                             dXdt_fab(i,j,k,ru) -= integrand*w;
-
-/*
-if (i == 33 && j == 25)
-{
-const int r = ParallelDescriptor::MyProc();
-Print(r) << "2 NFn("; DG::IO::PrintReals(r, AMREX_SPACEDIM, x); Print(r) << "): "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, NFn);
-}
-*/
                         }
                     }
                     // ------------------------------------------------
@@ -1207,21 +1663,13 @@ Print(r) << "2 NFn("; DG::IO::PrintReals(r, AMREX_SPACEDIM, x); Print(r) << "): 
                                 P[cu] += dXP_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-xc[2]);
                             )
                         }
-                        IBVP.F_P2U(t, x, P, U);
 
                         // NUMERICAL FLUX FOR INTERPHASE
-                        IBVP.F_NF_PHI_BCS(t, x, un, U, NFn);
+                        IBVP.F_NF_PHI_BCS_P(t, x, un, P, NFn);
 
                         // INTEGRAL CONTRIBUTION
                         integrand = NFn[ru];
                         dXdt_fab(i,j,k,ru) -= integrand*w;
-/*
-if (i == 33 && j == 25)
-{
-const int r = ParallelDescriptor::MyProc();
-Print(r) << "3 NFn("; DG::IO::PrintReals(r, AMREX_SPACEDIM, x); Print(r) << "): "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, NFn);
-}
-*/
                     }
                 }
                 // ----------------------------------------------------
@@ -1284,6 +1732,7 @@ void Eval_dXdt(const Real t,
 
     // EVAL LIMITED SLOPES ============================================
     EvalLimitedSlopesByLeastSquares(t, mesh, X, dXP, IBVP);
+    ApplyBarthJespersenLimiter(t, mesh, X, dXP, IBVP);
     // ================================================================
 
     // EVAL THE TIME DERIVATIVES ======================================

@@ -412,22 +412,6 @@ void EvalLimitedSlopes(const Real t,
                 dP[ru] = P[ru]-nbr_P[ru];
             }
 
-if (i == 32)
-{
-    const int r = ParallelDescriptor::MyProc();
-    Print(r) << std::endl;
-    Print(r) << std::endl << "(" << i << "," << j << "," << k << "): " << std::endl;
-    Print(r) << "P("; DG::IO::PrintReals(r, AMREX_SPACEDIM, x); Print(r) << "): "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, P);
-
-    Real dP_[FV_N_SOL];
-    
-    for (int ru = 0; ru < FV_N_SOL; ++ru)
-    {
-        dP_[ru] = dP[ru]*idx[0];
-    }
-    Print(r) << "dPL: " << std::endl; DG::IO::PrintRealArray2D(r, FV_N_SOL, AMREX_SPACEDIM, dP_);
-}
-
             // CHARACTERISTICS
             IBVP.F_DP2DC(t, x, un, P, dP, dCL);
 
@@ -620,7 +604,7 @@ void Eval_dXdt(const Real t,
             Real un[AMREX_SPACEDIM];
             int nbr_i, nbr_j, nbr_k, nbr_b;
             Real P[FV_N_SOL], nbr_P[FV_N_SOL];
-            Real U[FV_N_SOL], nbr_U[FV_N_SOL], NFn[FV_N_SOL];
+            Real NFn[FV_N_SOL];
 
             for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
             {
@@ -636,7 +620,6 @@ void Eval_dXdt(const Real t,
                 {
                     P[cu] += un[dir]*0.5*dXP_fab(i,j,k,dir+AMREX_SPACEDIM*cu)*dx[dir];
                 }
-                IBVP.F_P2U(t, nullptr, P, U);
 
                 // NEIGHBOR CELL INDICES
                 DG::NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
@@ -647,21 +630,9 @@ void Eval_dXdt(const Real t,
                 {
                     nbr_P[cu] -= un[dir]*0.5*dXP_fab(nbr_i,nbr_j,nbr_k,dir+AMREX_SPACEDIM*cu)*dx[dir];
                 }
-                IBVP.F_P2U(t, nullptr, nbr_P, nbr_U);
 
-/*
-if (i == 33)
-{
-const int r = ParallelDescriptor::MyProc();
-Print(r) << "b " << b << "     P: "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, P);
-Print(r) << "b " << b << " nbr_P: "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, nbr_P);
-Print(r) << "b " << b << "     U: "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, U);
-Print(r) << "b " << b << " nbr_U: "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, nbr_U);
-Print(r) << "b " << b << " NFn: "; DG::IO::PrintRealArray2D(r, 1, FV_N_SOL, NFn);
-}
-*/
                 // NUMERICAL FLUX
-                IBVP.F_NF_ICS(t, nullptr, un, U, nbr_U, NFn);
+                IBVP.F_NF_ICS_P(t, nullptr, un, P, nbr_P, NFn);
 
                 dXdt_fab(i,j,k,ru) -= NFn[ru]*idx[dir];
             }
