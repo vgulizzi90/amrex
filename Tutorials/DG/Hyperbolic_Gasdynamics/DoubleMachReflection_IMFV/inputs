@@ -15,17 +15,20 @@ time.n_steps = 50000
 
 # DISCRETIZATION ######################################################
 # GRID ================================================================
-grid.n_cells      = 1024 512
-grid.max_box_size = 64 64
+grid.n_cells      = 64 32
+grid.max_box_size = 4 4
 grid.CFL = 0.3
+
+# LEVEL SET FUNCTIONS
+grid.space_p = 1
+grid.space_q = 1
 # =====================================================================
 
 # IMPLICITLY-DEFINED MESH =============================================
-grid.space_p = 1
-grid.space_q = 1
-grid.space_q_im = 1
+implicit_mesh.space_q = 0
+implicit_mesh.space_q_ie = 0
 
-grid.volume_fraction_threshold = 0.3
+implicit_mesh.volume_fraction_threshold = 0.3
 # =====================================================================
 
 # DISCONTINUOUS GALERKIN METHOD =======================================

@@ -66,23 +66,6 @@ struct TimeInput
 };
 
 /**
- * \brief Inputs for Mesh information
- *
-*/
-struct MeshInput
-{
-    IntVect n_cells, max_grid_size;
-    Real CFL;
-
-    MeshInput()
-    :
-    n_cells(AMREX_D_DECL(0, 0, 0)),
-    max_grid_size(AMREX_D_DECL(0, 0, 0)),
-    CFL{1.0}
-    {}
-};
-
-/**
  * \brief Inputs for Grid information
  *
 */
@@ -92,8 +75,6 @@ struct GridInput
     Real CFL;
     int space_p, time_p;
     int space_q, time_q;
-    int space_q_im, time_q_im;
-    Real VFT;
 
     GridInput()
     :
@@ -103,9 +84,24 @@ struct GridInput
     space_p{-1},
     time_p{-1},
     space_q{-1},
+    time_q{-1}
+    {}
+};
+
+/**
+ * \brief Inputs for ImplicitMesh information
+ *
+*/
+struct ImplicitMeshInput
+{
+    int space_q, space_q_ie, time_q;
+    Real VFT;
+
+    ImplicitMeshInput()
+    :
+    space_q{-1},
+    space_q_ie{-1},
     time_q{-1},
-    space_q_im{-1},
-    time_q_im{-1},
     VFT{0.33}
     {}
 };
@@ -187,8 +183,8 @@ public InputReaderBase
     // DATA MEMBERS ###################################################
     SpaceInput space;
     TimeInput time;
-    MeshInput mesh;
     GridInput grid;
+    ImplicitMeshInput implicit_mesh;
     DGInput dG;
     ProblemInput problem;
     // ################################################################
@@ -218,33 +214,6 @@ public InputReaderBase
         }
         // ============================================================
 
-        // MESH =======================================================
-        {
-            Vector<int> aux;
-
-            ParmParse pp("mesh");
-
-            if (pp.queryarr("n_cells", aux))
-            {
-                for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
-                {
-                    this->mesh.n_cells[dim] = aux[dim];
-                    this->mesh.max_grid_size[dim] = aux[dim];
-                }
-            }
-
-            if (pp.queryarr("max_grid_size", aux))
-            {
-                for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
-                {
-                    this->mesh.max_grid_size[dim] = aux[dim];
-                }
-            }
-
-            pp.query("CFL", this->mesh.CFL);
-        }
-        // ============================================================
-
         // GRID =======================================================
         {
             Vector<int> aux;
@@ -271,13 +240,30 @@ public InputReaderBase
             pp.query("CFL", this->grid.CFL);
 
             pp.query("space_p", this->grid.space_p);
-            pp.query("time_p", this->grid.time_p);
-            pp.query("space_q", this->grid.space_q);
-            pp.query("time_q", this->grid.time_q);
-            pp.query("space_q_im", this->grid.space_q_im);
-            pp.query("time_q_im", this->grid.time_q_im);
 
-            pp.query("volume_fraction_threshold", this->grid.VFT);
+            this->grid.time_p = this->grid.space_p;
+            pp.query("time_p", this->grid.time_p);
+
+            this->grid.space_q = this->grid.space_p;
+            pp.query("space_q", this->grid.space_q);
+            
+            this->grid.time_q = this->grid.space_p;
+            pp.query("time_q", this->grid.time_q);
+        }
+        // ============================================================
+
+        // MESH =======================================================
+        {
+            Vector<int> aux;
+
+            ParmParse pp("implicit_mesh");
+
+            pp.query("space_q", this->implicit_mesh.space_q);
+
+            this->implicit_mesh.space_q_ie = this->implicit_mesh.space_q;
+            pp.query("space_q_ie", this->implicit_mesh.space_q_ie);
+
+            pp.query("volume_fraction_threshold", this->implicit_mesh.VFT);
         }
         // ============================================================
 

@@ -242,10 +242,11 @@ amrex::Print() << "#############################################################
         {
             int n = 0;
             amrex::Real t, dt;
-            amrex::Real tps_start, tps_stop, tps;
+            amrex::Real tps_start, tps_stop, tps, eta;
 
-            // INIT CLOCK TIME PER STEP
+            // INIT CLOCK TIME PER STEP AND ESTIMATED TIME
             tps = 0.0;
+            eta = 0.0;
 
             // ADVANCE IN TIME
             n = 0;
@@ -281,12 +282,14 @@ amrex::Print() << "#############################################################
                 amrex::ParallelDescriptor::ReduceRealMax(tps_stop, IOProc);
 
                 tps = (tps*n+(tps_stop-tps_start))/(n+1);
+                eta = (inputs.time.T-t)/dt*tps;
 
                 // REPORT TO SCREEN
                 amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
                 amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
                                << dt << ", t = " << t
-                               << ", clock time per time step = " << tps << std::endl;
+                               << ", clock time per time step = " << tps 
+                               << ", estimated remaining time = " << eta << std::endl;
             }
 
         }

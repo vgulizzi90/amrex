@@ -45,7 +45,7 @@ amrex::Print() << "#############################################################
 
     // IBVP
     const int X_n_comp = FV_N_SOL;
-    const amrex::Real gamma = 5.0/3.0;
+    const amrex::Real gamma = 1.4;
     // ================================================================
 
     // VARIABLES ======================================================
@@ -75,21 +75,21 @@ amrex::Print() << "#############################################################
     // AUXILIARY TABLES TO TEST THE DIFFERENT ORIENTATIONS ============
 #if (AMREX_SPACEDIM == 1)
     const amrex::Real table_hi[1] = {inputs.space.hi[0]};
-    const int table_n_cells[1] = {inputs.mesh.n_cells[0]};
+    const int table_n_cells[1] = {inputs.grid.n_cells[0]};
 #endif
 #if (AMREX_SPACEDIM == 2)
     const amrex::Real table_hi[AMREX_SPACEDIM*AMREX_SPACEDIM] = {inputs.space.hi[0], inputs.space.hi[1],
                                                                  inputs.space.hi[1], inputs.space.hi[0]};
-    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {inputs.mesh.n_cells[0], inputs.mesh.n_cells[1],
-                                                              inputs.mesh.n_cells[1], inputs.mesh.n_cells[0]};
+    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {inputs.grid.n_cells[0], inputs.grid.n_cells[1],
+                                                              inputs.grid.n_cells[1], inputs.grid.n_cells[0]};
 #endif
 #if (AMREX_SPACEDIM == 3)
     const amrex::Real table_hi[AMREX_SPACEDIM*AMREX_SPACEDIM] = {inputs.space.hi[0], inputs.space.hi[1], inputs.space.hi[2],
                                                                  inputs.space.hi[1], inputs.space.hi[0], inputs.space.hi[2],
                                                                  inputs.space.hi[1], inputs.space.hi[2], inputs.space.hi[0]};
-    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {inputs.mesh.n_cells[0], inputs.mesh.n_cells[1], inputs.mesh.n_cells[2],
-                                                              inputs.mesh.n_cells[1], inputs.mesh.n_cells[0], inputs.mesh.n_cells[2],
-                                                              inputs.mesh.n_cells[1], inputs.mesh.n_cells[2], inputs.mesh.n_cells[0]};
+    const int table_n_cells[AMREX_SPACEDIM*AMREX_SPACEDIM] = {inputs.grid.n_cells[0], inputs.grid.n_cells[1], inputs.grid.n_cells[2],
+                                                              inputs.grid.n_cells[1], inputs.grid.n_cells[0], inputs.grid.n_cells[2],
+                                                              inputs.grid.n_cells[1], inputs.grid.n_cells[2], inputs.grid.n_cells[0]};
 #endif
     // ================================================================
 
@@ -103,30 +103,30 @@ amrex::Print() << "#############################################################
         // SET THE PROBLEM SIZE AND THE NUMBER OF CELLS ===============
 #if (AMREX_SPACEDIM == 1)
         inputs.space.hi[0] = table_hi[ori];
-        inputs.mesh.n_cells[0] = table_n_cells[ori];
+        inputs.grid.n_cells[0] = table_n_cells[ori];
 #endif
 #if (AMREX_SPACEDIM == 2)
         inputs.space.hi[0] = table_hi[ori];
         inputs.space.hi[1] = table_hi[ori+AMREX_SPACEDIM];
-        inputs.mesh.n_cells[0] = table_n_cells[ori];
-        inputs.mesh.n_cells[1] = table_n_cells[ori+AMREX_SPACEDIM];
+        inputs.grid.n_cells[0] = table_n_cells[ori];
+        inputs.grid.n_cells[1] = table_n_cells[ori+AMREX_SPACEDIM];
 #endif
 #if (AMREX_SPACEDIM == 3)
         inputs.space.hi[0] = table_hi[ori];
         inputs.space.hi[1] = table_hi[ori+AMREX_SPACEDIM];
         inputs.space.hi[2] = table_hi[ori+2*AMREX_SPACEDIM];
-        inputs.mesh.n_cells[0] = table_n_cells[ori];
-        inputs.mesh.n_cells[1] = table_n_cells[ori+AMREX_SPACEDIM];
-        inputs.mesh.n_cells[2] = table_n_cells[ori+2*AMREX_SPACEDIM];
+        inputs.grid.n_cells[0] = table_n_cells[ori];
+        inputs.grid.n_cells[1] = table_n_cells[ori+AMREX_SPACEDIM];
+        inputs.grid.n_cells[2] = table_n_cells[ori+2*AMREX_SPACEDIM];
 #endif
         // ============================================================
 
         // MAKE OUTPUT FOLDER =========================================
         {
-            const std::string mesh_info = AMREX_D_TERM(std::to_string(inputs.mesh.n_cells[0]),+"x"+
-                                                       std::to_string(inputs.mesh.n_cells[1]),+"x"+
-                                                       std::to_string(inputs.mesh.n_cells[2]));
-            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info});
+            const std::string grid_info = AMREX_D_TERM(std::to_string(inputs.grid.n_cells[0]),+"x"+
+                                                       std::to_string(inputs.grid.n_cells[1]),+"x"+
+                                                       std::to_string(inputs.grid.n_cells[2]));
+            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+grid_info});
             amrex::DG::IO::MakeFolder(output_folderpath);
         }
         // ============================================================
@@ -159,9 +159,9 @@ amrex::Print() << "#############################################################
         {
             AMREX_D_TERM
             (
-                const amrex::Real dx1 = (inputs.space.hi[0]-inputs.space.lo[0])/inputs.mesh.n_cells[0];,
-                const amrex::Real dx2 = (inputs.space.hi[1]-inputs.space.lo[1])/inputs.mesh.n_cells[1];,
-                const amrex::Real dx3 = (inputs.space.hi[2]-inputs.space.lo[2])/inputs.mesh.n_cells[2];
+                const amrex::Real dx1 = (inputs.space.hi[0]-inputs.space.lo[0])/inputs.grid.n_cells[0];,
+                const amrex::Real dx2 = (inputs.space.hi[1]-inputs.space.lo[1])/inputs.grid.n_cells[1];,
+                const amrex::Real dx3 = (inputs.space.hi[2]-inputs.space.lo[2])/inputs.grid.n_cells[2];
             )
             const amrex::Real dx[AMREX_SPACEDIM] = {AMREX_D_DECL(dx1, dx2, dx3)};
 
@@ -179,12 +179,12 @@ amrex::Print() << "#############################################################
             ibx.setSmall(1, 0);,
             ibx.setSmall(2, 0);
         )
-        ibx.setBig(inputs.mesh.n_cells-1);
+        ibx.setBig(inputs.grid.n_cells-1);
         geom.define(ibx, &rbx, inputs.space.coord_sys, inputs.space.is_periodic.data());
 
         // BOX ARRAY
         ba.define(ibx);
-        ba.maxSize(inputs.mesh.max_grid_size);
+        ba.maxSize(inputs.grid.max_box_size);
 
         // DISTRIBUTION MAPPING
         dm.define(ba);
@@ -213,10 +213,11 @@ amrex::Print() << "#############################################################
         {
             int n = 0;
             amrex::Real t, dt;
-            amrex::Real tps_start, tps_stop, tps;
+            amrex::Real tps_start, tps_stop, tps, eta;
 
-            // INIT CLOCK TIME PER STEP
+            // INIT CLOCK TIME PER STEP AND ESTIMATED TIME
             tps = 0.0;
+            eta = 0.0;
 
             // ADVANCE IN TIME
             n = 0;
@@ -228,7 +229,7 @@ amrex::Print() << "#############################################################
 
                 // COMPUTE NEXT TIME STEP
                 dt = amrex::FV::IdealGas::Compute_dt(t+0.5*dt, geom, X, IG);
-                dt *= inputs.mesh.CFL;
+                dt *= inputs.grid.CFL;
                 dt = std::min(t+dt, inputs.time.T)-t;
 
                 // TIME STEP
@@ -251,12 +252,14 @@ amrex::Print() << "#############################################################
                 amrex::ParallelDescriptor::ReduceRealMax(tps_stop, IOProc);
 
                 tps = (tps*n+(tps_stop-tps_start))/(n+1);
+                eta = (inputs.time.T-t)/dt*tps;
 
                 // REPORT TO SCREEN
                 amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
                 amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
                                << dt << ", t = " << t
-                               << ", clock time per time step = " << tps << std::endl;
+                               << ", clock time per time step = " << tps 
+                               << ", estimated remaining time = " << eta << std::endl;
             }
 
         }

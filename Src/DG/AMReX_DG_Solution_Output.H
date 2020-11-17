@@ -494,8 +494,8 @@ void ExportImplicitMesh_DomData_VTK(const std::string & folderpath,
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
 
     // STANDARD ELEMENT
-    const int cell_dom_Ng = mesh.std_elem.dom_Ng;
-    const int cell_e = mesh.std_elem.g;
+    const int cell_dom_Ng = mesh.ls_std_elem.dom_Ng;
+    const int cell_e = mesh.ls_std_elem.g;
     const int cell_dom_Ne = AMREX_D_PICK(cell_e, cell_e*cell_e, cell_e*cell_e*cell_e);
 #if (AMREX_SPACEDIM == 1)
     const Gpu::ManagedVector<int> subgrid_conn = VTK::GriddedLine_Connectivity(cell_e);
@@ -510,13 +510,13 @@ void ExportImplicitMesh_DomData_VTK(const std::string & folderpath,
 
     AMREX_D_TERM
     (
-        Real const * dom_XI1g_ptr = mesh.std_elem.dom_XI1g.data();,
-        Real const * dom_XI2g_ptr = mesh.std_elem.dom_XI2g.data();,
-        Real const * dom_XI3g_ptr = mesh.std_elem.dom_XI3g.data();
+        Real const * dom_XI1g_ptr = mesh.ls_std_elem.dom_XI1g.data();,
+        Real const * dom_XI2g_ptr = mesh.ls_std_elem.dom_XI2g.data();,
+        Real const * dom_XI3g_ptr = mesh.ls_std_elem.dom_XI3g.data();
     )
 
     // DG
-    const int sp = mesh.std_elem.p;
+    const int sp = mesh.ls_std_elem.p;
 
     // VTK
     const int VTK_cell_id = AMREX_D_PICK(VTK_LINE_ID, VTK_QUAD_ID, VTK_HEXAHEDRON_ID);
@@ -844,8 +844,10 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath,
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
 
     // STANDARD ELEMENT
-    const int cell_bou_Ng = mesh.std_elem.bou_Ng;
-    const int cell_e = mesh.std_elem.g;
+    const int cell_bou_Ng = mesh.ls_std_elem.bou_Ng;
+#if (AMREX_SPACEDIM > 1)
+    const int cell_e = mesh.ls_std_elem.g;
+#endif
     const int cell_bou_Ne = AMREX_D_PICK(1, cell_e, cell_e*cell_e);
 #if (AMREX_SPACEDIM == 1)
     const Gpu::ManagedVector<int> subgrid_conn = {0};
@@ -860,13 +862,13 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath,
 
     AMREX_D_TERM
     (
-        Real const * bou_XI1g_ptr = mesh.std_elem.bou_XI1g.data();,
-        Real const * bou_XI2g_ptr = mesh.std_elem.bou_XI2g.data();,
-        Real const * bou_XI3g_ptr = mesh.std_elem.bou_XI3g.data();
+        Real const * bou_XI1g_ptr = mesh.ls_std_elem.bou_XI1g.data();,
+        Real const * bou_XI2g_ptr = mesh.ls_std_elem.bou_XI2g.data();,
+        Real const * bou_XI3g_ptr = mesh.ls_std_elem.bou_XI3g.data();
     )
 
     // DG
-    const int sp = mesh.std_elem.p;
+    const int sp = mesh.ls_std_elem.p;
 
     // VTK
     const int VTK_cell_id = AMREX_D_PICK(VTK_VERTEX_ID, VTK_LINE_ID, VTK_QUAD_ID);
@@ -1563,8 +1565,8 @@ void Export_VTK(const std::string & folderpath,
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
 
     // STANDARD ELEMENT
-    const int cell_dom_Ng = mesh.std_elem.dom_Ng;
-    const int cell_e = mesh.std_elem.g;
+    const int cell_dom_Ng = std::max(mesh.ls_std_elem.dom_Ng, mesh.im_std_elem.dom_Ng);
+    const int cell_e = std::max(mesh.ls_std_elem.g, mesh.im_std_elem.g);
     const int cell_dom_Ne = AMREX_D_PICK(cell_e, cell_e*cell_e, cell_e*cell_e*cell_e);
 #if (AMREX_SPACEDIM == 1)
     const Gpu::ManagedVector<int> subgrid_conn = VTK::GriddedLine_Connectivity(cell_e);
@@ -1579,13 +1581,13 @@ void Export_VTK(const std::string & folderpath,
 
     AMREX_D_TERM
     (
-        Real const * dom_XI1g_ptr = mesh.std_elem.dom_XI1g.data();,
-        Real const * dom_XI2g_ptr = mesh.std_elem.dom_XI2g.data();,
-        Real const * dom_XI3g_ptr = mesh.std_elem.dom_XI3g.data();
+        Real const * dom_XI1g_ptr = (mesh.ls_std_elem.g > mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI1g.data() : mesh.im_std_elem.dom_XI1g.data();,
+        Real const * dom_XI2g_ptr = (mesh.ls_std_elem.g > mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI2g.data() : mesh.im_std_elem.dom_XI2g.data();,
+        Real const * dom_XI3g_ptr = (mesh.ls_std_elem.g > mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI3g.data() : mesh.im_std_elem.dom_XI3g.data();
     )
 
     // DG
-    const int phi_sp = mesh.std_elem.p;
+    const int phi_sp = mesh.ls_std_elem.p;
     const int sol_sp = matfactory.std_elem.p;
 
     // VTK

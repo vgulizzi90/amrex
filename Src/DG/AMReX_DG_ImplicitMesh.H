@@ -664,16 +664,18 @@ struct ImplicitMesh
     Array<BoxArray, AMREX_SPACEDIM> fc_ba;
     DistributionMapping dm;
 
-    StandardRectangle<AMREX_SPACEDIM> std_elem;
-
     // LEVEL SETS
+    StandardRectangle<AMREX_SPACEDIM> ls_std_elem;
+
     MultiFab PHI;
 
     // IMPLICIT MESH INFO AND DATA STRUCTURES
-    Gpu::ManagedVector<int> Dom2Phi;
+    StandardRectangle<AMREX_SPACEDIM> im_std_elem;
 
-    int space_q_im;
+    int space_q_ie;
     Real volume_fraction_threshold;
+
+    Gpu::ManagedVector<int> Dom2Phi;
 
     shortMultiFab eType;
     Array<shortMultiFab, AMREX_SPACEDIM> eBouType;
@@ -762,14 +764,16 @@ struct ImplicitMesh
         this->dm.define(this->cc_ba);
         // ============================================================
 
-        // STANDARD ELEMENT ===========================================
-        this->std_elem.define(this->geom.CellSize(), inputs.grid.space_p, inputs.grid.space_q);
+        // LEVEL SETS STANDARD ELEMENT ================================
+        this->ls_std_elem.define(this->geom.CellSize(), inputs.grid.space_p, inputs.grid.space_q);
         // ============================================================
 
         // IMPLICIT MESH ==============================================
-        this->space_q_im = inputs.grid.space_q_im;
+        this->im_std_elem.define(this->geom.CellSize(), 0, inputs.implicit_mesh.space_q);
 
-        this->volume_fraction_threshold = inputs.grid.VFT;
+        this->space_q_ie = inputs.implicit_mesh.space_q_ie;
+
+        this->volume_fraction_threshold = inputs.implicit_mesh.VFT;
 
         this->n_cut_elms = 0;
         this->n_cut_elm_bou = 0;
@@ -815,10 +819,12 @@ struct ImplicitMesh
         const GpuArray<int, AMREX_SPACEDIM> is_periodic = this->geom.isPeriodicArray();
         const Real atol = this->abs_tol;
 
-        // STANDARD ELEMENT
-        const int p = this->std_elem.p;
-        const int std_elem_dom_Nq = this->std_elem.dom_Nq;
-        const int std_elem_bou_Nq = this->std_elem.bou_Nq;
+        // LEVEL SET APPROXIMATION ORDER
+        const int p = this->ls_std_elem.p;
+
+        // STANDARD ELEMENT QUADRATURE INFO
+        const int std_elem_dom_Nq = this->im_std_elem.dom_Nq;
+        const int std_elem_bou_Nq = this->im_std_elem.bou_Nq;
     
         // MULTIFAB INFO
         const int eType_n_comp = __DG_ELM_TYPE_N_COMP_PER_DOM__*N_DOM;
@@ -842,7 +848,7 @@ struct ImplicitMesh
         const Real vft = this->volume_fraction_threshold;
 
         // IMPLICIT MESH QUADRATURE ORDER
-        const int qo = this->space_q_im+1;
+        const int qo = this->space_q_ie+1;
         // ============================================================
         
         // VARIABLES ==================================================
@@ -902,7 +908,7 @@ struct ImplicitMesh
         // DOMAIN QUADRATURE POINTS
         {
             // QUADRATURE INFO
-            const int dom_Nq = this->std_elem.dom_Nq;
+            const int dom_Nq = std_elem_dom_Nq;
 
             // Resize memory
             this->eDomQuad_host_mem.resize((AMREX_SPACEDIM+1)*dom_Nq);
@@ -912,11 +918,11 @@ struct ImplicitMesh
             {
                 AMREX_D_TERM
                 (
-                    this->eDomQuad_host_mem[(AMREX_SPACEDIM+1)*q+0] = this->std_elem.dom_XI1q[q];,
-                    this->eDomQuad_host_mem[(AMREX_SPACEDIM+1)*q+1] = this->std_elem.dom_XI2q[q];,
-                    this->eDomQuad_host_mem[(AMREX_SPACEDIM+1)*q+2] = this->std_elem.dom_XI3q[q];
+                    this->eDomQuad_host_mem[(AMREX_SPACEDIM+1)*q+0] = this->im_std_elem.dom_XI1q[q];,
+                    this->eDomQuad_host_mem[(AMREX_SPACEDIM+1)*q+1] = this->im_std_elem.dom_XI2q[q];,
+                    this->eDomQuad_host_mem[(AMREX_SPACEDIM+1)*q+2] = this->im_std_elem.dom_XI3q[q];
                 )
-                this->eDomQuad_host_mem[(AMREX_SPACEDIM+1)*q+AMREX_SPACEDIM] = this->std_elem.dom_Wq[q];
+                this->eDomQuad_host_mem[(AMREX_SPACEDIM+1)*q+AMREX_SPACEDIM] = this->im_std_elem.dom_Wq[q];
             }
 
             // Update memory (nodes coordinates + weights)
@@ -926,7 +932,7 @@ struct ImplicitMesh
         // BOUNDARY QUADRATURE POINTS
         {
             // QUADRATURE INFO
-            const int bou_Nq = this->std_elem.bou_Nq;
+            const int bou_Nq = std_elem_bou_Nq;
 
             // Resize memory
             this->eBouQuad_host_mem.resize((AMREX_SPACEDIM+1)*bou_Nq*__DG_STD_ELEM_N_SPACE_BOUNDARIES__);
@@ -937,11 +943,11 @@ struct ImplicitMesh
             {
                 AMREX_D_TERM
                 (
-                    this->eBouQuad_host_mem[(AMREX_SPACEDIM+1)*bou_Nq*b+(AMREX_SPACEDIM+1)*q+0] = this->std_elem.bou_XI1q[bou_Nq*b+q];,
-                    this->eBouQuad_host_mem[(AMREX_SPACEDIM+1)*bou_Nq*b+(AMREX_SPACEDIM+1)*q+1] = this->std_elem.bou_XI2q[bou_Nq*b+q];,
-                    this->eBouQuad_host_mem[(AMREX_SPACEDIM+1)*bou_Nq*b+(AMREX_SPACEDIM+1)*q+2] = this->std_elem.bou_XI3q[bou_Nq*b+q];
+                    this->eBouQuad_host_mem[(AMREX_SPACEDIM+1)*bou_Nq*b+(AMREX_SPACEDIM+1)*q+0] = this->im_std_elem.bou_XI1q[bou_Nq*b+q];,
+                    this->eBouQuad_host_mem[(AMREX_SPACEDIM+1)*bou_Nq*b+(AMREX_SPACEDIM+1)*q+1] = this->im_std_elem.bou_XI2q[bou_Nq*b+q];,
+                    this->eBouQuad_host_mem[(AMREX_SPACEDIM+1)*bou_Nq*b+(AMREX_SPACEDIM+1)*q+2] = this->im_std_elem.bou_XI3q[bou_Nq*b+q];
                 )
-                this->eBouQuad_host_mem[(AMREX_SPACEDIM+1)*bou_Nq*b+(AMREX_SPACEDIM+1)*q+AMREX_SPACEDIM] = this->std_elem.bou_Wq[bou_Nq*b+q];
+                this->eBouQuad_host_mem[(AMREX_SPACEDIM+1)*bou_Nq*b+(AMREX_SPACEDIM+1)*q+AMREX_SPACEDIM] = this->im_std_elem.bou_Wq[bou_Nq*b+q];
             }
 
             // Update memory (nodes coordinates + weights)
@@ -1912,7 +1918,7 @@ else
             // LEVEL SETS
             {
                 const int ngr = this->dom_data_ngr;
-                const int n_comp = (this->std_elem.Np)*N_PHI;
+                const int n_comp = (this->ls_std_elem.Np)*N_PHI;
 
                 MultiFab real_mf;
                 
@@ -2041,7 +2047,7 @@ else
     void MakeFromScratch(const Real t, const int N_PHI, const int N_DOM, const IBVP_CLASS & IBVP, const bool im_flag = true)
     {
         // PARAMETERS =================================================
-        const int PHI_n_comp = (this->std_elem.Np)*N_PHI;
+        const int PHI_n_comp = (this->ls_std_elem.Np)*N_PHI;
         const int PHI_ngr = this->dom_data_ngr;
         // ============================================================
         
@@ -2050,7 +2056,7 @@ else
         this->PHI.define(this->cc_ba, this->dm, PHI_n_comp, PHI_ngr);
 
         // EVAL THE PROJECTION
-        ProjectLevelsetsOverGrid(t, this->geom, this->std_elem, N_PHI, this->PHI, IBVP);
+        ProjectLevelsetsOverGrid(t, this->geom, this->ls_std_elem, N_PHI, this->PHI, IBVP);
         // ============================================================
 
         // SET THE CORRESPONDENCE BETWEEN DOMAINS AND LEVELSETS =======

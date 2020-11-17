@@ -1018,7 +1018,7 @@ void EvalLimitedSlopesByLeastSquares(const Real t,
     int const * Dom2Phi_ptr = mesh.Dom2Phi.data();
 
     // DG
-    const int sp = mesh.std_elem.p;
+    const int sp = mesh.ls_std_elem.p;
 
     // NEAREST POINT SEARCH
     const int it_max = 10;
@@ -1562,19 +1562,25 @@ void Eval_dXdt_BouContrib(const Real t,
                             Fab2P(IBVP.gamma, X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_P);
                             for (int cu = 0; cu < FV_N_SOL; ++cu)
                             {
+                                /**/
                                 AMREX_D_TERM
                                 (
                                     P[cu] += dXP_fab(BF_i,BF_j,BF_k,0+AMREX_SPACEDIM*cu)*(x[0]-xc[0]);,
                                     P[cu] += dXP_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*cu)*(x[1]-xc[1]);,
                                     P[cu] += dXP_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-xc[2]);
                                 )
+                                /**/
+                                //P[cu] += dXP_fab(BF_i,BF_j,BF_k,dir+AMREX_SPACEDIM*cu)*(x[dir]-xc[dir]);
 
+                                /**/
                                 AMREX_D_TERM
                                 (
                                     nbr_P[cu] += dXP_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,0+AMREX_SPACEDIM*cu)*(x[0]-nbr_xc[0]);,
                                     nbr_P[cu] += dXP_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,1+AMREX_SPACEDIM*cu)*(x[1]-nbr_xc[1]);,
                                     nbr_P[cu] += dXP_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-nbr_xc[2]);
                                 )
+                                /**/
+                                //nbr_P[cu] += dXP_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,dir+AMREX_SPACEDIM*cu)*(x[dir]-nbr_xc[dir]);
                             }
 
                             // NUMERICAL FLUX FOR INTRAPHASE
@@ -1606,12 +1612,15 @@ void Eval_dXdt_BouContrib(const Real t,
                             Fab2P(IBVP.gamma, X_fab, BF_i, BF_j, BF_k, P);
                             for (int cu = 0; cu < FV_N_SOL; ++cu)
                             {
+                                /**/
                                 AMREX_D_TERM
                                 (
                                     P[cu] += dXP_fab(BF_i,BF_j,BF_k,0+AMREX_SPACEDIM*cu)*(x[0]-xc[0]);,
                                     P[cu] += dXP_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*cu)*(x[1]-xc[1]);,
                                     P[cu] += dXP_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-xc[2]);
                                 )
+                                /**/
+                                //P[cu] += dXP_fab(BF_i,BF_j,BF_k,dir+AMREX_SPACEDIM*cu)*(x[dir]-xc[dir]);
                             }
 
                             // NUMERICAL FLUX FOR GRID'S BOUNDARY
@@ -1732,7 +1741,7 @@ void Eval_dXdt(const Real t,
 
     // EVAL LIMITED SLOPES ============================================
     EvalLimitedSlopesByLeastSquares(t, mesh, X, dXP, IBVP);
-    ApplyBarthJespersenLimiter(t, mesh, X, dXP, IBVP);
+    //ApplyBarthJespersenLimiter(t, mesh, X, dXP, IBVP);
     // ================================================================
 
     // EVAL THE TIME DERIVATIVES ======================================

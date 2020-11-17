@@ -375,8 +375,33 @@ struct IDEAL_GAS_BASE
      *                  the state at the shock.
     */
     AMREX_GPU_HOST_DEVICE
-    void RiemannSolver_old(const amrex::Real * Un_left, const amrex::Real * Un_right,
+    void RiemannSolver(const amrex::Real * Un_left, const amrex::Real * Un_right,
                        amrex::Real * URP) const
+    {
+        amrex::Real rl, AMREX_D_DECL(ul, ut1l, ut2l), pl;
+        this->eval_primary_variables(Un_left, rl, AMREX_D_DECL(ul, ut1l, ut2l), pl);
+        
+        amrex::Real rr, AMREX_D_DECL(ur, ut1r, ut2r), pr;
+        this->eval_primary_variables(Un_right, rr, AMREX_D_DECL(ur, ut1r, ut2r), pr);
+
+        this->RiemannSolver_P(rl, AMREX_D_DECL(ul, ut1l, ut2l), pl,
+                              rr, AMREX_D_DECL(ur, ut1r, ut2r), pr,
+                              URP);
+    }
+    
+
+    /**
+     * \brief Solves the Riemann problem between left and right states in unit normal reference system.
+     *
+     * \param[in] (rhoL, u1L, u2L, u3L, pL): primary variables at the left of the shock.
+     * \param[in] (rhoR, u1R, u2R, u3R, pR): primary variables at the right of the shock.
+     * \param[out] URP: pointer to memory that will contain the solution of the Riemann problem, i.e.
+     *                  the state at the shock.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void RiemannSolver_P_old(const amrex::Real rhoL, AMREX_D_DECL(const amrex::Real u1L, const amrex::Real u2L, const amrex::Real u3L), const amrex::Real pL,
+                         const amrex::Real rhoR, AMREX_D_DECL(const amrex::Real u1R, const amrex::Real u2R, const amrex::Real u3R), const amrex::Real pR,
+                         amrex::Real * URP) const
     {
         // PARAMETERS -------------------------------------------------
         const amrex::Real g = this->gamma;
@@ -385,10 +410,10 @@ struct IDEAL_GAS_BASE
 
         // VARIABLES --------------------------------------------------
         // LEFT STATE
-        amrex::Real rhoL, AMREX_D_DECL(u1L, u2L, u3L), pL, aL;
+        amrex::Real aL;
 
         // RIGHT STATE
-        amrex::Real rhoR, AMREX_D_DECL(u1R, u2R, u3R), pR, aR;
+        amrex::Real aR;
 
         // INTERFACE STATE
         amrex::Real rhoI, AMREX_D_DECL(u1I, u2I, u3I), pI;
@@ -399,18 +424,14 @@ struct IDEAL_GAS_BASE
         amrex::Real pPV, pTS, ps, dps, aux_ps;
         amrex::Real gL, gR;
         
-        const int n_max_it = 20;
+        const int n_max_it = 10;
         int it;
         // ------------------------------------------------------------
 
         // EVAL THE LEFT AND RIGHT STATES -----------------------------
-        this->eval_primary_variables(Un_left, rhoL, AMREX_D_DECL(u1L, u2L, u3L), pL);
         aL = std::sqrt(g*pL/rhoL);
-        pL = std::max(1.0e-10, pL);
 
-        this->eval_primary_variables(Un_right, rhoR, AMREX_D_DECL(u1R, u2R, u3R), pR);
         aR = std::sqrt(g*pR/rhoR);
-        pR = std::max(1.0e-10, pR);
 
         // SOME AUXILIARY QUANTITIES
         dun = u1R-u1L;
@@ -638,31 +659,6 @@ struct IDEAL_GAS_BASE
         // ------------------------------------------------------------
     }
 
-    /**
-     * \brief Solves the Riemann problem between left and right states in unit normal reference system.
-     *
-     * \param[in] Un_left: pointer to memory containing the conserved variables at the left of the shock
-     *                     expressed in the unit normal reference system.
-     * \param[in] Un_right: pointer to memory containing the conserved variables at the right of the
-     *                      shock expressed in the unit normal reference system.
-     * \param[out] URP: pointer to memory that will contain the solution of the Riemann problem, i.e.
-     *                  the state at the shock.
-    */
-    AMREX_GPU_HOST_DEVICE
-    void RiemannSolver(const amrex::Real * Un_left, const amrex::Real * Un_right,
-                       amrex::Real * URP) const
-    {
-        amrex::Real rl, AMREX_D_DECL(ul, ut1l, ut2l), pl;
-        this->eval_primary_variables(Un_left, rl, AMREX_D_DECL(ul, ut1l, ut2l), pl);
-        
-        amrex::Real rr, AMREX_D_DECL(ur, ut1r, ut2r), pr;
-        this->eval_primary_variables(Un_right, rr, AMREX_D_DECL(ur, ut1r, ut2r), pr);
-
-        this->RiemannSolver_P(rl, AMREX_D_DECL(ul, ut1l, ut2l), pl,
-                              rr, AMREX_D_DECL(ur, ut1r, ut2r), pr,
-                              URP);
-    }
-    
     /**
      * \brief Solves the Riemann problem between left and right states in unit normal reference system.
      *
