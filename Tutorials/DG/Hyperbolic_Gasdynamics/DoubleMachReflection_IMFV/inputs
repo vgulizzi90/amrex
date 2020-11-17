@@ -15,8 +15,8 @@ time.n_steps = 50000
 
 # DISCRETIZATION ######################################################
 # GRID ================================================================
-grid.n_cells      = 64 32
-grid.max_box_size = 4 4
+grid.n_cells      = 512 256
+grid.max_box_size = 64 64
 grid.CFL = 0.3
 
 # LEVEL SET FUNCTIONS
