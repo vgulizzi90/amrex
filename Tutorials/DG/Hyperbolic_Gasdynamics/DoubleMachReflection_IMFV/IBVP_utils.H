@@ -1024,10 +1024,15 @@ void EvalLimitedSlopesByLeastSquares(const Real t,
     const int it_max = 10;
     const Real atol = 1.0e-3;
     const Real rtol = atol*AMREX_D_PICK(dx[0], dx[0]*dx[1], dx[0]*dx[1]*dx[2]);
+
+    // AUXILIARY MULTIFABS FOR LIMITING
+    MultiFab bounds(X.boxarray, X.distributionMap, 2*FV_N_SOL, X.n_grow);
     // ================================================================
 
     // INITIALIZATION
     dXP = 0.0;
+
+    bounds = 0.0;
     // ==============
 
     // COMPUTE LIMITED SLOPES =========================================
@@ -1041,6 +1046,8 @@ void EvalLimitedSlopesByLeastSquares(const Real t,
 
         Array4<Real const> const & X_fab = X.array(mfi);
         Array4<Real> const & dXP_fab = dXP.array(mfi);
+        
+        Array4<Real> const & b_fab = bounds.array(mfi);
 
         ParallelFor(bx,
         [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
@@ -1073,6 +1080,13 @@ void EvalLimitedSlopesByLeastSquares(const Real t,
                 )
                 // CURRENT ELEMENT SOLUTION
                 Fab2P(IBVP.gamma, X_fab, i, j, k, P);
+
+                // INIT THE BOUNDS
+                for (int ru = 0; ru < FV_N_SOL; ++ru)
+                {
+                    b_fab(i,j,k,ru) = P[ru];
+                    b_fab(i,j,k,ru+FV_N_SOL) = P[ru];
+                }
 
                 // FILL THE MATRIX S ----------------------------------
                 DG::linalg::zeros(AMREX_SPACEDIM*AMREX_SPACEDIM, S);
@@ -1196,6 +1210,13 @@ void EvalLimitedSlopesByLeastSquares(const Real t,
                     
                     // ADD CONTRIBUTION
                     Add2dP(P, y, nbr_P, y2L, y2R, dPL, dPR);
+
+                    // UPDATE THE BOUNDS
+                    for (int ru = 0; ru < FV_N_SOL; ++ru)
+                    {
+                        b_fab(i,j,k,ru) = std::min(b_fab(i,j,k,ru), nbr_P[ru]);
+                        b_fab(i,j,k,ru+FV_N_SOL) = std::max(b_fab(i,j,k,ru+FV_N_SOL), nbr_P[ru]);
+                    }
                 }
 
                 // NEIGHBORS
@@ -1263,6 +1284,13 @@ void EvalLimitedSlopesByLeastSquares(const Real t,
 
                         // ADD CONTRIBUTION
                         Add2dP(P, y, nbr_P, y2L, y2R, dPL, dPR);
+
+                        // UPDATE THE BOUNDS
+                        for (int ru = 0; ru < FV_N_SOL; ++ru)
+                        {
+                            b_fab(i,j,k,ru) = std::min(b_fab(i,j,k,ru), nbr_P[ru]);
+                            b_fab(i,j,k,ru+FV_N_SOL) = std::max(b_fab(i,j,k,ru+FV_N_SOL), nbr_P[ru]);
+                        }
                     }
                 }
                 // ----------------------------------------------------
@@ -1319,6 +1347,146 @@ void EvalLimitedSlopesByLeastSquares(const Real t,
                 for (int ru = 0; ru < FV_N_SOL; ++ru)
                 {
                     dXP_fab(i,j,k,d1+AMREX_SPACEDIM*ru) += EV[d2+d1*AMREX_SPACEDIM]*dP[ru+d2*FV_N_SOL];
+                }
+                // ----------------------------------------------------
+
+                // FIND THE RECONSTRUCTED MINIMUM AND MAXIMUM ---------
+                // We use dPL, dPR and dP as auxiliary variables.
+                // ----------------------------------------------------
+
+                for (int cu = 0; cu < FV_N_SOL; ++cu)
+                {
+                    dPL[cu] = P[cu];
+                    dPR[cu] = P[cu];
+                }
+
+                // MIRRORED IMAGE OF THE ELEMENT CENTROID
+                if (elm_is_large_or_extended)
+                {
+                    AMREX_D_TERM
+                    (
+                        nbr_xc[0] = 2.0*nxc[0]-xc[0];,
+                        nbr_xc[1] = 2.0*nxc[1]-xc[1];,
+                        nbr_xc[2] = 2.0*nxc[2]-xc[2];
+                    )
+
+                    for (int cu = 0; cu < FV_N_SOL; ++cu)
+                    {
+                        dP[cu] = P[cu];
+                        AMREX_D_TERM
+                        (
+                            dP[cu] += dXP_fab(i,j,k,0+AMREX_SPACEDIM*cu)*(nbr_xc[0]-xc[0]);,
+                            dP[cu] += dXP_fab(i,j,k,1+AMREX_SPACEDIM*cu)*(nbr_xc[1]-xc[1]);,
+                            dP[cu] += dXP_fab(i,j,k,2+AMREX_SPACEDIM*cu)*(nbr_xc[2]-xc[2]);
+                        )
+
+                        dPL[cu] = std::min(dPL[cu], dP[cu]);
+                        dPR[cu] = std::max(dPR[cu], dP[cu]);
+                    }
+                }
+
+                // NEIGHBORS
+                for (int n = 0; n < STENCIL_N_NBR; ++n)
+                {
+                    const int dir = n/2;
+                    const int nbr_i = i+aux_table_i[n];
+                    const int nbr_j = j+aux_table_j[n];
+                    const int nbr_k = k+aux_table_k[n];
+                    const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG::ELM_TYPE(dom));
+
+                    // NEIGHBOR ELEMENT CENTROID
+                    if (DG::ELM_IS_NOT_EMPTY(nbr_etype))
+                    {
+                        int BF_i, BF_j, BF_k;
+                        
+                        BF_i = nbr_i;
+                        BF_j = nbr_j;
+                        BF_k = nbr_k;
+
+                        if (DG::ELM_IS_SMALL(nbr_etype))
+                        {
+                            Real nbr_vf, nbr_nbr_vf;
+                            
+                            nbr_vf = eInfo_fab(nbr_i,nbr_j,nbr_k,DG::ELM_VOLUME_FRACTION(dom));
+
+                            for (int nn = 0; nn < STENCIL_N_NBR; ++nn)
+                            {
+                                if ((nn/2) != dir)
+                                {
+                                    int n_i = nbr_i+aux_table_i[nn];
+                                    int n_j = nbr_j+aux_table_j[nn];
+                                    int n_k = nbr_k+aux_table_k[nn];
+                                    nbr_nbr_vf = eInfo_fab(n_i,n_j,n_k,DG::ELM_VOLUME_FRACTION(dom));
+
+                                    if (nbr_nbr_vf > nbr_vf)
+                                    {
+                                        nbr_vf = nbr_nbr_vf;
+                                        BF_i = n_i;
+                                        BF_j = n_j;
+                                        BF_k = n_k;
+                                    }
+                                }
+                            }
+
+                            if ((BF_i == nbr_i) && (BF_j == nbr_j) && (BF_k == nbr_k))
+                            {
+                                BF_i = i;
+                                BF_j = j;
+                                BF_k = k;
+                            }
+                        }
+
+                        AMREX_D_TERM
+                        (
+                            nbr_xc[0] = eInfo_fab(BF_i,BF_j,BF_k,DG::ELM_CENTROID_X1(dom));,
+                            nbr_xc[1] = eInfo_fab(BF_i,BF_j,BF_k,DG::ELM_CENTROID_X2(dom));,
+                            nbr_xc[2] = eInfo_fab(BF_i,BF_j,BF_k,DG::ELM_CENTROID_X3(dom));
+                        )
+                    }
+
+                    for (int cu = 0; cu < FV_N_SOL; ++cu)
+                    {
+                        dP[cu] = P[cu];
+                        AMREX_D_TERM
+                        (
+                            dP[cu] += dXP_fab(i,j,k,0+AMREX_SPACEDIM*cu)*(nbr_xc[0]-xc[0]);,
+                            dP[cu] += dXP_fab(i,j,k,1+AMREX_SPACEDIM*cu)*(nbr_xc[1]-xc[1]);,
+                            dP[cu] += dXP_fab(i,j,k,2+AMREX_SPACEDIM*cu)*(nbr_xc[2]-xc[2]);
+                        )
+
+                        dPL[cu] = std::min(dPL[cu], dP[cu]);
+                        dPR[cu] = std::max(dPR[cu], dP[cu]);
+                    }
+                }
+                // ----------------------------------------------------
+
+                // APPLY BARTH-JESPERSEN LIMITER ----------------------
+                for (int cu = 0; cu < FV_N_SOL; ++cu)
+                {
+                    Real a, u0, u_lo, u_hi, b_lo, b_hi;
+                    
+                    a = 1.0;
+                    b_lo = b_fab(i,j,k,cu);
+                    b_hi = b_fab(i,j,k,cu+FV_N_SOL);
+
+                    u0 = P[cu];
+                    u_lo = dPL[cu];
+                    u_hi = dPR[cu];
+
+                    if ((u_lo < b_lo) && (u_lo != u0))
+                    {
+                        a = std::min(a, ((b_lo-u0)/(u_lo-u0)));
+                    }
+
+                    if ((u_hi > b_hi) && (u_hi != u0))
+                    {
+                        a = std::min(a, ((b_hi-u0)/(u_hi-u0)));
+                    }
+
+                    for (int d = 0; d < AMREX_SPACEDIM; ++d)
+                    {
+                        dXP_fab(i,j,k,d+AMREX_SPACEDIM*cu) *= a;
+                    }
                 }
                 // ----------------------------------------------------
             }
