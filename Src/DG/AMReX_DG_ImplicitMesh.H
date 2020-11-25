@@ -376,12 +376,11 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void NEAREST_POINT(const Real * prob_lo, const Real * dx,
                    DG_PHI_space_BFX & phi,
                    const Real * x, int & n_i, int & n_j, int & n_k,
-                   Real * nx,
+                   Real * cell_lo, Real * cell_hi, Real * nx,
                    const Real tol, const int it_max)
 {
     int it;
     Real err;
-    Real cell_lo[AMREX_SPACEDIM], cell_hi[AMREX_SPACEDIM];
     Real PHI, grad_PHI[AMREX_SPACEDIM];
     Real d1[AMREX_SPACEDIM], d2[AMREX_SPACEDIM], tmp, tmp2;
 
@@ -484,6 +483,22 @@ void NEAREST_POINT(const Real * prob_lo, const Real * dx,
 
         it += 1;
     }
+
+    AMREX_D_TERM
+    (
+        cell_lo[0] = prob_lo[0]+n_i*dx[0];,
+        cell_lo[1] = prob_lo[1]+n_j*dx[1];,
+        cell_lo[2] = prob_lo[2]+n_k*dx[2];
+    )
+    AMREX_D_TERM
+    (
+        cell_hi[0] = cell_lo[0]+dx[0];,
+        cell_hi[1] = cell_lo[1]+dx[1];,
+        cell_hi[2] = cell_lo[2]+dx[2];
+    )
+
+    phi.set_fab_ptrs(n_i, n_j, n_k);
+    phi.set_support(cell_lo, cell_hi);
 }
 
 /**
