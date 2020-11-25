@@ -531,6 +531,8 @@ void FillInvalidCells(const Real t,
             bool elm_is_not_isolated;
             Real cc[AMREX_SPACEDIM], ncc[AMREX_SPACEDIM], nbr_x[AMREX_SPACEDIM], un[AMREX_SPACEDIM];
             int nbr_i, nbr_j, nbr_k;
+            short nbr_etype;
+            int nbr_BF_i, nbr_BF_j, nbr_BF_k;
             Real nbr_cell_lo[AMREX_SPACEDIM], nbr_cell_hi[AMREX_SPACEDIM];
             Real nbr_P[FV_N_SOL], bcs_P[FV_N_SOL];
 
@@ -548,7 +550,7 @@ void FillInvalidCells(const Real t,
                     nbr_i = i+aux_table_i[n];
                     nbr_j = j+aux_table_j[n];
                     nbr_k = k+aux_table_k[n];
-                    const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG::ELM_TYPE(dom));
+                    nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG::ELM_TYPE(dom));
                     if (DG::ELM_IS_VALID(nbr_etype)) elm_is_not_isolated = true;
                 }   
             }
@@ -594,22 +596,16 @@ void FillInvalidCells(const Real t,
                     nbr_j = (int) std::floor((nbr_x[1]-prob_lo[1])/dx[1]);,
                     nbr_k = (int) std::floor((nbr_x[2]-prob_lo[2])/dx[2]);
                 )
-                Fab2P(IBVP.gamma, X_fab, nbr_i, nbr_j, nbr_k, nbr_P);
+
+                // SUPPORT OF THE BASIS FUNCTIONS (NEIGHBOR CELL)
+                nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG::ELM_TYPE(dom));
+                DG::BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                Fab2P(IBVP.gamma, X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_P);
 
                 IBVP.F_PHI_BCS(t, ncc, un, nbr_P, bcs_P);
-                
 
-{
-Print() << i << ", " << j << ", " << k << " -> " << nbr_i << "," << nbr_j << "," << nbr_k << std::endl;
-Print() << "cc: "; DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, cc);
-Print() << "ncc: "; DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, ncc);
-Print() << "nbr_x: "; DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_x);
-Print() << "un: "; DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, un);
-Print() << "nbr_P: "; DG::IO::PrintRealArray2D(1, FV_N_SOL, nbr_P);
-Print() << "bcs_P: "; DG::IO::PrintRealArray2D(1, FV_N_SOL, bcs_P);
-Print() << "HERE WE ARE - FillInvalidCells" << std::endl;
-exit(-1);
-}
+                P2Fab(IBVP.gamma, bcs_P, i, j, k, X_fab);
             }
         });
         Gpu::synchronize();
@@ -1218,6 +1214,44 @@ void EvalLimitedSlopesByLeastSquares0(const Real t,
     // GRID
     const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+    // NEIGHBORS INFO FOR LEAST-SQUARE SLOPE LIMITING
+    const GpuArray<int, STENCIL_N_NBR> aux_table_i =
+    {
+#if (AMREX_SPACEDIM == 1)
+        -1, +1
+#endif
+#if (AMREX_SPACEDIM == 2)
+        -1, +1, 0, 0
+#endif
+#if (AMREX_SPACEDIM == 3)
+        -1, +1, 0, 0, 0, 0
+#endif
+    };
+    const GpuArray<int, STENCIL_N_NBR> aux_table_j =
+    {
+#if (AMREX_SPACEDIM == 1)
+        0, 0
+#endif
+#if (AMREX_SPACEDIM == 2)
+        0, 0, -1, +1
+#endif
+#if (AMREX_SPACEDIM == 3)
+        0, 0, -1, +1, 0, 0
+#endif
+    };
+    const GpuArray<int, STENCIL_N_NBR> aux_table_k = 
+    {
+#if (AMREX_SPACEDIM == 1)
+        0, 0
+#endif
+#if (AMREX_SPACEDIM == 2)
+        0, 0, 0, 0
+#endif
+#if (AMREX_SPACEDIM == 3)
+        0, 0, 0, 0, -1, +1
+#endif
+    };
     
     // DOMAINS
     const int dom = 0;
@@ -1238,6 +1272,65 @@ void EvalLimitedSlopesByLeastSquares0(const Real t,
     dXP = 0.0;
     // ==============
 
+    // COMPUTE LIMITED SLOPES =========================================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
+        Array4<Real const> const & PHI_fab = mesh.PHI.array(mfi);
+
+        Array4<Real const> const & X_fab = X.array(mfi);
+        Array4<Real> const & dXP_fab = dXP.array(mfi);
+
+        ParallelFor(bx,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = eType_fab(i,j,k,DG::ELM_TYPE(dom));
+            const bool elm_is_valid = DG::ELM_IS_VALID(etype);
+
+            if (elm_is_valid)
+            {
+                // LOCAL VARIABLES
+                Real xc[AMREX_SPACEDIM];
+                Real P[FV_N_SOL], nbr_P[FV_N_SOL];
+                Real S[AMREX_SPACEDIM*AMREX_SPACEDIM];
+                Real y[AMREX_SPACEDIM], y2L[AMREX_SPACEDIM], y2R[AMREX_SPACEDIM];
+                Real dPL[FV_N_SOL*AMREX_SPACEDIM], dPR[FV_N_SOL*AMREX_SPACEDIM], dP[FV_N_SOL*AMREX_SPACEDIM];
+                Real dCL[FV_N_SOL], dCR[FV_N_SOL], dC[FV_N_SOL];
+
+                // LEVEL SET
+                DG::DG_PHI_space_BFX phi(sp, PHI_fab);
+                phi.set_u(Dom2Phi_ptr[2*dom]);
+
+                // CURRENT ELEMENT CENTROID
+                AMREX_D_TERM
+                (
+                    xc[0] = eInfo_fab(i,j,k,DG::ELM_CENTROID_X1(dom));,
+                    xc[1] = eInfo_fab(i,j,k,DG::ELM_CENTROID_X2(dom));,
+                    xc[2] = eInfo_fab(i,j,k,DG::ELM_CENTROID_X3(dom));
+                )
+                // CURRENT ELEMENT SOLUTION
+                Fab2P(IBVP.gamma, X_fab, i, j, k, P);
+
+
+if (DG::ELM_IS_ENTIRE(etype) && (P[1] > 0.0) && (i > 54))
+{
+Print() << "(" << i << "," << j << "," << k << ")" << std::endl;
+Print() << "xc: "; DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, xc);
+Print() << "P: "; DG::IO::PrintRealArray2D(1, FV_N_SOL, P);
+exit(-1);
+}
+
+            }
+        });
+        Gpu::synchronize();
+    }
+    dXP.FillBoundary(mesh.geom.periodicity());
+    
+
     // CHECK ==========================================================
     if (dXP.contains_nan())
     {
@@ -1248,11 +1341,6 @@ void EvalLimitedSlopesByLeastSquares0(const Real t,
         Abort(msg);
     }
     // ================================================================
-
-
-Print() << "HERE WE ARE - EvalLimitedSlopesByLeastSquares0" << std::endl;
-exit(-1);
-
 }
 
 /**

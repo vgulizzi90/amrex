@@ -74,9 +74,9 @@ void PrintReals(const int rank, const MPI_Comm comm, const int n, const Real * x
 {
     for (int i = 0; i < (n-1); ++i)
     {
-        Print(rank, comm, os) << std::scientific << std::setprecision(8) << std::setw(15) << std::showpos << x[i] << " ";
+        Print(rank, comm, os) << std::scientific << std::setprecision(11) << std::setw(18) << std::showpos << x[i] << " ";
     }
-    Print(rank, comm, os) << std::scientific << std::setprecision(8) << std::setw(15) << std::showpos << x[n-1];
+    Print(rank, comm, os) << std::scientific << std::setprecision(11) << std::setw(18) << std::showpos << x[n-1];
 }
 
 /**

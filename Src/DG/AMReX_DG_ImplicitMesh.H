@@ -536,6 +536,22 @@ std::string ELM_TYPE_DESCRIPTION(const int etype)
 }
 
 /**
+ * \brief Given the etype, return true if the element is entire, false otherwise.
+ *
+ * \param[in] etype: element type.
+ *
+ * \return true if the element is entire, false otherwise.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_ENTIRE(const int etype)
+{
+    const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
+
+    return elm_is_entire;
+}
+
+/**
  * \brief Given the etype, return true if the element is large, false otherwise.
  *
  * \param[in] etype: element type.
