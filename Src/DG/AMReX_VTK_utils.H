@@ -8,6 +8,7 @@
 
 #include <AMReX_Vector.H>
 #include <AMReX_PlotFileUtil.H>
+#include <AMReX_DG_IO.H>
 
 #ifndef AMREX_VTK_UTILS_H_
 #define AMREX_VTK_UTILS_H_
@@ -45,30 +46,6 @@ const std::string Cell_offs_t_description = "Int"+std::to_string(sizeof(Cell_off
 const std::string Cell_type_t_description = "UInt"+std::to_string(sizeof(Cell_type_t)*8);
 // ####################################################################
 
-// AUXILIARY FUNCTIONS ################################################
-std::string MakeLocalOutputFilename(const std::string & filename_root,
-                                    const std::string & file_fmt,
-                                    const int n, 
-                                    const int n_steps);
-
-std::string MakeGlobalOutputFilename(const std::string & filename_root,
-                                     const std::string & file_fmt,
-                                     const int n,
-                                     const int n_steps);
-
-std::string MakeLocalOutputFilepath(const std::string & folderpath,
-                                    const std::string & filename_root,
-                                    const std::string & file_fmt,
-                                    const int n,
-                                    const int n_steps);
-
-std::string MakeGlobalOutputFilepath(const std::string & folderpath,
-                                     const std::string & filename_root,
-                                     const std::string & file_fmt,
-                                     const int n, 
-                                     const int n_steps);
-// ####################################################################
-
 // VTU CELLS ##########################################################
 Gpu::ManagedVector<int> GriddedLine_Connectivity(const int ne);
 Gpu::ManagedVector<int> GriddedQuad_Connectivity(const int ne);
@@ -76,10 +53,10 @@ Gpu::ManagedVector<int> GriddedHexahedron_Connectivity(const int ne);
 // ####################################################################
 
 // VTU OUTPUT #########################################################
-void PrintHeaderFile_VTU(const std::string & folderpath,
-                         const std::string & filename_root,
+void PrintHeaderFile_VTU(const std::string & folderpath_root,
                          const int n,
                          const int n_steps,
+                         const std::string & filename_root,
                          const Vector<std::string> & nodal_fields_names,
                          const Vector<std::string> & cell_fields_names);
 

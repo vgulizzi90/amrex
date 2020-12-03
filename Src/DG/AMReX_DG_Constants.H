@@ -16,7 +16,7 @@ namespace DG
 // CONSTANTS ##########################################################
 #define __DG_STD_ELEM_N_SPACE_BOUNDARIES__ (2*AMREX_SPACEDIM)
 
-#define __DG_PHI_MAX_SPACE_p__ 3
+#define __DG_PHI_MAX_SPACE_p__ 8
 #if (AMREX_SPACEDIM == 1)
 #define __DG_PHI_MAX_SPACE_Np__ (1+__DG_PHI_MAX_SPACE_p__)
 #endif

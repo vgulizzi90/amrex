@@ -7,8 +7,8 @@
 */
 
 #include <AMReX_DG_Constants.H>
-#include <AMReX_VTK_utils.H>
 #include <AMReX_DG_IO.H>
+#include <AMReX_VTK_utils.H>
 #include <AMReX_DG_Quadrature.H>
 #include <AMReX_DG_BasisFunctions.H>
 #include <AMReX_DG_LinAlg.H>
@@ -19,4 +19,5 @@
 #include <AMReX_DG_ImplicitMesh.H>
 #include <AMReX_DG_MatrixFactory.H>
 #include <AMReX_DG_Solution.H>
+#include <AMReX_DG_Solution_Hyperbolic.H>
 #include <AMReX_DG_Solution_Output.H>

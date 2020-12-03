@@ -21,6 +21,91 @@ namespace FV
 {
 namespace IdealGas
 {
+/**
+ * \brief Set initial conditions over the implicitly-defined mesh.
+ *
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[inout] X: a MultiFab object that, on exit, will contain the coefficients of the basis
+ *                  functions for the projected initial conditions. Must be a valid MultiFab.
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  void F_SOL0(const Real * x, Real * SOL) const;
+ *
+*/
+template <typename IBVP_CLASS>
+void SetInitialConditions(const DG::ImplicitMesh & mesh,
+                          MultiFab & X,
+                          const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("SetInitialConditions(const DG::ImplicitMesh &, MultiFab &, ....)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS =====================================================
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+    // DOMAIN
+    const int dom = 0;
+    // ================================================================
+
+    // INITIALIZATION =================================================
+    X = 0.0;
+    // ================================================================
+
+    // EVAL THE PROJECTION ============================================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
+
+        Array4<Real> const & X_fab = X.array(mfi);
+
+        ParallelFor(bx,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+        {
+            // LOCAL PARAMETERS
+            const short etype = eType_fab(i,j,k,DG::ELM_TYPE(dom));
+
+            // LOCAL VARIABLES
+            Real xc[AMREX_SPACEDIM];
+            Real SOL[FV_N_SOL];
+
+            if (DG::ELM_IS_VALID(etype))
+            {
+                AMREX_D_TERM
+                (
+                    xc[0] = eInfo_fab(i,j,k,DG::ELM_CENTROID_X1(dom));,
+                    xc[1] = eInfo_fab(i,j,k,DG::ELM_CENTROID_X2(dom));,
+                    xc[2] = eInfo_fab(i,j,k,DG::ELM_CENTROID_X3(dom));
+                )
+            }
+            else
+            {
+                AMREX_D_TERM
+                (
+                    xc[0] = prob_lo[0]+(i+0.5)*dx[0];,
+                    xc[1] = prob_lo[1]+(j+0.5)*dx[1];,
+                    xc[2] = prob_lo[2]+(k+0.5)*dx[2];
+                )
+            }
+
+            IBVP.F_SOL0(xc, SOL);
+
+            for (int ru = 0; ru < FV_N_SOL; ++ru)
+            {
+                X_fab(i,j,k,ru) = SOL[ru];
+            }
+        });
+        Gpu::synchronize();
+    }
+    X.FillBoundary(mesh.geom.periodicity());
+    // ================================================================
+}
 
 /**
  * \brief Extract the conserved variables state vector from a fab. 
@@ -1500,6 +1585,10 @@ void EvalLimitedSlopesByLeastSquares1(const Real t,
                                       const IBVP_CLASS & IBVP)
 {
     // PARAMETERS =====================================================
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
     // NEIGHBORS INFO FOR LEAST-SQUARE SLOPE LIMITING
     const GpuArray<int, STENCIL_N_NBR> aux_table_i =
     {
@@ -1589,7 +1678,7 @@ void EvalLimitedSlopesByLeastSquares1(const Real t,
                 Fab2P(IBVP.gamma, X_fab, i, j, k, P);
 
 /*
-if (i == 62 && j == 21)
+if (i == 45 && j == 1)
 {
 Print() << std::endl << "(" << i << "," << j << "," << k << ")" << std::endl;
 Print() << "t: " << t << std::endl;
@@ -1622,7 +1711,14 @@ Print() << "P: "; DG::IO::PrintRealArray2D(1, FV_N_SOL, P);
                     }
                     else
                     {
-                        continue;
+                        n_valid_nbr += 1;
+
+                        AMREX_D_TERM
+                        (
+                            nbr_xc[0] = prob_lo[0]+(nbr_i+0.5)*dx[0];,
+                            nbr_xc[1] = prob_lo[1]+(nbr_j+0.5)*dx[1];,
+                            nbr_xc[2] = prob_lo[2]+(nbr_k+0.5)*dx[2];
+                        )
                     }
 
                     // ADD CONTRIBUTION FOR LEAST-SQUARE RECONSTRUCTION
@@ -1674,13 +1770,18 @@ Print() << "P: "; DG::IO::PrintRealArray2D(1, FV_N_SOL, P);
                         }
                         else
                         {
-                            continue;
+                            AMREX_D_TERM
+                            (
+                                nbr_xc[0] = prob_lo[0]+(nbr_i+0.5)*dx[0];,
+                                nbr_xc[1] = prob_lo[1]+(nbr_j+0.5)*dx[1];,
+                                nbr_xc[2] = prob_lo[2]+(nbr_k+0.5)*dx[2];
+                            )
                         }
                         // NEIGHBOR ELEMENT SOLUTION
                         Fab2P(IBVP.gamma, X_fab, nbr_i, nbr_j, nbr_k, nbr_P);
 
 /*
-if (i == 62 && j == 21)
+if (i == 45 && j == 1)
 {
 Print() << "(" << nbr_i << "," << nbr_j << "," << nbr_k << ")" << std::endl;
 Print() << "nbr_xc: "; DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_xc);
@@ -1775,7 +1876,7 @@ for (int cu = 0; cu < FV_N_SOL; ++cu)
 }
 /**/
 /*
-if (i == 62 && j == 21)
+if (i == 45 && j == 1)
 {
 Print() << "n_valid_nbr: " << n_valid_nbr << std::endl;
 Print() << "S: " << std::endl; DG::IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, S);
@@ -2849,7 +2950,7 @@ void TakeTimeStep(const Real dt, const Real t,
 
     // RK2 STEP 1 =====================================================
     FillBoundaryCells(t, mesh, X_old, IBVP);
-#if (FV_LIMITING == FV_LIMITING_0)
+#if ((FV_LIMITING == FV_LIMITING_0) || (FV_LIMITING == FV_LIMITING_1))
     FillInvalidCells(t, mesh, X_old, IBVP);
 #endif
 
@@ -2862,7 +2963,7 @@ void TakeTimeStep(const Real dt, const Real t,
 
     // RK2 STEP 2 =====================================================
     FillBoundaryCells(t, mesh, X1, IBVP);
-#if (FV_LIMITING == FV_LIMITING_0)
+#if ((FV_LIMITING == FV_LIMITING_0) || (FV_LIMITING == FV_LIMITING_1))
     FillInvalidCells(t, mesh, X1, IBVP);
 #endif
 

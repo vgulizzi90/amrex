@@ -57,17 +57,40 @@ struct DG_space_BF
     p{p_},
     Np{AMREX_D_PICK((1+p_),(1+p_)*(1+p_),(1+p_)*(1+p_)*(1+p_))},
     lo{nullptr}, hi{nullptr}
-    {}
+    {
+#ifdef AMREX_DEBUG
+        this->self_check();
+#endif
+    }
 
     AMREX_GPU_HOST_DEVICE
     DG_space_BF(const int p_, const Real * lo_, const Real * hi_):
     p{p_},
     Np{AMREX_D_PICK((1+p_),(1+p_)*(1+p_),(1+p_)*(1+p_)*(1+p_))},
     lo{lo_}, hi{hi_}
-    {}
+    {
+#ifdef AMREX_DEBUG
+        this->self_check();
+#endif
+    }
     // ================================================================
 
     // MISC ===========================================================
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void self_check() const
+    {
+        if (p > DG_MAX_p)
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_DG_BFX.H - DG_space_BF.self_check()\n";
+            msg += "| The order of the basis functions exceeds the maximum allowed number.\n";
+            msg += "| p       : "+std::to_string(p)+".\n";
+            msg += "| DG_MAX_p: "+std::to_string(DG_MAX_p)+".\n";
+            Abort(msg);
+        }
+    }
+    
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void set_support(const Real * lo_, const Real * hi_)
     {
@@ -381,10 +404,29 @@ struct algoim_DG_space_BFX
     i{i_}, j{j_}, k{k_},
     u{-1},
     sgn{-1.0}
-    {}
+    {
+#ifdef AMREX_DEBUG
+        this->self_check();
+#endif
+    }
     // ================================================================
 
     // MISC ===========================================================
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void self_check() const
+    {
+        if (p > DG_MAX_p)
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_DG_BFX.H - algoim_DG_space_BFX.self_check()\n";
+            msg += "| The order of the basis functions exceeds the maximum allowed number.\n";
+            msg += "| p       : "+std::to_string(p)+".\n";
+            msg += "| DG_MAX_p: "+std::to_string(DG_MAX_p)+".\n";
+            Abort(msg);
+        }
+    }
+
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void set_fab_ptrs(const int i_, const int j_, const int k_)
     {

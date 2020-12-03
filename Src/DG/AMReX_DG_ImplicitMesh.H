@@ -584,6 +584,22 @@ bool ELM_IS_SMALL(const int etype)
 }
 
 /**
+ * \brief Given the etype, return true if the element is empty, false otherwise.
+ *
+ * \param[in] etype: element type.
+ *
+ * \return true if the element is empty, false otherwise.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_EMPTY(const int etype)
+{
+    const bool elm_is_empty = (etype == __DG_ELM_TYPE_EMPTY__);
+
+    return elm_is_empty;
+}
+
+/**
  * \brief Given the etype, return true if the element is not empty, false otherwise.
  *
  * \param[in] etype: element type.
@@ -2380,11 +2396,21 @@ else
             Print() << "|  - Computed via bou. quadrature: " << computed_volume_div[dom] << ", error (%): " << err << std::endl;
 
             Print() << "|  Surface: " << std::endl;
-            
-            Print() << "|  - Reference: " << exact_surface[dom] << std::endl;
 
-            err = 100.0*std::abs(computed_surface[dom]-exact_surface[dom])/exact_surface[dom];
-            Print() << "|  - Computed: " << computed_surface[dom] << ", error (%): " << err << std::endl;
+            if (exact_surface[dom] == 0.0)
+            {
+                Print() << "|  - Reference: " << exact_surface[dom] << std::endl;
+
+                err = std::abs(computed_surface[dom]-exact_surface[dom]);
+                Print() << "|  - Computed: " << computed_surface[dom] << ", error: " << err << std::endl;
+            }
+            else
+            {
+                Print() << "|  - Reference: " << exact_surface[dom] << std::endl;
+
+                err = 100.0*std::abs(computed_surface[dom]-exact_surface[dom])/exact_surface[dom];
+                Print() << "|  - Computed: " << computed_surface[dom] << ", error (%): " << err << std::endl;
+            }
         }
         Print() << std::endl;
         // ============================================================

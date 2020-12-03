@@ -23,7 +23,7 @@ mesh.CFL = 0.9
 #
 #       CFL := CFL/(1+2*p)
 #
-#       where p is the order of the basis functions (see below).
+#       where p is the order of the dG basis functions (see below).
 # =====================================================================
 
 

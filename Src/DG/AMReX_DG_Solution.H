@@ -404,6 +404,182 @@ void ProjectInitialConditions(const ImplicitMesh & mesh,
     ProjectInitialConditions(mesh, matfactory, N_SOL, Sol2Dom, X, IBVP);
 }
 
+/**
+ * \brief Compute the error between the exact solution and the dG solution.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
+ *                        mesh.
+ * \param[in] N_DOM: number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
+ *               unknown solution fields.
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  Real F_ERROR(const int dom, const Real t, const Real * x, const Real * SOL, Real & err_x, Real & norm_x) const;
+ *
+ * \return the error.
+*/
+template <typename IBVP_CLASS>
+Real EvalError(const Real t,
+               const ImplicitMesh & mesh,
+               const MatrixFactory & matfactory,
+               const int N_DOM,
+               const int N_SOL,
+               const MultiFab & X,
+               const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("EvalError(const Real, const ImplicitMesh &, ....)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS =====================================================
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+    // IMPLICIT MESH
+#ifdef AMREX_USE_CUDA
+    const Real * eDomQuad_mem_ptr = mesh.eDomQuad_device_mem.data();
+#else
+    const Real * eDomQuad_mem_ptr = mesh.eDomQuad_host_mem.data();
+#endif
+
+    // DG
+    const int sp = matfactory.std_elem.p;
+    // ================================================================
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    if (N_SOL > __DG_MAX_N_SOL__)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg +=  "ERROR: AMReX_DG_Solution.H - EvalError\n";
+        msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
+        msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
+        msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
+        Abort(msg);
+    }
+    // ================================================================
+
+    // VARIABLES ======================================================
+    MultiFab err(X.boxarray, X.distributionMap, 2*N_DOM, 0);
+    err = 0.0;
+
+    Real total_error = 0.0;
+    // ================================================================
+
+    // EVAL THE MINIMUM TIME STEP =====================================
+    for (MFIter mfi(err); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+        Array4<int const> const & eDomQuad_Nq_fab = mesh.eDomQuad_Nq.array(mfi);
+        Array4<long const> const & eDomQuad_pos_fab = mesh.eDomQuad_pos.array(mfi);
+        
+        Array4<Real const> const & X_fab = X.array(mfi);
+        Array4<Real> const & err_fab = err.array(mfi);
+
+        ParallelFor(bx, N_DOM,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+
+            if (ELM_IS_NOT_EMPTY(etype))
+            {
+                // LOCAL PARAMETERS
+                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                   prob_lo[1]+j*dx[1],
+                                                                   prob_lo[2]+k*dx[2])};
+                const int dom_Nq = eDomQuad_Nq_fab(i,j,k,ELM_DOM_QUAD_NQ(dom));
+                const long pos = eDomQuad_pos_fab(i,j,k,ELM_DOM_QUAD_POS(dom));
+                const Real * xptr = &eDomQuad_mem_ptr[pos];
+                
+                // LOCAL VARIABLES
+                int BF_i, BF_j, BF_k;
+                Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
+                Real x[AMREX_SPACEDIM], w;
+                Real SOL[__DG_MAX_N_SOL__];
+                Real err_x, norm_x;
+
+                // SUPPORT OF THE BASIS FUNCTIONS
+                BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
+
+                // SOLUTION
+                DG_SOL_space_BFX sol(sp, BF_lo, BF_hi, X_fab, BF_i, BF_j, BF_k);
+
+                // LOOP OVER THE QUADRATURE POINTS
+                for (int q = 0; q < dom_Nq; ++q)
+                {
+                    // QUADRATURE POINT
+                    const long x_pos = (AMREX_SPACEDIM+1)*q;
+                    AMREX_D_TERM
+                    (
+                        x[0] = xptr[x_pos+0]+cell_lo[0];,
+                        x[1] = xptr[x_pos+1]+cell_lo[1];,
+                        x[2] = xptr[x_pos+2]+cell_lo[2];
+                    )
+                    w = xptr[x_pos+AMREX_SPACEDIM];
+
+                    // EVAL SOLUTION
+                    sol.eval_BF_only_table(x);
+                    sol.eval_unsafe(0, N_SOL, SOL);
+
+                    // EVAL ERROR
+                    IBVP.F_ERROR(dom, t, x, SOL, err_x, norm_x);
+
+                    err_fab(i,j,k,2*dom) += norm_x*w;
+                    err_fab(i,j,k,2*dom+1) += err_x*w;
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+
+    total_error = err.sum(1)/err.sum(0);
+    for (int dom = 1; dom < N_DOM; ++dom)
+    {
+        total_error += err.sum(2*dom+1)/err.sum(2*dom);
+    }
+    // ================================================================
+
+    return total_error;
+}
+
+/**
+ * \brief Compute the error between the exact solution and the dG solution.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
+ *                        mesh.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
+ *               unknown solution fields.
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  Real F_ERROR(const int dom, const Real t, const Real * x, const Real * SOL, Real & err_x, Real & norm_x) const;
+ *
+ * \return the error.
+*/
+template <typename IBVP_CLASS>
+Real EvalError(const Real t,
+               const ImplicitMesh & mesh,
+               const MatrixFactory & matfactory,
+               const int N_SOL,
+               const MultiFab & X,
+               const IBVP_CLASS & IBVP)
+{
+    const int N_DOM = 1;
+    return EvalError(t, mesh, matfactory, N_DOM, N_SOL, X, IBVP);
+}
+
 } // namespace DG
 } // namespace amrex
 

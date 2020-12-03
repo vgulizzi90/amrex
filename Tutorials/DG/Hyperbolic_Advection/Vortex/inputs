@@ -1,61 +1,45 @@
 # SPACE ###############################################################
-space.is_periodic = 0 0
-space.lo          = 0.0 0.0
-space.hi          = 7.5 3.75
+space.is_periodic = 1 1 1
+space.lo          = 0.0 0.0 0.0
+space.hi          = 1.0 1.0 1.0
 #######################################################################
 
 
 
 # TIME ################################################################
-#time.T = 1.2e-5
-time.T = 0.2921464429
-time.n_steps = 50000
+time.T = 2.0
+time.n_steps = 10000
 #######################################################################
 
 
 
 # DISCRETIZATION ######################################################
 # GRID ================================================================
-grid.n_cells      = 64 32
-grid.max_box_size = 4 4
-grid.CFL = 0.3
+grid.n_cells      = 16 16 16
+grid.max_box_size = 4 4 4
+grid.CFL = 0.7
 
 # LEVEL SET FUNCTIONS
 grid.space_p = 1
 grid.space_q = 1
 # =====================================================================
+# NOTE: Remember that the CFL will be scaled as follows:
+#
+#       CFL := CFL/(1+2*p)
+#
+#       where p is the order of the dG basis functions (see below).
+# =====================================================================
 
 # IMPLICITLY-DEFINED MESH =============================================
-implicit_mesh.space_q = 0
-implicit_mesh.space_q_ie = 0
-
-implicit_mesh.volume_fraction_threshold = 0.3
+implicit_mesh.space_q = 4
 # =====================================================================
 
 # DISCONTINUOUS GALERKIN METHOD =======================================
 dG.space_p = 0
 # =====================================================================
-# NOTE: In order to activate finite volumes with the implicitly-defined
-#       mesh, it is necessary to specify: dG.space_p = 0.
+# NOTE: Although the polynomial order p is set here, the code will test
+#       p = 0, 1, 2, 3.
 # =====================================================================
-#######################################################################
-
-
-
-# PROBLEM #############################################################
-#problem.params = 3.61e-4 0.0 7.42e6 4.2041015625 3.29e-5 0.0 1.95e4 5.2 49.0
-problem.params = 10.9726443769 0.0 380.5128205128 4.2041015625 1.0 0.0 1.0 5.2 49.0
-#######################################################################
-# NOTE: params contains the left_state, right_state, and some geometry
-#       information which should be input as follows:
-#
-#       rhoL, uL, pL, Sx, rhoR, uR, pR, Px, theta (degree)
-#
-#       where:
-#       - Sx is the shock location
-#       - Px is the x coordinate of the point P(Px,0) on the plane
-#       - theta is the plane orientation.
-#
 #######################################################################
 
 

@@ -12,113 +12,6 @@ namespace amrex
 {
 namespace VTK
 {
-
-// AUXILIARY FUNCTIONS ################################################
-/**
- * \brief Make a string containing the filename_root suffixed with rank, time step index and format.
- *
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the local rank and the time step.
- * \param[in] file_fmt: filename format appended to the filename.
- * \param[in] n: time step index.
- * \param[in] n_steps: maximum number of time steps.
- *
- * \return a string containing the output filename.
-*/
-std::string MakeLocalOutputFilename(const std::string & filename_root,
-                                    const std::string & file_fmt,
-                                    const int n, 
-                                    const int n_steps)
-{
-    const int proc_id = ParallelDescriptor::MyProc();
-
-    int ndigits;
-    std::string filename;
-
-    ndigits = 1;
-    while (std::pow(10, ndigits) < n_steps) ndigits += 1;
-
-    filename = Concatenate(filename_root+"_proc_"+std::to_string(proc_id)+"_", n, ndigits);
-    filename += "."+file_fmt;
-
-    return filename;
-}
-
-/**
- * \brief Make a string containing the filename_root suffixed with time step index and format.
- *
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the time step.
- * \param[in] file_fmt: filename format appended to the filename.
- * \param[in] n: time step index.
- * \param[in] n_steps: maximum number of time steps.
- *
- * \return a string containing the output filename.
-*/
-std::string MakeGlobalOutputFilename(const std::string & filename_root,
-                                     const std::string & file_fmt,
-                                     const int n,
-                                     const int n_steps)
-{
-    int ndigits;
-    std::string filename;
-
-    ndigits = 1;
-    while (std::pow(10, ndigits) < n_steps) ndigits += 1;
-
-    filename = Concatenate(filename_root+"_", n, ndigits);
-    filename += "."+file_fmt;
-
-    return filename;
-}
-
-/**
- * \brief Same as MakeLocalOutputFilename but the folderpath is prefixed.
- *
- * \param[in] folderpath: path to the output folder.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the local rank and the time step.
- * \param[in] file_fmt: filename format appended to the filename.
- * \param[in] n: time step index.
- * \param[in] n_steps: maximum number of time steps.
- *
- * \return a string containing the output filepath.
-*/
-std::string MakeLocalOutputFilepath(const std::string & folderpath,
-                                    const std::string & filename_root,
-                                    const std::string & file_fmt,
-                                    const int n,
-                                    const int n_steps)
-{
-    std::string filepath = folderpath+"/"+MakeLocalOutputFilename(filename_root, file_fmt, n, n_steps);
-
-    return filepath;
-}
-
-/**
- * \brief Same as MakeGlobalOutputFilename but the folderpath is prefixed.
- *
- * \param[in] folderpath: path to the output folder.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the time step.
- * \param[in] file_fmt: filename format appended to the filename.
- * \param[in] n: time step index.
- * \param[in] n_steps: maximum number of time steps.
- *
- * \return a string containing the output filepath.
-*/
-std::string MakeGlobalOutputFilepath(const std::string & folderpath,
-                                     const std::string & filename_root,
-                                     const std::string & file_fmt,
-                                     const int n, 
-                                     const int n_steps)
-{
-    std::string filepath = folderpath+"/"+MakeGlobalOutputFilename(filename_root, file_fmt, n, n_steps);
-
-    return filepath;
-}
-// ####################################################################
-
 // VTU CELLS ##########################################################
 /**
  * \brief Return the connectivity of a VTK line divided using ne lines.
@@ -227,20 +120,69 @@ Gpu::ManagedVector<int> GriddedHexahedron_Connectivity(const int ne)
 
 // VTU OUTPUT #########################################################
 /**
- * \brief Print header file for VTU output.
+ * \brief Make the filepath for the header file.
  *
- * \param[in] folderpath: output folder path where the file will be dumped.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
+ * \param[in] folderpath_root: root of the output folderpath; it will be suffixed with an index denoting
  *                           the time step.
  * \param[in] n: time step index.
  * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
+ *
+ * \return the filepath for the header file.
+*/
+std::string MakeHeaderFilepath(const std::string & folderpath_root,
+                               const int n,
+                               const int n_steps,
+                               const std::string & filename_root)
+{
+    int ndigits;
+
+    ndigits = 1;
+    while (std::pow(10, ndigits) < n_steps) ndigits += 1;
+
+    return Concatenate(folderpath_root+"/"+filename_root+"_", n, ndigits)+".pvtu";
+}
+
+
+/**
+ * \brief Make the filepath for the local file.
+ *
+ * \param[in] n: time step index.
+ * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
+ * \param[in] proc: id of the processor.
+ *
+ * \return the filepath for the header file.
+*/
+std::string MakeLocalFilepath(const int n,
+                              const int n_steps,
+                              const std::string & filename_root,
+                              const int proc)
+{
+    int ndigits;
+
+    ndigits = 1;
+    while (std::pow(10, ndigits) < n_steps) ndigits += 1;
+
+    return Concatenate("", n, ndigits)+"/"+filename_root+"_proc_"+std::to_string(proc)+".vtu";
+}
+
+
+/**
+ * \brief Print header file for VTU output.
+ *
+ * \param[in] folderpath_root: root of the output folderpath; it will be suffixed with an index denoting
+ *                           the time step.
+ * \param[in] n: time step index.
+ * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
  * \param[in] cell_fields_names: vector of strings containing the description of the cell fields.
  * \param[in] nodal_fields_names: vector of strings containing the description of the nodal fields.
 */
-void PrintHeaderFile_VTU(const std::string & folderpath,
-                         const std::string & filename_root,
+void PrintHeaderFile_VTU(const std::string & folderpath_root,
                          const int n,
                          const int n_steps,
+                         const std::string & filename_root,
                          const Vector<std::string> & nodal_fields_names,
                          const Vector<std::string> & cell_fields_names)
 {
@@ -248,7 +190,7 @@ void PrintHeaderFile_VTU(const std::string & folderpath,
     const int n_procs = ParallelDescriptor::NProcs();
 
     // FILEPATH
-    const std::string filepath = MakeGlobalOutputFilepath(folderpath, filename_root, "pvtu", n, n_steps);
+    const std::string filepath = MakeHeaderFilepath(folderpath_root, n, n_steps, filename_root);
 
     // NODAL DATA
     const int n_nodal_fields = nodal_fields_names.size();
@@ -318,7 +260,7 @@ void PrintHeaderFile_VTU(const std::string & folderpath,
 
     for (int i = 0; i < n_procs; i++)
     {
-        tmp_filename = MakeGlobalOutputFilename(filename_root+"_proc_"+std::to_string(i), "vtu", n, n_steps);
+        tmp_filename = MakeLocalFilepath(n, n_steps, filename_root, i);
 
         fp << "  <Piece Source=\"" << tmp_filename << "\"/>\n";
     }

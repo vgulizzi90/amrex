@@ -127,6 +127,7 @@ struct DGInput
 */
 struct ProblemInput
 {
+    Vector<int> int_params;
     Vector<Real> params;
 
     ProblemInput()
@@ -285,7 +286,8 @@ public InputReaderBase
         {
             ParmParse pp("problem");
 
-            pp.getarr("params", this->problem.params);
+            pp.queryarr("int_params", this->problem.int_params);
+            pp.queryarr("params", this->problem.params);
         }
         // ============================================================
     }

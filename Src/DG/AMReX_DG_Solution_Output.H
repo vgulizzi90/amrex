@@ -6,6 +6,8 @@
  * \brief Contains output functions for implicit-mesh discontinuous Galerkin methods.
 */
 
+#include <AMReX_DG_IO.H>
+
 #ifndef AMREX_DG_SOLUTION_OUTPUT_H_
 #define AMREX_DG_SOLUTION_OUTPUT_H_
 
@@ -17,11 +19,11 @@ namespace DG
 /**
  * \brief Export solution contained in a MultiFab to VTK format.
  *
- * \param[in] folderpath: output folder path where the file will be dumped.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the time step.
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
  * \param[in] n: time step index.
  * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
  * \param[in] t: time.
  * \param[in] geom: a Geometry object that contains geometry information.
  * \param[in] std_elem: a StandardRectangle<AMREX_SPACEDIM> object that contains evaluation grid
@@ -36,10 +38,10 @@ namespace DG
  *                  void F_FIELDS(const Real t, const Real * x, const Real * PHI, const Real * SOL, Real * F) const;
 */
 template <typename IBVP_CLASS>
-void Export_VTK(const std::string & folderpath,
-                const std::string & filename_root,
+void Export_VTK(const std::string & folderpath_root,
                 const int n, 
                 const int n_steps,
+                const std::string & filename_root,
                 const Real t,
                 const Geometry & geom,
                 const StandardRectangle<AMREX_SPACEDIM> & std_elem,
@@ -312,16 +314,17 @@ void Export_VTK(const std::string & folderpath,
     // ================================================================
 
     // DUMP HEADER FILE ===============================================
+    IO::MakeStepFolder(folderpath_root, n, n_steps);
     if (ParallelDescriptor::IOProcessor())
     {
-        VTK::PrintHeaderFile_VTU(folderpath, filename_root, n, n_steps,
+        VTK::PrintHeaderFile_VTU(folderpath_root, n, n_steps, filename_root,
                                  VTK_nodal_fields_names, VTK_cell_fields_names);
     }
     // ================================================================
 
     // DUMP DATA FILE =================================================
     {
-        filepath = VTK::MakeLocalOutputFilepath(folderpath, filename_root, "vtu", n, n_steps);
+        filepath = IO::MakeLocalOutputFilepath(folderpath_root, n, n_steps, filename_root, "vtu");
 
         VTK::PrintUnstructuredGridData_VTU(filepath,
                                            n_VTK_nodes,
@@ -341,11 +344,11 @@ void Export_VTK(const std::string & folderpath,
 /**
  * \brief Export solution contained in a MultiFab to VTK format.
  *
- * \param[in] folderpath: output folder path where the file will be dumped.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the time step.
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
  * \param[in] n: time step index.
  * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
  * \param[in] t: time.
  * \param[in] geom: a Geometry object that contains geometry information.
  * \param[in] std_elem: a StandardRectangle<AMREX_SPACEDIM> object that contains evaluation grid
@@ -359,10 +362,10 @@ void Export_VTK(const std::string & folderpath,
  *                  void F_FIELDS(const Real t, const Real * x, const Real * PHI, const Real * SOL, Real * F) const;
 */
 template <typename IBVP_CLASS>
-void Export_VTK(const std::string & folderpath,
-                const std::string & filename_root,
+void Export_VTK(const std::string & folderpath_root,
                 const int n, 
                 const int n_steps,
+                const std::string & filename_root,
                 const Real t,
                 const Geometry & geom,
                 const StandardRectangle<AMREX_SPACEDIM> & std_elem,
@@ -373,7 +376,7 @@ void Export_VTK(const std::string & folderpath,
     charMultiFab tags(X.boxarray, X.distributionMap, 1, 1);
     tags = 0;
 
-    Export_VTK(folderpath, filename_root, n, n_steps, t, geom, std_elem, N_SOL, X, tags, IBVP);
+    Export_VTK(folderpath_root, n, n_steps, filename_root, t, geom, std_elem, N_SOL, X, tags, IBVP);
 }
 
 /**
@@ -432,11 +435,11 @@ struct IBVP_FIELDS
 /**
  * \brief Export fields contained in a MultiFab to VTK format.
  *
- * \param[in] folderpath: output folder path where the file will be dumped.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the time step.
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
  * \param[in] n: time step index.
  * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
  * \param[in] t: time.
  * \param[in] geom: a Geometry object that contains geometry information.
  * \param[in] std_elem: a StandardRectangle<AMREX_SPACEDIM> object that contains evaluation grid
@@ -446,10 +449,10 @@ struct IBVP_FIELDS
  *               output fields.
  * \param[in] field_root: a string that will be used as a root for the names of the output fields.
 */
-void ExportBase_VTK(const std::string & folderpath,
-                    const std::string & filename_root,
+void ExportBase_VTK(const std::string & folderpath_root,
                     const int n, 
                     const int n_steps,
+                    const std::string & filename_root,
                     const Real t,
                     const Geometry & geom,
                     const StandardRectangle<AMREX_SPACEDIM> & std_elem,
@@ -458,27 +461,27 @@ void ExportBase_VTK(const std::string & folderpath,
                     const std::string & field_root)
 {
     const IBVP_FIELDS FIELDS(N_F, field_root);
-    Export_VTK(folderpath, filename_root, n, n_steps, t, geom, std_elem, N_F, X, FIELDS);
+    Export_VTK(folderpath_root, n, n_steps, filename_root, t, geom, std_elem, N_F, X, FIELDS);
 }
 
 /**
  * \brief Export the domain data of the implicitly-defined mesh to VTK format.
  *
- * \param[in] folderpath: output folder path where the file will be dumped.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the time step.
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
  * \param[in] n: time step index.
  * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
  * \param[in] t: time.
  * \param[in] mesh: the ImplicitMesh object that will be exported.
  * \param[in] N_PHI: number of levelsets contained in mesh.
  * \param[in] N_DOM: number of domains to be considered.
  * \param[in] tags: a charMultiFab object that contains a two-value data for each cell.
 */
-void ExportImplicitMesh_DomData_VTK(const std::string & folderpath,
-                                    const std::string & filename_root,
+void ExportImplicitMesh_DomData_VTK(const std::string & folderpath_root,
                                     const int n, 
                                     const int n_steps,
+                                    const std::string & filename_root,
                                     const Real /*t*/,
                                     const ImplicitMesh & mesh,
                                     const int N_PHI,
@@ -547,7 +550,7 @@ void ExportImplicitMesh_DomData_VTK(const std::string & folderpath,
 
     long VTK_cell_conn_offset;
 
-    std::string filepath;
+    std::string filepath, folderpath;
     // ================================================================
 
     // GET NODAL FIELDS AND CELL FIELDS DATA ==========================
@@ -788,16 +791,18 @@ void ExportImplicitMesh_DomData_VTK(const std::string & folderpath,
     // ================================================================
 
     // DUMP HEADER FILE ===============================================
+    IO::MakeStepFolder(folderpath_root, n, n_steps);
+
     if (ParallelDescriptor::IOProcessor())
-    {
-        VTK::PrintHeaderFile_VTU(folderpath, filename_root, n, n_steps,
+    {   
+        VTK::PrintHeaderFile_VTU(folderpath_root, n, n_steps, filename_root,
                                  VTK_nodal_fields_names, VTK_cell_fields_names);
     }
     // ================================================================
 
     // DUMP DATA FILE =================================================
     {
-        filepath = VTK::MakeLocalOutputFilepath(folderpath, filename_root, "vtu", n, n_steps);
+        filepath = IO::MakeLocalOutputFilepath(folderpath_root, n, n_steps, filename_root, "vtu");
 
         VTK::PrintUnstructuredGridData_VTU(filepath,
                                            n_VTK_nodes,
@@ -817,21 +822,21 @@ void ExportImplicitMesh_DomData_VTK(const std::string & folderpath,
 /**
  * \brief Export the boundary data of the implicitly-defined mesh to VTK format.
  *
- * \param[in] folderpath: output folder path where the file will be dumped.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the time step.
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
  * \param[in] n: time step index.
  * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
  * \param[in] t: time.
  * \param[in] mesh: the ImplicitMesh object that will be exported.
  * \param[in] N_PHI: number of levelsets contained in mesh.
  * \param[in] N_DOM: number of domains to be considered.
  * \param[in] tags: a charMultiFab object that contains a two-value data for each cell.
 */
-void ExportImplicitMesh_BouData_VTK(const std::string & folderpath,
-                                    const std::string & filename_root,
+void ExportImplicitMesh_BouData_VTK(const std::string & folderpath_root,
                                     const int n, 
                                     const int n_steps,
+                                    const std::string & filename_root,
                                     const Real /*t*/,
                                     const ImplicitMesh & mesh,
                                     const int N_PHI,
@@ -899,7 +904,7 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath,
 
     long VTK_cell_conn_offset;
 
-    std::string filepath;
+    std::string filepath, folderpath;
     // ================================================================
 
     // GET NODAL FIELDS AND CELL FIELDS DATA ==========================
@@ -1202,16 +1207,18 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath,
     // ================================================================
 
     // DUMP HEADER FILE ===============================================
+    IO::MakeStepFolder(folderpath_root, n, n_steps);
+    
     if (ParallelDescriptor::IOProcessor())
     {
-        VTK::PrintHeaderFile_VTU(folderpath, filename_root, n, n_steps,
+        VTK::PrintHeaderFile_VTU(folderpath_root, n, n_steps, filename_root,
                                  VTK_nodal_fields_names, VTK_cell_fields_names);
     }
     // ================================================================
 
     // DUMP DATA FILE =================================================
     {
-        filepath = VTK::MakeLocalOutputFilepath(folderpath, filename_root, "vtu", n, n_steps);
+        filepath = IO::MakeLocalOutputFilepath(folderpath_root, n, n_steps, filename_root, "vtu");
 
         VTK::PrintUnstructuredGridData_VTU(filepath,
                                            n_VTK_nodes,
@@ -1231,21 +1238,21 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath,
 /**
  * \brief Export the centroids of the implicitly-defined mesh elements to VTK format.
  *
- * \param[in] folderpath: output folder path where the file will be dumped.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the time step.
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
  * \param[in] n: time step index.
  * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
  * \param[in] t: time.
  * \param[in] mesh: the ImplicitMesh object that will be exported.
  * \param[in] N_PHI: number of levelsets contained in mesh.
  * \param[in] N_DOM: number of domains to be considered.
  * \param[in] tags: a charMultiFab object that contains a two-value data for each cell.
 */
-void ExportImplicitMesh_Centroids_VTK(const std::string & folderpath,
-                                      const std::string & filename_root,
+void ExportImplicitMesh_Centroids_VTK(const std::string & folderpath_root,
                                       const int n, 
                                       const int n_steps,
+                                      const std::string & filename_root,
                                       const Real /*t*/,
                                       const ImplicitMesh & mesh,
                                       const int N_DOM)
@@ -1271,7 +1278,7 @@ void ExportImplicitMesh_Centroids_VTK(const std::string & folderpath,
     long VTK_nodes_pos;
     long VTK_nodal_field_pos;
 
-    std::string filepath;
+    std::string filepath, folderpath;
     // ================================================================
 
     // GET NODAL FIELDS AND CELL FIELDS DATA ==========================
@@ -1404,16 +1411,18 @@ void ExportImplicitMesh_Centroids_VTK(const std::string & folderpath,
     // ================================================================
 
     // DUMP HEADER FILE ===============================================
+    IO::MakeStepFolder(folderpath_root, n, n_steps);
+
     if (ParallelDescriptor::IOProcessor())
     {
-        VTK::PrintHeaderFile_VTU(folderpath, filename_root, n, n_steps,
+        VTK::PrintHeaderFile_VTU(folderpath_root, n, n_steps, filename_root,
                                  VTK_nodal_fields_names, VTK_cell_fields_names);
     }
     // ================================================================
 
     // DUMP DATA FILE =================================================
     {
-        filepath = VTK::MakeLocalOutputFilepath(folderpath, filename_root, "vtu", n, n_steps);
+        filepath = IO::MakeLocalOutputFilepath(folderpath_root, n, n_steps, filename_root, "vtu");
 
         VTK::PrintUnstructuredGridData_VTU(filepath,
                                            n_VTK_nodes,
@@ -1433,57 +1442,54 @@ void ExportImplicitMesh_Centroids_VTK(const std::string & folderpath,
 /**
  * \brief Export the implicitly-defined mesh to VTK format.
  *
- * \param[in] folderpath: output folder path where the file will be dumped.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the time step.
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
  * \param[in] n: time step index.
  * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
  * \param[in] t: time.
  * \param[in] mesh: the ImplicitMesh object that will be exported.
  * \param[in] N_PHI: number of levelsets contained in mesh.
  * \param[in] N_DOM: number of domains to be considered.
  * \param[in] tags: a charMultiFab object that contains a two-value data for each cell.
 */
-void ExportImplicitMesh_VTK(const std::string & folderpath,
-                            const std::string & filename_root,
+void ExportImplicitMesh_VTK(const std::string & folderpath_root,
                             const int n, 
                             const int n_steps,
+                            const std::string & filename_root,
                             const Real t,
                             const ImplicitMesh & mesh,
                             const int N_PHI,
                             const int N_DOM,
                             const charMultiFab & tags)
 {
-    ExportImplicitMesh_DomData_VTK(folderpath, filename_root+"Dom",
-                                   n, n_steps, t,
-                                   mesh, N_PHI, N_DOM,
+    ExportImplicitMesh_DomData_VTK(folderpath_root, n, n_steps, filename_root+"Dom",
+                                   t, mesh, N_PHI, N_DOM,
                                    tags);
-    ExportImplicitMesh_BouData_VTK(folderpath, filename_root+"Bou",
-                                   n, n_steps, t,
-                                   mesh, N_PHI, N_DOM,
+    ExportImplicitMesh_BouData_VTK(folderpath_root, n, n_steps, filename_root+"Bou",
+                                   t, mesh, N_PHI, N_DOM,
                                    tags);
-    ExportImplicitMesh_Centroids_VTK(folderpath, filename_root+"Centroids",
-                                     n, n_steps, t,
-                                     mesh, N_DOM);
+    ExportImplicitMesh_Centroids_VTK(folderpath_root, n, n_steps, filename_root+"Centroids",
+                                     t, mesh, N_DOM);
 }
 
 /**
  * \brief Export the implicitly-defined mesh to VTK format.
  *
- * \param[in] folderpath: output folder path where the file will be dumped.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the time step.
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
  * \param[in] n: time step index.
  * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
  * \param[in] t: time.
  * \param[in] mesh: the ImplicitMesh object that will be exported.
  * \param[in] N_PHI: number of levelsets contained in mesh.
  * \param[in] N_DOM: number of domains to be considered.
 */
-void ExportImplicitMesh_VTK(const std::string & folderpath,
-                            const std::string & filename_root,
+void ExportImplicitMesh_VTK(const std::string & folderpath_root,
                             const int n, 
                             const int n_steps,
+                            const std::string & filename_root,
                             const Real t,
                             const ImplicitMesh & mesh,
                             const int N_PHI,
@@ -1492,24 +1498,24 @@ void ExportImplicitMesh_VTK(const std::string & folderpath,
     charMultiFab tags(mesh.PHI.boxarray, mesh.PHI.distributionMap, 1, mesh.dom_data_ngr);
     tags = 0;
 
-    ExportImplicitMesh_VTK(folderpath, filename_root, n, n_steps, t, mesh, N_PHI, N_DOM, tags);
+    ExportImplicitMesh_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, N_PHI, N_DOM, tags);
 }
 
 /**
  * \brief Export the implicitly-defined mesh to VTK format.
  *
- * \param[in] folderpath: output folder path where the file will be dumped.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the time step.
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
  * \param[in] n: time step index.
  * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
  * \param[in] t: time.
  * \param[in] mesh: the ImplicitMesh object that will be exported.
 */
-void ExportImplicitMesh_VTK(const std::string & folderpath,
-                            const std::string & filename_root,
+void ExportImplicitMesh_VTK(const std::string & folderpath_root,
                             const int n, 
                             const int n_steps,
+                            const std::string & filename_root,
                             const Real t,
                             const ImplicitMesh & mesh)
 {
@@ -1518,17 +1524,17 @@ void ExportImplicitMesh_VTK(const std::string & folderpath,
     charMultiFab tags(mesh.PHI.boxarray, mesh.PHI.distributionMap, 1, mesh.dom_data_ngr);
     tags = 0;
 
-    ExportImplicitMesh_VTK(folderpath, filename_root, n, n_steps, t, mesh, N_PHI, N_DOM, tags);
+    ExportImplicitMesh_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, N_PHI, N_DOM, tags);
 }
 
 /**
  * \brief Export solution contained in a MultiFab and defined over an implicit mesh to VTK format.
  *
- * \param[in] folderpath: output folder path where the file will be dumped.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the time step.
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
  * \param[in] n: time step index.
  * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
  * \param[in] t: time.
  * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
  *                  mesh.
@@ -1546,10 +1552,10 @@ void ExportImplicitMesh_VTK(const std::string & folderpath,
  *                  void F_FIELDS(const Real t, const Real * x, const Real * PHI, const Real * SOL, Real * F) const;
 */
 template <typename IBVP_CLASS>
-void Export_VTK(const std::string & folderpath,
-                const std::string & filename_root,
+void Export_VTK(const std::string & folderpath_root,
                 const int n, 
                 const int n_steps,
+                const std::string & filename_root,
                 const Real t,
                 const ImplicitMesh & mesh,
                 const MatrixFactory & matfactory,
@@ -1619,7 +1625,7 @@ void Export_VTK(const std::string & folderpath,
 
     long VTK_cell_conn_offset;
 
-    std::string filepath;
+    std::string filepath, folderpath;
 
     int n_IBVP_fields;
     Vector<int> nodal_fields_domains;
@@ -1863,16 +1869,18 @@ void Export_VTK(const std::string & folderpath,
     // ================================================================
 
     // DUMP HEADER FILE ===============================================
+    IO::MakeStepFolder(folderpath_root, n, n_steps);
+
     if (ParallelDescriptor::IOProcessor())
     {
-        VTK::PrintHeaderFile_VTU(folderpath, filename_root, n, n_steps,
+        VTK::PrintHeaderFile_VTU(folderpath_root, n, n_steps, filename_root,
                                  VTK_nodal_fields_names, VTK_cell_fields_names);
     }
     // ================================================================
 
     // DUMP DATA FILE =================================================
     {
-        filepath = VTK::MakeLocalOutputFilepath(folderpath, filename_root, "vtu", n, n_steps);
+        filepath = IO::MakeLocalOutputFilepath(folderpath_root, n, n_steps, filename_root, "vtu");
 
         VTK::PrintUnstructuredGridData_VTU(filepath,
                                            n_VTK_nodes,
@@ -1892,11 +1900,11 @@ void Export_VTK(const std::string & folderpath,
 /**
  * \brief Export solution contained in a MultiFab and defined over an implicit mesh to VTK format.
  *
- * \param[in] folderpath: output folder path where the file will be dumped.
- * \param[in] filename_root: root of the output filename; it will be suffixed with an index denoting
- *                           the time step.
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
  * \param[in] n: time step index.
  * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
  * \param[in] t: time.
  * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
  *                  mesh.
@@ -1911,10 +1919,10 @@ void Export_VTK(const std::string & folderpath,
  *                  void F_FIELDS(const Real t, const Real * x, const Real * PHI, const Real * SOL, Real * F) const;
 */
 template <typename IBVP_CLASS>
-void Export_VTK(const std::string & folderpath,
-                const std::string & filename_root,
+void Export_VTK(const std::string & folderpath_root,
                 const int n, 
                 const int n_steps,
+                const std::string & filename_root,
                 const Real t,
                 const ImplicitMesh & mesh,
                 const MatrixFactory & matfactory,
@@ -1927,8 +1935,8 @@ void Export_VTK(const std::string & folderpath,
     charMultiFab tags(X.boxarray, X.distributionMap, 1, X.n_grow);
     tags = 0;
 
-    Export_VTK(folderpath, filename_root,
-               n, n_steps, t,
+    Export_VTK(folderpath_root, n, n_steps, filename_root,
+               t,
                mesh,
                matfactory,
                N_PHI,

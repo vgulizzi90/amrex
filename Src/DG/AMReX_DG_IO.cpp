@@ -203,20 +203,135 @@ std::string MakePath(const std::initializer_list<std::string> list)
 }
 
 /**
+ * \brief Make a string containing the filename_root suffixed with rank and format.
+ *
+ * \param[in] filename: name of the file without rank and format.
+ * \param[in] file_fmt: format appended to the filename.
+ *
+ * \return a string containing the output filename.
+*/
+std::string MakeLocalOutputFilename(const std::string & filename,
+                                    const std::string & file_fmt)
+{
+    const int proc_id = ParallelDescriptor::MyProc();
+
+    return filename+"_proc_"+std::to_string(proc_id)+"."+file_fmt;
+}
+
+/**
+ * \brief Make a string containing the filename_root suffixed with format.
+ *
+ * \param[in] filename: name of the file without format.
+ * \param[in] file_fmt: format appended to the filename.
+ *
+ * \return a string containing the output filename.
+*/
+std::string MakeGlobalOutputFilename(const std::string & filename,
+                                     const std::string & file_fmt)
+{
+    return filename+"."+file_fmt;
+}
+
+/**
+ * \brief Make a filepath where the folder is suffixed with index denoting the time step.
+ *
+ * \param[in] folderpath_root: root of the folder path; it will be suffixed with an index denoting
+ *                             the time step.
+ * \param[in] n: time step index.
+ * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename: name of the file without format.
+ * \param[in] file_fmt: format appended to the filename.
+ *
+ * \return a string containing the output filepath.
+*/
+std::string MakeLocalOutputFilepath(const std::string & folderpath_root,
+                                    const int n,
+                                    const int n_steps,
+                                    const std::string & filename,
+                                    const std::string & file_fmt)
+{
+    int ndigits;
+    std::string folderpath;
+
+    ndigits = 1;
+    while (std::pow(10, ndigits) < n_steps) ndigits += 1;
+
+    folderpath = Concatenate(folderpath_root+"/", n, ndigits);
+
+    return MakePath({folderpath, MakeLocalOutputFilename(filename, file_fmt)});
+}
+
+/**
+ * \brief Make a filepath where the folder is suffixed with index denoting the time step.
+ *
+ * \param[in] folderpath_root: root of the folder path; it will be suffixed with an index denoting
+ *                             the time step.
+ * \param[in] n: time step index.
+ * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename: name of the file without format.
+ * \param[in] file_fmt: format appended to the filename.
+ *
+ * \return a string containing the output filepath.
+*/
+std::string MakeGlobalOutputFilepath(const std::string & folderpath_root,
+                                     const int n, 
+                                     const int n_steps,
+                                     const std::string & filename,
+                                     const std::string & file_fmt)
+{
+    int ndigits;
+    std::string folderpath;
+
+    ndigits = 1;
+    while (std::pow(10, ndigits) < n_steps) ndigits += 1;
+
+    folderpath = Concatenate(folderpath_root+"/", n, ndigits);
+
+    return MakePath({folderpath, MakeGlobalOutputFilename(filename, file_fmt)});
+}
+
+/**
  * \brief Make folder at the input folderpath.
  *
  * \param[in] folderpath: input path of the folder.
 */
 void MakeFolder(const std::string & folderpath)
 {
-    if (amrex::ParallelDescriptor::IOProcessor())
+    if (ParallelDescriptor::IOProcessor())
     {
-        if (!amrex::UtilCreateDirectory(folderpath, 0755))
+        if (!UtilCreateDirectory(folderpath, 0755))
         {
-            amrex::CreateDirectoryFailed(folderpath);
+            CreateDirectoryFailed(folderpath);
         }
     }
-    amrex::ParallelDescriptor::Barrier();
+    ParallelDescriptor::Barrier();
+}
+
+/**
+ * \brief Make folder at the input folderpath accounting for current step and total number of steps.
+ *
+ * \param[in] folderpath_root: input path of the folder.
+ * \param[in] n: current step.
+ * \param[in] n_steps: total number of steps.
+*/
+void MakeStepFolder(const std::string & folderpath_root, const int n, const int n_steps)
+{
+    int ndigits;
+    std::string folderpath;
+
+    ndigits = 1;
+    while (std::pow(10, ndigits) < n_steps) ndigits += 1;
+
+    folderpath = Concatenate(folderpath_root+"/", n, ndigits);
+
+    if (ParallelDescriptor::IOProcessor())
+    {
+        if (!UtilCreateDirectory(folderpath, 0755))
+        {
+            CreateDirectoryFailed(folderpath);
+        }
+    }
+    ParallelDescriptor::Barrier();
 }
 
 /**
