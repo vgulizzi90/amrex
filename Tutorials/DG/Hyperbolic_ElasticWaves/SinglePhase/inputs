@@ -1,6 +1,6 @@
 # SPACE ###############################################################
-#space.is_periodic = 0 0 0
-space.is_periodic = 1 1 1
+space.is_periodic = 0 0 0
+#space.is_periodic = 1 1 1
 space.lo          = 0.0 0.0 0.0
 space.hi          = 1.0 1.0 1.0
 #######################################################################
@@ -18,7 +18,7 @@ time.n_steps = 10000
 # GRID ================================================================
 grid.n_cells      = 16 16 16
 grid.max_box_size = 4 4 4
-grid.CFL = 1.0
+grid.CFL = 0.6
 
 # LEVEL SET FUNCTIONS
 grid.space_p = 2
@@ -50,12 +50,12 @@ dG.space_p = 0
 
 # PROBLEM #############################################################
 # NO EMBEDDED GEOMETRY
-problem.int_params = 0 -1
-problem.params = 1.0 1.0 0.3
+#problem.int_params = 0 -1
+#problem.params = 1.0 1.0 0.3
 
 # EMBEDDED CIRCLE
-#problem.int_params = 0 0
-#problem.params = 1.0 1.0 0.3 0.2 0.5 0.5 0.5
+problem.int_params = 0 0
+problem.params = 1.0 1.0 0.3 0.2 0.5 0.5 0.5
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
 #       which should be input as follows

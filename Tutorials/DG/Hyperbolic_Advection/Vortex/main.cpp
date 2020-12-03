@@ -40,7 +40,7 @@ amrex::Print() << "#############################################################
     const std::string problem = "PROBLEM_Vortex";
 
     // AUXILIARY TABLES TO TEST THE DIFFERENT POLYNOMIAL ORDERS
-    const amrex::Vector<int> table_p = {0};
+    const amrex::Vector<int> table_p = {0, 1, 2, 3};
     const int n_p = table_p.size();
 
     // NUMBER OF GHOST ROWS
@@ -253,7 +253,7 @@ amrex::Print() << "#############################################################
         // ============================================================
 
         {
-            const amrex::Real err = amrex::DG::EvalError(0.0, mesh, matfactory, DG_N_SOL, X, ADV);
+            const amrex::Real err = amrex::DG::EvalError(inputs.time.T, mesh, matfactory, DG_N_SOL, X, ADV);
             amrex::Print() << "| err: " << std::scientific << std::setprecision(5) << std::setw(12) << err << std::endl;
         }
 

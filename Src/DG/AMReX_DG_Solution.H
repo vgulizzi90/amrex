@@ -541,6 +541,9 @@ Real EvalError(const Real t,
         Gpu::synchronize();
     }
 
+Print() << "err.sum(1): " << err.sum(1) << std::endl;
+Print() << "err.sum(0): " << err.sum(0) << std::endl;
+
     total_error = err.sum(1)/err.sum(0);
     for (int dom = 1; dom < N_DOM; ++dom)
     {

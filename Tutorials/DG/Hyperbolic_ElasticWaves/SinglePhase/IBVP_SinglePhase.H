@@ -160,7 +160,7 @@ public ELASTIC_SOLID_BASE<1>
         const amrex::Real * c = &this->cSE[dom][0];
 
         const int k = 0;
-        const amrex::Real theta = 0.0*M_PI/6.0;
+        const amrex::Real theta = M_PI/6.0;
         const amrex::Real dir[AMREX_SPACEDIM] = {AMREX_D_DECL(std::cos(theta), std::sin(theta), 0.0)};
 
         // VARIABLES
@@ -398,7 +398,9 @@ exit(-1);
 #endif
 #if (AMREX_SPACEDIM == 2)
         fields_names = {"velocity_x", "velocity_y",
-                        "stress_xx", "stress_yy", "stress_xy"};
+                        "stress_xx", "stress_yy", "stress_xy",
+                        "err_velocity_x", "err_velocity_y",
+                        "err_stress_xx", "err_stress_yy", "err_stress_xy"};
 #endif
 #if (AMREX_SPACEDIM == 3)
         fields_names = {"velocity_x", "velocity_y", "velocity_z"
@@ -418,7 +420,8 @@ exit(-1);
         fields_domains = {0, 0};
 #endif
 #if (AMREX_SPACEDIM == 2)
-        fields_domains = {0, 0, 0, 0, 0};
+        fields_domains = {0, 0, 0, 0, 0,
+                          0, 0, 0, 0, 0};
 #endif
 #if (AMREX_SPACEDIM == 3)
         fields_domains = {0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -435,10 +438,16 @@ exit(-1);
      * \param[out] F: pointer to memory that will be filled with values of the output fields at (t,x).
     */
     AMREX_GPU_HOST_DEVICE
-    void F_FIELDS(const amrex::Real /*t*/, const amrex::Real * /*x*/,
+    void F_FIELDS(const amrex::Real t, const amrex::Real * x,
                   const amrex::Real * U,
                   amrex::Real * F) const
     {
+        // VARIABLES
+        amrex::Real Ue[DG_N_SOL];
+        
+        // EXACT SOLUTION
+        this->F_EXACT(t, x, Ue);
+
 #if (AMREX_SPACEDIM == 1)
         F[0] = U[V1];
         F[1] = U[S11];
@@ -449,6 +458,12 @@ exit(-1);
         F[2] = U[S11];
         F[3] = U[S22];
         F[4] = U[S12];
+
+        F[0+N_VS] = U[ V1]-Ue[ V1];
+        F[1+N_VS] = U[ V2]-Ue[ V2];
+        F[2+N_VS] = U[S11]-Ue[S11];
+        F[3+N_VS] = U[S22]-Ue[S22];
+        F[4+N_VS] = U[S12]-Ue[S12];
 #endif
 #if (AMREX_SPACEDIM == 3)
         F[0] = U[ V1];

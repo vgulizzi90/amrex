@@ -43,7 +43,7 @@ amrex::Print() << "#############################################################
     const std::string problem = "PROBLEM_SinglePhase";
 
     // AUXILIARY TABLES TO TEST THE DIFFERENT POLYNOMIAL ORDERS
-    const amrex::Vector<int> table_p = {1};
+    const amrex::Vector<int> table_p = {2};
     const int n_p = table_p.size();
 
     // NUMBER OF GHOST ROWS
@@ -130,7 +130,7 @@ amrex::Print() << "#############################################################
         {
             const int n = 0;
             const amrex::Real t = 0.0;
-            amrex::DG::ExportImplicitMesh_VTK(output_folderpath, "ImplicitMesh", n, inputs.time.n_steps,
+            amrex::DG::ExportImplicitMesh_VTK(output_folderpath, n, inputs.time.n_steps, "ImplicitMesh",
                                               t, mesh);
         }
         // ============================================================
@@ -196,7 +196,7 @@ amrex::Print() << "#############################################################
         {
             const int n = 0;
             const amrex::Real t = 0.0;
-            amrex::DG::Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
+            amrex::DG::Export_VTK(output_folderpath, n, inputs.time.n_steps, "Solution",
                                   t, mesh, matfactory, DG_N_SOL, X,
                                   ES);
         }
@@ -252,7 +252,7 @@ amrex::Print() << "#############################################################
                 // WRITE TO OUTPUT
                 if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(t/inputs.time.T-1.0) < 1.0e-12)))
                 {
-                    amrex::DG::Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
+                    amrex::DG::Export_VTK(output_folderpath, n, inputs.time.n_steps, "Solution",
                                           t, mesh, matfactory, DG_N_SOL, X,
                                           ES);
                 }
@@ -282,7 +282,7 @@ amrex::Print() << "#############################################################
         // ============================================================
 
         {
-            const amrex::Real err = amrex::DG::EvalError(0.0, mesh, matfactory, DG_N_SOL, X, ES);
+            const amrex::Real err = amrex::DG::EvalError(inputs.time.T, mesh, matfactory, DG_N_SOL, X, ES);
             amrex::Print() << "| err: " << std::scientific << std::setprecision(5) << std::setw(12) << err << std::endl;
         }
 

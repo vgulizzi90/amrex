@@ -124,6 +124,19 @@ void Export_VTK(const std::string & folderpath_root,
     n_VTK_cell_fields = VTK_cell_fields_names.size();
     // ================================================================
 
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    if (n_VTK_nodal_fields > __DG_MAX_N_FIELDS__)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg +=  "ERROR: AMReX_DG_Solution_Output.H - Export_VTK\n";
+        msg += "| The number of output fields exceeds the maximum allowed number.\n";
+        msg += "| n_VTK_nodal_fields : "+std::to_string(n_VTK_nodal_fields)+".\n";
+        msg += "| __DG_MAX_N_FIELDS__: "+std::to_string(__DG_MAX_N_FIELDS__)+".\n";
+        Abort(msg);
+    }
+    // ================================================================
+
     // EVAL REQUIRED MEMORY ===========================================
     VTK_cell_conn_size = 0L;
     
@@ -1650,6 +1663,19 @@ void Export_VTK(const std::string & folderpath_root,
     VTK_cell_fields_names = {"TAG"};
 
     n_VTK_cell_fields = VTK_cell_fields_names.size();
+    // ================================================================
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    if (n_IBVP_fields > __DG_MAX_N_FIELDS__)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg +=  "ERROR: AMReX_DG_Solution_Output.H - Export_VTK\n";
+        msg += "| The number of output fields exceeds the maximum allowed number.\n";
+        msg += "| n_IBVP_fields      : "+std::to_string(n_IBVP_fields)+".\n";
+        msg += "| __DG_MAX_N_FIELDS__: "+std::to_string(__DG_MAX_N_FIELDS__)+".\n";
+        Abort(msg);
+    }
     // ================================================================
 
     // EVAL REQUIRED MEMORY ===========================================
