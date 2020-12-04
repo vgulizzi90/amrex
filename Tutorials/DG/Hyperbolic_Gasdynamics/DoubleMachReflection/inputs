@@ -18,43 +18,57 @@ time.n_steps = 50000
 # GRID ================================================================
 grid.n_cells      = 64 32
 grid.max_box_size = 4 4
-grid.CFL = 0.3
+grid.CFL = 0.6
 
 # LEVEL SET FUNCTIONS
-grid.space_p = 1
-grid.space_q = 1
+grid.space_p = 2
+grid.space_q = 2
+# =====================================================================
+# NOTE: Remember that the CFL will be scaled as follows:
+#
+#       CFL := CFL/(1+2*p)
+#
+#       where p is the order of the dG basis functions (see below).
 # =====================================================================
 
 # IMPLICITLY-DEFINED MESH =============================================
-implicit_mesh.space_q = 0
-implicit_mesh.space_q_ie = 0
+implicit_mesh.space_q = 4
+implicit_mesh.space_q_ie = 6
 
 implicit_mesh.volume_fraction_threshold = 0.3
 # =====================================================================
 
 # DISCONTINUOUS GALERKIN METHOD =======================================
-dG.space_p = 0
-# =====================================================================
-# NOTE: In order to activate finite volumes with the implicitly-defined
-#       mesh, it is necessary to specify: dG.space_p = 0.
+dG.space_p = 1
 # =====================================================================
 #######################################################################
 
 
 
 # PROBLEM #############################################################
-#problem.params = 3.61e-4 0.0 7.42e6 4.2041015625 3.29e-5 0.0 1.95e4 5.2 49.0
-problem.params = 10.9726443769 0.0 380.5128205128 4.2041015625 1.0 0.0 1.0 5.2 49.0
+problem.int_params = 0
+
+#problem.params = 1.6666666667 3.61e-4 0.0 7.42e6 4.2041015625 3.29e-5 0.0 1.95e4 5.2 49.0
+problem.params = 1.6666666667 10.9726443769 0.0 380.5128205128 4.2041015625 1.0 0.0 1.0 5.2 49.0
 #######################################################################
-# NOTE: params contains the left_state, right_state, and some geometry
-#       information which should be input as follows:
+# NOTE: int_params and params contains the parameters of the problem,
+#       which should be input as follows
 #
-#       rhoL, uL, pL, Sx, rhoR, uR, pR, Px, theta (degree)
+#       int_param: eb_flag
+#       params: gamma, rhoL, uL, pL, Sx, rhoR, uR, pR, Px, theta (degree)
 #
 #       where:
-#       - Sx is the shock location
-#       - Px is the x coordinate of the point P(Px,0) on the plane
-#       - theta is the plane orientation.
+#       - eb_flag: flag to activate the embedded boundary
+#                  0: no embedded boundary is present and a Riemann
+#                     problem is basically solved
+#                  1: a plane is embedded into the grid
+#
+#       - gamma: specific heats ratio
+#       - (rhoL, uL, pL): left state
+#       - Sx: the shock location
+#       - (rhoR, uR, pR): right state
+#       - Px: the x coordinate of the point P(Px,0) on the plane
+#       - theta: the plane orientation.
 #
 #######################################################################
 

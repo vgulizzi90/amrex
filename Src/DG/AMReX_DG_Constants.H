@@ -40,7 +40,7 @@ namespace DG
 
 #define __DG_MAX_N_PHI__ 10
 #define __DG_MAX_N_SOL__ 10
-#define __DG_MAX_N_FIELDS__ 10
+#define __DG_MAX_N_FIELDS__ 18
 
 // IMPLICIT MESH
 #define __DG_ELM_TYPE_N_COMP_PER_DOM__ 1

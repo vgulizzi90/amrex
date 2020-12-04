@@ -16,7 +16,7 @@ struct IDEAL_GAS
 public IDEAL_GAS_BASE
 {
     // DATA MEMBERS ###################################################
-    amrex::Real params[10];
+    amrex::Real params[9];
     // ################################################################
     // NOTE: params must store:
     //       - params[0]: rhoL, i.e. density at the left of the shock;
@@ -34,14 +34,12 @@ public IDEAL_GAS_BASE
     // CONSTRUCTOR ####################################################
     /**
      * \brief This method initializes the IBVP.
-     * 
-     * \param[in] gamma_: ratio of specific heats.
     */
-    IDEAL_GAS(const amrex::Real gamma_, const amrex::Vector<amrex::Real> & params_)
+    IDEAL_GAS(const amrex::Vector<int> & int_params_, const amrex::Vector<amrex::Real> & params_)
     :
-    IDEAL_GAS_BASE(gamma_)
+    IDEAL_GAS_BASE(int_params_, params_)
     {
-        std::copy(params_.begin(), params_.end(), this->params);
+        std::copy(params_.begin()+1, params_.end(), this->params);
     }
     // ################################################################
 
@@ -56,13 +54,19 @@ public IDEAL_GAS_BASE
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void F_PHI(const amrex::Real /*t*/, const amrex::Real * x, amrex::Real * PHI) const
     {
-        const amrex::Real theta = (this->params[8])*M_PI/180.0;
-        const amrex::Real eta[2] = {-std::sin(theta), +std::cos(theta)};
-        const amrex::Real P[2] = {this->params[7], 0.0};
-        const amrex::Real s = (x[0]-P[0])*eta[0]+(x[1]-P[1])*eta[1];
+        if (this->eb_flag == 0)
+        {
+            PHI[0] = -1.0;
+        }
+        else
+        {
+            const amrex::Real theta = (this->params[8])*M_PI/180.0;
+            const amrex::Real eta[2] = {-std::sin(theta), +std::cos(theta)};
+            const amrex::Real P[2] = {this->params[7], 0.0};
+            const amrex::Real s = (x[0]-P[0])*eta[0]+(x[1]-P[1])*eta[1];
 
-        PHI[0] = -s;
-        //PHI[0] = -1.0;
+            PHI[0] = -s;
+        }
     }
 
     /**
@@ -93,6 +97,19 @@ public IDEAL_GAS_BASE
     int F_SOL2DOM(const int /*ru*/) const
     {
         return 0;
+    }
+
+    /**
+     * \brief Returns the index nbr_dom of the domain that is neighbor with the current domain.
+     * 
+     * \param[in] dom: index of the current domain.
+     *
+     * \return the index nbr_dom of the domain that is neighbor with domain dom.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    int F_DOM2NBRDOM(const int /*dom*/) const
+    {
+        return -1;
     }
     // ################################################################
 
@@ -197,7 +214,7 @@ public IDEAL_GAS_BASE
                    const amrex::Real * U,
                    amrex::Real * bcs_U) const
     {
-        amrex::Real Un[FV_N_SOL];
+        amrex::Real Un[DG_N_SOL];
 
         this->eval_U2Un(un, U, Un);
         Un[RHOV1] = -Un[RHOV1];
@@ -211,6 +228,7 @@ public IDEAL_GAS_BASE
     /**
      * \brief Eval the numerical flux at a grid's boundary.
      *
+     * \param[in] dom: index of the domain.
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
      * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
@@ -218,37 +236,20 @@ public IDEAL_GAS_BASE
      * \param[out] NFn: pointer to memory that will contain the numerical flux.
     */
     AMREX_GPU_HOST_DEVICE
-    void F_NF_BCS(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+    void F_NF_BCS(const int dom,
+                  const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
                   const amrex::Real * U,
                   amrex::Real * NFn) const
     {
-        amrex::Real bcs_U[FV_N_SOL];
+        amrex::Real bcs_U[DG_N_SOL];
         this->F_BCS(t, x, un, U, bcs_U);
-        this->F_NF_ICS(t, x, un, U, bcs_U, NFn);
-    }
-
-    /**
-     * \brief Eval the numerical flux at a grid's boundary.
-     *
-     * \param[in] t: time.
-     * \param[in] x: pointer to memory containing the space location.
-     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
-     * \param[in] P: pointer to memory that stores the primary variables.
-     * \param[out] NFn: pointer to memory that will contain the numerical flux.
-    */
-    AMREX_GPU_HOST_DEVICE
-    void F_NF_BCS_P(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
-                    const amrex::Real * P,
-                    amrex::Real * NFn) const
-    {
-        amrex::Real bcs_P[FV_N_SOL];
-        this->F_BCS(t, x, un, P, bcs_P);
-        this->F_NF_ICS_P(t, x, un, P, bcs_P, NFn);
+        this->F_NF_ICS(dom, t, x, un, U, bcs_U, NFn);
     }
 
     /**
      * \brief Eval the numerical flux at a levelset's boundary.
      *
+     * \param[in] dom: index of the domain.
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
      * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
@@ -256,32 +257,14 @@ public IDEAL_GAS_BASE
      * \param[out] NFn: pointer to memory that will contain the numerical flux.
     */
     AMREX_GPU_HOST_DEVICE
-    void F_NF_PHI_BCS(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+    void F_NF_PHI_BCS(const int dom,
+                      const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
                       const amrex::Real * U,
                       amrex::Real * NFn) const
     {
-        amrex::Real bcs_U[FV_N_SOL];
+        amrex::Real bcs_U[DG_N_SOL];
         this->F_PHI_BCS(t, x, un, U, bcs_U);
-        this->F_NF_ICS(t, x, un, U, bcs_U, NFn);
-    }
-
-    /**
-     * \brief Eval the numerical flux at a levelset's boundary.
-     *
-     * \param[in] t: time.
-     * \param[in] x: pointer to memory containing the space location.
-     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
-     * \param[in] P: pointer to memory that stores the primary variables.
-     * \param[out] NFn: pointer to memory that will contain the numerical flux.
-    */
-    AMREX_GPU_HOST_DEVICE
-    void F_NF_PHI_BCS_P(const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
-                        const amrex::Real * P,
-                        amrex::Real * NFn) const
-    {
-        amrex::Real bcs_P[FV_N_SOL];
-        this->F_PHI_BCS(t, x, un, P, bcs_P);
-        this->F_NF_ICS_P(t, x, un, P, bcs_P, NFn);
+        this->F_NF_ICS(dom, t, x, un, U, bcs_U, NFn);
     }
     // ################################################################
 
@@ -340,7 +323,7 @@ public IDEAL_GAS_BASE
 
         // VELOCITY COMPONENTS ALONG THE PLANE DIRECTION
         const amrex::Real xi[2] = {std::cos(theta), std::sin(theta)};
-        amrex::Real Un[FV_N_SOL];
+        amrex::Real Un[DG_N_SOL];
         this->eval_U2Un(xi, U, Un);
 
         // OUTPUT FIELDS
@@ -355,5 +338,4 @@ public IDEAL_GAS_BASE
         F[TE+5] = Un[RHOV2]/rho;
     }
     // ################################################################
-
 };

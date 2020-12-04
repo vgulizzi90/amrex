@@ -1,3 +1,0 @@
-CEXE_headers += ../IBVP_Base.H IBVP_utils.H
-
-CEXE_sources += main.cpp

@@ -16,15 +16,17 @@ time.n_steps = 10000
 
 # DISCRETIZATION ######################################################
 # GRID ================================================================
-grid.n_cells      = 16 16 16
+grid.n_cells      = 8 8 8
 grid.max_box_size = 4 4 4
-grid.CFL = 0.6
+grid.CFL = 0.3
 
 # LEVEL SET FUNCTIONS
 grid.space_p = 2
-grid.space_q = 2
+grid.space_q = 3
 # =====================================================================
-# NOTE: Remember that the CFL will be scaled as follows:
+# NOTE: CFL = 0.6 for DIM = 2 and CFL = 0.3 for DIM = 3
+#
+#       Also, remember that the CFL will be scaled as follows:
 #
 #       CFL := CFL/(1+2*p)
 #
@@ -53,9 +55,10 @@ dG.space_p = 0
 #problem.int_params = 0 -1
 #problem.params = 1.0 1.0 0.3
 
-# EMBEDDED CIRCLE
+# EMBEDDED CIRCLE/SPHERE
 problem.int_params = 0 0
-problem.params = 1.0 1.0 0.3 0.2 0.5 0.5 0.5
+#problem.params = 1.0 1.0 0.3 0.2 0.5 0.5 0.5 # in 2D
+problem.params = 1.0 1.0 0.3 0.4 0.5 0.5 0.5 # in 3D
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
 #       which should be input as follows
@@ -99,5 +102,5 @@ problem.params = 1.0 1.0 0.3 0.2 0.5 0.5 0.5
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 1
+plot_int = 10000
 #######################################################################

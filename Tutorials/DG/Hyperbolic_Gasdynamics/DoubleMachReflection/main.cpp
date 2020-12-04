@@ -9,7 +9,6 @@
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
-#include "IBVP_utils.H"
 #include "IBVP_DoubleMachReflection.H"
 // ====================================================================
 // ####################################################################
@@ -52,10 +51,6 @@ amrex::Print() << "#############################################################
 
     // NUMBER OF GHOST ROWS
     const int ngr = 1;
-
-    // IBVP
-    const int X_n_comp = N_SOL;
-    const amrex::Real gamma = 5.0/3.0;
     // ================================================================
 
     // VARIABLES ======================================================
@@ -69,21 +64,29 @@ amrex::Print() << "#############################################################
     amrex::MultiFab X;
 
     // IBVP
-    IDEAL_GAS IG(gamma, inputs.problem.params);
+    IDEAL_GAS IG(inputs.problem.int_params, inputs.problem.params);
     // ================================================================
 
     // DO THE ANALYSIS
     {
         // MAKE OUTPUT FOLDER =========================================
         {
-            const amrex::Real theta = inputs.problem.params[8];
+            const amrex::Real theta = inputs.problem.params[9];
 
-            const std::string mesh_info = AMREX_D_TERM(std::to_string(inputs.grid.n_cells[0]),+"x"+
-                                                       std::to_string(inputs.grid.n_cells[1]),+"x"+
-                                                       std::to_string(inputs.grid.n_cells[2]));
+            const std::string mesh_info = "m"+AMREX_D_TERM(std::to_string(inputs.grid.n_cells[0]),+"x"+
+                                                           std::to_string(inputs.grid.n_cells[1]),+"x"+
+                                                           std::to_string(inputs.grid.n_cells[2]));
+            const std::string p_info = "p"+std::to_string(inputs.dG.space_p);
             const std::string theta_info = "TH"+std::to_string((int) std::round(theta));
 
-            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+theta_info});
+            if (inputs.problem.int_params[0] == 0)
+            {
+                output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+p_info});
+            }
+            else
+            {
+                output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+p_info+"_"+theta_info});
+            }
 
             amrex::DG::IO::MakeFolder(output_folderpath);
         }
@@ -105,12 +108,19 @@ amrex::Print() << "#############################################################
 
         // HEADER =====================================================
         {
-            const amrex::Real theta = inputs.problem.params[8];
+            const amrex::Real theta = inputs.problem.params[9];
             
             const std::string theta_info = std::to_string((int) std::round(theta));
 
             amrex::Print() << std::endl;
-            amrex::Print() << "# DOUBLE MACH REFLECTION TEST" << " - INCLINATION: " << theta_info << std::endl;
+            if (inputs.problem.int_params[0] == 0)
+            {
+                amrex::Print() << "# DOUBLE MACH REFLECTION TEST" << " - p: " << inputs.dG.space_p << std::endl;
+            }
+            else
+            {
+                amrex::Print() << "# DOUBLE MACH REFLECTION TEST" << " - p: " << inputs.dG.space_p << " - INCLINATION: " << theta_info << std::endl;
+            }
         }
         // ============================================================
 
@@ -128,35 +138,43 @@ amrex::Print() << "#############################################################
         {
             const int n = 0;
             const amrex::Real t = 0.0;
-            ExportImplicitMesh_VTK(output_folderpath, "ImplicitMesh", n, inputs.time.n_steps,
-                                   t, mesh);
+            amrex::DG::ExportImplicitMesh_VTK(output_folderpath, n, inputs.time.n_steps, "ImplicitMesh",
+                                              t, mesh);
         }
         // ============================================================
 
         // CHECK THE COMPUTED QUADRATURE RULES ========================
         {
-            const amrex::Real theta = (inputs.problem.params[8])*M_PI/180.0;
-            const amrex::Real Px = inputs.problem.params[7];
+            const amrex::Real theta = (inputs.problem.params[9])*M_PI/180.0;
+            const amrex::Real Px = inputs.problem.params[8];
             const amrex::Real L = inputs.space.hi[0]-Px;
             const amrex::Real H = inputs.space.hi[1];
             const amrex::Real alpha = std::atan(H/L);
 
             amrex::Real volume;
             amrex::Real surface;
-            
-            if (theta < alpha)
-            {
-                const amrex::Real h = L*std::tan(theta);
 
-                volume = (Px+L)*H-0.5*L*h;
-                surface = L/std::cos(theta);
+            if (inputs.problem.int_params[0] == 0)
+            {
+                volume = (Px+L)*H;
+                surface = 0.0;
             }
             else
             {
-                const amrex::Real l = H/std::tan(theta);
+                if (theta < alpha)
+                {
+                    const amrex::Real h = L*std::tan(theta);
 
-                volume = 0.5*(Px+Px+l)*H;
-                surface = H/std::sin(theta);
+                    volume = (Px+L)*H-0.5*L*h;
+                    surface = L/std::cos(theta);
+                }
+                else
+                {
+                    const amrex::Real l = H/std::tan(theta);
+
+                    volume = 0.5*(Px+Px+l)*H;
+                    surface = H/std::sin(theta);
+                }
             }
 
             mesh.CheckQuadratureRules(volume, surface);
@@ -170,19 +188,25 @@ amrex::Print() << "#############################################################
         // ============================================================
 
         // INIT MULTIFAB ==============================================
-        X.define(mesh.cc_ba, mesh.dm, X_n_comp, ngr);
+        {
+            const int p = inputs.dG.space_p;
+            const int X_n_comp = DG_N_SOL*(AMREX_D_PICK(1+p, (1+p)*(1+p), (1+p)*(1+p)*(1+p)));
+            X.define(mesh.cc_ba, mesh.dm, X_n_comp, ngr);
+        }
         // ============================================================
 
         // SET INITIAL CONDITIONS =====================================
-        amrex::DG::ProjectInitialConditions(mesh, matfactory, N_SOL, X, IG);
+        amrex::Print() << "# COMPUTING PROJECTED INITIAL CONDITIONS " << std::endl;
+        
+        amrex::DG::ProjectInitialConditions(mesh, matfactory, DG_N_SOL, X, IG);
 
         // WRITE TO OUTPUT
         if (inputs.plot_int > 0)
         {
             const int n = 0;
             const amrex::Real t = 0.0;
-            amrex::DG::Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                                  t, mesh, matfactory, N_SOL, X,
+            amrex::DG::Export_VTK(output_folderpath, n, inputs.time.n_steps, "Solution",
+                                  t, mesh, matfactory, DG_N_SOL, X,
                                   IG);
         }
 
@@ -199,12 +223,16 @@ amrex::Print() << "#############################################################
         // ADVANCE IN TIME ============================================
         amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
         {
+            const int p = inputs.dG.space_p;
+            const int RK_order = p+1;
+
             int n = 0;
             amrex::Real t, dt;
-            amrex::Real tps_start, tps_stop, tps;
+            amrex::Real tps_start, tps_stop, tps, eta;
 
-            // INIT CLOCK TIME PER STEP
+            // INIT CLOCK TIME PER STEP AND ESTIMATED TIME
             tps = 0.0;
+            eta = 0.0;
 
             // ADVANCE IN TIME
             n = 0;
@@ -216,13 +244,16 @@ amrex::Print() << "#############################################################
                 tps_start = amrex::second();
 
                 // COMPUTE NEXT TIME STEP
-                dt = amrex::DG::Compute_dt(t+0.5*dt, mesh, matfactory, N_SOL, X, IG);
-                dt *= inputs.grid.CFL;
+                dt = amrex::DG::Hyperbolic::Explicit::Compute_dt(t+0.5*dt, mesh, matfactory, DG_N_SOL, X, IG);
+                dt *= inputs.grid.CFL/(1.0+2.0*p);
                 dt = std::min(t+dt, inputs.time.T)-t;
 
                 // TIME STEP
-                amrex::DG::TakeTimeStep(dt, t, mesh, matfactory, N_SOL, X, IG);
-
+                amrex::DG::Hyperbolic::Explicit::TakeRungeKuttaTimeStep(RK_order, dt, t,
+                                                                        mesh, matfactory,
+                                                                        DG_N_SOL,
+                                                                        X,
+                                                                        IG);
                 // UPDATE TIME STEP
                 n += 1;
                 t += dt;
@@ -230,8 +261,8 @@ amrex::Print() << "#############################################################
                 // WRITE TO OUTPUT
                 if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(t/inputs.time.T-1.0) < 1.0e-12)))
                 {
-                    amrex::DG::Export_VTK(output_folderpath, "Solution", n, inputs.time.n_steps,
-                                          t, mesh, matfactory, N_SOL, X,
+                    amrex::DG::Export_VTK(output_folderpath, n, inputs.time.n_steps, "Solution",
+                                          t, mesh, matfactory, DG_N_SOL, X,
                                           IG);
                 }
 
@@ -240,12 +271,14 @@ amrex::Print() << "#############################################################
                 amrex::ParallelDescriptor::ReduceRealMax(tps_stop, IOProc);
 
                 tps = (tps*n+(tps_stop-tps_start))/(n+1);
+                eta = (inputs.time.T-t)/dt*tps;
 
                 // REPORT TO SCREEN
                 amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
                 amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
                                << dt << ", t = " << t
-                               << ", clock time per time step = " << tps << std::endl;
+                               << ", clock time per time step = " << tps 
+                               << ", estimated remaining time = " << eta << std::endl;
             }
 
         }

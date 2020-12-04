@@ -43,7 +43,7 @@ amrex::Print() << "#############################################################
     const std::string problem = "PROBLEM_SinglePhase";
 
     // AUXILIARY TABLES TO TEST THE DIFFERENT POLYNOMIAL ORDERS
-    const amrex::Vector<int> table_p = {2};
+    const amrex::Vector<int> table_p = {1, 2, 3};
     const int n_p = table_p.size();
 
     // NUMBER OF GHOST ROWS
@@ -77,7 +77,7 @@ amrex::Print() << "#############################################################
             std::string geo_info;
             if (inputs.problem.int_params[1] == -1)
             {
-                geo_info = "No_EB";
+                geo_info = "NoEB";
             }
             else if (inputs.problem.int_params[1] == 0)
             {
@@ -105,7 +105,18 @@ amrex::Print() << "#############################################################
             char * date_and_time_ = ctime(&date_and_time);
             
             fp.open(stats_filepath, std::ofstream::app);
-            fp << std::endl << "ANALYSIS STATISTICS - " << date_and_time_ << "\n";
+            fp << std::endl << "ANALYSIS STATISTICS - " << date_and_time_;
+#ifdef AMREX_DEBUG
+            fp << "| Debug active: true" << std::endl;
+#else
+            fp << "| Debug active: false" << std::endl;
+#endif
+#ifdef AMREX_USE_GPU
+            fp << "| Using GPUs: true" << std::endl;
+#else
+            fp << "| Using GPUs: false" << std::endl;
+#endif
+            fp << "| Number of MPI ranks: " << amrex::ParallelDescriptor::NProcs() << std::endl;
         }
         // ============================================================
 
@@ -158,7 +169,7 @@ amrex::Print() << "#############################################################
                 surface = 2.0*M_PI*r;
 #endif
 #if (AMREX_SPACEDIM == 3)
-                volume = 1.0-(4.0/3.0)*M_PI*r*r*r;
+                volume = (4.0/3.0)*M_PI*r*r*r;
                 surface = 4.0*M_PI*r*r;
 #endif
             }
@@ -188,7 +199,9 @@ amrex::Print() << "#############################################################
         
         {
             const amrex::Real err = amrex::DG::EvalError(0.0, mesh, matfactory, DG_N_SOL, X, ES);
-            amrex::Print() << "| err: " << std::scientific << std::setprecision(5) << std::setw(12) << err << std::endl;
+            amrex::Print() << "| err: " << std::scientific << std::setprecision(5) << std::setw(12) << std::sqrt(err) << std::endl;
+
+            fp << "| err(t = 0): " << std::scientific << std::setprecision(5) << std::setw(12) << std::sqrt(err) << "\n";
         }
 
         // WRITE TO OUTPUT
@@ -272,6 +285,7 @@ amrex::Print() << "#############################################################
                                << ", estimated remaining time = " << eta << std::endl;
             }
 
+            fp << "| clock time per time step: " << std::scientific << std::setprecision(5) << std::setw(12) << std::sqrt(tps) << " s\n";
         }
         amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
         // ============================================================
@@ -283,7 +297,9 @@ amrex::Print() << "#############################################################
 
         {
             const amrex::Real err = amrex::DG::EvalError(inputs.time.T, mesh, matfactory, DG_N_SOL, X, ES);
-            amrex::Print() << "| err: " << std::scientific << std::setprecision(5) << std::setw(12) << err << std::endl;
+            amrex::Print() << "| err: " << std::scientific << std::setprecision(5) << std::setw(12) << std::sqrt(err) << std::endl;
+
+            fp << "| err(t = T): " << std::scientific << std::setprecision(5) << std::setw(12) << std::sqrt(err) << "\n";
         }
 
         // CLOSING ====================================================

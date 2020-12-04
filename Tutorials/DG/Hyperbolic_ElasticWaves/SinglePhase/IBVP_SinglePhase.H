@@ -95,6 +95,10 @@ public ELASTIC_SOLID_BASE<1>
             const amrex::Real xc[AMREX_SPACEDIM] = {AMREX_D_DECL(this->ls_params[1]-x[0], this->ls_params[2]-x[1], this->ls_params[3]-x[2])};
 
             PHI[0] = r*r-(AMREX_D_TERM(xc[0]*xc[0], +xc[1]*xc[1], +xc[2]*xc[2]));
+
+#if (AMREX_SPACEDIM == 3)
+            PHI[0] *= -1.0;
+#endif
         }
     }
 
@@ -159,9 +163,17 @@ public ELASTIC_SOLID_BASE<1>
         const amrex::Real density = this->rho[dom];
         const amrex::Real * c = &this->cSE[dom][0];
 
+#if (AMREX_SPACEDIM == 2)
         const int k = 0;
         const amrex::Real theta = M_PI/6.0;
         const amrex::Real dir[AMREX_SPACEDIM] = {AMREX_D_DECL(std::cos(theta), std::sin(theta), 0.0)};
+#endif
+#if (AMREX_SPACEDIM == 3)
+        const int k = 0;
+        const amrex::Real phi = M_PI/6.0;
+        const amrex::Real theta = M_PI/6.0;
+        const amrex::Real dir[AMREX_SPACEDIM] = {AMREX_D_DECL(std::cos(phi)*std::sin(theta), std::sin(phi)*std::sin(theta), std::cos(theta))};
+#endif
 
         // VARIABLES
         amrex::Real w[AMREX_SPACEDIM], v[AMREX_SPACEDIM*AMREX_SPACEDIM];
@@ -207,8 +219,19 @@ public ELASTIC_SOLID_BASE<1>
         U[V2] = vk[1];
         U[V3] = vk[2];
 
-        amrex::Print() << "HELLO! F_EXACT - DIM = 3" << std::endl;
-        exit(-1);
+        U[S11] = (c[C11]*dir[0]+c[C61]*dir[1]+c[C51]*dir[2])*vk[0]+(c[C61]*dir[0]+c[C21]*dir[1]+c[C41]*dir[2])*vk[1]+(c[C51]*dir[0]+c[C41]*dir[1]+c[C31]*dir[2])*vk[2];
+        U[S22] = (c[C21]*dir[0]+c[C62]*dir[1]+c[C52]*dir[2])*vk[0]+(c[C62]*dir[0]+c[C22]*dir[1]+c[C42]*dir[2])*vk[1]+(c[C52]*dir[0]+c[C42]*dir[1]+c[C32]*dir[2])*vk[2];
+        U[S33] = (c[C31]*dir[0]+c[C63]*dir[1]+c[C53]*dir[2])*vk[0]+(c[C63]*dir[0]+c[C32]*dir[1]+c[C43]*dir[2])*vk[1]+(c[C53]*dir[0]+c[C43]*dir[1]+c[C33]*dir[2])*vk[2];
+        U[S23] = (c[C41]*dir[0]+c[C64]*dir[1]+c[C54]*dir[2])*vk[0]+(c[C64]*dir[0]+c[C42]*dir[1]+c[C44]*dir[2])*vk[1]+(c[C54]*dir[0]+c[C44]*dir[1]+c[C43]*dir[2])*vk[2];
+        U[S13] = (c[C51]*dir[0]+c[C65]*dir[1]+c[C55]*dir[2])*vk[0]+(c[C65]*dir[0]+c[C52]*dir[1]+c[C54]*dir[2])*vk[1]+(c[C55]*dir[0]+c[C54]*dir[1]+c[C53]*dir[2])*vk[2];
+        U[S12] = (c[C61]*dir[0]+c[C66]*dir[1]+c[C65]*dir[2])*vk[0]+(c[C66]*dir[0]+c[C62]*dir[1]+c[C64]*dir[2])*vk[1]+(c[C65]*dir[0]+c[C64]*dir[1]+c[C63]*dir[2])*vk[2];
+
+        U[S11] *= -density/zk;
+        U[S22] *= -density/zk;
+        U[S33] *= -density/zk;
+        U[S23] *= -density/zk;
+        U[S13] *= -density/zk;
+        U[S12] *= -density/zk;
 #endif
         // ============================================================
 
@@ -224,12 +247,26 @@ exit(-1);
         f = (AMREX_D_TERM(x[0]*dir[0], +x[1]*dir[1], +x[2]*dir[2]))-zk*t;
         f = std::sin(2.0*M_PI*f);
 
-        U[V1] *= f;
-        U[V2] *= f;
+        AMREX_D_TERM
+        (
+            U[V1] *= f;,
+            U[V2] *= f;,
+            U[V3] *= f;
+        )
 
+#if (AMREX_SPACEDIM == 2)
         U[S11] *= f;
         U[S22] *= f;
         U[S12] *= f;
+#endif
+#if (AMREX_SPACEDIM == 3)
+        U[S11] *= f;
+        U[S22] *= f;
+        U[S33] *= f;
+        U[S23] *= f;
+        U[S13] *= f;
+        U[S12] *= f;
+#endif
         // ============================================================
     }
     
@@ -262,10 +299,31 @@ exit(-1);
     AMREX_GPU_HOST_DEVICE
     void F_BCS(const int /*dom*/,
                const amrex::Real t, const amrex::Real * x, const amrex::Real * /*un*/,
-               const amrex::Real * /*U*/,
+               const amrex::Real * U,
                amrex::Real * bcs_U) const
     {
         this->F_EXACT(t, x, bcs_U);
+
+        // PRESCRIBED VELOCITY
+        AMREX_D_TERM
+        (
+            bcs_U[V1] = 2.0*bcs_U[V1]-U[V1];,
+            bcs_U[V2] = 2.0*bcs_U[V2]-U[V2];,
+            bcs_U[V3] = 2.0*bcs_U[V3]-U[V3];
+        )
+#if (AMREX_SPACEDIM == 2)
+        bcs_U[S11] = U[S11];
+        bcs_U[S22] = U[S22];
+        bcs_U[S12] = U[S12];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        bcs_U[S11] = U[S11];
+        bcs_U[S22] = U[S22];
+        bcs_U[S33] = U[S33];
+        bcs_U[S23] = U[S23];
+        bcs_U[S13] = U[S13];
+        bcs_U[S12] = U[S12];
+#endif
     }
 
     /**
@@ -281,11 +339,47 @@ exit(-1);
     */
     AMREX_GPU_HOST_DEVICE
     void F_PHI_BCS(const int /*dom*/,
-                   const amrex::Real t, const amrex::Real * x, const amrex::Real * /*un*/,
-                   const amrex::Real * /*U*/,
+                   const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                   const amrex::Real * U,
                    amrex::Real * bcs_U) const
     {
+        amrex::Real Un[DG_N_SOL], bcs_Un[DG_N_SOL];
+
         this->F_EXACT(t, x, bcs_U);
+
+        this->eval_U2Un(un, U, Un);
+        this->eval_U2Un(un, bcs_U, bcs_Un);
+
+        // PRESCRIBED TRACTIONS
+        AMREX_D_TERM
+        (
+            bcs_Un[V1] = Un[V1];,
+            bcs_Un[V2] = Un[V2];,
+            bcs_Un[V3] = Un[V3];
+        )
+#if (AMREX_SPACEDIM == 2)
+        bcs_Un[S11] = 2.0*bcs_Un[S11]-Un[S11];
+        bcs_Un[S22] = Un[S22];
+        bcs_Un[S12] = 2.0*bcs_Un[S12]-Un[S12];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        bcs_Un[S11] = 2.0*bcs_Un[S11]-Un[S11];
+        bcs_Un[S22] = Un[S22];
+        bcs_Un[S33] = Un[S33];
+        bcs_Un[S23] = Un[S23];
+        bcs_Un[S13] = 2.0*bcs_Un[S13]-Un[S13];
+        bcs_Un[S12] = 2.0*bcs_Un[S12]-Un[S12];
+#endif
+        this->eval_Un2U(un, bcs_Un, bcs_U);
+
+/*
+amrex::Print() << "un: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, un);
+amrex::Print() << "bcs_Un: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, bcs_Un);
+this->eval_U2Un(un, bcs_Un, Un);
+this->eval_Un2U(un, Un, bcs_Un);
+amrex::Print() << "bcs_Un: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, bcs_Un);
+exit(-1);
+*/
     }
     // ################################################################
 
@@ -403,8 +497,10 @@ exit(-1);
                         "err_stress_xx", "err_stress_yy", "err_stress_xy"};
 #endif
 #if (AMREX_SPACEDIM == 3)
-        fields_names = {"velocity_x", "velocity_y", "velocity_z"
-                        "stress_xx", "stress_yy", "stress_zz", "stress_yz", "stress_xz", "stress_xy"};
+        fields_names = {"velocity_x", "velocity_y", "velocity_z",
+                        "stress_xx", "stress_yy", "stress_zz", "stress_yz", "stress_xz", "stress_xy",
+                        "err_velocity_x", "err_velocity_y", "err_velocity_z",
+                        "err_stress_xx", "err_stress_yy", "err_stress_zz", "err_stress_yz", "err_stress_xz", "err_stress_xy"};
 #endif
     }
 
@@ -424,7 +520,8 @@ exit(-1);
                           0, 0, 0, 0, 0};
 #endif
 #if (AMREX_SPACEDIM == 3)
-        fields_domains = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+        fields_domains = {0, 0, 0, 0, 0, 0, 0, 0, 0,
+                          0, 0, 0, 0, 0, 0, 0, 0, 0};
 #endif
     }
 
@@ -475,6 +572,16 @@ exit(-1);
         F[6] = U[S23];
         F[7] = U[S13];
         F[8] = U[S12];
+
+        F[0+N_VS] = U[ V1]-Ue[ V1];
+        F[1+N_VS] = U[ V2]-Ue[ V2];
+        F[2+N_VS] = U[ V3]-Ue[ V3];
+        F[3+N_VS] = U[S11]-Ue[S11];
+        F[4+N_VS] = U[S22]-Ue[S22];
+        F[5+N_VS] = U[S33]-Ue[S33];
+        F[6+N_VS] = U[S23]-Ue[S23];
+        F[7+N_VS] = U[S13]-Ue[S13];
+        F[8+N_VS] = U[S12]-Ue[S12];
 #endif
     }
     // ################################################################

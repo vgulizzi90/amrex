@@ -303,6 +303,106 @@ struct ELASTIC_SOLID_BASE
 
     // AUXILIARY FUNCTIONS ############################################
     /**
+     * \brief Transform solution from global reference system to unit normal reference system.
+     * 
+     * \param[in] un: pointer to memory containing the unit normal.
+     * \param[in] U: pointer to memory containing the unknown solution fields in the global reference
+     *               system.
+     * \param[out] Un: pointer to memory containing the unknown solution fields in the unit normal
+     *                 reference system.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void eval_U2Un(const amrex::Real * un, const amrex::Real * U, amrex::Real * Un) const
+    {
+#if (AMREX_SPACEDIM == 1)
+amrex::Print() << "HELLO! eval_U2Un - DIM = 1" << std::endl;
+exit(-1);
+#endif
+#if (AMREX_SPACEDIM == 2)
+        const amrex::Real c = un[0], s = un[1];
+        const amrex::Real cs = c*s;
+
+        Un[V1] =  c*U[V1]+s*U[V2];
+        Un[V2] = -s*U[V1]+c*U[V2];
+        Un[S11] = c*c*U[S11]+s*s*U[S22]  +2.0*cs*U[S12];
+        Un[S22] = s*s*U[S11]+c*c*U[S22]  -2.0*cs*U[S12];
+        Un[S12] = -cs*U[S11]+cs*U[S22]+(c*c-s*s)*U[S12];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        // We assume un be written as
+        // un = n1 = cos(phi)*sin(theta)
+        //      n2   sin(phi)*sin(theta)
+        //      n3   cos(theta)
+        const amrex::Real theta = std::acos(un[2]);
+        const amrex::Real phi = std::atan2(un[1], un[0]);
+        const amrex::Real cth = std::cos(theta);
+        const amrex::Real sth = std::sin(theta);
+        const amrex::Real cph = std::cos(phi);
+        const amrex::Real sph = std::sin(phi);
+
+        Un[V1] =  cph*sth*U[V1]+sph*sth*U[V2]+cth*U[V3];
+        Un[V2] =     -sph*U[V1]    +cph*U[V2];
+        Un[V3] = -cph*cth*U[V1]-cth*sph*U[V2]+sth*U[V3];
+        Un[S11] =  cph*cph*sth*sth*U[S11]+sph*sph*sth*sth*U[S22]+cth*cth*U[S33]      +2.0*cth*sph*sth*U[S23]      +2.0*cph*cth*sth*U[S13]  +2.0*cph*sph*sth*sth*U[S12];
+        Un[S22] =          sph*sph*U[S11]        +cph*cph*U[S22]                                                                                   -2.0*cph*sph*U[S12];
+        Un[S33] =  cph*cph*cth*cth*U[S11]+cth*cth*sph*sph*U[S22]+sth*sth*U[S33]      -2.0*cth*sph*sth*U[S23]      -2.0*cph*cth*sth*U[S13]  +2.0*cph*cth*cth*sph*U[S12];
+        Un[S23] =      cph*cth*sph*U[S11]    -cph*cth*sph*U[S22]                             +cph*sth*U[S23]              -sph*sth*U[S13]-(cph*cph-sph*sph)*cth*U[S12];
+        Un[S13] = -cph*cph*cth*sth*U[S11]-cth*sph*sph*sth*U[S22]+cth*sth*U[S33]-(cth*cth-sth*sth)*sph*U[S23]-(cth*cth-sth*sth)*cph*U[S13]  -2.0*cph*cth*sph*sth*U[S12];
+        Un[S12] =     -cph*sph*sth*U[S11]    +cph*sph*sth*U[S22]                             +cph*cth*U[S23]              -cth*sph*U[S13]+(cph*cph-sph*sph)*sth*U[S12];
+#endif
+    }
+
+    /**
+     * \brief Transform solution from unit normal reference system to global reference system.
+     * 
+     * \param[in] un: pointer to memory containing the unit normal.
+     * \param[in] Un: pointer to memory containing the unknown solution fields in the unit normal
+     *                reference system.
+     * \param[out] U: pointer to memory containing the unknown solution fields in the global reference
+     *                system.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void eval_Un2U(const amrex::Real * un, const amrex::Real * Un, amrex::Real * U) const
+    {
+#if (AMREX_SPACEDIM == 1)
+amrex::Print() << "HELLO! eval_Un2U - DIM = 1" << std::endl;
+exit(-1);
+#endif
+#if (AMREX_SPACEDIM == 2)
+        const amrex::Real c = un[0], s = un[1];
+        const amrex::Real cs = c*s;
+
+        U[V1] = c*Un[V1]-s*Un[V2];
+        U[V2] = s*Un[V1]+c*Un[V2];
+        U[S11] = c*c*Un[S11]+s*s*Un[S22]  -2.0*cs*Un[S12];
+        U[S22] = s*s*Un[S11]+c*c*Un[S22]  +2.0*cs*Un[S12];
+        U[S12] =  cs*Un[S11]-cs*Un[S22]+(c*c-s*s)*Un[S12];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        // We assume un be written as
+        // un = n1 = cos(phi)*sin(theta)
+        //      n2   sin(phi)*sin(theta)
+        //      n3   cos(theta)
+        const amrex::Real theta = std::acos(un[2]);
+        const amrex::Real phi = std::atan2(un[1], un[0]);
+        const amrex::Real cth = std::cos(theta);
+        const amrex::Real sth = std::sin(theta);
+        const amrex::Real cph = std::cos(phi);
+        const amrex::Real sph = std::sin(phi);
+
+        U[V1] = cph*sth*Un[V1]-sph*Un[V2]-cph*cth*Un[V3];
+        U[V2] = sph*sth*Un[V1]+cph*Un[V2]-cth*sph*Un[V3];
+        U[V3] = cth*Un[V1]                   +sth*Un[V3];
+        U[S11] = cph*cph*sth*sth*Un[S11]+sph*sph*Un[S22]+cph*cph*cth*cth*Un[S33]      +2.0*cph*cth*sph*Un[S23]  -2.0*cph*cph*cth*sth*Un[S13]      -2.0*cph*sph*sth*Un[S12];
+        U[S22] = sph*sph*sth*sth*Un[S11]+cph*cph*Un[S22]+cth*cth*sph*sph*Un[S33]      -2.0*cph*cth*sph*Un[S23]  -2.0*cth*sph*sph*sth*Un[S13]      +2.0*cph*sph*sth*Un[S12];
+        U[S33] =         cth*cth*Un[S11]                        +sth*sth*Un[S33]                                        +2.0*cth*sth*Un[S13];
+        U[S23] =     cth*sph*sth*Un[S11]                    -cth*sph*sth*Un[S33]              +cph*sth*Un[S23]+(sth*sth-cth*cth)*sph*Un[S13]              +cph*cth*Un[S12];
+        U[S13] =     cph*cth*sth*Un[S11]                    -cph*cth*sth*Un[S33]              -sph*sth*Un[S23]+(sth*sth-cth*cth)*cph*Un[S13]              -cth*sph*Un[S12];
+        U[S12] = cph*sph*sth*sth*Un[S11]-cph*sph*Un[S22]+cph*cth*cth*sph*Un[S33]+(sph*sph-cph*cph)*cth*Un[S23]  -2.0*cph*cth*sph*sth*Un[S13]+(cph*cph-sph*sph)*sth*Un[S12];
+#endif
+    }
+    
+    /**
      * \brief Eval the strain vector given the stress vector as input.
      *
      * \param[in] dom: index of the domain.
@@ -388,6 +488,11 @@ struct ELASTIC_SOLID_BASE
         const amrex::Real un12 = un[0]*un[1]*inv_rho;
         const amrex::Real un22 = un[1]*un[1]*inv_rho;
 #endif
+#if (AMREX_SPACEDIM > 2)
+        const amrex::Real un23 = un[1]*un[2]*inv_rho;
+        const amrex::Real un13 = un[0]*un[2]*inv_rho;
+        const amrex::Real un33 = un[2]*un[2]*inv_rho;
+#endif
 
 #if (AMREX_SPACEDIM == 2)
         InTcIn[0+0*AMREX_SPACEDIM] = c[C11]*un11+(c[C61]+c[C61])*un12+c[C66]*un22;
@@ -398,8 +503,17 @@ struct ELASTIC_SOLID_BASE
         InTcIn[0+1*AMREX_SPACEDIM] = InTcIn[1+0*AMREX_SPACEDIM];
 #endif
 #if (AMREX_SPACEDIM == 3)
-        amrex::Print() << "HELLO! eval_InTcIn - DIM = 3" << std::endl;
-        exit(-1);
+        InTcIn[0+0*AMREX_SPACEDIM] = c[C11]*un11+c[C66]*un22+c[C55]*un33+(c[C61]+c[C61])*un12+(c[C51]+c[C51])*un13+(c[C65]+c[C65])*un23;
+        InTcIn[1+0*AMREX_SPACEDIM] = c[C61]*un11+c[C62]*un22+c[C54]*un33+(c[C21]+c[C66])*un12+(c[C41]+c[C65])*un13+(c[C52]+c[C64])*un23;
+        InTcIn[2+0*AMREX_SPACEDIM] = c[C51]*un11+c[C64]*un22+c[C53]*un33+(c[C41]+c[C65])*un12+(c[C31]+c[C55])*un13+(c[C63]+c[C54])*un23;
+        InTcIn[1+1*AMREX_SPACEDIM] = c[C66]*un11+c[C22]*un22+c[C44]*un33+(c[C62]+c[C62])*un12+(c[C64]+c[C64])*un13+(c[C42]+c[C42])*un23;
+        InTcIn[2+1*AMREX_SPACEDIM] = c[C65]*un11+c[C42]*un22+c[C43]*un33+(c[C52]+c[C64])*un12+(c[C63]+c[C54])*un13+(c[C32]+c[C44])*un23;
+        InTcIn[2+2*AMREX_SPACEDIM] = c[C55]*un11+c[C44]*un22+c[C33]*un33+(c[C54]+c[C54])*un12+(c[C53]+c[C53])*un13+(c[C43]+c[C43])*un23;
+
+        // Symmetric components
+        InTcIn[0+1*AMREX_SPACEDIM] = InTcIn[1+0*AMREX_SPACEDIM];
+        InTcIn[0+2*AMREX_SPACEDIM] = InTcIn[2+0*AMREX_SPACEDIM];
+        InTcIn[1+2*AMREX_SPACEDIM] = InTcIn[2+1*AMREX_SPACEDIM];
 #endif
     }
 
@@ -427,8 +541,16 @@ struct ELASTIC_SOLID_BASE
         An[4+V1*N_VS] = -(c[C61]*un[0]+c[C66]*un[1]); An[4+V2*N_VS] = -(c[C66]*un[0]+c[C62]*un[1]);
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "HELLO! eval_An - DIM = 3" << std::endl;
-exit(-1);
+        An[V1+S11*N_VS] = -inv_rho*un[0]; An[V1+S12*N_VS] = -inv_rho*un[1]; An[V1+S13*N_VS] = -inv_rho*un[2];
+        An[V2+S12*N_VS] = -inv_rho*un[0]; An[V2+S22*N_VS] = -inv_rho*un[1]; An[V2+S23*N_VS] = -inv_rho*un[2];
+        An[V3+S13*N_VS] = -inv_rho*un[0]; An[V3+S23*N_VS] = -inv_rho*un[1]; An[V3+S33*N_VS] = -inv_rho*un[2];
+
+        An[S11+V1*N_VS] = -(c[C11]*un[0]+c[C61]*un[1]+c[C51]*un[2]); An[S11+V2*N_VS] = -(c[C61]*un[0]+c[C21]*un[1]+c[C41]*un[2]); An[S11+V3*N_VS] = -(c[C51]*un[0]+c[C41]*un[1]+c[C31]*un[2]);
+        An[S22+V1*N_VS] = -(c[C21]*un[0]+c[C62]*un[1]+c[C52]*un[2]); An[S22+V2*N_VS] = -(c[C62]*un[0]+c[C22]*un[1]+c[C42]*un[2]); An[S22+V3*N_VS] = -(c[C52]*un[0]+c[C42]*un[1]+c[C32]*un[2]);
+        An[S33+V1*N_VS] = -(c[C31]*un[0]+c[C63]*un[1]+c[C53]*un[2]); An[S33+V2*N_VS] = -(c[C63]*un[0]+c[C32]*un[1]+c[C43]*un[2]); An[S33+V3*N_VS] = -(c[C53]*un[0]+c[C43]*un[1]+c[C33]*un[2]);
+        An[S23+V1*N_VS] = -(c[C41]*un[0]+c[C64]*un[1]+c[C54]*un[2]); An[S23+V2*N_VS] = -(c[C64]*un[0]+c[C42]*un[1]+c[C44]*un[2]); An[S23+V3*N_VS] = -(c[C54]*un[0]+c[C44]*un[1]+c[C43]*un[2]);
+        An[S13+V1*N_VS] = -(c[C51]*un[0]+c[C65]*un[1]+c[C55]*un[2]); An[S13+V2*N_VS] = -(c[C65]*un[0]+c[C52]*un[1]+c[C54]*un[2]); An[S13+V3*N_VS] = -(c[C55]*un[0]+c[C54]*un[1]+c[C53]*un[2]);
+        An[S12+V1*N_VS] = -(c[C61]*un[0]+c[C66]*un[1]+c[C65]*un[2]); An[S12+V2*N_VS] = -(c[C66]*un[0]+c[C62]*un[1]+c[C64]*un[2]); An[S12+V3*N_VS] = -(c[C65]*un[0]+c[C64]*un[1]+c[C63]*un[2]);
 #endif
 
     }
@@ -504,8 +626,26 @@ exit(-1);
 
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "HELLO! eig_An - DIM = 3" << std::endl;
-exit(-1);
+            r[S11+k*N_VS] = (c[C11]*un[0]+c[C61]*un[1]+c[C51]*un[2])*r[V1+k*N_VS]+(c[C61]*un[0]+c[C21]*un[1]+c[C41]*un[2])*r[V2+k*N_VS]+(c[C51]*un[0]+c[C41]*un[1]+c[C31]*un[2])*r[V3+k*N_VS];
+            r[S22+k*N_VS] = (c[C21]*un[0]+c[C62]*un[1]+c[C52]*un[2])*r[V1+k*N_VS]+(c[C62]*un[0]+c[C22]*un[1]+c[C42]*un[2])*r[V2+k*N_VS]+(c[C52]*un[0]+c[C42]*un[1]+c[C32]*un[2])*r[V3+k*N_VS];
+            r[S33+k*N_VS] = (c[C31]*un[0]+c[C63]*un[1]+c[C53]*un[2])*r[V1+k*N_VS]+(c[C63]*un[0]+c[C32]*un[1]+c[C43]*un[2])*r[V2+k*N_VS]+(c[C53]*un[0]+c[C43]*un[1]+c[C33]*un[2])*r[V3+k*N_VS];
+            r[S23+k*N_VS] = (c[C41]*un[0]+c[C64]*un[1]+c[C54]*un[2])*r[V1+k*N_VS]+(c[C64]*un[0]+c[C42]*un[1]+c[C44]*un[2])*r[V2+k*N_VS]+(c[C54]*un[0]+c[C44]*un[1]+c[C43]*un[2])*r[V3+k*N_VS];
+            r[S13+k*N_VS] = (c[C51]*un[0]+c[C65]*un[1]+c[C55]*un[2])*r[V1+k*N_VS]+(c[C65]*un[0]+c[C52]*un[1]+c[C54]*un[2])*r[V2+k*N_VS]+(c[C55]*un[0]+c[C54]*un[1]+c[C53]*un[2])*r[V3+k*N_VS];
+            r[S12+k*N_VS] = (c[C61]*un[0]+c[C66]*un[1]+c[C65]*un[2])*r[V1+k*N_VS]+(c[C66]*un[0]+c[C62]*un[1]+c[C64]*un[2])*r[V2+k*N_VS]+(c[C65]*un[0]+c[C64]*un[1]+c[C63]*un[2])*r[V3+k*N_VS];
+            
+            r[S11+k*N_VS] *= -density/zk;
+            r[S22+k*N_VS] *= -density/zk;
+            r[S33+k*N_VS] *= -density/zk;
+            r[S23+k*N_VS] *= -density/zk;
+            r[S13+k*N_VS] *= -density/zk;
+            r[S12+k*N_VS] *= -density/zk;
+
+            r[S11+(k+AMREX_SPACEDIM)*N_VS] = -r[S11+k*N_VS];
+            r[S22+(k+AMREX_SPACEDIM)*N_VS] = -r[S22+k*N_VS];
+            r[S33+(k+AMREX_SPACEDIM)*N_VS] = -r[S33+k*N_VS];
+            r[S23+(k+AMREX_SPACEDIM)*N_VS] = -r[S23+k*N_VS];
+            r[S13+(k+AMREX_SPACEDIM)*N_VS] = -r[S13+k*N_VS];
+            r[S12+(k+AMREX_SPACEDIM)*N_VS] = -r[S12+k*N_VS];
 #endif
             // LEFT EIGENVECTORS
             AMREX_D_TERM
@@ -534,8 +674,26 @@ exit(-1);
             l[S12+(k+AMREX_SPACEDIM)*N_VS] = -l[S12+k*N_VS];
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "HELLO! eig_An - DIM = 3" << std::endl;
-exit(-1);
+            l[S11+k*N_VS] = un[0]*r[V1+k*N_VS];
+            l[S22+k*N_VS] = un[1]*r[V2+k*N_VS];
+            l[S33+k*N_VS] = un[2]*r[V3+k*N_VS];
+            l[S23+k*N_VS] = un[2]*r[V2+k*N_VS]+un[1]*r[V3+k*N_VS];
+            l[S13+k*N_VS] = un[0]*r[V3+k*N_VS]+un[2]*r[V1+k*N_VS];
+            l[S12+k*N_VS] = un[0]*r[V2+k*N_VS]+un[1]*r[V1+k*N_VS];
+
+            l[S11+k*N_VS] *= -1.0/zk;
+            l[S22+k*N_VS] *= -1.0/zk;
+            l[S33+k*N_VS] *= -1.0/zk;
+            l[S23+k*N_VS] *= -1.0/zk;
+            l[S13+k*N_VS] *= -1.0/zk;
+            l[S12+k*N_VS] *= -1.0/zk;
+
+            l[S11+(k+AMREX_SPACEDIM)*N_VS] = -l[S11+k*N_VS];
+            l[S22+(k+AMREX_SPACEDIM)*N_VS] = -l[S22+k*N_VS];
+            l[S33+(k+AMREX_SPACEDIM)*N_VS] = -l[S33+k*N_VS];
+            l[S23+(k+AMREX_SPACEDIM)*N_VS] = -l[S23+k*N_VS];
+            l[S13+(k+AMREX_SPACEDIM)*N_VS] = -l[S13+k*N_VS];
+            l[S12+(k+AMREX_SPACEDIM)*N_VS] = -l[S12+k*N_VS];
 #endif
         }
         // ============================================================
@@ -565,8 +723,16 @@ exit(-1);
         AnU[S12] = -(c[C61]*U[V1]+c[C66]*U[V2])*un[0]-(c[C66]*U[V1]+c[C62]*U[V2])*un[1];
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "HELLO! eval_AnU - DIM = 3" << std::endl;
-exit(-1);
+        AnU[V1] = -inv_rho*(U[S11]*un[0]+U[S12]*un[1]+U[S13]*un[2]);
+        AnU[V2] = -inv_rho*(U[S12]*un[0]+U[S22]*un[1]+U[S23]*un[2]);
+        AnU[V3] = -inv_rho*(U[S13]*un[0]+U[S23]*un[1]+U[S33]*un[2]);
+
+        AnU[S11] = -(c[C11]*un[0]+c[C61]*un[1]+c[C51]*un[2])*U[V1]-(c[C61]*un[0]+c[C21]*un[1]+c[C41]*un[2])*U[V2]-(c[C51]*un[0]+c[C41]*un[1]+c[C31]*un[2])*U[V3];
+        AnU[S22] = -(c[C21]*un[0]+c[C62]*un[1]+c[C52]*un[2])*U[V1]-(c[C62]*un[0]+c[C22]*un[1]+c[C42]*un[2])*U[V2]-(c[C52]*un[0]+c[C42]*un[1]+c[C32]*un[2])*U[V3];
+        AnU[S33] = -(c[C31]*un[0]+c[C63]*un[1]+c[C53]*un[2])*U[V1]-(c[C63]*un[0]+c[C32]*un[1]+c[C43]*un[2])*U[V2]-(c[C53]*un[0]+c[C43]*un[1]+c[C33]*un[2])*U[V3];
+        AnU[S23] = -(c[C41]*un[0]+c[C64]*un[1]+c[C54]*un[2])*U[V1]-(c[C64]*un[0]+c[C42]*un[1]+c[C44]*un[2])*U[V2]-(c[C54]*un[0]+c[C44]*un[1]+c[C43]*un[2])*U[V3];
+        AnU[S13] = -(c[C51]*un[0]+c[C65]*un[1]+c[C55]*un[2])*U[V1]-(c[C65]*un[0]+c[C52]*un[1]+c[C54]*un[2])*U[V2]-(c[C55]*un[0]+c[C54]*un[1]+c[C53]*un[2])*U[V3];
+        AnU[S12] = -(c[C61]*un[0]+c[C66]*un[1]+c[C65]*un[2])*U[V1]-(c[C66]*un[0]+c[C62]*un[1]+c[C64]*un[2])*U[V2]-(c[C65]*un[0]+c[C64]*un[1]+c[C63]*un[2])*U[V3];
 #endif
 
     }
@@ -596,9 +762,15 @@ exit(-1);
 #if (AMREX_SPACEDIM == 3)
         amrex::DG::linalg::dsy3ev(InTcIn, w, v);
 #endif
+
 /*
+amrex::Print() << "un: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, un);
+amrex::Print() << "InTcIn: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, InTcIn);
+amrex::Print() << "w: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, w);
+amrex::Print() << "v: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, v);
+
+for (int k = 0; k < AMREX_SPACEDIM; ++k)
 {
-const int k = 1;
 amrex::Real tmp[AMREX_SPACEDIM*AMREX_SPACEDIM], I[AMREX_SPACEDIM*AMREX_SPACEDIM], res[AMREX_SPACEDIM];
 amrex::DG::linalg::eye(AMREX_SPACEDIM, I);
 for (int d = 0; d < AMREX_SPACEDIM; ++d)
@@ -612,14 +784,11 @@ for (int r = 0; r < AMREX_SPACEDIM; ++r)
 }
 
 amrex::DG::linalg::matmul(AMREX_SPACEDIM, AMREX_SPACEDIM, 1, tmp, &v[k*AMREX_SPACEDIM], res);
-
-amrex::Print() << "InTcIn: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, InTcIn);
-amrex::Print() << "w: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, w);
-amrex::Print() << "v: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, v);
 amrex::Print() << "I: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, I);
 amrex::Print() << "res: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, 1, res);
-exit(-1);
+amrex::Print() << std::endl;
 }
+exit(-1);
 */
     }
     // ################################################################
@@ -639,17 +808,25 @@ exit(-1);
         const amrex::Real inv_rho = 1.0/(this->rho[dom]);
         const amrex::Real * c = &this->cSE[dom][0];
 
-#if (AMREX_SPACEDIM == 2)
-        F1[V1] = -inv_rho*U[S11];
-        F1[V2] = -inv_rho*U[S12];
+        AMREX_D_TERM
+        (
+            F1[V1] = -inv_rho*U[S11];,
+            F1[V2] = -inv_rho*U[S12];,
+            F1[V3] = -inv_rho*U[S13];
+        )
 
+#if (AMREX_SPACEDIM == 2)
         F1[S11] = -c[C11]*U[V1]-c[C61]*U[V2];
         F1[S22] = -c[C21]*U[V1]-c[C62]*U[V2];
         F1[S12] = -c[C61]*U[V1]-c[C66]*U[V2];
 #endif
 #if (AMREX_SPACEDIM == 3)
-        amrex::Print() << "HELLO! eval_F1 - DIM = 3" << std::endl;
-        exit(-1);
+        F1[S11] = -c[C11]*U[V1]-c[C61]*U[V2]-c[C51]*U[V3];
+        F1[S22] = -c[C21]*U[V1]-c[C62]*U[V2]-c[C52]*U[V3];
+        F1[S33] = -c[C31]*U[V1]-c[C63]*U[V2]-c[C53]*U[V3];
+        F1[S23] = -c[C41]*U[V1]-c[C64]*U[V2]-c[C54]*U[V3];
+        F1[S13] = -c[C51]*U[V1]-c[C65]*U[V2]-c[C55]*U[V3];
+        F1[S12] = -c[C61]*U[V1]-c[C66]*U[V2]-c[C65]*U[V3];
 #endif
     }
 
@@ -668,17 +845,25 @@ exit(-1);
         const amrex::Real inv_rho = 1.0/(this->rho[dom]);
         const amrex::Real * c = &this->cSE[dom][0];
 
-#if (AMREX_SPACEDIM == 2)
-        F2[V1] = -inv_rho*U[S12];
-        F2[V2] = -inv_rho*U[S22];
+        AMREX_D_TERM
+        (
+            F2[V1] = -inv_rho*U[S12];,
+            F2[V2] = -inv_rho*U[S22];,
+            F2[V3] = -inv_rho*U[S23];
+        )
 
+#if (AMREX_SPACEDIM == 2)
         F2[S11] = -c[C61]*U[V1]-c[C21]*U[V2];
         F2[S22] = -c[C62]*U[V1]-c[C22]*U[V2];
         F2[S12] = -c[C66]*U[V1]-c[C62]*U[V2];
 #endif
 #if (AMREX_SPACEDIM == 3)
-        amrex::Print() << "HELLO! eval_F2 - DIM = 3" << std::endl;
-        exit(-1);
+        F2[S11] = -c[C61]*U[V1]-c[C21]*U[V2]-c[C42]*U[V3];
+        F2[S22] = -c[C62]*U[V1]-c[C22]*U[V2]-c[C42]*U[V3];
+        F2[S33] = -c[C63]*U[V1]-c[C32]*U[V2]-c[C43]*U[V3];
+        F2[S23] = -c[C64]*U[V1]-c[C42]*U[V2]-c[C44]*U[V3];
+        F2[S13] = -c[C65]*U[V1]-c[C52]*U[V2]-c[C54]*U[V3];
+        F2[S12] = -c[C66]*U[V1]-c[C62]*U[V2]-c[C64]*U[V3];
 #endif
     }
 #endif
@@ -698,8 +883,16 @@ exit(-1);
         const amrex::Real inv_rho = 1.0/(this->rho[dom]);
         const amrex::Real * c = &this->cSE[dom][0];
 
-amrex::Print() << "HELLO! eval_F3 - DIM = 3" << std::endl;
-exit(-1);
+        F3[V1] = -inv_rho*U[S13];
+        F3[V2] = -inv_rho*U[S23];
+        F3[V3] = -inv_rho*U[S33];
+
+        F3[S11] = -c[C51]*U[V1]-c[C42]*U[V2]-c[C31]*U[V3];
+        F3[S22] = -c[C52]*U[V1]-c[C42]*U[V2]-c[C32]*U[V3];
+        F3[S33] = -c[C53]*U[V1]-c[C43]*U[V2]-c[C33]*U[V3];
+        F3[S23] = -c[C54]*U[V1]-c[C44]*U[V2]-c[C43]*U[V3];
+        F3[S13] = -c[C55]*U[V1]-c[C54]*U[V2]-c[C53]*U[V3];
+        F3[S12] = -c[C65]*U[V1]-c[C64]*U[V2]-c[C63]*U[V3];
     }
 #endif
 
@@ -806,8 +999,19 @@ exit(-1);
             lk[S12] *= -1.0/zk;
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "HELLO - F_NF_ICS - DIM = 3" << std::endl;
-exit(-1);
+            lk[S11] = un[0]*lk[V1];
+            lk[S22] = un[1]*lk[V2];
+            lk[S33] = un[2]*lk[V3];
+            lk[S23] = un[2]*lk[V2]+un[1]*lk[V3];
+            lk[S13] = un[0]*lk[V3]+un[2]*lk[V1];
+            lk[S12] = un[0]*lk[V2]+un[1]*lk[V1];
+
+            lk[S11] *= -1.0/zk;
+            lk[S22] *= -1.0/zk;
+            lk[S33] *= -1.0/zk;
+            lk[S23] *= -1.0/zk;
+            lk[S13] *= -1.0/zk;
+            lk[S12] *= -1.0/zk;
 #endif
 
 //amrex::Print() << "lk: "; amrex::DG::IO::PrintRealArray2D(1, N_VS, lk);
@@ -860,8 +1064,19 @@ exit(-1);
             lk[S12] *= -density/zk;
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "HELLO - F_NF_ICS - DIM = 3" << std::endl;
-exit(-1);
+            lk[S11] = (c[C11]*un[0]+c[C61]*un[1]+c[C51]*un[2])*lk[V1]+(c[C61]*un[0]+c[C21]*un[1]+c[C41]*un[2])*lk[V2]+(c[C51]*un[0]+c[C41]*un[1]+c[C31]*un[2])*lk[V3];
+            lk[S22] = (c[C21]*un[0]+c[C62]*un[1]+c[C52]*un[2])*lk[V1]+(c[C62]*un[0]+c[C22]*un[1]+c[C42]*un[2])*lk[V2]+(c[C52]*un[0]+c[C42]*un[1]+c[C32]*un[2])*lk[V3];
+            lk[S33] = (c[C31]*un[0]+c[C63]*un[1]+c[C53]*un[2])*lk[V1]+(c[C63]*un[0]+c[C32]*un[1]+c[C43]*un[2])*lk[V2]+(c[C53]*un[0]+c[C43]*un[1]+c[C33]*un[2])*lk[V3];
+            lk[S23] = (c[C41]*un[0]+c[C64]*un[1]+c[C54]*un[2])*lk[V1]+(c[C64]*un[0]+c[C42]*un[1]+c[C44]*un[2])*lk[V2]+(c[C54]*un[0]+c[C44]*un[1]+c[C43]*un[2])*lk[V3];
+            lk[S13] = (c[C51]*un[0]+c[C65]*un[1]+c[C55]*un[2])*lk[V1]+(c[C65]*un[0]+c[C52]*un[1]+c[C54]*un[2])*lk[V2]+(c[C55]*un[0]+c[C54]*un[1]+c[C53]*un[2])*lk[V3];
+            lk[S12] = (c[C61]*un[0]+c[C66]*un[1]+c[C65]*un[2])*lk[V1]+(c[C66]*un[0]+c[C62]*un[1]+c[C64]*un[2])*lk[V2]+(c[C65]*un[0]+c[C64]*un[1]+c[C63]*un[2])*lk[V3];
+            
+            lk[S11] *= -density/zk;
+            lk[S22] *= -density/zk;
+            lk[S33] *= -density/zk;
+            lk[S23] *= -density/zk;
+            lk[S13] *= -density/zk;
+            lk[S12] *= -density/zk;
 #endif
 
 //amrex::Print() << "rk: "; amrex::DG::IO::PrintRealArray2D(1, N_VS, lk);
@@ -878,8 +1093,12 @@ exit(-1);
             NFnd[S12] -= ak[k]*lamk*lk[S12];
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "HELLO - F_NF_ICS - DIM = 3" << std::endl;
-exit(-1);
+            NFnd[S11] -= ak[k]*lamk*lk[S11];
+            NFnd[S22] -= ak[k]*lamk*lk[S22];
+            NFnd[S33] -= ak[k]*lamk*lk[S33];
+            NFnd[S23] -= ak[k]*lamk*lk[S23];
+            NFnd[S13] -= ak[k]*lamk*lk[S13];
+            NFnd[S12] -= ak[k]*lamk*lk[S12];
 #endif
         }
         // ============================================================
@@ -930,7 +1149,7 @@ exit(-1);
         // ============================================================
 
 /*
-if ((un[0] < -0.5) && (un[1] > 0.05))
+//if ((un[0] < -0.5) && (un[1] > 0.05))
 {
 amrex::Real An[N_VS*N_VS], lam[2*AMREX_SPACEDIM], r[N_VS*2*AMREX_SPACEDIM], l[N_VS*2*AMREX_SPACEDIM];
 amrex::Real rAn[N_VS*N_VS];
