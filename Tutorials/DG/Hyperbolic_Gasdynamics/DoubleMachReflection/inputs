@@ -26,7 +26,7 @@ grid.space_q = 2
 # =====================================================================
 # NOTE: Remember that the CFL will be scaled as follows:
 #
-#       CFL := CFL/(1+2*p)
+#       CFL := CFL/(1+2*p)
 #
 #       where p is the order of the dG basis functions (see below).
 # =====================================================================
@@ -52,19 +52,19 @@ problem.int_params = 0
 problem.params = 1.6666666667 10.9726443769 0.0 380.5128205128 4.2041015625 1.0 0.0 1.0 5.2 49.0
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
-#       which should be input as follows
+#       which should be input as follows
 #
 #       int_param: eb_flag
 #       params: gamma, rhoL, uL, pL, Sx, rhoR, uR, pR, Px, theta (degree)
 #
 #       where:
-#       - eb_flag: flag to activate the embedded boundary
+#       - eb_flag: flag to activate the embedded boundary
 #                  0: no embedded boundary is present and a Riemann
 #                     problem is basically solved
 #                  1: a plane is embedded into the grid
 #
 #       - gamma: specific heats ratio
-#       - (rhoL, uL, pL): left state
+#       - (rhoL, uL, pL): left state
 #       - Sx: the shock location
 #       - (rhoR, uR, pR): right state
 #       - Px: the x coordinate of the point P(Px,0) on the plane

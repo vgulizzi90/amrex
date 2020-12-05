@@ -176,7 +176,7 @@ amrex::Print() << "#############################################################
         // ============================================================
 
         // ADVANCE IN TIME ============================================
-        amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
+        amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
         {
             const int p = inputs.dG.space_p;
             const int RK_order = p+1;
@@ -244,7 +244,7 @@ amrex::Print() << "#############################################################
             }
 
         }
-        amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
+        amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
         // ============================================================
 
         // TOC ========================================================
