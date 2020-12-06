@@ -14,6 +14,31 @@ namespace DG
 {
 namespace IO
 {
+
+/**
+ * \brief Convert a real containing seconds to a string showing h:m:s.
+ *
+ * \param[in] total: seconds as a real;
+ *
+ * \return a string showing h:m:s.
+ *
+*/
+std::string Seconds2HoursMinutesSeconds(const Real total)
+{
+    const int int_total = (int) std::round(total);
+    const int aux = int_total/60;
+    const int seconds = int_total%60;
+    const int hours = aux/60;
+    const int minutes = aux%60;
+
+    std::string res;
+    res = std::to_string(hours)+":";
+    res += ((minutes < 10) ? ("0"+std::to_string(minutes)) : std::to_string(minutes))+":";
+    res += ((seconds < 10) ? ("0"+std::to_string(seconds)) : std::to_string(seconds));
+    
+    return res;
+}
+
 /**
  * \brief Print a list of n space-separated integers on process rank of communicator comm.
  *

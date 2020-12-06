@@ -454,6 +454,7 @@ exit(-1);
         this->F_EXACT(t, x, Ue);
 
         norm_x = this->eval_total_energy(dom, Ue);
+        //norm_x = U[V1]*U[V1];
 
         AMREX_D_TERM
         (
@@ -475,6 +476,7 @@ exit(-1);
         Ue[S12] -= U[S12];
 #endif
         err_x = this->eval_total_energy(dom, Ue);
+        //err_x = Ue[V1]*Ue[V1];
     }
     // ################################################################
 

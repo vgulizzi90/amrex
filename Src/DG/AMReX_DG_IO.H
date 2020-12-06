@@ -22,6 +22,8 @@ namespace DG
 namespace IO
 {
 
+std::string Seconds2HoursMinutesSeconds(const Real /*seconds*/);
+
 void PrintInts(const int /*rank*/, const MPI_Comm, const int /*n*/, const int *, std::ostream & os = amrex::OutStream());
 void PrintInts(const int /*rank*/, const int /*n*/, const int *, std::ostream & os = amrex::OutStream());
 void PrintInts(const int /*n*/, const int *, std::ostream & os = amrex::OutStream());
