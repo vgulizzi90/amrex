@@ -291,7 +291,7 @@ amrex::Print() << "#############################################################
                                << ", eta = " << amrex::DG::IO::Seconds2HoursMinutesSeconds(eta) << std::endl;
             }
 
-            fp << "| clock time per time step: " << std::scientific << std::setprecision(5) << std::setw(12) << std::sqrt(tps) << " s\n";
+            fp << "| clock time per time step: " << std::scientific << std::setprecision(5) << std::setw(12) << tps << " s\n";
         }
         amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
         // ============================================================
