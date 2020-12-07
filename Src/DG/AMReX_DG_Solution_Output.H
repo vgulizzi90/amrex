@@ -125,6 +125,16 @@ void Export_VTK(const std::string & folderpath_root,
     // ================================================================
 
     // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    if (N_SOL > __DG_MAX_N_SOL__)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg +=  "ERROR: AMReX_DG_Solution_Hyperbolic.H - Compute_dt\n";
+        msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
+        msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
+        msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
+        Abort(msg);
+    }
     if (n_VTK_nodal_fields > __DG_MAX_N_FIELDS__)
     {
         std::string msg;
@@ -1666,6 +1676,16 @@ void Export_VTK(const std::string & folderpath_root,
     // ================================================================
 
     // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    if (N_SOL > __DG_MAX_N_SOL__)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg +=  "ERROR: AMReX_DG_Solution_Output.H - Export_VTK\n";
+        msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
+        msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
+        msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
+        Abort(msg);
+    }
     if (n_IBVP_fields > __DG_MAX_N_FIELDS__)
     {
         std::string msg;

@@ -71,6 +71,19 @@ void ProjectInitialConditionsOverGrid(const Geometry & geom,
     Real const * iMM_ptr = std_elem.iMM.data();
     // ================================================================
 
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    if (N_SOL > __DG_MAX_N_SOL__)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg +=  "ERROR: AMReX_DG_Solution.H - ProjectInitialConditionsOverGrid\n";
+        msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
+        msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
+        msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
+        Abort(msg);
+    }
+    // ================================================================
+
     // INITIALIZATION =================================================
     X = 0.0;
     // ================================================================
@@ -300,6 +313,19 @@ void ProjectInitialConditions(const ImplicitMesh & mesh,
 
     // SOLUTIONS-TO-DOMAIN CORRESPONDENCE
     const int * Sol2Dom_ptr = Sol2Dom.data();
+    // ================================================================
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    if (N_SOL > __DG_MAX_N_SOL__)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg +=  "ERROR: AMReX_DG_Solution.H - ProjectInitialConditions\n";
+        msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
+        msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
+        msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
+        Abort(msg);
+    }
     // ================================================================
 
     // INITIALIZATION =================================================
@@ -541,8 +567,8 @@ Real EvalError(const Real t,
         Gpu::synchronize();
     }
 
-//Print() << "err.sum(1): " << err.sum(1) << std::endl;
-//Print() << "err.sum(0): " << err.sum(0) << std::endl;
+Print() << "err.sum(1): " << err.sum(1) << std::endl;
+Print() << "err.sum(0): " << err.sum(0) << std::endl;
 
     total_error = err.sum(1)/err.sum(0);
     for (int dom = 1; dom < N_DOM; ++dom)
