@@ -2040,7 +2040,7 @@ void dsy3ev_old(const Real * a, Real * lam, Real * ev)
         //tmp = ev[0+2*3]; ev[0+2*3] = ev[2+0*3]; ev[2+0*3] = tmp;
         //tmp = ev[1+2*3]; ev[1+2*3] = ev[2+1*3]; ev[2+1*3] = tmp;
         // ------------------------------------------------------------
-/**/
+/*
 Print() << "q: " << q << std::endl;
 Print() << "p: " << p << std::endl;
 Print() << "lam[0]: " << lam[0] << std::endl;
@@ -2049,7 +2049,7 @@ Print() << "lam[2]: " << lam[2] << std::endl;
 Print() << "ev[0]: " << ev[0] << " " << ev[1] << " " << ev[2] << std::endl;
 Print() << "ev[1]: " << ev[0+1*3] << " " << ev[1+1*3] << " " << ev[2+1*3] << std::endl;
 Print() << "ev[2]: " << ev[0+2*3] << " " << ev[1+2*3] << " " << ev[2+2*3] << std::endl;
-/**/
+*/
     }
 }
 
