@@ -2094,6 +2094,7 @@ void dsy3ev(const Real * a, Real * lam, Real * ev)
             tmp = std::sqrt(THIRD*std::abs(p));
             ph = tmp*tmp*tmp;
             ph = -0.5*q/ph;
+            ph = std::min(1.0, std::max(-1.0, ph));
             ph = std::acos(ph);
 
             // Eigenvalues
