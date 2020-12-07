@@ -1834,7 +1834,7 @@ void dpo3s(const int n, const Real * a, const Real * b, Real * x)
  * \brief Compute eigenvalues and (right) eigenvectors of a 3x3 symmetric matrix.
 */
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void dsy3ev(const Real * a, Real * lam, Real * ev)
+void dsy3ev_old(const Real * a, Real * lam, Real * ev)
 {
     const Real a11 = a[0+0*3];
     const Real a12 = a[0+1*3];
@@ -2040,9 +2040,189 @@ void dsy3ev(const Real * a, Real * lam, Real * ev)
         //tmp = ev[0+2*3]; ev[0+2*3] = ev[2+0*3]; ev[2+0*3] = tmp;
         //tmp = ev[1+2*3]; ev[1+2*3] = ev[2+1*3]; ev[2+1*3] = tmp;
         // ------------------------------------------------------------
-/*
+/**/
 Print() << "q: " << q << std::endl;
 Print() << "p: " << p << std::endl;
+Print() << "lam[0]: " << lam[0] << std::endl;
+Print() << "lam[1]: " << lam[1] << std::endl;
+Print() << "lam[2]: " << lam[2] << std::endl;
+Print() << "ev[0]: " << ev[0] << " " << ev[1] << " " << ev[2] << std::endl;
+Print() << "ev[1]: " << ev[0+1*3] << " " << ev[1+1*3] << " " << ev[2+1*3] << std::endl;
+Print() << "ev[2]: " << ev[0+2*3] << " " << ev[1+2*3] << " " << ev[2+2*3] << std::endl;
+/**/
+    }
+}
+
+/**
+ * \brief Compute eigenvalues and (right) eigenvectors of a 3x3 symmetric matrix.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void dsy3ev(const Real * a, Real * lam, Real * ev)
+{
+    const Real a11 = a[0+0*3];
+    const Real a12 = a[0+1*3];
+    const Real a13 = a[0+2*3];
+    const Real a22 = a[1+1*3];
+    const Real a23 = a[1+2*3];
+    const Real a33 = a[2+2*3];
+
+    const bool a_is_diagonal = (std::sqrt(a12*a12+a13*a13+a23*a23)/(a11+a22+a33) < 1.0e-12);
+
+    if (a_is_diagonal)
+    {
+        lam[0] = a11;
+        lam[1] = a22;
+        lam[2] = a33;
+        ev[0+0*3] = 1.0; ev[0+1*3] = 0.0; ev[0+2*3] = 0.0;
+        ev[1+0*3] = 0.0; ev[1+1*3] = 1.0; ev[1+2*3] = 0.0;
+        ev[2+0*3] = 0.0; ev[2+1*3] = 0.0; ev[2+2*3] = 1.0;
+    }
+    else
+    {
+        // EIGENVALUES ------------------------------------------------
+        {
+            Real p, q, ph, tmp;
+
+            // Temporarily store the invariants
+            ev[0] = a11+a22+a33;
+            ev[1] = a12*a12+a13*a13+a23*a23-a11*a22-a22*a33-a33*a11;
+            ev[2] = a11*a22*a33+2.0*a12*a23*a13-a11*a23*a23-a12*a12*a33-a13*a13*a22;
+
+            p = -ev[1]-THIRD*ev[0]*ev[0];
+            q = -ev[2]-(2.0/27.0)*ev[0]*ev[0]*ev[0]-THIRD*ev[0]*ev[1];
+            
+            tmp = std::sqrt(THIRD*std::abs(p));
+            ph = tmp*tmp*tmp;
+            ph = -0.5*q/ph;
+            ph = std::acos(ph);
+
+            // Eigenvalues
+            lam[0] = THIRD*ev[0]-2.0*tmp*std::cos(THIRD*(ph-M_PI));
+            lam[1] = THIRD*ev[0]-2.0*tmp*std::cos(THIRD*(ph+M_PI));
+            lam[2] = ev[0]-lam[0]-lam[1];
+        }
+        // ------------------------------------------------------------
+
+        // CHECK WHETHER WE HAVE COINCIDENT EIGENVALUES ---------------
+        bool coincident_eigenvalues;
+        
+        {
+            int k;
+
+            {
+                const Real tmp = 1.0e-12*std::abs(a11+a22+a33);
+
+                coincident_eigenvalues = false;
+                k = 0;
+
+                if (std::abs(lam[0]-lam[1]) < tmp)
+                {
+                    coincident_eigenvalues = true;
+                    k = 2;
+                }
+                else if (std::abs(lam[0]-lam[2]) < tmp)
+                {
+                    coincident_eigenvalues = true;
+                    k = 1;
+                }
+                else if (std::abs(lam[1]-lam[2]) < tmp)
+                {
+                    coincident_eigenvalues = true;
+                    k = 0;
+                }
+            }
+
+            if (coincident_eigenvalues)
+            {
+                Real tmp;
+
+                if (k != 0)
+                {
+                    tmp = lam[0];
+                    lam[0] = lam[k];
+                    lam[k] = tmp;
+                }
+            }
+        }
+        // ------------------------------------------------------------
+
+        // EIGENVECTORS -----------------------------------------------
+        const int k_max = coincident_eigenvalues ? 1 : 3;
+        for (int k = 0; k < k_max; ++k)
+        {
+            const Real b11 = a11-lam[k], b22 = a22-lam[k], b33 = a33-lam[k];
+            Real tmp, c12, c13, c23;
+            int i;
+
+            c12 = a12*a12-b11*b22;
+            c13 = a13*a13-b11*b33;
+            c23 = a23*a23-b22*b33;
+
+            tmp = c12;
+            i = 12;
+            if (std::abs(c13) > std::abs(tmp))
+            {
+                tmp = c13;
+                i = 13;
+            }
+            if (std::abs(c23) > std::abs(tmp))
+            {
+                tmp = c23;
+                i = 23;
+            }
+
+            if (i == 12)
+            {
+                tmp = 1.0/c12;
+                c13 = (a13*b22-a12*a23)*tmp;
+                c23 = (a23*b11-a12*a13)*tmp;
+                ev[2+k*3] = std::sqrt(1.0-c13*c13-c23*c23);
+                ev[0+k*3] = c13*ev[2+k*3];
+                ev[1+k*3] = c23*ev[2+k*3];
+            }
+            else if (i == 13)
+            {
+                tmp = 1.0/c13;
+                c12 = (a12*b33-a13*a23)*tmp;
+                c23 = (a23*b11-a12*a13)*tmp;
+                ev[1+k*3] = std::sqrt(1.0-c12*c12-c23*c23);
+                ev[0+k*3] = c12*ev[1+k*3];
+                ev[2+k*3] = c23*ev[1+k*3];
+            }
+            else
+            {
+                tmp = 1.0/c23;
+                c12 = (a12*b33-a13*a23)*tmp;
+                c13 = (a13*b22-a12*a23)*tmp;
+                ev[0+k*3] = std::sqrt(1.0-c12*c12-c13*c13);
+                ev[1+k*3] = c12*ev[0+k*3];
+                ev[2+k*3] = c13*ev[0+k*3];
+            }
+        }
+
+        if (coincident_eigenvalues)
+        {
+            Real tmp;
+
+            if (std::abs(ev[0]) > std::abs(ev[1]))
+            {
+                tmp = 1.0/std::sqrt(ev[0]*ev[0]+ev[2]*ev[2]);
+                ev[0+1*3] = -ev[2]*tmp;
+                ev[1+1*3] = 0.0;
+                ev[2+1*3] = +ev[0]*tmp;
+            }
+            else
+            {
+                tmp = 1.0/std::sqrt(ev[1]*ev[1]+ev[2]*ev[2]);
+                ev[0+1*3] = 0.0;
+                ev[1+1*3] = +ev[2]*tmp;
+                ev[2+1*3] = -ev[1]*tmp;
+            }
+            cross3(&ev[0*3], &ev[1*3], &ev[2*3]);
+        }
+        // ------------------------------------------------------------
+        
+/*
 Print() << "lam[0]: " << lam[0] << std::endl;
 Print() << "lam[1]: " << lam[1] << std::endl;
 Print() << "lam[2]: " << lam[2] << std::endl;
