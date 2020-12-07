@@ -1834,7 +1834,7 @@ void dpo3s(const int n, const Real * a, const Real * b, Real * x)
  * \brief Compute eigenvalues and (right) eigenvectors of a 3x3 symmetric matrix.
 */
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void dsy3ev_old(const Real * a, Real * lam, Real * ev)
+void dsy3ev(const Real * a, Real * lam, Real * ev)
 {
     const Real a11 = a[0+0*3];
     const Real a12 = a[0+1*3];
@@ -1890,9 +1890,18 @@ void dsy3ev_old(const Real * a, Real * lam, Real * ev)
             tmp = std::acos(tmp)*THIRD;
         }
 
-        lam[0] = q+2.0*p*std::cos(tmp+2.0*M_PI*THIRD);
-        lam[2] = q+2.0*p*std::cos(tmp);
-        lam[1] = 3.0*q-lam[0]-lam[2];
+        if (tmp < (M_PI/6.0))
+        {
+            lam[0] = q+2.0*p*std::cos(tmp);
+            lam[2] = q+2.0*p*std::cos(tmp+2.0*M_PI*THIRD);
+            lam[1] = 3.0*q-lam[0]-lam[2];
+        }
+        else
+        {
+            lam[0] = q+2.0*p*std::cos(tmp+2.0*M_PI*THIRD);
+            lam[2] = q+2.0*p*std::cos(tmp);
+            lam[1] = 3.0*q-lam[0]-lam[2];
+        }
 
         // Compute eigenvector corresponding to lam[0] ----------------
         b[0+0*3] = a11-lam[0]; b[0+1*3] = a12;        b[0+2*3] = a13;
@@ -2057,7 +2066,7 @@ Print() << "ev[2]: " << ev[0+2*3] << " " << ev[1+2*3] << " " << ev[2+2*3] << std
  * \brief Compute eigenvalues and (right) eigenvectors of a 3x3 symmetric matrix.
 */
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void dsy3ev(const Real * a, Real * lam, Real * ev)
+void dsy3ev_other(const Real * a, Real * lam, Real * ev)
 {
     const Real a11 = a[0+0*3];
     const Real a12 = a[0+1*3];
