@@ -91,14 +91,11 @@ public ELASTIC_SOLID_BASE<1>
         }
         else if (this->ls_flag == 0)
         {
+            const amrex::Real y[AMREX_SPACEDIM] = {AMREX_D_DECL(x[0]-std::floor(x[0]), x[1]-std::floor(x[1]), x[2]-std::floor(x[2]))};
             const amrex::Real r = this->ls_params[0];
-            const amrex::Real xc[AMREX_SPACEDIM] = {AMREX_D_DECL(this->ls_params[1]-x[0], this->ls_params[2]-x[1], this->ls_params[3]-x[2])};
+            const amrex::Real xc[AMREX_SPACEDIM] = {AMREX_D_DECL(this->ls_params[1]-y[0], this->ls_params[2]-y[1], this->ls_params[3]-y[2])};
 
             PHI[0] = r*r-(AMREX_D_TERM(xc[0]*xc[0], +xc[1]*xc[1], +xc[2]*xc[2]));
-
-#if (AMREX_SPACEDIM == 3)
-            PHI[0] *= -1.0;
-#endif
         }
     }
 
@@ -164,18 +161,17 @@ public ELASTIC_SOLID_BASE<1>
         const amrex::Real * c = &this->cSE[dom][0];
 
 #if (AMREX_SPACEDIM == 2)
-        const int k = 0;
         const amrex::Real theta = M_PI/6.0;
         const amrex::Real dir[AMREX_SPACEDIM] = {AMREX_D_DECL(std::cos(theta), std::sin(theta), 0.0)};
 #endif
 #if (AMREX_SPACEDIM == 3)
-        const int k = 0;
         const amrex::Real phi = M_PI/6.0;
         const amrex::Real theta = M_PI/6.0;
         const amrex::Real dir[AMREX_SPACEDIM] = {AMREX_D_DECL(std::cos(phi)*std::sin(theta), std::sin(phi)*std::sin(theta), std::cos(theta))};
 #endif
 
         // VARIABLES
+        int k;
         amrex::Real w[AMREX_SPACEDIM], v[AMREX_SPACEDIM*AMREX_SPACEDIM];
         amrex::Real z[AMREX_SPACEDIM];
         amrex::Real zk, vk[AMREX_SPACEDIM];
@@ -194,7 +190,17 @@ public ELASTIC_SOLID_BASE<1>
         // ============================================================
 
         // EVAL COEFFICIENTS ==========================================
+        k = 0;
         zk = z[k];
+        for (int ik = 1; ik < AMREX_SPACEDIM; ++ik)
+        {
+            if (z[ik] > zk)
+            {
+                k = ik;
+                zk = z[ik];
+            }
+        }
+
         AMREX_D_TERM
         (
             vk[0] = 0.5*std::sqrt(2.0)*v[0+k*AMREX_SPACEDIM];,
@@ -239,6 +245,7 @@ public ELASTIC_SOLID_BASE<1>
 amrex::Print() << "w: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, w);
 amrex::Print() << "z: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, z);
 amrex::Print() << "v: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, v);
+amrex::Print() << "k: " << k << std::endl;
 amrex::Print() << "U0: " << std::endl; amrex::DG::IO::PrintRealArray2D(DG_N_SOL, 1, U);
 exit(-1);
 */

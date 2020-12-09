@@ -64,6 +64,20 @@ amrex::Print() << "#############################################################
     ELASTIC_SOLID ES(inputs.problem.int_params, inputs.problem.params);
     // ================================================================
 
+    // INPUT CHECK ====================================================
+    if ((inputs.space.lo[0] != 0.0) || (inputs.space.lo[1] != 0.0) || (inputs.space.lo[2] != 0.0))
+    {
+        std::string msg;
+        msg  = "\n";
+        msg +=  "ERROR: main.cpp\n";
+        msg += "| The lower bounds of the domain must be (0,0,0).\n";
+        msg += "| inputs.space.lo: ("+AMREX_D_TERM(std::to_string(inputs.space.lo[0]),+","+
+                                                   std::to_string(inputs.space.lo[1]),+","+
+                                                   std::to_string(inputs.space.lo[2]))+").\n";
+        amrex::Abort(msg);
+    }
+    // ================================================================
+
     // DO THE ANALYSES
     for (int ip = 0; ip < n_p; ++ip)
     {
@@ -74,6 +88,10 @@ amrex::Print() << "#############################################################
         
         // MAKE OUTPUT FOLDER =========================================
         {
+            const std::string dom_info = "d"+AMREX_D_TERM(std::to_string((int) std::round(inputs.space.hi[0])),+"x"+
+                                                          std::to_string((int) std::round(inputs.space.hi[1])),+"x"+
+                                                          std::to_string((int) std::round(inputs.space.hi[2])));
+
             std::string geo_info;
             if (inputs.problem.int_params[1] == -1)
             {
@@ -89,7 +107,7 @@ amrex::Print() << "#############################################################
                                                            std::to_string(inputs.grid.n_cells[2]));
             const std::string p_info = "p"+std::to_string(inputs.dG.space_p);
 
-            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+geo_info+"_"+mesh_info+"_"+p_info});
+            output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+dom_info+"_"+geo_info+"_"+mesh_info+"_"+p_info});
 
             amrex::DG::IO::MakeFolder(output_folderpath);
         }

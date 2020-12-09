@@ -45,11 +45,7 @@ struct ADVECTION_BASE
     */
     AMREX_GPU_HOST_DEVICE
     virtual
-    void F_V(const amrex::Real /*t*/, const amrex::Real * /*x*/, amrex::Real * /*V*/) const
-    {
-amrex::Print() << "ADVECTION_BASE.F_V: We should have not ended up in here" << std::endl;
-exit(-1);
-    };
+    void F_V(const amrex::Real /*t*/, const amrex::Real * /*x*/, amrex::Real * /*V*/) const = 0;
     // ################################################################
 
     // TIME STEP ######################################################

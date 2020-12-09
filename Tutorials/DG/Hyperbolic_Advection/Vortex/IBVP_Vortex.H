@@ -58,19 +58,6 @@ public ADVECTION_BASE
     }
 
     /**
-     * \brief Returns the domain index dom where the unknown solution field ru is defined.
-     * 
-     * \param[in] ru: index of the unknown solution field.
-     *
-     * \return the index of the domain where the unknown solution field ru is defined.
-    */
-    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    int F_SOL2DOM(const int /*ru*/) const
-    {
-        return 0;
-    }
-
-    /**
      * \brief Returns the index nbr_dom of the domain that is neighbor with the current domain.
      * 
      * \param[in] dom: index of the current domain.

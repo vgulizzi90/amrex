@@ -8,25 +8,25 @@ space.hi          = 1.0 1.0 1.0
 
 
 # TIME ################################################################
-time.T = 1.0
-time.n_steps = 10000
+time.T = 0.9099999991 # in 2D
+#time.T = 0.7428571407 # in 3D
+time.n_steps = 100000
 #######################################################################
 
 
 
 # DISCRETIZATION ######################################################
 # GRID ================================================================
-grid.n_cells      = 8 8 8
-grid.max_box_size = 4 4 4
-grid.CFL = 0.3
+grid.n_cells      = 16 16 16
+grid.max_box_size = 8 8 8
+grid.CFL = 0.50 # in 2D
+#grid.CFL = 0.25 # in 3D
 
 # LEVEL SET FUNCTIONS
 grid.space_p = 2
 grid.space_q = 3
 # =====================================================================
-# NOTE: CFL = 0.6 for DIM = 2 and CFL = 0.3 for DIM = 3
-#
-#       Also, remember that the CFL will be scaled as follows:
+# NOTE: Remember that the CFL will be scaled as follows:
 #
 #       CFL := CFL/(1+2*p)
 #
@@ -37,11 +37,11 @@ grid.space_q = 3
 implicit_mesh.space_q = 4
 implicit_mesh.space_q_ie = 6
 
-implicit_mesh.volume_fraction_threshold = 0.3
+implicit_mesh.volume_fraction_threshold = 0.25
 # =====================================================================
 
 # DISCONTINUOUS GALERKIN METHOD =======================================
-dG.space_p = 1
+dG.space_p = 3
 # =====================================================================
 # NOTE: Although the polynomial order p is set here, the code will test
 #       p = 1, 2, 3.
@@ -57,8 +57,7 @@ dG.space_p = 1
 
 # EMBEDDED CIRCLE/SPHERE
 problem.int_params = 0 0
-#problem.params = 1.0 1.0 0.3 0.2 0.5 0.5 0.5 # in 2D
-problem.params = 1.0 1.0 0.3 0.4 0.5 0.5 0.5 # in 3D
+problem.params = 1.0 1.0 0.3 0.2 0.5 0.5 0.5
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
 #       which should be input as follows
@@ -102,5 +101,5 @@ problem.params = 1.0 1.0 0.3 0.4 0.5 0.5 0.5 # in 3D
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 10000
+plot_int = 100000
 #######################################################################
