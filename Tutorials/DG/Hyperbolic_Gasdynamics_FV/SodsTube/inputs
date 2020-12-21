@@ -1,0 +1,75 @@
+# SPACE ###############################################################
+space.is_periodic = 0 0 0
+space.lo          = 0.0 0.0 0.0
+space.hi          = 1.0 1.0 1.0
+#######################################################################
+
+
+
+# TIME ################################################################
+time.T = 0.2
+time.n_steps = 50000
+#######################################################################
+
+
+
+# DISCRETIZATION ######################################################
+# GRID ================================================================
+grid.n_cells      = 64 64 64
+grid.max_box_size = 4 4 4
+grid.CFL = 0.3
+
+# LEVEL SET FUNCTIONS
+grid.space_p = 2
+grid.space_q = 2
+# =====================================================================
+
+# IMPLICITLY-DEFINED MESH =============================================
+implicit_mesh.space_q = 2
+implicit_mesh.space_q_ie = 2
+
+implicit_mesh.volume_fraction_threshold = 0.3
+# =====================================================================
+
+# DISCONTINUOUS GALERKIN METHOD =======================================
+dG.space_p = 0
+# =====================================================================
+# NOTE: To activate Finite-Volume within the dG framework, it is
+#       necessary to set dG.space_p = 0.
+#######################################################################
+
+
+
+# PROBLEM #############################################################
+problem.int_params = 0
+
+problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1 0.2 0.0 0.0
+#######################################################################
+# NOTE: int_params and params contains the parameters of the problem,
+#       which should be input as follows
+#
+#       int_param: eb_flag
+#       params: gamma, rhoL, uL, pL, s, rhoR, uR, pR, diam, theta, phi
+#
+#       where:
+#       - eb_flag: flag to activate the embedded boundary
+#                  0: no embedded boundary is present and a Riemann
+#                     problem is basically solved
+#                  1: an embedded Sod's tube is introduced
+#
+#       - gamma: specific heats ratio
+#       - (rhoL, uL, pL): left state
+#       - s: the shock location
+#       - (rhoR, uR, pR): right state
+#       - diam: diameter of the embedded Sod's tube
+#       - theta: inclination (or azimuth in 3D) of the embedded Sod's
+#                tube
+#       - phi: elevation of the embedded Sod's tube (used in 3D only)
+#
+#######################################################################
+
+
+
+# POST-PROCESSING INFO ################################################
+plot_int = 100000
+#######################################################################

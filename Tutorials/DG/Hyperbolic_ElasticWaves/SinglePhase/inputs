@@ -19,8 +19,7 @@ time.n_steps = 100000
 # GRID ================================================================
 grid.n_cells      = 16 16 16
 grid.max_box_size = 8 8 8
-grid.CFL = 0.50 # in 2D
-#grid.CFL = 0.25 # in 3D
+grid.CFL = 0.25
 
 # LEVEL SET FUNCTIONS
 grid.space_p = 2

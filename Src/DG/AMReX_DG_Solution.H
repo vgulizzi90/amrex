@@ -270,7 +270,7 @@ void MultiplyByInverseMassMatrix(const ImplicitMesh & mesh,
  *
  * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
  *                  mesh.
- * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
+ * \param[in] matfactory: a MatrixFactory object containing the operators for the implicitly-defined
  *                        mesh.
  * \param[in] N_SOL: Number of unknown solution fields.
  * \param[in] Sol2Dom: Vector containing information regarding over which domain each unknown
@@ -409,7 +409,7 @@ void ProjectInitialConditions(const ImplicitMesh & mesh,
  *
  * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
  *                  mesh.
- * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
+ * \param[in] matfactory: a MatrixFactory object containing the operators for the implicitly-defined
  *                        mesh.
  * \param[in] N_SOL: Number of unknown solution fields.
  * \param[inout] X: a MultiFab object that, on exit, will contain the coefficients of the basis
@@ -436,7 +436,7 @@ void ProjectInitialConditions(const ImplicitMesh & mesh,
  * \param[in] t: time.
  * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
  *                  mesh.
- * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
+ * \param[in] matfactory: a MatrixFactory object containing the operators for the implicitly-defined
  *                        mesh.
  * \param[in] N_DOM: number of domains to be considered.
  * \param[in] N_SOL: Number of unknown solution fields.
@@ -482,7 +482,7 @@ Real EvalError(const Real t,
     {
         std::string msg;
         msg  = "\n";
-        msg +=  "ERROR: AMReX_DG_Solution.H - EvalError\n";
+        msg += "ERROR: AMReX_DG_Solution.H - EvalError\n";
         msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
         msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
         msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
@@ -586,7 +586,7 @@ Real EvalError(const Real t,
  * \param[in] t: time.
  * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
  *                  mesh.
- * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
+ * \param[in] matfactory: a MatrixFactory object containing the operators for the implicitly-defined
  *                        mesh.
  * \param[in] N_SOL: Number of unknown solution fields.
  * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
@@ -607,6 +607,481 @@ Real EvalError(const Real t,
 {
     const int N_DOM = 1;
     return EvalError(t, mesh, matfactory, N_DOM, N_SOL, X, IBVP);
+}
+
+/**
+ * \brief Fill boundary cells with meaningful data.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] matfactory: a MatrixFactory object containing the operators for the implicitly-defined
+ *                        mesh.
+ * \param[in] N_DOM: number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[inout] X: a MultiFab object that contains the AVERAGE of the unknown solution fields. On
+ *                  exit, the boundary (where possible) cells will have meaningful values. 
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  void F_BCS(const int dom, const Real t, const Real * x, const Real * un,
+ *                             const Real * SOL, Real * bcs_SOL) const;
+ *
+*/
+template <typename IBVP_CLASS>
+void FillBoundaryCells(const Real t,
+                       const ImplicitMesh & mesh,
+                       const MatrixFactory & /*matfactory*/,
+                       const int N_DOM,
+                       const int N_SOL,
+                       MultiFab & X,
+                       const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("FillBoundaryCells(const Real, const ImplicitMesh &, ....)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS =====================================================
+    // GRID
+    const Box domain = mesh.geom.Domain();
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+    const GpuArray<int, AMREX_SPACEDIM> is_periodic = mesh.geom.isPeriodicArray();
+    // ================================================================
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    if (N_SOL > __DG_MAX_N_SOL__)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution.H - FillBoundaryCells\n";
+        msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
+        msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
+        msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
+        Abort(msg);
+    }
+    // ================================================================
+
+    // FILL BOUNDARY CELLS ============================================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+        Array4<Real> const & X_fab = X.array(mfi);
+
+        ParallelFor(bx, N_DOM,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // LOCAL PARAMETERS
+            const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+
+            // LOCAL VARIABLES
+            Real x[AMREX_SPACEDIM], un[AMREX_SPACEDIM];
+            int BF_i, BF_j, BF_k;
+            Real SOL[__DG_MAX_N_SOL__], bcs_SOL[__DG_MAX_N_SOL__];
+
+            if (ELM_IS_NOT_EMPTY(etype))
+            {
+                // CURRENT CELL SOLUTION
+                BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+
+                for (int ru = 0; ru < N_SOL; ++ru)
+                {
+                    SOL[ru] = X_fab(BF_i,BF_j,BF_k,ru);
+                }
+
+                // UPDATE GRID BOUNDARY VALUES
+                if ((i == domain.smallEnd(0)) && (is_periodic[0] == 0))
+                {
+                    AMREX_D_TERM
+                    (
+                        x[0] = prob_lo[0]+(i-1+0.5)*dx[0];,
+                        x[1] = prob_lo[1]+(j  +0.5)*dx[1];,
+                        x[2] = prob_lo[2]+(k  +0.5)*dx[2];
+                    )
+                    AMREX_D_TERM
+                    (
+                        un[0] = -1.0;,
+                        un[1] =  0.0;,
+                        un[2] =  0.0;
+                    )
+                    IBVP.F_BCS(dom, t, x, un, SOL, bcs_SOL);
+
+                    for (int ru = 0; ru < N_SOL; ++ru)
+                    {
+                        X_fab(i-1,j,k,ru) = bcs_SOL[ru];
+                    }
+                }
+                if ((i == domain.bigEnd(0)) && (is_periodic[0] == 0))
+                {
+                    AMREX_D_TERM
+                    (
+                        x[0] = prob_lo[0]+(i+1+0.5)*dx[0];,
+                        x[1] = prob_lo[1]+(j  +0.5)*dx[1];,
+                        x[2] = prob_lo[2]+(k  +0.5)*dx[2];
+                    )
+                    AMREX_D_TERM
+                    (
+                        un[0] = +1.0;,
+                        un[1] =  0.0;,
+                        un[2] =  0.0;
+                    )
+                    IBVP.F_BCS(dom, t, x, un, SOL, bcs_SOL);
+                    
+                    for (int ru = 0; ru < N_SOL; ++ru)
+                    {
+                        X_fab(i+1,j,k,ru) = bcs_SOL[ru];
+                    }
+                }
+#if (AMREX_SPACEDIM > 1)
+                if ((j == domain.smallEnd(1)) && (is_periodic[1] == 0))
+                {
+                    AMREX_D_TERM
+                    (
+                        x[0] = prob_lo[0]+(i  +0.5)*dx[0];,
+                        x[1] = prob_lo[1]+(j-1+0.5)*dx[1];,
+                        x[2] = prob_lo[2]+(k  +0.5)*dx[2];
+                    )
+                    AMREX_D_TERM
+                    (
+                        un[0] =  0.0;,
+                        un[1] = -1.0;,
+                        un[2] =  0.0;
+                    )
+                    IBVP.F_BCS(dom, t, x, un, SOL, bcs_SOL);
+
+                    for (int ru = 0; ru < N_SOL; ++ru)
+                    {
+                        X_fab(i,j-1,k,ru) = bcs_SOL[ru];
+                    }
+                }
+                if ((j == domain.bigEnd(1)) && (is_periodic[1] == 0))
+                {
+                    AMREX_D_TERM
+                    (
+                        x[0] = prob_lo[0]+(i  +0.5)*dx[0];,
+                        x[1] = prob_lo[1]+(j+1+0.5)*dx[1];,
+                        x[2] = prob_lo[2]+(k  +0.5)*dx[2];
+                    )
+                    AMREX_D_TERM
+                    (
+                        un[0] =  0.0;,
+                        un[1] = +1.0;,
+                        un[2] =  0.0;
+                    )
+                    IBVP.F_BCS(dom, t, x, un, SOL, bcs_SOL);
+                    
+                    for (int ru = 0; ru < N_SOL; ++ru)
+                    {
+                        X_fab(i,j+1,k,ru) = bcs_SOL[ru];
+                    }
+                }
+#endif
+#if (AMREX_SPACEDIM > 2)
+                if ((k == domain.smallEnd(2)) && (is_periodic[2] == 0))
+                {
+                    AMREX_D_TERM
+                    (
+                        x[0] = prob_lo[0]+(i  +0.5)*dx[0];,
+                        x[1] = prob_lo[1]+(j  +0.5)*dx[1];,
+                        x[2] = prob_lo[2]+(k-1+0.5)*dx[2];
+                    )
+                    AMREX_D_TERM
+                    (
+                        un[0] =  0.0;,
+                        un[1] =  0.0;,
+                        un[2] = -1.0;
+                    )
+                    IBVP.F_BCS(dom, t, x, un, SOL, bcs_SOL);
+                    
+                    for (int ru = 0; ru < N_SOL; ++ru)
+                    {
+                        X_fab(i,j,k-1,ru) = bcs_SOL[ru];
+                    }
+                }
+                if ((k == domain.bigEnd(2)) && (is_periodic[2] == 0))
+                {
+                    AMREX_D_TERM
+                    (
+                        x[0] = prob_lo[0]+(i  +0.5)*dx[0];,
+                        x[1] = prob_lo[1]+(j  +0.5)*dx[1];,
+                        x[2] = prob_lo[2]+(k+1+0.5)*dx[2];
+                    )
+                    AMREX_D_TERM
+                    (
+                        un[0] =  0.0;,
+                        un[1] =  0.0;,
+                        un[2] = +1.0;
+                    )
+                    IBVP.F_BCS(dom, t, x, un, SOL, bcs_SOL);
+                    
+                    for (int ru = 0; ru < N_SOL; ++ru)
+                    {
+                        X_fab(i,j,k+1,ru) = bcs_SOL[ru];
+                    }
+                }
+#endif
+            }
+        });
+        Gpu::synchronize();
+    }
+    X.FillBoundary(mesh.geom.periodicity());
+    // ================================================================
+
+    // CHECK ==========================================================
+    if (X.contains_nan())
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution.H - FillBoundaryCells\n";
+        msg += "| X contains nans.\n";
+        Abort(msg);
+    }
+    // ================================================================
+}
+
+#define __DG_BASE_STENCIL_N_NBR__ AMREX_D_PICK(2, 4, 6)
+
+/**
+ * \brief Fill invalid (boundary+small/empty) cells with meaningful data.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] matfactory: a MatrixFactory object containing the operators for the implicitly-defined
+ *                        mesh.
+ * \param[in] N_DOM: number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[inout] X: a MultiFab object that contains the AVERAGE of the unknown solution fields. On
+ *                  exit, the boundary, small and empty (where possible) cells will have meaningful
+ *                  values. 
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS>
+void FillInvalidCells(const Real t,
+                      const ImplicitMesh & mesh,
+                      const MatrixFactory & matfactory,
+                      const int N_DOM,
+                      const int N_SOL,
+                      MultiFab & X,
+                      const IBVP_CLASS & IBVP)
+{
+    // FILL THE BOUNDARY CELLS ========================================
+    FillBoundaryCells(t, mesh, matfactory, N_DOM, N_SOL, X, IBVP);
+    // ================================================================
+
+    // PARAMETERS =====================================================
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+    // NEIGHBORS INFO IN STENCIL
+    const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> aux_table_i =
+    {
+#if (AMREX_SPACEDIM == 1)
+        -1, +1
+#endif
+#if (AMREX_SPACEDIM == 2)
+        -1, +1, 0, 0
+#endif
+#if (AMREX_SPACEDIM == 3)
+        -1, +1, 0, 0, 0, 0
+#endif
+    };
+    const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> aux_table_j =
+    {
+#if (AMREX_SPACEDIM == 1)
+        0, 0
+#endif
+#if (AMREX_SPACEDIM == 2)
+        0, 0, -1, +1
+#endif
+#if (AMREX_SPACEDIM == 3)
+        0, 0, -1, +1, 0, 0
+#endif
+    };
+    const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> aux_table_k = 
+    {
+#if (AMREX_SPACEDIM == 1)
+        0, 0
+#endif
+#if (AMREX_SPACEDIM == 2)
+        0, 0, 0, 0
+#endif
+#if (AMREX_SPACEDIM == 3)
+        0, 0, 0, 0, -1, +1
+#endif
+    };
+
+    // DOMAIN-TO-LEVELSETS CORRESPONDENCE
+    int const * Dom2Phi_ptr = mesh.Dom2Phi.data();
+
+    // DG
+    const int sp = mesh.ls_std_elem.p;
+
+    // NEAREST POINT SEARCH
+    const int it_max = 10;
+    const Real atol = 1.0e-3;
+    const Real rtol = atol*AMREX_D_PICK(dx[0], dx[0]*dx[1], dx[0]*dx[1]*dx[2]);
+    // ================================================================
+
+    // FILL BOUNDARY CELLS ============================================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<Real const> const & PHI_fab = mesh.PHI.array(mfi);
+
+        Array4<Real> const & X_fab = X.array(mfi);
+
+        ParallelFor(bx, N_DOM,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // LOCAL PARAMETERS
+            const short etype = eType_fab(i,j,k,DG::ELM_TYPE(dom));
+            const bool elm_is_not_valid = !DG::ELM_IS_VALID(etype);
+
+            // LOCAL VARIABLES
+            bool elm_is_not_isolated;
+            Real cc[AMREX_SPACEDIM], ncc[AMREX_SPACEDIM], nbr_x[AMREX_SPACEDIM], un[AMREX_SPACEDIM];
+            int nbr_i, nbr_j, nbr_k;
+            short nbr_etype;
+            int nbr_BF_i, nbr_BF_j, nbr_BF_k;
+            Real nbr_cell_lo[AMREX_SPACEDIM], nbr_cell_hi[AMREX_SPACEDIM];
+            Real nbr_SOL[__DG_MAX_N_SOL__], bcs_SOL[__DG_MAX_N_SOL__];
+
+            // LEVEL SET
+            DG_PHI_space_BFX phi(sp, PHI_fab);
+            phi.set_u(Dom2Phi_ptr[2*dom]);
+
+            // CHECK WHETHER THE ELEMENT HAS VALID NEIGHBORS ----------
+            elm_is_not_isolated = false;
+
+            if (elm_is_not_valid)
+            {
+                for (int n = 0; n < __DG_BASE_STENCIL_N_NBR__; ++n)
+                {
+                    nbr_i = i+aux_table_i[n];
+                    nbr_j = j+aux_table_j[n];
+                    nbr_k = k+aux_table_k[n];
+                    nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG::ELM_TYPE(dom));
+                    if (DG::ELM_IS_VALID(nbr_etype)) elm_is_not_isolated = true;
+                }   
+            }
+            // --------------------------------------------------------
+
+            if (elm_is_not_valid && elm_is_not_isolated)
+            {
+                // CELL'S CENTROID
+                AMREX_D_TERM
+                (
+                    cc[0] = prob_lo[0]+(i+0.5)*dx[0];,
+                    cc[1] = prob_lo[1]+(j+0.5)*dx[1];,
+                    cc[2] = prob_lo[2]+(k+0.5)*dx[2];
+                )
+
+                // MIRRORED IMAGE OF THE CELL'S CENTROID
+                nbr_i = i;
+                nbr_j = j;
+                nbr_k = k;
+                NEAREST_POINT(&prob_lo[0], &dx[0], phi, cc,
+                              nbr_i, nbr_j, nbr_k, nbr_cell_lo, nbr_cell_hi, ncc,
+                              rtol, it_max);
+                
+                // UNIT NORMAL
+                phi.eval_un(ncc, un);
+                AMREX_D_TERM
+                (
+                    un[0] *= -Dom2Phi_ptr[2*dom+1];,
+                    un[1] *= -Dom2Phi_ptr[2*dom+1];,
+                    un[2] *= -Dom2Phi_ptr[2*dom+1];
+                )
+                
+                // SOLUTION AT THE NEIGHBOR ELEMENT
+                AMREX_D_TERM
+                (
+                    nbr_x[0] = 2.0*ncc[0]-cc[0];,
+                    nbr_x[1] = 2.0*ncc[1]-cc[1];,
+                    nbr_x[2] = 2.0*ncc[2]-cc[2];
+                )
+                AMREX_D_TERM
+                (
+                    nbr_i = (int) std::floor((nbr_x[0]-prob_lo[0])/dx[0]);,
+                    nbr_j = (int) std::floor((nbr_x[1]-prob_lo[1])/dx[1]);,
+                    nbr_k = (int) std::floor((nbr_x[2]-prob_lo[2])/dx[2]);
+                )
+
+                // SUPPORT OF THE BASIS FUNCTIONS (NEIGHBOR CELL)
+                nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                for (int ru = 0; ru < N_SOL; ++ru)
+                {
+                    nbr_SOL[ru] = X_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ru);
+                }
+
+                IBVP.F_PHI_BCS(t, ncc, un, nbr_SOL, bcs_SOL);
+
+                for (int ru = 0; ru < N_SOL; ++ru)
+                {
+                    X_fab(i,j,k,ru) = bcs_SOL[ru];
+                }
+
+//Print() << "cc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, cc);
+//Print() << "ncc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, ncc);
+//Print() << "un: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, un);
+//Print() << "nbr_x: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_x);
+//Print() << "(" << nbr_i << "," << nbr_j << "," << nbr_k << ")" << std::endl;
+//Print() << "bcs_SOL("; IO::PrintReals(AMREX_SPACEDIM, ncc); Print() << "): "; IO::PrintRealArray2D(1, N_SOL, bcs_SOL);
+            }
+        });
+        Gpu::synchronize();
+    }
+    X.FillBoundary(mesh.geom.periodicity());
+    // ================================================================
+
+    // CHECK ==========================================================
+    if (X.contains_nan())
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution.H - FillInvalidCells\n";
+        msg += "| X contains nans.\n";
+        Abort(msg);
+    }
+    // ================================================================
+}
+
+/**
+ * \brief Fill invalid (boundary+small/empty) cells with meaningful data.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] matfactory: a MatrixFactory object containing the operators for the implicitly-defined
+ *                        mesh.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the AVERAGE of the unknown solution fields.
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS>
+void FillInvalidCells(const Real t,
+                      const ImplicitMesh & mesh,
+                      const MatrixFactory & matfactory,
+                      const int N_SOL,
+                      MultiFab & X,
+                      const IBVP_CLASS & IBVP)
+{
+    const int N_DOM = 1;
+    FillInvalidCells(t, mesh, matfactory, N_DOM, N_SOL, X, IBVP);
 }
 
 } // namespace DG

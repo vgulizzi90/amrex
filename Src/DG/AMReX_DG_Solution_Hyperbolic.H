@@ -79,6 +79,9 @@ Real Compute_dt(const Real t,
 
     // SOLUTIONS-TO-DOMAIN CORRESPONDENCE
     //const int * Sol2Dom_ptr = Sol2Dom.data();
+
+    // MAX REAL
+    const Real max_real = std::numeric_limits<Real>::max();
     // ================================================================
 
     // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
@@ -96,7 +99,7 @@ Real Compute_dt(const Real t,
 
     // VARIABLES ======================================================
     MultiFab dt(X.boxarray, X.distributionMap, N_DOM, 0);
-    dt = std::numeric_limits<Real>::max();
+    dt = max_real;
 
     Real dt_min;
     // ================================================================
@@ -159,7 +162,7 @@ exit(-1);
 }
 */
                 // LOOP OVER THE QUADRATURE POINTS
-                elm_dt = std::numeric_limits<Real>::max();
+                elm_dt = max_real;
                 for (int q = 0; q < dom_Nq; ++q)
                 {
                     // QUADRATURE POINT
@@ -847,7 +850,7 @@ exit(-1);
  * \param[in] t: time.
  * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
  *                  mesh.
- * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
+ * \param[in] matfactory: a MatrixFactory object containing the operators for the implicitly-defined
  *                        mesh.
  * \param[in] N_SOL: Number of unknown solution fields.
  * \param[in] Sol2Dom: Vector containing information regarding over which domain each unknown
@@ -928,7 +931,7 @@ exit(-1);
  * \param[in] t: time.
  * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
  *                  mesh.
- * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
+ * \param[in] matfactory: a MatrixFactory object containing the operators for the implicitly-defined
  *                        mesh.
  * \param[in] N_DOM: number of domains to be considered.
  * \param[in] N_SOL: Number of unknown solution fields.
@@ -1205,7 +1208,7 @@ exit(-1);
  * \param[in] t: time.
  * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
  *                  mesh.
- * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
+ * \param[in] matfactory: a MatrixFactory object containing the operators for the implicitly-defined
  *                        mesh.
  * \param[in] N_SOL: Number of unknown solution fields.
  * \param[inout] X: a MultiFab object that contains the coefficients of the basis functions for the

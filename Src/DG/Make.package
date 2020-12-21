@@ -12,6 +12,7 @@ CEXE_headers += AMREX_DG_Constants.H \
     AMReX_DG_MatrixFactory.H \
     AMReX_DG_Solution.H \
     AMReX_DG_Solution_Hyperbolic.H \
+    AMReX_DG_Solution_Parabolic.H \
     AMReX_DG_Solution_Output.H \
     AMReX_DG.H
 
