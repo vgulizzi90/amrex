@@ -232,7 +232,6 @@ void EvalSlopes_P(const Real t,
     // PARAMETERS =====================================================
     // GRID
     const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
-    const GpuArray<Real, AMREX_SPACEDIM> idx = mesh.geom.InvCellSizeArray();
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
 
     // DOMAINS
@@ -600,6 +599,317 @@ void EvalSlopes_P(const Real t,
     // ================================================================
 }
 
+/** \brief Multiply by rotation matrix.
+ *
+*/
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+void ApplyR(const Real * R, const Real * xc, const Real * nbr_xc, Real * y)
+{
+#if (AMREX_SPACEDIM == 2)
+    y[0] = R[0+0*2]*(nbr_xc[0]-xc[0])+R[0+1*2]*(nbr_xc[1]-xc[1]);
+    y[1] = R[1+0*2]*(nbr_xc[0]-xc[0])+R[1+1*2]*(nbr_xc[1]-xc[1]);
+#endif
+#if (AMREX_SPACEDIM == 3)
+    y[0] = R[0+0*3]*(nbr_xc[0]-xc[0])+R[0+1*3]*(nbr_xc[1]-xc[1])+R[0+2*3]*(nbr_xc[2]-xc[2]);
+    y[1] = R[1+0*3]*(nbr_xc[0]-xc[0])+R[1+1*3]*(nbr_xc[1]-xc[1])+R[1+2*3]*(nbr_xc[2]-xc[2]);
+    y[2] = R[2+0*3]*(nbr_xc[0]-xc[0])+R[2+1*3]*(nbr_xc[1]-xc[1])+R[2+2*3]*(nbr_xc[2]-xc[2]);
+#endif
+}
+
+/** \brief Add contribution to the left and right differences.
+ *
+*/
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+void Add2dU(const Real * U, const Real * y, const Real * nbr_U, Real * y2L, Real * y2R, Real * dUL, Real * dUR)
+{
+    for (int d = 0; d < AMREX_SPACEDIM; ++d)
+    {
+        if (y[d] < 0.0)
+        {
+            y2L[d] += y[d]*y[d];
+
+            for (int ru = 0; ru < DG_N_SOL; ++ru)
+            {
+                dUL[ru+d*DG_N_SOL] += (nbr_U[ru]-U[ru])*y[d];
+            }
+        }
+        else
+        {
+            y2R[d] += y[d]*y[d];
+
+            for (int ru = 0; ru < DG_N_SOL; ++ru)
+            {
+                dUR[ru+d*DG_N_SOL] += (nbr_U[ru]-U[ru])*y[d];
+            }
+        }
+    }
+}
+
+/**
+ * \brief Eval limited slopes and store them. They'll be used to reconstruct the PRIMARY variables.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
+ *               unknown solution fields.
+ * \param[out] dXP: a MultiFab object that will contain the limited slopes for the PRIMARY variables.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+*/
+template <typename IBVP_CLASS>
+void EvalSlopesLS_P(const Real t,
+                    const DG::ImplicitMesh & mesh,
+                    const MultiFab & X,
+                    MultiFab & dXP,
+                    const IBVP_CLASS & IBVP)
+{
+    // PARAMETERS =====================================================
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> idx = mesh.geom.InvCellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+#ifdef AMREX_USE_CUDA
+    const Real * eFVInfo_mem_ptr = mesh.eFVInfo_device_mem.data();
+#else
+    const Real * eFVInfo_mem_ptr = mesh.eFVInfo_host_mem.data();
+#endif
+
+    // DOMAINS
+    const int dom = 0;
+    // ================================================================
+
+    // VARIABLES ======================================================
+    // ================================================================
+
+    // INITIALIZATION
+    dXP = 0.0;
+    // ==============
+
+    // COMPUTE LIMITED SLOPES
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
+        Array4<long const> const & eFVInfo_pos_fab = mesh.eFVInfo_pos.array(mfi);
+
+        Array4<Real const> const & X_fab = X.array(mfi);
+        Array4<Real> const & dXP_fab = dXP.array(mfi);
+
+        ParallelFor(bx,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = eType_fab(i,j,k,DG::ELM_TYPE(dom));
+            const bool elm_is_valid = DG::ELM_IS_VALID(etype);
+
+            if (elm_is_valid)
+            {
+                // LOCAL PARAMETERS
+                const long pos = eFVInfo_pos_fab(i,j,k,DG::ELM_FV_INFO_POS(dom));
+                const Real * xm = &eFVInfo_mem_ptr[pos];
+                const Real * R = &eFVInfo_mem_ptr[pos+AMREX_SPACEDIM];
+
+                // LOCAL VARIABLES
+                Real xc[AMREX_SPACEDIM], un[AMREX_SPACEDIM], nbr_xc[AMREX_SPACEDIM];
+                Real P[DG_N_SOL], nbr_P[DG_N_SOL];
+                int nbr_i, nbr_j, nbr_k, nbr_BF_i, nbr_BF_j, nbr_BF_k;
+                short nbr_etype;
+                Real y[AMREX_SPACEDIM], y2L[AMREX_SPACEDIM], y2R[AMREX_SPACEDIM];
+                Real dPL[DG_N_SOL*AMREX_SPACEDIM], dPR[DG_N_SOL*AMREX_SPACEDIM], dP[DG_N_SOL*AMREX_SPACEDIM];
+                Real dCL[DG_N_SOL], dCR[DG_N_SOL], dC[DG_N_SOL];
+
+                AMREX_D_TERM
+                (
+                    y2L[0] = 0.0; y2R[0] = 0.0;,
+                    y2L[1] = 0.0; y2R[1] = 0.0;,
+                    y2L[2] = 0.0; y2R[2] = 0.0;
+                )
+                for (int d = 0; d < AMREX_SPACEDIM; ++d)
+                for (int ru = 0; ru < DG_N_SOL; ++ru)
+                {
+                    dPL[ru+d*DG_N_SOL] = 0.0;
+                    dPR[ru+d*DG_N_SOL] = 0.0;
+                }
+
+                // ELEMENT INFO
+                AMREX_D_TERM
+                (
+                    xc[0] = eInfo_fab(i,j,k,DG::ELM_CENTROID_X1(dom));,
+                    xc[1] = eInfo_fab(i,j,k,DG::ELM_CENTROID_X2(dom));,
+                    xc[2] = eInfo_fab(i,j,k,DG::ELM_CENTROID_X3(dom));
+                )
+                Fab2P(IBVP.gamma, X_fab, i, j, k, P);
+
+//Print() << "P: "; DG::IO::PrintRealArray2D(1, DG_N_SOL, P);
+
+                // LOOP OVER THE ELEMENT IN THE STENCIL
+                for (int n = 0; n < __DG_BASE_STENCIL_N_NBR__; ++n)
+                {
+                    nbr_i = i+DG::base_stencil_table_i[n];
+                    nbr_j = j+DG::base_stencil_table_j[n];
+                    nbr_k = k+DG::base_stencil_table_k[n];
+                    nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG::ELM_TYPE(dom));
+                    DG::BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                    // NEIGHBOR ELEMENT INFO
+                    AMREX_D_TERM
+                    (
+                        nbr_xc[0] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,DG::ELM_CENTROID_X1(dom));,
+                        nbr_xc[1] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,DG::ELM_CENTROID_X2(dom));,
+                        nbr_xc[2] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,DG::ELM_CENTROID_X3(dom));
+                    )
+                    Fab2P(IBVP.gamma, X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_P);
+
+                    // ADD LS CONTRIBUTION
+                    ApplyR(R, xc, nbr_xc, y);
+                    Add2dU(P, y, nbr_P, y2L, y2R, dPL, dPR);
+
+//Print() << "nbr_P: "; DG::IO::PrintRealArray2D(1, DG_N_SOL, nbr_P);
+
+                }
+
+                if (DG::ELM_IS_LARGE_OR_EXTENDED(etype))
+                {
+                    // UNIT NORMAL
+                    // We use nbr_xc[0] as a temporary variable
+                    AMREX_D_TERM
+                    (
+                        un[0] = (xm[0]-xc[0]);,
+                        un[1] = (xm[1]-xc[1]);,
+                        un[2] = (xm[2]-xc[2]);
+                    )
+                    nbr_xc[0] = 1.0/std::sqrt(AMREX_D_TERM(un[0]*un[0],+un[1]*un[1],+un[2]*un[2]));
+                    AMREX_D_TERM
+                    (
+                        un[0] *= nbr_xc[0];,
+                        un[1] *= nbr_xc[0];,
+                        un[2] *= nbr_xc[0];
+                    )
+
+                    // POINT AND SOLUTION AT THE INTERFACE
+                    AMREX_D_TERM
+                    (
+                        nbr_xc[0] = 0.5*(xm[0]+xc[0]);,
+                        nbr_xc[1] = 0.5*(xm[1]+xc[1]);,
+                        nbr_xc[2] = 0.5*(xm[2]+xc[2]);
+                    )
+                    IBVP.F_PHI_BCS(t, nbr_xc, un, P, nbr_P);
+
+                    // MIRRORED ELEMENT INFO
+                    AMREX_D_TERM
+                    (
+                        nbr_xc[0] = xm[0];,
+                        nbr_xc[1] = xm[1];,
+                        nbr_xc[2] = xm[2];
+                    )
+
+                    // ADD LS CONTRIBUTION
+                    ApplyR(R, xc, nbr_xc, y);
+                    Add2dU(P, y, nbr_P, y2L, y2R, dPL, dPR);
+
+//Print() << "nbr_P: "; DG::IO::PrintRealArray2D(1, DG_N_SOL, nbr_P);
+
+//Print() << "HERE WE ARE - EvalSlopesLS_P - large or extended" << std::endl;
+//exit(-1);
+                }
+
+//Print() << "dPL: " << std::endl; DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dPL);
+//Print() << "dPR: " << std::endl; DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dPR);
+
+                // EVAL DIFFERENCES -----------------------------------
+                for (int d = 0; d < AMREX_SPACEDIM; ++d)
+                {
+                    if (y2L[d] > 0.0)
+                    {
+                        y2L[d] = 1.0/y2L[d];
+
+                        for (int ru = 0; ru < DG_N_SOL; ++ru)
+                        {
+                            dPL[ru+d*DG_N_SOL] *= y2L[d];
+                        }
+                    }
+
+                    if (y2R[d] > 0.0)
+                    {
+                        y2R[d] = 1.0/y2R[d];
+
+                        for (int ru = 0; ru < DG_N_SOL; ++ru)
+                        {
+                            dPR[ru+d*DG_N_SOL] *= y2R[d];
+                        }
+                    }
+                }
+//Print() << "y2L: " << std::endl; DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, y2L);
+//Print() << "y2R: " << std::endl; DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, y2R);
+                // ----------------------------------------------------
+
+                // LIMITED SLOPES (VIA CHARACTERISTICS) ---------------
+                for (int d = 0; d < AMREX_SPACEDIM; ++d)
+                {
+                    AMREX_D_TERM
+                    (
+                        un[0] = R[d+0*AMREX_SPACEDIM];,
+                        un[1] = R[d+1*AMREX_SPACEDIM];,
+                        un[2] = R[d+2*AMREX_SPACEDIM];
+                    )
+
+                    IBVP.F_DP2DC(t, xc, un, P, &dPL[d*DG_N_SOL], dCL);
+                    IBVP.F_DP2DC(t, xc, un, P, &dPR[d*DG_N_SOL], dCR);
+
+                    MCDLimiter(dCL, dCR, dC);
+
+//Print() << "dC: "; DG::IO::PrintRealArray2D(1, DG_N_SOL, dC);
+
+                    IBVP.F_DC2DP(t, xc, un, P, dC, &dP[d*DG_N_SOL]);
+
+                }
+                // ----------------------------------------------------
+
+                // STORE IN THE MULTIFAB ------------------------------
+                for (int d2 = 0; d2 < AMREX_SPACEDIM; ++d2)
+                for (int d1 = 0; d1 < AMREX_SPACEDIM; ++d1)
+                for (int ru = 0; ru < DG_N_SOL; ++ru)
+                {
+                    dXP_fab(i,j,k,d1+AMREX_SPACEDIM*ru) += R[d2+d1*AMREX_SPACEDIM]*dP[ru+d2*DG_N_SOL];
+                }
+                // ----------------------------------------------------
+/*
+{
+Print() << "R: " << std::endl;
+DG::IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, R);
+
+for (int d = 0; d < AMREX_SPACEDIM; ++d)
+for (int cu = 0; cu < DG_N_SOL; ++cu)
+{
+    dP[cu+d*DG_N_SOL] = dXP_fab(i,j,k,d+AMREX_SPACEDIM*cu);
+}
+Print() << "dP: " << std::endl; DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dP);
+
+Print() << "HERE WE ARE - EvalSlopesLS_P" << std::endl;
+exit(-1);
+}
+*/
+            }
+        });
+        Gpu::synchronize();
+    }
+    dXP.FillBoundary(mesh.geom.periodicity());
+    
+    // CHECK ==========================================================
+    if (dXP.contains_nan())
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: IBVP_utils.H - EvalSlopesLS_P\n";
+        msg += "| dXP contains nans.\n";
+        Abort(msg);
+    }
+    // ================================================================
+}
+
 /**
  * \brief Eval the time derivative of the dG coefficients: Boundary contribution.
  *
@@ -612,7 +922,6 @@ void EvalSlopes_P(const Real t,
  *                  mesh.
  * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
  *                        mesh.
- * \param[in] N_SOL: Number of unknown solution fields.
  * \param[in] Sol2Dom: Vector containing information regarding over which domain each unknown
  *                     solution field is defined; Sol2Dom[ru] = dom means that the ru-th unknown
  *                     solution field is defined over the dom-th domain.
@@ -697,8 +1006,8 @@ void Eval_dXdt_BouContrib(const Real t,
 
         Array4<Real> const & dXdt_fab = dXdt.array(mfi);
 
-        ParallelFor(bx, DG_N_SOL,
-        [=] AMREX_GPU_DEVICE (int i, int j, int k, int ru) noexcept
+        ParallelFor(bx,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
         {
             // ELEMENT TYPE
             const short etype = eType_fab(i,j,k,DG::ELM_TYPE(dom));
@@ -721,7 +1030,7 @@ void Eval_dXdt_BouContrib(const Real t,
                 // LOCAL VARIABLES
                 int BF_i, BF_j, BF_k;
                 Real xc[AMREX_SPACEDIM], nbr_xc[AMREX_SPACEDIM];
-                Real P[DG_N_SOL], nbr_P[DG_N_SOL];
+                Real P[DG_N_SOL], nbr_P[DG_N_SOL], Pr[DG_N_SOL], nbr_Pr[DG_N_SOL];
                 int nbr_i, nbr_j, nbr_k, nbr_b;
                 short nbr_etype;
                 int nbr_BF_i, nbr_BF_j, nbr_BF_k;
@@ -731,7 +1040,6 @@ void Eval_dXdt_BouContrib(const Real t,
 #ifdef AMREX_DEBUG
                 Real elm_v;
 #endif
-
 
                 // SUPPORT OF THE SOLUTION (CURRENT ELEMENT)
                 DG::BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
@@ -743,6 +1051,11 @@ void Eval_dXdt_BouContrib(const Real t,
                     xc[1] = eInfo_fab(BF_i,BF_j,BF_k,DG::ELM_CENTROID_X2(dom));,
                     xc[2] = eInfo_fab(BF_i,BF_j,BF_k,DG::ELM_CENTROID_X3(dom));
                 )
+
+                // CURRENT ELEMENT SOLUTION
+                Fab2P(IBVP.gamma, X_fab, BF_i, BF_j, BF_k, P);
+
+Print() << "(" << i << "," << j << "," << k << ") -> (" << BF_i << "," << BF_j << "," << BF_k << ")" << std::endl;
 
                 // LOOP OVER THE BOUNDARIES
 #ifdef AMREX_DEBUG
@@ -854,6 +1167,8 @@ void Eval_dXdt_BouContrib(const Real t,
                         // SUPPORT OF THE SOLUTION (NEIGHBOR ELEMENT)
                         DG::BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
 
+Print() << " - nbr(" << nbr_i << "," << nbr_j << "," << nbr_k << ") -> (" << nbr_BF_i << "," << nbr_BF_j << "," << nbr_BF_k << ")" << std::endl;
+
                         // NEIGHBOR ELEMENT CENTROID
                         AMREX_D_TERM
                         (
@@ -861,6 +1176,9 @@ void Eval_dXdt_BouContrib(const Real t,
                             nbr_xc[1] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,DG::ELM_CENTROID_X2(dom));,
                             nbr_xc[2] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,DG::ELM_CENTROID_X3(dom));
                         )
+
+                        // NEIGHBOR ELEMENT SOLUTION
+                        Fab2P(IBVP.gamma, X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_P);
 
                         // COMPUTE THE INTEGRAL
                         for (int q = 0; q < bou_Nq; ++q)
@@ -876,31 +1194,49 @@ void Eval_dXdt_BouContrib(const Real t,
                             w = xptr[x_pos+AMREX_SPACEDIM];
 
                             // EVAL SOLUTION
-                            Fab2P(IBVP.gamma, X_fab, BF_i, BF_j, BF_k, P);
-                            Fab2P(IBVP.gamma, X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_P);
+                            Pr[RHO] = P[RHO];
+                            AMREX_D_TERM
+                            (
+                                Pr[RHOV1] = P[RHOV1];,
+                                Pr[RHOV2] = P[RHOV2];,
+                                Pr[RHOV3] = P[RHOV3];
+                            )
+                            Pr[TE] = P[TE];
+                            nbr_Pr[RHO] = nbr_P[RHO];
+                            AMREX_D_TERM
+                            (
+                                nbr_Pr[RHOV1] = nbr_P[RHOV1];,
+                                nbr_Pr[RHOV2] = nbr_P[RHOV2];,
+                                nbr_Pr[RHOV3] = nbr_P[RHOV3];
+                            )
+                            nbr_Pr[TE] = nbr_P[TE];
+
                             for (int cu = 0; cu < DG_N_SOL; ++cu)
                             {
                                 AMREX_D_TERM
                                 (
-                                    P[cu] += dX_fab(BF_i,BF_j,BF_k,0+AMREX_SPACEDIM*cu)*(x[0]-xc[0]);,
-                                    P[cu] += dX_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*cu)*(x[1]-xc[1]);,
-                                    P[cu] += dX_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-xc[2]);
+                                    Pr[cu] += dX_fab(BF_i,BF_j,BF_k,0+AMREX_SPACEDIM*cu)*(x[0]-xc[0]);,
+                                    Pr[cu] += dX_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*cu)*(x[1]-xc[1]);,
+                                    Pr[cu] += dX_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-xc[2]);
                                 )
 
                                 AMREX_D_TERM
                                 (
-                                    nbr_P[cu] += dX_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,0+AMREX_SPACEDIM*cu)*(x[0]-nbr_xc[0]);,
-                                    nbr_P[cu] += dX_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,1+AMREX_SPACEDIM*cu)*(x[1]-nbr_xc[1]);,
-                                    nbr_P[cu] += dX_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-nbr_xc[2]);
+                                    nbr_Pr[cu] += dX_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,0+AMREX_SPACEDIM*cu)*(x[0]-nbr_xc[0]);,
+                                    nbr_Pr[cu] += dX_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,1+AMREX_SPACEDIM*cu)*(x[1]-nbr_xc[1]);,
+                                    nbr_Pr[cu] += dX_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-nbr_xc[2]);
                                 )
                             }
 
                             // NUMERICAL FLUX
-                            IBVP.F_NF_ICS_P(dom, t, x, un, P, nbr_P, NFn);
+                            IBVP.F_NF_ICS_P(dom, t, x, un, Pr, nbr_Pr, NFn);
 
                             // INTEGRAL CONTRIBUTION
-                            integrand = NFn[ru];
-                            dXdt_fab(i,j,k,ru) -= integrand*w;
+                            for (int ru = 0; ru < DG_N_SOL; ++ru)
+                            {
+                                integrand = NFn[ru];
+                                dXdt_fab(i,j,k,ru) -= integrand*w;
+                            }
                         }
                     }
                     else
@@ -919,23 +1255,33 @@ void Eval_dXdt_BouContrib(const Real t,
                             w = xptr[x_pos+AMREX_SPACEDIM];
 
                             // EVAL SOLUTION
-                            Fab2P(IBVP.gamma, X_fab, BF_i, BF_j, BF_k, P);
+                            Pr[RHO] = P[RHO];
+                            AMREX_D_TERM
+                            (
+                                Pr[RHOV1] = P[RHOV1];,
+                                Pr[RHOV2] = P[RHOV2];,
+                                Pr[RHOV3] = P[RHOV3];
+                            )
+                            Pr[TE] = P[TE];
                             for (int cu = 0; cu < DG_N_SOL; ++cu)
                             {
                                 AMREX_D_TERM
                                 (
-                                    P[cu] += dX_fab(BF_i,BF_j,BF_k,0+AMREX_SPACEDIM*cu)*(x[0]-xc[0]);,
-                                    P[cu] += dX_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*cu)*(x[1]-xc[1]);,
-                                    P[cu] += dX_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-xc[2]);
+                                    Pr[cu] += dX_fab(BF_i,BF_j,BF_k,0+AMREX_SPACEDIM*cu)*(x[0]-xc[0]);,
+                                    Pr[cu] += dX_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*cu)*(x[1]-xc[1]);,
+                                    Pr[cu] += dX_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-xc[2]);
                                 )
                             }
 
                             // NUMERICAL FLUX
-                            IBVP.F_NF_BCS_P(dom, t, x, un, P, NFn);
+                            IBVP.F_NF_BCS_P(dom, t, x, un, Pr, NFn);
 
                             // INTEGRAL CONTRIBUTION
-                            integrand = NFn[ru];
-                            dXdt_fab(i,j,k,ru) -= integrand*w;
+                            for (int ru = 0; ru < DG_N_SOL; ++ru)
+                            {
+                                integrand = NFn[ru];
+                                dXdt_fab(i,j,k,ru) -= integrand*w;
+                            }
                         }
                     }
                 }
@@ -994,23 +1340,34 @@ void Eval_dXdt_BouContrib(const Real t,
                             )
 
                             // EVAL SOLUTION
-                            Fab2P(IBVP.gamma, X_fab, BF_i, BF_j, BF_k, P);
+                            Pr[RHO] = P[RHO];
+                            AMREX_D_TERM
+                            (
+                                Pr[RHOV1] = P[RHOV1];,
+                                Pr[RHOV2] = P[RHOV2];,
+                                Pr[RHOV3] = P[RHOV3];
+                            )
+                            Pr[TE] = P[TE];
+
                             for (int cu = 0; cu < DG_N_SOL; ++cu)
                             {
                                 AMREX_D_TERM
                                 (
-                                    P[cu] += dX_fab(BF_i,BF_j,BF_k,0+AMREX_SPACEDIM*cu)*(x[0]-xc[0]);,
-                                    P[cu] += dX_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*cu)*(x[1]-xc[1]);,
-                                    P[cu] += dX_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-xc[2]);
+                                    Pr[cu] += dX_fab(BF_i,BF_j,BF_k,0+AMREX_SPACEDIM*cu)*(x[0]-xc[0]);,
+                                    Pr[cu] += dX_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*cu)*(x[1]-xc[1]);,
+                                    Pr[cu] += dX_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*cu)*(x[2]-xc[2]);
                                 )
                             }
 
                             // NUMERICAL FLUX
-                            IBVP.F_NF_PHI_BCS_P(dom, t, x, un, P, NFn);
+                            IBVP.F_NF_PHI_BCS_P(dom, t, x, un, Pr, NFn);
 
                             // INTEGRAL CONTRIBUTION
-                            integrand = NFn[ru];
-                            dXdt_fab(i,j,k,ru) -= integrand*w;
+                            for (int ru = 0; ru < DG_N_SOL; ++ru)
+                            {
+                                integrand = NFn[ru];
+                                dXdt_fab(i,j,k,ru) -= integrand*w;
+                            }
                         }
                     }
                 }
@@ -1051,6 +1408,8 @@ void Eval_dXdt_BouContrib(const Real t,
     // ================================================================
 }
 
+#define USE_LEAST_SQUARES
+
 /**
  * \brief Eval the time derivative of the solution.
  *
@@ -1090,6 +1449,15 @@ void Eval_dXdt(const Real t,
     dXdt = 0.0;
     // ==============
 
+#ifdef USE_LEAST_SQUARES
+    // FILL THE INVALID CELLS =========================================
+    DG::FillBoundaryCells(t, mesh, matfactory, DG_N_SOL, X, IBVP);
+    // ================================================================
+
+    // COMPUTE THE SLOPES =============================================
+    EvalSlopesLS_P(t, mesh, X, dX, IBVP);
+    // ================================================================
+#else
     // FILL THE INVALID CELLS =========================================
     DG::FillInvalidCells(t, mesh, matfactory, DG_N_SOL, X, IBVP);
     // ================================================================
@@ -1097,6 +1465,7 @@ void Eval_dXdt(const Real t,
     // COMPUTE THE SLOPES =============================================
     EvalSlopes_P(t, mesh, X, dX, IBVP);
     // ================================================================
+#endif
 
     // EVAL THE TIME DERIVATIVES: DOMAIN CONTRIBUTION =================
     // ================================================================

@@ -8,12 +8,18 @@
 
 #include <algoim_quad.hpp>
 
+#ifndef AMREX_DG_CONSTANTS_H_
+#define AMREX_DG_CONSTANTS_H_
+
+
 namespace amrex
 {
 namespace DG
 {
 
 // CONSTANTS ##########################################################
+#define __DG_BASE_STENCIL_N_NBR__ AMREX_D_PICK(2, 4, 6)
+
 #define __DG_STD_ELEM_N_SPACE_BOUNDARIES__ (2*AMREX_SPACEDIM)
 
 #define __DG_PHI_MAX_SPACE_p__ 8
@@ -68,6 +74,8 @@ namespace DG
 #define __DG_ELM_BOU_QUAD_N_COMP_PER_DOM__ 2
 #define __DG_ELM_INT_BOU_QUAD_N_COMP_PER_DOM__ 1
 
+#define __DG_ELM_FV_INFO_N_COMP_PER_DOM__ 1
+
 #define __DG_ELM_COLOR_N_COMP_PER_DOM__ 1
 
 #define __DG_ELM_COLOR_UNDEFINED__ -1
@@ -82,5 +90,48 @@ typedef FabArray<BaseFab<long>> longMultiFab;
 typedef Algoim::QuadratureRule<AMREX_SPACEDIM> iQuadRule;
 // ####################################################################
 
+// AUXILIARY CONSTANTS ################################################
+// NEIGHBORS INFO IN STENCIL
+const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> base_stencil_table_i =
+{
+#if (AMREX_SPACEDIM == 1)
+    -1, +1
+#endif
+#if (AMREX_SPACEDIM == 2)
+    -1, +1, 0, 0
+#endif
+#if (AMREX_SPACEDIM == 3)
+    -1, +1, 0, 0, 0, 0
+#endif
+};
+const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> base_stencil_table_j =
+{
+#if (AMREX_SPACEDIM == 1)
+    0, 0
+#endif
+#if (AMREX_SPACEDIM == 2)
+    0, 0, -1, +1
+#endif
+#if (AMREX_SPACEDIM == 3)
+    0, 0, -1, +1, 0, 0
+#endif
+};
+const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> base_stencil_table_k = 
+{
+#if (AMREX_SPACEDIM == 1)
+    0, 0
+#endif
+#if (AMREX_SPACEDIM == 2)
+    0, 0, 0, 0
+#endif
+#if (AMREX_SPACEDIM == 3)
+    0, 0, 0, 0, -1, +1
+#endif
+};
+// ####################################################################
+
+
 } // namespace DG
 } // namespace amrex
+
+#endif

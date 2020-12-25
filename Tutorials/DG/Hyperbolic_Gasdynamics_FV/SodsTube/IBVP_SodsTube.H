@@ -16,7 +16,7 @@ struct IDEAL_GAS
 public IDEAL_GAS_BASE
 {
     // DATA MEMBERS ###################################################
-    amrex::Real params[10];
+    amrex::Real params[11];
     // ################################################################
     // NOTE: params must store:
     //       - params[0]: rhoL, i.e. density at the left of the shock;
@@ -26,11 +26,23 @@ public IDEAL_GAS_BASE
     //       - params[4]: rhoR, i.e. density at the right of the shock;
     //       - params[5]: uR, i.e. velocity at the right of the shock;
     //       - params[6]: pR, i.e. pressure at the right of the shock;
+    //
+    //       if (this->eb_flag == 0)
+    //       - params[7-10]: not used;
+    //
+    //       if (this->eb_flag == 1)
     //       - params[7]: diameter of the embedded Sod's tube;
     //       - params[8]: inclination (or azimuth in 3D) of the
     //                    embedded Sod's tube;
     //       - params[9]: elevation of the embedded Sod's tube (used in
     //                    3D only);
+    //       - params[10]: not used;
+    //
+    //       if (this->eb_flag == 2)
+    //       - params[7]: radius of the embedded circle (in 2D) or
+    //                    sphere (in 3D);
+    //       - params[8-9(10)]: (x1,x2(,x3)) coordinates of the center
+    //                          of the circle/sphere.
     // ################################################################
 
     // CONSTRUCTOR ####################################################
@@ -41,7 +53,7 @@ public IDEAL_GAS_BASE
     :
     IDEAL_GAS_BASE(int_params_, params_)
     {
-        std::fill(this->params, this->params+10, 0.0);
+        std::fill(this->params, this->params+11, 0.0);
         std::copy(params_.begin()+1, params_.end(), this->params);
     }
     // ################################################################
@@ -64,10 +76,35 @@ public IDEAL_GAS_BASE
         {
             PHI[0] = -1.0;
         }
+        else if (this->eb_flag == 1)
+        {
+            const amrex::Real diam = this->params[7];
+
+#if (AMREX_SPACEDIM == 2)
+            const amrex::Real theta = (this->params[8])*M_PI/180.0;
+            const amrex::Real xi[2] = {std::cos(theta), std::sin(theta)};
+            const amrex::Real s = (x[0]-0.5)*xi[0]+(x[1]-0.5)*xi[1];
+            const amrex::Real y[2] = {0.5+s*xi[0], 0.5+s*xi[1]};
+            const amrex::Real d2 = (x[0]-y[0])*(x[0]-y[0])+(x[1]-y[1])*(x[1]-y[1]);
+#endif
+#if (AMREX_SPACEDIM == 3)
+            const amrex::Real theta = (this->params[8])*M_PI/180.0;
+            const amrex::Real phi = (this->params[9])*M_PI/180.0;
+            const amrex::Real xi[3] = {std::cos(theta)*std::cos(phi), std::sin(theta)*std::cos(phi), std::sin(phi)};
+            const amrex::Real s = (x[0]-0.5)*xi[0]+(x[1]-0.5)*xi[1]+(x[2]-0.5)*xi[2];
+            const amrex::Real y[3] = {0.5+s*xi[0], 0.5+s*xi[1], 0.5+s*xi[2]};
+            const amrex::Real d2 = (x[0]-y[0])*(x[0]-y[0])+(x[1]-y[1])*(x[1]-y[1])+(x[2]-y[2])*(x[2]-y[2]);
+#endif
+            const amrex::Real res = d2-0.25*diam*diam;
+        
+            PHI[0] = res;
+        }
         else
         {
-amrex::Print() << "HERE WE ARE - IDEAL_GAS.F_PHI" << std::endl;
-exit(-1);
+            const amrex::Real r = this->params[7];
+            const amrex::Real * xc = &this->params[8];
+
+            PHI[0] = r*r-(AMREX_D_TERM((x[0]-xc[0])*(x[0]-xc[0]),+(x[1]-xc[1])*(x[1]-xc[1]),+(x[2]-xc[2])*(x[2]-xc[2])));
         }
     }
 
@@ -135,7 +172,7 @@ exit(-1);
         const amrex::Real uR = this->params[5];
         const amrex::Real pR = this->params[6];
 
-        if (this->eb_flag == 0)
+        if ((this->eb_flag == 0) || (this->eb_flag == 2))
         {
             if (x[0] > xis)
             {
@@ -260,8 +297,9 @@ exit(-1);
                         const amrex::Real * P,
                         amrex::Real * NFn) const
     {
-amrex::Print() << "HERE WE ARE - IDEAL_GAS.F_NF_PHI_BCS_P" << std::endl;
-exit(-1);
+        amrex::Real bcs_P[DG_N_SOL];
+        this->F_PHI_BCS(t, x, un, P, bcs_P);
+        this->F_NF_ICS_P(dom, t, x, un, P, bcs_P, NFn);
     }
     // ################################################################
 
@@ -273,13 +311,34 @@ exit(-1);
     */
     void F_FIELDS_NAMES(amrex::Vector<std::string> & fields_names) const
     {
-        fields_names = {"density",
-                        AMREX_D_DECL("velocity_x", "velocity_y", "velocity_z"),
-                        "pressure",
-                        "mach",
-                        "total_energy",
-                        "internal_energy",
-                        AMREX_D_DECL("velocity_xi", "velocity_eta", "velocity_zeta")};
+        if (this->eb_flag == 0)
+        {
+            fields_names = {"density",
+                            AMREX_D_DECL("velocity_x", "velocity_y", "velocity_z"),
+                            "pressure",
+                            "mach",
+                            "total_energy",
+                            "internal_energy"};
+        }
+        else if (this->eb_flag == 1)
+        {
+            fields_names = {"density",
+                            AMREX_D_DECL("velocity_x", "velocity_y", "velocity_z"),
+                            "pressure",
+                            "mach",
+                            "total_energy",
+                            "internal_energy",
+                             AMREX_D_DECL("velocity_xi", "velocity_eta", "velocity_zeta")};
+        }
+        else if (this->eb_flag == 2)
+        {
+            fields_names = {"density",
+                            AMREX_D_DECL("velocity_x", "velocity_y", "velocity_z"),
+                            "pressure",
+                            "mach",
+                            "total_energy",
+                            "internal_energy"};
+        }
     }
 
     /**
@@ -290,7 +349,18 @@ exit(-1);
     */
     void F_FIELDS_DOMAINS(amrex::Vector<int> & fields_domains) const
     {
-        fields_domains = {0, AMREX_D_DECL(0, 0, 0), 0, 0, 0, 0, AMREX_D_DECL(0, 0, 0)};
+        if (this->eb_flag == 0)
+        {
+            fields_domains = {0, AMREX_D_DECL(0, 0, 0), 0, 0, 0, 0};
+        }
+        else if (this->eb_flag == 1)
+        {
+            fields_domains = {0, AMREX_D_DECL(0, 0, 0), 0, 0, 0, 0, AMREX_D_DECL(0, 0, 0)};
+        }
+        else if (this->eb_flag == 2)
+        {
+            fields_domains = {0, AMREX_D_DECL(0, 0, 0), 0, 0, 0, 0};
+        }
     }
 
     /**
@@ -308,10 +378,6 @@ exit(-1);
                   amrex::Real * F) const
     {
         const amrex::Real g = this->gamma;
-        const amrex::Real theta = (this->params[8])*M_PI/180.0;
-#if (AMREX_SPACEDIM == 3)
-        const amrex::Real phi = (this->params[9])*M_PI/180.0;
-#endif
 
         // PRIMARY VARIABLES
         amrex::Real rho, AMREX_D_DECL(u1, u2, u3), p;
@@ -320,16 +386,6 @@ exit(-1);
         // SOUND SPEED AND MACH NUMBER
         const amrex::Real a = std::sqrt(g*p/rho);
         const amrex::Real M = std::sqrt(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3))/a;
-
-        // VELOCITY COMPONENTS ALONG THE TUBE'S CENTERLINE
-#if (AMREX_SPACEDIM == 2)
-        const amrex::Real xi[2] = {std::cos(theta), std::sin(theta)};
-#endif
-#if (AMREX_SPACEDIM == 3)
-        const amrex::Real xi[3] = {std::cos(theta)*std::cos(phi), std::sin(theta)*std::cos(phi), std::sin(phi)};
-#endif
-        amrex::Real Un[DG_N_SOL];
-        this->eval_U2Un(xi, U, Un);
 
         // OUTPUT FIELDS
         F[RHO] = rho;
@@ -343,12 +399,30 @@ exit(-1);
         F[TE+1] = M;
         F[TE+2] = U[TE];
         F[TE+3] = p/(rho*(g-1.0));
-        AMREX_D_TERM
-        (
-            F[TE+4] = Un[RHOV1]/rho;,
-            F[TE+5] = Un[RHOV2]/rho;,
-            F[TE+6] = Un[RHOV3]/rho;
-        )
+
+        // VELOCITY COMPONENTS ALONG THE TUBE'S CENTERLINE
+        if (this->eb_flag == 1)
+        {
+            const amrex::Real theta = (this->params[8])*M_PI/180.0;
+#if (AMREX_SPACEDIM == 3)
+            const amrex::Real phi = (this->params[9])*M_PI/180.0;
+#endif
+#if (AMREX_SPACEDIM == 2)
+            const amrex::Real xi[2] = {std::cos(theta), std::sin(theta)};
+#endif
+#if (AMREX_SPACEDIM == 3)
+            const amrex::Real xi[3] = {std::cos(theta)*std::cos(phi), std::sin(theta)*std::cos(phi), std::sin(phi)};
+#endif
+            amrex::Real Un[DG_N_SOL];
+            this->eval_U2Un(xi, U, Un);
+
+            AMREX_D_TERM
+            (
+                F[TE+4] = Un[RHOV1]/rho;,
+                F[TE+5] = Un[RHOV2]/rho;,
+                F[TE+6] = Un[RHOV3]/rho;
+            )
+        }
     }
     // ################################################################
 };

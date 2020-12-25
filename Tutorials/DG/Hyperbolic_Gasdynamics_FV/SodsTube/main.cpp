@@ -84,9 +84,36 @@ amrex::Print() << "#############################################################
             {
                 output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info});
             }
+            else if (inputs.problem.int_params[0] == 1)
+            {
+                const amrex::Real diam = inputs.problem.params[8];
+                const amrex::Real theta = inputs.problem.params[9];
+#if (AMREX_SPACEDIM == 3)
+                const amrex::Real phi = inputs.problem.params[10];
+#endif
+                const std::string diam_info = "D0"+std::to_string((int) std::round(diam*100));
+                const std::string theta_info = "TH"+std::to_string((int) std::round(theta));
+#if (AMREX_SPACEDIM == 3)
+                const std::string phi_info = "PH"+std::to_string((int) std::round(phi));
+#endif
+
+#if (AMREX_SPACEDIM == 2)
+                output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+diam_info+"_"+theta_info});
+#endif
+#if (AMREX_SPACEDIM == 3)
+                output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+diam_info+"_"+theta_info+"_"+phi_info});
+#endif
+            }
+            else if (inputs.problem.int_params[0] == 2)
+            {
+                const amrex::Real radius = inputs.problem.params[8];
+                const std::string radius_info = "R0"+std::to_string((int) std::round(radius*1000));
+
+                output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+radius_info});
+            }
             else
             {
-amrex::Print() << "HERE WE ARE - SodsTube - inputs.problem.int_params[0] != 0" << std::endl;
+amrex::Print() << "HERE WE ARE - MAKE OUTPUT FOLDER" << std::endl;
 exit(-1);
             }
 
@@ -105,23 +132,60 @@ exit(-1);
             
             fp.open(stats_filepath, std::ofstream::app);
             fp << std::endl << "ANALYSIS STATISTICS - " << date_and_time_ << "\n";
+#ifdef AMREX_DEBUG
+            fp << "| Debug active: true" << std::endl;
+#else
+            fp << "| Debug active: false" << std::endl;
+#endif
+#ifdef AMREX_USE_GPU
+            fp << "| Using GPUs: true" << std::endl;
+#else
+            fp << "| Using GPUs: false" << std::endl;
+#endif
+            fp << "| Number of MPI ranks: " << amrex::ParallelDescriptor::NProcs() << std::endl;
         }
         // ============================================================
 
         // HEADER =====================================================
         {
-            const amrex::Real theta = inputs.problem.params[9];
-            
-            const std::string theta_info = std::to_string((int) std::round(theta));
-
             amrex::Print() << std::endl;
             if (inputs.problem.int_params[0] == 0)
             {
                 amrex::Print() << "# SOD'S TUBE TEST" << std::endl;
             }
+            else if (inputs.problem.int_params[0] == 1)
+            {
+                const amrex::Real diam = inputs.problem.params[8];
+                const amrex::Real theta = inputs.problem.params[9];
+#if (AMREX_SPACEDIM == 3)
+                const amrex::Real phi = inputs.problem.params[10];
+#endif
+                const std::string diam_info = "D0"+std::to_string((int) std::round(diam*100));
+                const std::string theta_info = "TH"+std::to_string((int) std::round(theta));
+#if (AMREX_SPACEDIM == 3)
+                const std::string phi_info = "PH"+std::to_string((int) std::round(phi));
+#endif
+
+                amrex::Print() << std::endl;
+#if (AMREX_SPACEDIM == 2)
+                amrex::Print() << "# SOD'S TUBE TEST" << " - DIAMETER: " << diam_info << " - INCLINATION: " << theta_info << std::endl;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                amrex::Print() << "# SOD'S TUBE TEST" << " - DIAMETER: " << diam_info << " - AZIMUTH: " << theta_info << " - ELEVATION: " << phi_info << std::endl;
+#endif
+            }
+            else if (inputs.problem.int_params[0] == 2)
+            {
+                const amrex::Real radius = inputs.problem.params[8];
+                const std::string radius_info = "R0"+std::to_string((int) std::round(radius*1000));
+
+                amrex::Print() << std::endl;
+                amrex::Print() << "# SOD'S TUBE TEST" << " - RADIUS: " << radius_info << std::endl;
+
+            }
             else
             {
-amrex::Print() << "HERE WE ARE - SodsTube - HEADER" << std::endl;
+amrex::Print() << "HERE WE ARE - HEADER" << std::endl;
 exit(-1);
             }
         }
@@ -160,9 +224,72 @@ exit(-1);
                 volume = AMREX_D_TERM(len[0],*len[1],*len[2]);
                 surface = 0.0;
             }
+            else if (inputs.problem.int_params[0] == 1)
+            {
+                const amrex::Real diam = inputs.problem.params[8];
+                const amrex::Real theta = inputs.problem.params[9]*M_PI/180.0;
+
+                const amrex::Real cth = std::cos(theta);
+                const amrex::Real sth = std::sin(theta);
+                const amrex::Real tth = std::tan(theta);
+
+                const amrex::Real Ay = 0.5*(1.0-diam/cth+tth);
+                const amrex::Real By = 0.5*(1.0+diam/cth+tth);
+
+                volume = 0.0;
+                surface = 0.0;
+
+                // We assume theta >= 0
+                if (Ay > 1.0)
+                {
+#if (AMREX_SPACEDIM == 2)
+                    volume = diam/sth;
+                    surface = 2.0/sth;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                    volume = 0.25*M_PI*diam*diam/sth;
+                    surface = M_PI*diam/sth;
+#endif
+                }
+                else if (By < 1.0)
+                {
+#if (AMREX_SPACEDIM == 2)
+                    volume = diam/cth;
+                    surface = 2.0/cth;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                    volume = 0.25*M_PI*diam*diam/cth;
+                    surface = M_PI*diam/cth;
+#endif
+                }
+                else
+                {
+#if (AMREX_SPACEDIM == 2)
+                    const amrex::Real xc = 0.5*(1.0+1.0/tth-diam/sth);
+
+                    volume = 0.25*(2.0+2.0*diam/sth+2.0*diam/cth-(1.0+diam*diam)/(cth*sth));
+                    surface = 2.0*xc/cth;
+#endif
+#if (AMREX_SPACEDIM == 3)
+#endif
+                }
+            }
+            else if (inputs.problem.int_params[0] == 2)
+            {
+                const amrex::Real r = inputs.problem.params[8];
+
+#if (AMREX_SPACEDIM == 2)
+                    volume = 1.0-M_PI*r*r;
+                    surface = 2.0*M_PI*r;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                    volume = 1.0-(4.0/3.0)*M_PI*r*r*r;
+                    surface = 4.0*M_PI*r*r;
+#endif
+            }
             else
             {
-amrex::Print() << "HERE WE ARE - SodsTube - CheckQuadrature" << std::endl;
+amrex::Print() << "HERE WE ARE - CHECK THE COMPUTED QUADRATURE RULES" << std::endl;
 exit(-1);
             }
 
@@ -210,7 +337,7 @@ exit(-1);
         // ============================================================
 
         // ADVANCE IN TIME ============================================
-        amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
+        amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
         {
             int n = 0;
             amrex::Real t, dt;
@@ -265,6 +392,8 @@ exit(-1);
                                << ", clock time per time step = " << tps 
                                << ", estimated remaining time = " << eta << std::endl;
             }
+
+            fp << "| clock time per time step: " << std::scientific << std::setprecision(5) << std::setw(12) << tps << " s\n";
 
         }
         amrex::Print() << "# END OF THE ANALYSIS" << std::endl;

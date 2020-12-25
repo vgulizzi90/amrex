@@ -116,6 +116,17 @@ amrex::Print() << "#############################################################
             
             fp.open(stats_filepath, std::ofstream::app);
             fp << std::endl << "ANALYSIS STATISTICS - " << date_and_time_ << "\n";
+#ifdef AMREX_DEBUG
+            fp << "| Debug active: true" << std::endl;
+#else
+            fp << "| Debug active: false" << std::endl;
+#endif
+#ifdef AMREX_USE_GPU
+            fp << "| Using GPUs: true" << std::endl;
+#else
+            fp << "| Using GPUs: false" << std::endl;
+#endif
+            fp << "| Number of MPI ranks: " << amrex::ParallelDescriptor::NProcs() << std::endl;
         }
         // ============================================================
 
@@ -289,6 +300,8 @@ amrex::Print() << "#############################################################
                                << ", clock time per time step = " << tps 
                                << ", estimated remaining time = " << eta << std::endl;
             }
+
+            fp << "| clock time per time step: " << std::scientific << std::setprecision(5) << std::setw(12) << tps << " s\n";
 
         }
         amrex::Print() << "# END OF THE ANALYSIS" << std::endl;

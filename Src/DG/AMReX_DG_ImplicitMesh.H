@@ -358,6 +358,12 @@ int ELM_INT_BOU_QUAD_POS(const int dom)
     return (__DG_ELM_INT_BOU_QUAD_N_COMP_PER_DOM__*dom);
 }
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_FV_INFO_POS(const int dom)
+{
+    return (__DG_ELM_FV_INFO_N_COMP_PER_DOM__*dom);
+}
+
 /**
  * \brief Given a point x, find the nearest on the zero level of the level set function.
  *
@@ -584,6 +590,26 @@ bool ELM_IS_SMALL(const int etype)
 }
 
 /**
+ * \brief Given the etype, return true if the element is large or small, false otherwise.
+ *
+ * \param[in] etype: element type.
+ *
+ * \return true if the element is large or small, false otherwise.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_SMALL_LARGE_OR_EXTENDED(const int etype)
+{
+    const bool elm_is_small = (etype%10 == __DG_ELM_TYPE_SMALL__);
+    const bool elm_is_large = (etype%10 == __DG_ELM_TYPE_LARGE__);
+    const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
+    const bool elm_is_valid = elm_is_entire || elm_is_large;
+    const bool elm_is_extended = elm_is_valid && (etype/10 == 1);
+
+    return elm_is_small || elm_is_large || elm_is_extended;
+}
+
+/**
  * \brief Given the etype, return true if the element is empty, false otherwise.
  *
  * \param[in] etype: element type.
@@ -670,6 +696,23 @@ bool ELM_IS_LARGE_OR_EXTENDED(const int etype)
 
     return elm_is_large || elm_is_extended;
 }
+
+/**
+ * \brief Given the etype, return true if the element is entire and non-extended, false otherwise.
+ *
+ * \param[in] etype: element type.
+ *
+ * \return true if the element is entire and non-extended, false otherwise.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_STANDARD_CELL(const int etype)
+{
+    const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
+    const bool elm_is_extended = elm_is_entire && (etype/10 == 1);
+
+    return (elm_is_entire && (!elm_is_extended));
+}
 // ####################################################################
 
 
@@ -738,6 +781,8 @@ struct ImplicitMesh
     iMultiFab eIntBouQuad_Nq;
     longMultiFab eIntBouQuad_pos;
 
+    longMultiFab eFVInfo_pos;
+
     iMultiFab eColor;
     
     int n_cut_elms, n_cut_elm_bou, n_entire_extended_elms;
@@ -750,6 +795,11 @@ struct ImplicitMesh
     Gpu::DeviceVector<Real> eDomQuad_device_mem;
     Gpu::DeviceVector<Real> eBouQuad_device_mem;
     Gpu::DeviceVector<Real> eIntBouQuad_device_mem;
+
+    long mem_for_eFVInfo;
+    
+    Gpu::HostVector<Real> eFVInfo_host_mem;
+    Gpu::DeviceVector<Real> eFVInfo_device_mem;
     // ################################################################
 
     // CONSTRUCTOR ####################################################
@@ -829,6 +879,8 @@ struct ImplicitMesh
         this->mem_for_eDomQuad = 0L;
         this->mem_for_eBouQuad = 0L;
         this->mem_for_eIntBouQuad = 0L;
+
+        this->mem_for_eFVInfo = 0L;
         // ============================================================
     }
     // ################################################################
@@ -888,6 +940,8 @@ struct ImplicitMesh
         const int eIntBouQuad_Nq_n_comp = __DG_ELM_INT_BOU_QUAD_N_COMP_PER_DOM__*N_DOM;
         const int eIntBouQuad_pos_n_comp = __DG_ELM_INT_BOU_QUAD_N_COMP_PER_DOM__*N_DOM;
 
+        const int eFVInfo_pos_n_comp = __DG_ELM_FV_INFO_N_COMP_PER_DOM__*N_DOM;
+
         // DOMAIN-TO-LEVELSETS CORRESPONDENCE
         int const * Dom2Phi_ptr = this->Dom2Phi.data();
 
@@ -896,10 +950,129 @@ struct ImplicitMesh
 
         // IMPLICIT MESH QUADRATURE ORDER
         const int qo = this->space_q_ie+1;
+
+        // LEVEL SET
+        const int sp = this->ls_std_elem.p;
+
+        // NEAREST POINT SEARCH
+        const int it_max = 10;
+        const Real rtol = atol*AMREX_D_PICK(dx[0], dx[0]*dx[1], dx[0]*dx[1]*dx[2]);
         // ============================================================
         
         // VARIABLES ==================================================
         long eDomQuad_mem_pos, eBouQuad_mem_pos, eIntBouQuad_mem_pos;
+
+        MultiFab emx;
+        long eFVInfo_mem_pos;
+        // ============================================================
+
+        // PRUNING OF THE BOXES =======================================
+        // REMOVE ALL BOXES WHOSE ELEMENTS ARE EMPTY
+        // (THE ELEMENTS MUST BE EMPTY FOR EACH AND EVERY DOMAIN)
+        // ============================================================
+        if (im_flag)
+        {
+            BoxList bl;
+            int n_empty_boxes;
+
+            for (MFIter mfi(this->PHI); mfi.isValid(); ++mfi)
+            {
+                const Box & bx = mfi.fabbox();
+                const Dim3 lo = lbound(bx);
+                const Dim3 hi = ubound(bx);
+
+                Array4<Real const> const & PHI_fab = this->PHI.array(mfi);
+
+                bool bx_is_empty;
+
+                bx_is_empty = true;
+                for (int dom = 0; dom < N_DOM; ++dom)
+                for (int k = lo.z; k <= hi.z; ++k)
+                for (int j = lo.y; j <= hi.y; ++j)
+                for (int i = lo.x; i <= hi.x; ++i)
+                {
+                    // LOCAL PARAMETERS
+                    const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                       prob_lo[1]+j*dx[1],
+                                                                       prob_lo[2]+k*dx[2])};
+                    const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+1)*dx[0],
+                                                                       prob_lo[1]+(j+1)*dx[1],
+                                                                       prob_lo[2]+(k+1)*dx[2])};
+                    const Real entire_cell_volume = AMREX_D_PICK(dx[0], dx[0]*dx[1], dx[0]*dx[1]*dx[2]);
+
+                    // LOCAL VARIABLES
+                    Real cell_volume, volume_fraction;
+
+                    // LEVELSETS
+                    algoim_DG_phi_space_BFX phi(p, cell_lo, cell_hi, PHI_fab, i, j, k);
+                    phi.set_u(Dom2Phi_ptr[2*dom]);
+                    phi.set_sign(Dom2Phi_ptr[2*dom+1]);
+
+                    iQuadRule quad = iQuadGen(phi, cell_lo, cell_hi, -1, -1, qo);
+
+                    // Compute the volume fraction
+                    cell_volume = quad([](const auto & /*x*/) {return 1.0;});
+                    volume_fraction = cell_volume/entire_cell_volume;
+
+                    if (volume_fraction > atol)
+                    {
+                        bx_is_empty = false;
+                    }
+
+                }
+
+                if (!bx_is_empty)
+                {
+                    bl.push_back(mfi.validbox());
+                }
+            }
+
+            // SHARE THE INFO
+            AllGatherBoxes(bl.data());
+
+            // CREATE THE NEW BOX ARRAYS AND DISTRIBUTION MAPPING
+            BoxArray new_cc_ba;
+            Array<BoxArray, AMREX_SPACEDIM> new_fc_ba;
+            DistributionMapping new_dm;
+
+            new_cc_ba = BoxArray(bl);
+#if (AMREX_SPACEDIM == 1)
+            new_fc_ba[0] = convert(new_cc_ba, IntVect(1));
+#endif
+#if (AMREX_SPACEDIM == 2)
+            new_fc_ba[0] = convert(new_cc_ba, IntVect(1,0));
+            new_fc_ba[1] = convert(new_cc_ba, IntVect(0,1));
+#endif
+#if (AMREX_SPACEDIM == 3)
+            new_fc_ba[0] = convert(new_cc_ba, IntVect(1,0,0));
+            new_fc_ba[1] = convert(new_cc_ba, IntVect(0,1,0));
+            new_fc_ba[2] = convert(new_cc_ba, IntVect(0,0,1));
+#endif
+            new_dm.define(new_cc_ba);
+
+            // UPDATE THE LEVEL SET MULTIFAB
+            {
+                const int ngr = this->dom_data_ngr;
+                const int n_comp = (this->ls_std_elem.Np)*N_PHI;
+
+                MultiFab real_mf;
+                
+                real_mf.define(new_cc_ba, new_dm, n_comp, ngr);
+                real_mf.ParallelCopy(this->PHI, 0, 0, n_comp, ngr, ngr, this->geom.periodicity());
+                this->PHI.define(new_cc_ba, new_dm, n_comp, ngr);
+                MultiFab::Copy(this->PHI, real_mf, 0, 0, n_comp, ngr);
+            }
+
+            // UPDATE IMPLICIT-MESH BOX ARRAYS AND DISTRIBUTION MAPPING
+            this->cc_ba = new_cc_ba;
+            AMREX_D_TERM
+            (
+                this->fc_ba[0] = new_fc_ba[0];,
+                this->fc_ba[1] = new_fc_ba[1];,
+                this->fc_ba[2] = new_fc_ba[2];
+            )
+            this->dm = new_dm;
+        }
         // ============================================================
 
         // INITIALIZATION =============================================
@@ -942,6 +1115,9 @@ struct ImplicitMesh
         this->eIntBouQuad_pos.define(this->cc_ba, this->dm, eIntBouQuad_pos_n_comp, this->dom_data_ngr);
         this->eIntBouQuad_pos = -1L;
 
+        this->eFVInfo_pos.define(this->cc_ba, this->dm, eFVInfo_pos_n_comp, 0);
+        this->eFVInfo_pos = -1L;
+
         this->n_cut_elms = 0;
         this->n_cut_elm_bou = 0;
         this->n_entire_extended_elms = 0;
@@ -949,6 +1125,8 @@ struct ImplicitMesh
         eDomQuad_mem_pos = 0L;
         eBouQuad_mem_pos = 0L;
         eIntBouQuad_mem_pos = 0L;
+
+        eFVInfo_mem_pos = 0L;
         // ============================================================
 
         // THE FIRST BLOCK OF MEMORY STORES THE STANDARD ELEMENT INFO =
@@ -1644,7 +1822,7 @@ struct ImplicitMesh
                         // Neighboring cell id and boundary
                         NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
 
-                        nbr_is_valid = domain.contains(IntVect(AMREX_D_DECL(nbr_i, nbr_j, nbr_k)));
+                        nbr_is_valid = domain.contains(nbr_i, nbr_j, nbr_k);
                         nbr_vf = eInfo_fab(nbr_i,nbr_j,nbr_k,ELM_VOLUME_FRACTION(dom));
 
                         if ((nbr_vf > best_nbr_vf) && nbr_is_valid)
@@ -1899,172 +2077,8 @@ else
         }
         // ============================================================
 
-        // PERFORM THE MESH PRUNING ===================================
-        // REMOVE ALL BOXES WHOSE ELEMENTS ARE EMPTY
-        // (THE ELEMENTS MUST BE EMPTY FOR EACH AND EVERY DOMAIN)
-        // ============================================================
-        if (false)
-        {
-            BoxList bl;
-
-            for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
-            {
-                const Box & bx = mfi.fabbox();
-                const Dim3 lo = lbound(bx);
-                const Dim3 hi = ubound(bx);
-
-                Array4<short const> const & eType_fab = this->eType.array(mfi);
-
-                bool bx_is_empty;
-
-                bx_is_empty = true;
-                for (int dom = 0; dom < N_DOM; ++dom)
-                for (int k = lo.z; k <= hi.z; ++k)
-                for (int j = lo.y; j <= hi.y; ++j)
-                for (int i = lo.x; i <= hi.x; ++i)
-                {
-                    const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
-                    const bool elm_is_not_empty = (etype != __DG_ELM_TYPE_EMPTY__);
-
-                    if (elm_is_not_empty)
-                    {
-                        bx_is_empty = false;
-                    }
-                }
-
-                if (!bx_is_empty)
-                {
-                    bl.push_back(mfi.validbox());
-                }
-            }
-
-            // SHARE THE INFO
-            AllGatherBoxes(bl.data());
-
-            // CREATE THE NEW BOX ARRAYS AND DISTRIBUTION MAPPING
-            BoxArray new_cc_ba;
-            Array<BoxArray, AMREX_SPACEDIM> new_fc_ba;
-            DistributionMapping new_dm;
-
-            new_cc_ba = BoxArray(bl);
-    #if (AMREX_SPACEDIM == 1)
-            new_fc_ba[0] = convert(new_cc_ba, IntVect(1));
-    #endif
-    #if (AMREX_SPACEDIM == 2)
-            new_fc_ba[0] = convert(new_cc_ba, IntVect(1,0));
-            new_fc_ba[1] = convert(new_cc_ba, IntVect(0,1));
-    #endif
-    #if (AMREX_SPACEDIM == 3)
-            new_fc_ba[0] = convert(new_cc_ba, IntVect(1,0,0));
-            new_fc_ba[1] = convert(new_cc_ba, IntVect(0,1,0));
-            new_fc_ba[2] = convert(new_cc_ba, IntVect(0,0,1));
-    #endif
-            new_dm.define(new_cc_ba);
-
-            // UPDATE ALL THE MULTIFABS RELATED TO THE IMPLICIT MESH
-            // LEVEL SETS
-            {
-                const int ngr = this->dom_data_ngr;
-                const int n_comp = (this->ls_std_elem.Np)*N_PHI;
-
-                MultiFab real_mf;
-                
-                real_mf.define(new_cc_ba, new_dm, n_comp, ngr);
-                real_mf.ParallelCopy(this->PHI, 0, 0, n_comp, ngr, ngr, this->geom.periodicity());
-                this->PHI.define(new_cc_ba, new_dm, n_comp, ngr);
-                MultiFab::Copy(this->PHI, real_mf, 0, 0, n_comp, ngr);
-            }
-
-            // IMPLICIT MESH DOMAIN (CELL-CENTERED) INFO
-            {
-                const int ngr = this->dom_data_ngr;
-                
-                shortMultiFab short_mf;
-                iMultiFab int_mf;
-                longMultiFab long_mf;
-                MultiFab real_mf;
-                
-                short_mf.define(new_cc_ba, new_dm, eType_n_comp, ngr);
-                short_mf.ParallelCopy(this->eType, 0, 0, eType_n_comp, ngr, ngr, this->geom.periodicity());
-                this->eType.define(new_cc_ba, new_dm, eType_n_comp, ngr);
-                Copy(this->eType, short_mf, 0, 0, eType_n_comp, ngr);
-
-                real_mf.define(new_cc_ba, new_dm, eInfo_n_comp, ngr);
-                real_mf.ParallelCopy(this->eInfo, 0, 0, eInfo_n_comp, ngr, ngr, this->geom.periodicity());
-                this->eInfo.define(new_cc_ba, new_dm, eInfo_n_comp, ngr);
-                MultiFab::Copy(this->eInfo, real_mf, 0, 0, eInfo_n_comp, ngr);
-
-                real_mf.define(new_cc_ba, new_dm, eIntBouInfo_n_comp, ngr);
-                real_mf.ParallelCopy(this->eIntBouInfo, 0, 0, eIntBouInfo_n_comp, ngr, ngr, this->geom.periodicity());
-                this->eIntBouInfo.define(new_cc_ba, new_dm, eIntBouInfo_n_comp, ngr);
-                MultiFab::Copy(this->eIntBouInfo, real_mf, 0, 0, eIntBouInfo_n_comp, ngr);
-
-                int_mf.define(new_cc_ba, new_dm, eDomQuad_Nq_n_comp, ngr);
-                int_mf.ParallelCopy(this->eDomQuad_Nq, 0, 0, eDomQuad_Nq_n_comp, ngr, ngr, this->geom.periodicity());
-                this->eDomQuad_Nq.define(new_cc_ba, new_dm, eDomQuad_Nq_n_comp, ngr);
-                iMultiFab::Copy(this->eDomQuad_Nq, int_mf, 0, 0, eDomQuad_Nq_n_comp, ngr);
-
-                long_mf.define(new_cc_ba, new_dm, eDomQuad_pos_n_comp, ngr);
-                long_mf.ParallelCopy(this->eDomQuad_pos, 0, 0, eDomQuad_pos_n_comp, ngr, ngr);
-                this->eDomQuad_pos.define(new_cc_ba, new_dm, eDomQuad_pos_n_comp, ngr);
-                Copy(this->eDomQuad_pos, long_mf, 0, 0, eDomQuad_pos_n_comp, ngr);
-
-                int_mf.define(new_cc_ba, new_dm, eIntBouQuad_Nq_n_comp, ngr);
-                int_mf.ParallelCopy(this->eIntBouQuad_Nq, 0, 0, eIntBouQuad_Nq_n_comp, ngr, ngr, this->geom.periodicity());
-                this->eIntBouQuad_Nq.define(new_cc_ba, new_dm, eIntBouQuad_Nq_n_comp, ngr);
-                iMultiFab::Copy(this->eIntBouQuad_Nq, int_mf, 0, 0, eIntBouQuad_Nq_n_comp, ngr);
-
-                long_mf.define(new_cc_ba, new_dm, eIntBouQuad_pos_n_comp, ngr);
-                long_mf.ParallelCopy(this->eIntBouQuad_pos, 0, 0, eIntBouQuad_pos_n_comp, ngr, ngr);
-                this->eIntBouQuad_pos.define(new_cc_ba, new_dm, eIntBouQuad_pos_n_comp, ngr);
-                Copy(this->eIntBouQuad_pos, long_mf, 0, 0, eIntBouQuad_pos_n_comp, ngr);
-            }
-            
-            // IMPLICIT MESH BOUNDARY (FACE-CENTERED) INFO
-            for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
-            {
-                const int ngr = this->bou_data_ngr;
-
-                shortMultiFab short_mf;
-                iMultiFab int_mf;
-                longMultiFab long_mf;
-                MultiFab real_mf;
-
-                short_mf.define(new_fc_ba[dim], new_dm, eBouType_n_comp, ngr);
-                short_mf.ParallelCopy(this->eBouType[dim], 0, 0, eBouType_n_comp, ngr, ngr, this->geom.periodicity());
-                this->eBouType[dim].define(new_fc_ba[dim], new_dm, eBouType_n_comp, ngr);
-                Copy(this->eBouType[dim], short_mf, 0, 0, eBouType_n_comp, ngr);
-
-                real_mf.define(new_fc_ba[dim], new_dm, eBouInfo_n_comp, ngr);
-                real_mf.ParallelCopy(this->eBouInfo[dim], 0, 0, eBouInfo_n_comp, ngr, ngr, this->geom.periodicity());
-                this->eBouInfo[dim].define(new_fc_ba[dim], new_dm, eBouInfo_n_comp, ngr);
-                Copy(this->eBouInfo[dim], real_mf, 0, 0, eBouInfo_n_comp, ngr);
-
-                int_mf.define(new_fc_ba[dim], new_dm, eBouQuad_Nq_n_comp, ngr);
-                int_mf.ParallelCopy(this->eBouQuad_Nq[dim], 0, 0, eBouQuad_Nq_n_comp, ngr, ngr, this->geom.periodicity());
-                this->eBouQuad_Nq[dim].define(new_fc_ba[dim], new_dm, eBouQuad_Nq_n_comp, ngr);
-                iMultiFab::Copy(this->eBouQuad_Nq[dim], int_mf, 0, 0, eBouQuad_Nq_n_comp, ngr);
-
-                long_mf.define(new_fc_ba[dim], new_dm, eBouQuad_pos_n_comp, ngr);
-                long_mf.ParallelCopy(this->eBouQuad_pos[dim], 0, 0, eBouQuad_pos_n_comp, ngr, ngr);
-                this->eBouQuad_pos[dim].define(new_fc_ba[dim], new_dm, eBouQuad_pos_n_comp, ngr);
-                Copy(this->eBouQuad_pos[dim], long_mf, 0, 0, eBouQuad_pos_n_comp, ngr);
-            }
-
-            // UPDATE IMPLICIT-MESH BOX ARRAYS AND DISTRIBUTION MAPPING
-            this->cc_ba = new_cc_ba;
-            AMREX_D_TERM
-            (
-                this->fc_ba[0] = new_fc_ba[0];,
-                this->fc_ba[1] = new_fc_ba[1];,
-                this->fc_ba[2] = new_fc_ba[2];
-            )
-            this->dm = new_dm;
-        }
-        // ============================================================
-
         // COPY MEMORY TO THE DEVICE ==================================
-    #ifdef AMREX_USE_CUDA
+#ifdef AMREX_USE_CUDA
         this->eDomQuad_device_mem.resize(this->eDomQuad_host_mem.size());
         this->eBouQuad_device_mem.resize(this->eBouQuad_host_mem.size());
         this->eIntBouQuad_device_mem.resize(this->eIntBouQuad_host_mem.size());
@@ -2072,10 +2086,345 @@ else
         Gpu::copy(Gpu::hostToDevice, this->eDomQuad_host_mem.begin(), this->eDomQuad_host_mem.end(), this->eDomQuad_device_mem.begin());
         Gpu::copy(Gpu::hostToDevice, this->eBouQuad_host_mem.begin(), this->eBouQuad_host_mem.end(), this->eBouQuad_device_mem.begin());
         Gpu::copy(Gpu::hostToDevice, this->eIntBouQuad_host_mem.begin(), this->eIntBouQuad_host_mem.end(), this->eIntBouQuad_device_mem.begin());
-    #endif
+#endif
+        // ============================================================
+
+        // COMPUTE ADDITIONAL INFORMATION FOR CUT CELLS ===============
+        // We compute:
+        // - the mirror points of the centroids of the cut cells with 
+        //   respect to the zero-contour of the level set functions.
+        // - a rotation matrix such that the linear reconstruction
+        //   based on a suitably modified least-square approximation is
+        //   performed using a diagonal matrix.
+        // ============================================================
+        emx.define(this->cc_ba, this->dm, AMREX_SPACEDIM*N_DOM, this->dom_data_ngr);
+        emx = 0.0;
+
+        for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+            const Dim3 lo = lbound(bx);
+            const Dim3 hi = ubound(bx);
+
+            Array4<short> const & eType_fab = this->eType.array(mfi);
+            Array4<Real const> const & eInfo_fab = this->eInfo.array(mfi);
+            Array4<Real const> const & PHI_fab = this->PHI.array(mfi);
+
+            Array4<Real> const & emx_fab = emx.array(mfi);
+
+            for (int dom = 0; dom < N_DOM; ++dom)
+            for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i)
+            {
+                // LOCAL PARAMETERS
+                const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_small_large_or_extended = ELM_IS_SMALL_LARGE_OR_EXTENDED(etype);
+
+                if (elm_is_small_large_or_extended)
+                {
+                    // VARIABLES
+                    Real xc[AMREX_SPACEDIM], cc[AMREX_SPACEDIM], xm[AMREX_SPACEDIM];
+                    int nbr_i, nbr_j, nbr_k;
+                    Real nbr_cell_lo[AMREX_SPACEDIM], nbr_cell_hi[AMREX_SPACEDIM];
+
+                    // LEVEL SET
+                    DG_PHI_space_BFX phi(sp, PHI_fab);
+                    phi.set_u(Dom2Phi_ptr[2*dom]);
+
+                    // ELEMENT CENTROID
+                    AMREX_D_TERM
+                    (
+                        xc[0] = eInfo_fab(i,j,k,ELM_CENTROID_X1(dom));,
+                        xc[1] = eInfo_fab(i,j,k,ELM_CENTROID_X2(dom));,
+                        xc[2] = eInfo_fab(i,j,k,ELM_CENTROID_X3(dom));
+                    )
+
+                    // CLOSEST POINT TO THE ELEMENT CENTROID
+                    nbr_i = i;
+                    nbr_j = j;
+                    nbr_k = k;
+                    NEAREST_POINT(&prob_lo[0], &dx[0], phi, xc,
+                                  nbr_i, nbr_j, nbr_k, nbr_cell_lo, nbr_cell_hi, cc,
+                                  rtol, it_max);
+
+                    // MIRRORED POINT OF THE ELEMENT CENTROID
+                    AMREX_D_TERM
+                    (
+                        xm[0] = 2.0*cc[0]-xc[0];,
+                        xm[1] = 2.0*cc[1]-xc[1];,
+                        xm[2] = 2.0*cc[2]-xc[2];
+                    )
+
+                    // TEMPORARILY STORE INFO IN THE AUXILIARY MULTIFAB
+                    AMREX_D_TERM
+                    (
+                        emx_fab(i,j,k,AMREX_SPACEDIM*dom+0) = xm[0];,
+                        emx_fab(i,j,k,AMREX_SPACEDIM*dom+1) = xm[1];,
+                        emx_fab(i,j,k,AMREX_SPACEDIM*dom+2) = xm[2];
+                    )
+
+//IO::PrintRealArray2D(1, AMREX_SPACEDIM, xc);
+//IO::PrintRealArray2D(1, AMREX_SPACEDIM, cc);
+//IO::PrintRealArray2D(1, AMREX_SPACEDIM, xm);
+
+                }
+            }
+        }
+
+        // COMPUTE AND STORE INFO FOR LEAST-SQUARE RECONSTRUCTION
+
+        // FIRST BLOCK OF INFORMATION IS RELATED TO STANDARD STENCIL
+        {
+            // Expand memory
+            this->eFVInfo_host_mem.resize((AMREX_SPACEDIM+1)*AMREX_SPACEDIM);
+
+            // Store data: mirrored point (all zero in this case)
+            AMREX_D_TERM
+            (
+                this->eFVInfo_host_mem[0] = 0.0;,
+                this->eFVInfo_host_mem[1] = 0.0;,
+                this->eFVInfo_host_mem[2] = 0.0;
+            )
+
+            // Store data: Rotation matrix (identity matrix)
+            linalg::eye(AMREX_SPACEDIM, &this->eFVInfo_host_mem[AMREX_SPACEDIM]);
+
+            // Update memory
+            eFVInfo_mem_pos = AMREX_SPACEDIM+AMREX_SPACEDIM*AMREX_SPACEDIM;
+        }
+        
+        // THE REST TO MODIFIED LEAST-SQUARE RECONSTRUCTION
+        for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+            const Dim3 lo = lbound(bx);
+            const Dim3 hi = ubound(bx);
+
+            Array4<short> const & eType_fab = this->eType.array(mfi);
+            Array4<Real const> const & eInfo_fab = this->eInfo.array(mfi);
+            Array4<Real const> const & emx_fab = emx.array(mfi);
+
+            Array4<long> const & eFVInfo_pos_fab = this->eFVInfo_pos.array(mfi);
+
+            for (int dom = 0; dom < N_DOM; ++dom)
+            for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i)
+            {
+                // LOCAL PARAMETERS
+                const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_valid = ELM_IS_VALID(etype);
+
+                // LOCAL VARIABLES
+                int nbr_i, nbr_j, nbr_k;
+                int nbr_BF_i, nbr_BF_j, nbr_BF_k;
+                short nbr_etype;
+                bool stencil_is_standard;
+                Real xc[AMREX_SPACEDIM], nbr_xc[AMREX_SPACEDIM];
+                long pos;
+                Real w[AMREX_SPACEDIM], v[AMREX_SPACEDIM*AMREX_SPACEDIM];
+
+                // LOOP OVER THE ELEMENT IN THE STENCIL
+                stencil_is_standard = true;
+                for (int n = 0; n < __DG_BASE_STENCIL_N_NBR__; ++n)
+                {
+                    nbr_i = i+base_stencil_table_i[n];
+                    nbr_j = j+base_stencil_table_j[n];
+                    nbr_k = k+base_stencil_table_k[n];
+                    nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+
+                    if (!ELM_IS_STANDARD_CELL(nbr_etype))
+                    {
+                        stencil_is_standard = false;
+                    }
+                }
+
+                if (stencil_is_standard)
+                {
+                    eFVInfo_pos_fab(i,j,k,ELM_FV_INFO_POS(dom)) = 0;
+                }
+                else if (elm_is_valid)
+                {
+                    // ELEMENT CENTROID
+                    AMREX_D_TERM
+                    (
+                        xc[0] = eInfo_fab(i,j,k,ELM_CENTROID_X1(dom));,
+                        xc[1] = eInfo_fab(i,j,k,ELM_CENTROID_X2(dom));,
+                        xc[2] = eInfo_fab(i,j,k,ELM_CENTROID_X3(dom));
+                    )
+
+                    // Store memory offset
+                    eFVInfo_pos_fab(i,j,k,ELM_FV_INFO_POS(dom)) = eFVInfo_mem_pos;
+
+                    // Expand memory
+                    this->eFVInfo_host_mem.resize(eFVInfo_mem_pos+AMREX_SPACEDIM+AMREX_SPACEDIM*AMREX_SPACEDIM);
+
+                    // Store data: mirrored point
+                    pos = eFVInfo_mem_pos;
+                    AMREX_D_TERM
+                    (
+                        this->eFVInfo_host_mem[pos+0] = emx_fab(i,j,k,AMREX_SPACEDIM*dom+0);,
+                        this->eFVInfo_host_mem[pos+1] = emx_fab(i,j,k,AMREX_SPACEDIM*dom+1);,
+                        this->eFVInfo_host_mem[pos+2] = emx_fab(i,j,k,AMREX_SPACEDIM*dom+2);
+                    )
+
+                    // Store data: Rotation matrix
+                    Real * R = &this->eFVInfo_host_mem[pos+AMREX_SPACEDIM];
+
+                    linalg::zeros(AMREX_SPACEDIM*AMREX_SPACEDIM, R);
+
+//Print() << "xc(" << i << "," << j << "," << k << "): "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, xc);
+
+                    for (int n = 0; n < __DG_BASE_STENCIL_N_NBR__; ++n)
+                    {
+                        nbr_i = i+base_stencil_table_i[n];
+                        nbr_j = j+base_stencil_table_j[n];
+                        nbr_k = k+base_stencil_table_k[n];
+                        nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+
+                        BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                        AMREX_D_TERM
+                        (
+                            nbr_xc[0] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X1(dom));,
+                            nbr_xc[1] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X2(dom));,
+                            nbr_xc[2] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X3(dom));
+                        )
+
+#if (AMREX_SPACEDIM == 2)
+                        R[0+0*2] += (nbr_xc[0]-xc[0])*(nbr_xc[0]-xc[0]);
+                        R[0+1*2] += (nbr_xc[0]-xc[0])*(nbr_xc[1]-xc[1]);
+                        R[1+0*2]  = R[0+1*2];
+                        R[1+1*2] += (nbr_xc[1]-xc[1])*(nbr_xc[1]-xc[1]);
+#endif
+#if (AMREX_SPACEDIM == 3)
+                        R[0+0*3] += (nbr_xc[0]-xc[0])*(nbr_xc[0]-xc[0]);
+                        R[0+1*3] += (nbr_xc[0]-xc[0])*(nbr_xc[1]-xc[1]);
+                        R[0+2*3] += (nbr_xc[0]-xc[0])*(nbr_xc[2]-xc[2]);
+                        R[1+0*3]  = R[0+1*3];
+                        R[2+0*3]  = R[0+2*3];
+                        R[1+1*3] += (nbr_xc[1]-xc[1])*(nbr_xc[1]-xc[1]);
+                        R[1+2*3] += (nbr_xc[2]-xc[2])*(nbr_xc[2]-xc[2]);
+                        R[2+1*3]  = R[1+2*3];
+                        R[2+2*3] += (nbr_xc[2]-xc[2])*(nbr_xc[2]-xc[2]);
+#endif
+//Print() << "nbr_xc(" << nbr_BF_i << "," << nbr_BF_j << "," << nbr_BF_k << "): "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_xc);
+                    }
+
+                    if (ELM_IS_LARGE_OR_EXTENDED(etype))
+                    {
+                        AMREX_D_TERM
+                        (
+                            nbr_xc[0] = this->eFVInfo_host_mem[pos+0];,
+                            nbr_xc[1] = this->eFVInfo_host_mem[pos+1];,
+                            nbr_xc[2] = this->eFVInfo_host_mem[pos+2];
+                        )
+
+#if (AMREX_SPACEDIM == 2)
+                        R[0+0*2] += (nbr_xc[0]-xc[0])*(nbr_xc[0]-xc[0]);
+                        R[0+1*2] += (nbr_xc[0]-xc[0])*(nbr_xc[1]-xc[1]);
+                        R[1+0*2]  = R[0+1*2];
+                        R[1+1*2] += (nbr_xc[1]-xc[1])*(nbr_xc[1]-xc[1]);
+#endif
+#if (AMREX_SPACEDIM == 3)
+                        R[0+0*3] += (nbr_xc[0]-xc[0])*(nbr_xc[0]-xc[0]);
+                        R[0+1*3] += (nbr_xc[0]-xc[0])*(nbr_xc[1]-xc[1]);
+                        R[0+2*3] += (nbr_xc[0]-xc[0])*(nbr_xc[2]-xc[2]);
+                        R[1+0*3]  = R[0+1*3];
+                        R[2+0*3]  = R[0+2*3];
+                        R[1+1*3] += (nbr_xc[1]-xc[1])*(nbr_xc[1]-xc[1]);
+                        R[1+2*3] += (nbr_xc[2]-xc[2])*(nbr_xc[2]-xc[2]);
+                        R[2+1*3]  = R[1+2*3];
+                        R[2+2*3] += (nbr_xc[2]-xc[2])*(nbr_xc[2]-xc[2]);
+#endif
+//Print() << "nbr_xc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_xc);
+                    }
+
+#if (AMREX_SPACEDIM == 2)
+                    linalg::dsy2ev(R, w, v);
+#endif
+#if (AMREX_SPACEDIM == 3)
+                    linalg::dsy3ev(R, w, v);
+#endif
+
+/*
+{
+    Real diag_w[AMREX_SPACEDIM*AMREX_SPACEDIM];
+    Real tmp[AMREX_SPACEDIM*AMREX_SPACEDIM];
+    Real vwvT[AMREX_SPACEDIM*AMREX_SPACEDIM];
+
+    for (int d = 0; d < AMREX_SPACEDIM; ++d)
+    {
+        diag_w[d+d*AMREX_SPACEDIM] = w[d];
+    }
+
+    linalg::dgemm('N', 'N', AMREX_SPACEDIM, AMREX_SPACEDIM, AMREX_SPACEDIM,
+                  1.0, v, AMREX_SPACEDIM,
+                  diag_w, AMREX_SPACEDIM, 0.0,
+                  tmp, AMREX_SPACEDIM);
+    linalg::dgemm('N', 'T', AMREX_SPACEDIM, AMREX_SPACEDIM, AMREX_SPACEDIM,
+                  1.0, tmp, AMREX_SPACEDIM,
+                  v, AMREX_SPACEDIM, 0.0,
+                  vwvT, AMREX_SPACEDIM);
+
+Print() << "R: " << std::endl;
+IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, R);
+Print() << "w: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, w);
+Print() << "v: " << std::endl;
+IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, v);
+Print() << "vwvT: " << std::endl;
+IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, vwvT);
+Print() << std::endl;
+
+Real max_err;
+
+max_err = 0.0;
+for (int c = 0; c < AMREX_SPACEDIM; ++c)
+for (int r = 0; r < AMREX_SPACEDIM; ++r)
+{
+    max_err = std::max(max_err, std::abs(vwvT[r+c*AMREX_SPACEDIM]-R[r+c*AMREX_SPACEDIM]));
+}
+#if (AMREX_SPACEDIM == 2)
+if (max_err > 1.0-12*std::max(R[0], R[1+AMREX_SPACEDIM]))
+#endif
+#if (AMREX_SPACEDIM == 3)
+if (max_err > 1.0-12*std::max(R[0], std::max(R[1+AMREX_SPACEDIM], R[2+2*AMREX_SPACEDIM])))
+#endif
+{
+Print() << "max_err: " << max_err << std::endl;
+exit(-1);
+}
+
+}
+*/
+
+                    for (int c = 0; c < AMREX_SPACEDIM; ++c)
+                    for (int r = 0; r < AMREX_SPACEDIM; ++r)
+                    {
+                        R[r+c*AMREX_SPACEDIM] = v[c+r*AMREX_SPACEDIM];
+                    }
+
+                    // Update memory
+                    eFVInfo_mem_pos += AMREX_SPACEDIM+AMREX_SPACEDIM*AMREX_SPACEDIM;
+                }
+                else
+                {
+                    eFVInfo_pos_fab(i,j,k,ELM_FV_INFO_POS(dom)) = -1;
+                }
+            }
+        }
+        // ============================================================
+
+        // COPY MEMORY TO THE DEVICE ==================================
+#ifdef AMREX_USE_CUDA
+        this->eFVInfo_device_mem.resize(this->eFVInfo_host_mem.size());
+
+        Gpu::copy(Gpu::hostToDevice, this->eFVInfo_host_mem.begin(), this->eFVInfo_host_mem.end(), this->eFVInfo_device_mem.begin());
+#endif
         // ============================================================
     }
-    
+
     /**
      * \brief Eval and store the implicitly-defined mesh using N_PHI level sets and N_DOM domains.
      *

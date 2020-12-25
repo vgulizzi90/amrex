@@ -841,7 +841,34 @@ void FillBoundaryCells(const Real t,
     // ================================================================
 }
 
-#define __DG_BASE_STENCIL_N_NBR__ AMREX_D_PICK(2, 4, 6)
+/**
+ * \brief Fill boundary cells with meaningful data.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] matfactory: a MatrixFactory object containing the operators for the implicitly-defined
+ *                        mesh.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[inout] X: a MultiFab object that contains the AVERAGE of the unknown solution fields. On
+ *                  exit, the boundary (where possible) cells will have meaningful values. 
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  void F_BCS(const int dom, const Real t, const Real * x, const Real * un,
+ *                             const Real * SOL, Real * bcs_SOL) const;
+ *
+*/
+template <typename IBVP_CLASS>
+void FillBoundaryCells(const Real t,
+                       const ImplicitMesh & mesh,
+                       const MatrixFactory & matfactory,
+                       const int N_SOL,
+                       MultiFab & X,
+                       const IBVP_CLASS & IBVP)
+{
+    const int N_DOM = 1;
+    FillBoundaryCells(t, mesh, matfactory, N_DOM, N_SOL, X, IBVP);
+}
 
 /**
  * \brief Fill invalid (boundary+small/empty) cells with meaningful data.
@@ -943,8 +970,8 @@ void FillInvalidCells(const Real t,
         [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
         {
             // LOCAL PARAMETERS
-            const short etype = eType_fab(i,j,k,DG::ELM_TYPE(dom));
-            const bool elm_is_not_valid = !DG::ELM_IS_VALID(etype);
+            const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+            const bool elm_is_not_valid = !ELM_IS_VALID(etype);
 
             // LOCAL VARIABLES
             bool elm_is_not_isolated;
@@ -969,8 +996,8 @@ void FillInvalidCells(const Real t,
                     nbr_i = i+aux_table_i[n];
                     nbr_j = j+aux_table_j[n];
                     nbr_k = k+aux_table_k[n];
-                    nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,DG::ELM_TYPE(dom));
-                    if (DG::ELM_IS_VALID(nbr_etype)) elm_is_not_isolated = true;
+                    nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                    if (ELM_IS_VALID(nbr_etype)) elm_is_not_isolated = true;
                 }   
             }
             // --------------------------------------------------------
@@ -985,6 +1012,9 @@ void FillInvalidCells(const Real t,
                     cc[2] = prob_lo[2]+(k+0.5)*dx[2];
                 )
 
+//Print() << std::endl << "(" << i << "," << j << "," << k << ")" << std::endl;
+//Print() << "cc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, cc);
+
                 // MIRRORED IMAGE OF THE CELL'S CENTROID
                 nbr_i = i;
                 nbr_j = j;
@@ -992,6 +1022,8 @@ void FillInvalidCells(const Real t,
                 NEAREST_POINT(&prob_lo[0], &dx[0], phi, cc,
                               nbr_i, nbr_j, nbr_k, nbr_cell_lo, nbr_cell_hi, ncc,
                               rtol, it_max);
+
+//Print() << "ncc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, ncc);
                 
                 // UNIT NORMAL
                 phi.eval_un(ncc, un);
@@ -1016,6 +1048,10 @@ void FillInvalidCells(const Real t,
                     nbr_k = (int) std::floor((nbr_x[2]-prob_lo[2])/dx[2]);
                 )
 
+//Print() << "un: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, un);
+//Print() << "nbr_x: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_x);
+//Print() << "nbr(" << nbr_i << "," << nbr_j << "," << nbr_k << ")" << std::endl;
+
                 // SUPPORT OF THE BASIS FUNCTIONS (NEIGHBOR CELL)
                 nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
                 BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
@@ -1032,12 +1068,8 @@ void FillInvalidCells(const Real t,
                     X_fab(i,j,k,ru) = bcs_SOL[ru];
                 }
 
-//Print() << "cc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, cc);
-//Print() << "ncc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, ncc);
-//Print() << "un: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, un);
-//Print() << "nbr_x: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_x);
-//Print() << "(" << nbr_i << "," << nbr_j << "," << nbr_k << ")" << std::endl;
 //Print() << "bcs_SOL("; IO::PrintReals(AMREX_SPACEDIM, ncc); Print() << "): "; IO::PrintRealArray2D(1, N_SOL, bcs_SOL);
+//if (linalg::contains_nan(N_SOL, bcs_SOL)) exit(-1);
             }
         });
         Gpu::synchronize();

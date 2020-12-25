@@ -144,35 +144,19 @@ struct StandardRectangle
         // ============================================================
 
         // POINTERS TO 1D QUADRATURE ABSCISSAE AND WEIGHTS ============
-        // NOTE: Remember that these are referred to the [-1,+1]
+        // NOTE: Remember that these are referred to the [0,+1]
         //       interval.
         // ============================================================
-        const Real * Xq_1d;
-        const Real * Wq_1d;
+        Vector<Real> Xq_1d;
+        Vector<Real> Wq_1d;
 
-        if      (q_ == 0) {Xq_1d = gau_leg_1_x; Wq_1d = gau_leg_1_w;}
-        else if (q_ == 1) {Xq_1d = gau_leg_2_x; Wq_1d = gau_leg_2_w;}
-        else if (q_ == 2) {Xq_1d = gau_leg_3_x; Wq_1d = gau_leg_3_w;}
-        else if (q_ == 3) {Xq_1d = gau_leg_4_x; Wq_1d = gau_leg_4_w;}
-        else if (q_ == 4) {Xq_1d = gau_leg_5_x; Wq_1d = gau_leg_5_w;}
-        else if (q_ == 5) {Xq_1d = gau_leg_6_x; Wq_1d = gau_leg_6_w;}
-        else if (q_ == 6) {Xq_1d = gau_leg_7_x; Wq_1d = gau_leg_7_w;}
-        else if (q_ == 7) {Xq_1d = gau_leg_8_x; Wq_1d = gau_leg_8_w;}
-        else if (q_ == 8) {Xq_1d = gau_leg_9_x; Wq_1d = gau_leg_9_w;}
-        else if (q_ == 9) {Xq_1d = gau_leg_10_x; Wq_1d = gau_leg_10_w;}
-        else if (q_ == 10) {Xq_1d = gau_leg_11_x; Wq_1d = gau_leg_11_w;}
-        else if (q_ == 11) {Xq_1d = gau_leg_12_x; Wq_1d = gau_leg_12_w;}
-        else if (q_ == 12) {Xq_1d = gau_leg_13_x; Wq_1d = gau_leg_13_w;}
-        else if (q_ == 13) {Xq_1d = gau_leg_14_x; Wq_1d = gau_leg_14_w;}
-        else if (q_ == 14) {Xq_1d = gau_leg_15_x; Wq_1d = gau_leg_15_w;}
-        else if (q_ == 15) {Xq_1d = gau_leg_16_x; Wq_1d = gau_leg_16_w;}
-        else
+        Xq_1d.resize(1+q_);
+        Wq_1d.resize(1+q_);
+
+        for (int q1 = 0; q1 < (1+q_); ++q1)
         {
-            std::string msg;
-            msg  = "\n";
-            msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::define\n";
-            msg += "| Quadrature order = "+std::to_string(q_)+" not implemented yet\n";
-            Abort(msg);
+            Xq_1d[q1] = Algoim::GaussQuad::x(1+q_,q1);
+            Wq_1d[q1] = Algoim::GaussQuad::w(1+q_,q1);
         }
         // ============================================================
 
@@ -197,7 +181,7 @@ struct StandardRectangle
         // ============================================================
         if (DIM == 1)
         {
-            const Real aJ = 0.5*(this->dx[0]);
+            const Real aJ = (this->dx[0]);
 
             int q1, pos;
             int b;
@@ -206,7 +190,7 @@ struct StandardRectangle
             for (q1 = 0; q1 < (1+q_); ++q1)
             {
                 pos = q1;
-                this->dom_XI1q[pos] = (Xq_1d[q1]+1.0)*0.5*(this->dx[0]);
+                this->dom_XI1q[pos] = Xq_1d[q1]*(this->dx[0]);
                 this->dom_Wq[pos] = Wq_1d[q1]*aJ;
             }
 
@@ -223,9 +207,9 @@ struct StandardRectangle
         }
         else if (DIM == 2)
         {
-            const Real aJ = 0.25*(this->dx[0]*this->dx[1]);
-            const Real bou_aJ[2] = {0.5*(this->dx[1]),
-                                    0.5*(this->dx[0])};
+            const Real aJ = (this->dx[0]*this->dx[1]);
+            const Real bou_aJ[2] = {(this->dx[1]),
+                                    (this->dx[0])};
 
             int q1, q2, pos;
             int b;
@@ -235,8 +219,8 @@ struct StandardRectangle
             for (q1 = 0; q1 < (1+q_); ++q1)
             {
                 pos = q1+q2*(1+q_);
-                this->dom_XI1q[pos] = (Xq_1d[q1]+1.0)*0.5*(this->dx[0]);
-                this->dom_XI2q[pos] = (Xq_1d[q2]+1.0)*0.5*(this->dx[1]);
+                this->dom_XI1q[pos] = Xq_1d[q1]*(this->dx[0]);
+                this->dom_XI2q[pos] = Xq_1d[q2]*(this->dx[1]);
                 this->dom_Wq[pos] = Wq_1d[q1]*Wq_1d[q2]*aJ;
             }
 
@@ -247,7 +231,7 @@ struct StandardRectangle
             {
                 pos = q2+b*(this->bou_Nq);
                 this->bou_XI1q[pos] = 0.0;
-                this->bou_XI2q[pos] = (Xq_1d[q2]+1.0)*0.5*(this->dx[1]);
+                this->bou_XI2q[pos] = Xq_1d[q2]*(this->dx[1]);
                 this->bou_Wq[pos] = Wq_1d[q2]*bou_aJ[b/2];
             }
 
@@ -257,7 +241,7 @@ struct StandardRectangle
             {
                 pos = q2+b*(this->bou_Nq);
                 this->bou_XI1q[pos] = this->dx[0];
-                this->bou_XI2q[pos] = (Xq_1d[q2]+1.0)*0.5*(this->dx[1]);
+                this->bou_XI2q[pos] = Xq_1d[q2]*(this->dx[1]);
                 this->bou_Wq[pos] = Wq_1d[q2]*bou_aJ[b/2];
             }
 
@@ -266,7 +250,7 @@ struct StandardRectangle
             for (q1 = 0; q1 < (1+q_); ++q1)
             {
                 pos = q1+b*(this->bou_Nq);
-                this->bou_XI1q[pos] = (Xq_1d[q1]+1.0)*0.5*(this->dx[0]);
+                this->bou_XI1q[pos] = Xq_1d[q1]*(this->dx[0]);
                 this->bou_XI2q[pos] = 0.0;
                 this->bou_Wq[pos] = Wq_1d[q1]*bou_aJ[b/2];
             }
@@ -276,17 +260,17 @@ struct StandardRectangle
             for (q1 = 0; q1 < (1+q_); ++q1)
             {
                 pos = q1+b*(this->bou_Nq);
-                this->bou_XI1q[pos] = (Xq_1d[q1]+1.0)*0.5*(this->dx[0]);
+                this->bou_XI1q[pos] = Xq_1d[q1]*(this->dx[0]);
                 this->bou_XI2q[pos] = this->dx[1];
                 this->bou_Wq[pos] = Wq_1d[q1]*bou_aJ[b/2];
             }
         }
         else if (DIM == 3)
         {
-            const Real aJ = 0.125*(this->dx[0]*this->dx[1]*this->dx[2]);
-            const Real bou_aJ[3] = {0.25*(this->dx[1]*this->dx[2]),
-                                    0.25*(this->dx[0]*this->dx[2]),
-                                    0.25*(this->dx[0]*this->dx[1])};
+            const Real aJ = (this->dx[0]*this->dx[1]*this->dx[2]);
+            const Real bou_aJ[3] = {(this->dx[1]*this->dx[2]),
+                                    (this->dx[0]*this->dx[2]),
+                                    (this->dx[0]*this->dx[1])};
             
             int q1, q2, q3, pos;
             int b;
@@ -297,9 +281,9 @@ struct StandardRectangle
             for (q1 = 0; q1 < (1+q_); ++q1)
             {
                 pos = q1+q2*(1+q_)+q3*(1+q_)*(1+q_);
-                this->dom_XI1q[pos] = (Xq_1d[q1]+1.0)*0.5*(this->dx[0]);
-                this->dom_XI2q[pos] = (Xq_1d[q2]+1.0)*0.5*(this->dx[1]);
-                this->dom_XI3q[pos] = (Xq_1d[q3]+1.0)*0.5*(this->dx[2]);
+                this->dom_XI1q[pos] = Xq_1d[q1]*(this->dx[0]);
+                this->dom_XI2q[pos] = Xq_1d[q2]*(this->dx[1]);
+                this->dom_XI3q[pos] = Xq_1d[q3]*(this->dx[2]);
                 this->dom_Wq[pos] = Wq_1d[q1]*Wq_1d[q2]*Wq_1d[q3]*aJ;
             }
 
@@ -311,8 +295,8 @@ struct StandardRectangle
             {
                 pos = q2+q3*(1+q_)+b*(this->bou_Nq);
                 this->bou_XI1q[pos] = 0.0;
-                this->bou_XI2q[pos] = (Xq_1d[q2]+1.0)*0.5*(this->dx[1]);
-                this->bou_XI3q[pos] = (Xq_1d[q3]+1.0)*0.5*(this->dx[2]);
+                this->bou_XI2q[pos] = Xq_1d[q2]*(this->dx[1]);
+                this->bou_XI3q[pos] = Xq_1d[q3]*(this->dx[2]);
                 this->bou_Wq[pos] = Wq_1d[q2]*Wq_1d[q3]*bou_aJ[b/2];
             }
 
@@ -323,8 +307,8 @@ struct StandardRectangle
             {
                 pos = q2+q3*(1+q_)+b*(this->bou_Nq);
                 this->bou_XI1q[pos] = this->dx[0];
-                this->bou_XI2q[pos] = (Xq_1d[q2]+1.0)*0.5*(this->dx[1]);
-                this->bou_XI3q[pos] = (Xq_1d[q3]+1.0)*0.5*(this->dx[2]);
+                this->bou_XI2q[pos] = Xq_1d[q2]*(this->dx[1]);
+                this->bou_XI3q[pos] = Xq_1d[q3]*(this->dx[2]);
                 this->bou_Wq[pos] = Wq_1d[q2]*Wq_1d[q3]*bou_aJ[b/2];
             }
 
@@ -334,9 +318,9 @@ struct StandardRectangle
             for (q1 = 0; q1 < (1+q_); ++q1)
             {
                 pos = q1+q3*(1+q_)+b*(this->bou_Nq);
-                this->bou_XI1q[pos] = (Xq_1d[q1]+1.0)*0.5*(this->dx[0]);
+                this->bou_XI1q[pos] = Xq_1d[q1]*(this->dx[0]);
                 this->bou_XI2q[pos] = 0.0;
-                this->bou_XI3q[pos] = (Xq_1d[q3]+1.0)*0.5*(this->dx[2]);
+                this->bou_XI3q[pos] = Xq_1d[q3]*(this->dx[2]);
                 this->bou_Wq[pos] = Wq_1d[q1]*Wq_1d[q3]*bou_aJ[b/2];
             }
 
@@ -346,9 +330,9 @@ struct StandardRectangle
             for (q1 = 0; q1 < (1+q_); ++q1)
             {
                 pos = q1+q3*(1+q_)+b*(this->bou_Nq);
-                this->bou_XI1q[pos] = (Xq_1d[q1]+1.0)*0.5*(this->dx[0]);
+                this->bou_XI1q[pos] = Xq_1d[q1]*(this->dx[0]);
                 this->bou_XI2q[pos] = this->dx[1];
-                this->bou_XI3q[pos] = (Xq_1d[q3]+1.0)*0.5*(this->dx[2]);
+                this->bou_XI3q[pos] = Xq_1d[q3]*(this->dx[2]);
                 this->bou_Wq[pos] = Wq_1d[q1]*Wq_1d[q3]*bou_aJ[b/2];
             }
 
@@ -358,8 +342,8 @@ struct StandardRectangle
             for (q1 = 0; q1 < (1+q_); ++q1)
             {
                 pos = q1+q2*(1+q_)+b*(this->bou_Nq);
-                this->bou_XI1q[pos] = (Xq_1d[q1]+1.0)*0.5*(this->dx[0]);
-                this->bou_XI2q[pos] = (Xq_1d[q2]+1.0)*0.5*(this->dx[1]);
+                this->bou_XI1q[pos] = Xq_1d[q1]*(this->dx[0]);
+                this->bou_XI2q[pos] = Xq_1d[q2]*(this->dx[1]);
                 this->bou_XI3q[pos] = 0.0;
                 this->bou_Wq[pos] = Wq_1d[q1]*Wq_1d[q2]*bou_aJ[b/2];
             }
@@ -370,8 +354,8 @@ struct StandardRectangle
             for (q1 = 0; q1 < (1+q_); ++q1)
             {
                 pos = q1+q2*(1+q_)+b*(this->bou_Nq);
-                this->bou_XI1q[pos] = (Xq_1d[q1]+1.0)*0.5*(this->dx[0]);
-                this->bou_XI2q[pos] = (Xq_1d[q2]+1.0)*0.5*(this->dx[1]);
+                this->bou_XI1q[pos] = Xq_1d[q1]*(this->dx[0]);
+                this->bou_XI2q[pos] = Xq_1d[q2]*(this->dx[1]);
                 this->bou_XI3q[pos] = this->dx[2];
                 this->bou_Wq[pos] = Wq_1d[q1]*Wq_1d[q2]*bou_aJ[b/2];
             }

@@ -43,7 +43,7 @@ amrex::Print() << "#############################################################
     const std::string problem = "PROBLEM_SinglePhase";
 
     // AUXILIARY TABLES TO TEST THE DIFFERENT POLYNOMIAL ORDERS
-    const amrex::Vector<int> table_p = {3};
+    const amrex::Vector<int> table_p = {1, 2, 3};
     const int n_p = table_p.size();
 
     // NUMBER OF GHOST ROWS
