@@ -1,6 +1,7 @@
 
 #ifndef AMREX_BOX_H_
 #define AMREX_BOX_H_
+#include <AMReX_Config.H>
 
 #include <iosfwd>
 
@@ -211,6 +212,28 @@ public:
     //! Returns true if argument is contained within Box.
     AMREX_GPU_HOST_DEVICE
     bool contains (const IntVect& p) const noexcept { return p.allGE(smallend) && p.allLE(bigend); }
+
+    //! Returns true if argument is contained within Box.
+    AMREX_GPU_HOST_DEVICE
+    bool contains (const Dim3& p) const noexcept {
+        return AMREX_D_TERM(p.x >= smallend[0] && p.x <= bigend[0],
+                         && p.y >= smallend[1] && p.y <= bigend[1],
+                         && p.z >= smallend[2] && p.z <= bigend[2]);
+    }
+
+    //! Returns true if argument is contained within Box.
+    AMREX_GPU_HOST_DEVICE
+#if (AMREX_SPACEDIM == 1)
+    bool contains (int i, int, int) const noexcept {
+#elif (AMREX_SPACEDIM == 2)
+    bool contains (int i, int j, int) const noexcept {
+#else
+    bool contains (int i, int j, int k) const noexcept {
+#endif
+        return AMREX_D_TERM(i >= smallend[0] && i <= bigend[0],
+                         && j >= smallend[1] && j <= bigend[1],
+                         && k >= smallend[2] && k <= bigend[2]);
+    }
 
     /** \brief Returns true if argument is contained within Box.
     * It is an error if the Boxes have different types.

@@ -1,5 +1,6 @@
 #ifndef AMREX_EBFABFACTORY_H_
 #define AMREX_EBFABFACTORY_H_
+#include <AMReX_Config.H>
 
 #include <AMReX_FabFactory.H>
 
@@ -71,6 +72,7 @@ public:
 
     const DistributionMapping& DistributionMap () const noexcept;
     const BoxArray& boxArray () const noexcept;
+    const Geometry& Geom () const noexcept { return m_geom; }
 
 private:
 
