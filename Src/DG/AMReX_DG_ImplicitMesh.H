@@ -598,6 +598,23 @@ bool ELM_IS_SMALL(const int etype)
  *
 */
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_SMALL_OR_LARGE(const int etype)
+{
+    const bool elm_is_small = (etype%10 == __DG_ELM_TYPE_SMALL__);
+    const bool elm_is_large = (etype%10 == __DG_ELM_TYPE_LARGE__);
+
+    return elm_is_small || elm_is_large;
+}
+
+/**
+ * \brief Given the etype, return true if the element is large, small or extended, false otherwise.
+ *
+ * \param[in] etype: element type.
+ *
+ * \return true if the element is large, small or extended, false otherwise.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 bool ELM_IS_SMALL_LARGE_OR_EXTENDED(const int etype)
 {
     const bool elm_is_small = (etype%10 == __DG_ELM_TYPE_SMALL__);
@@ -1823,6 +1840,7 @@ struct ImplicitMesh
                         NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
 
                         nbr_is_valid = domain.contains(nbr_i, nbr_j, nbr_k);
+
                         nbr_vf = eInfo_fab(nbr_i,nbr_j,nbr_k,ELM_VOLUME_FRACTION(dom));
 
                         if ((nbr_vf > best_nbr_vf) && nbr_is_valid)
@@ -1834,18 +1852,23 @@ struct ImplicitMesh
                     }
 
 /*
-if (i == 2 && j == 3 && k == 0)
+if (i == 40 && j == 36 && k == 27)
 {
 const int r = ParallelDescriptor::MyProc();
 
-Print(r) << "HELLO " << std::endl;
-Print(r) << "etype: " << ELM_TYPE_DESCRIPTION(eType_fab(i,j,k,ELM_TYPE(dom))) << std::endl;
+const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
 
-BF_CELL(i, j, k, eType_fab(i,j,k,ELM_TYPE(dom)), nbr_i, nbr_j, nbr_k);
+Print(r) << "HELLO " << std::endl;
+Print(r) << "etype: " << ELM_TYPE_DESCRIPTION(etype) << std::endl;
+
+BF_CELL(i, j, k, etype, nbr_i, nbr_j, nbr_k);
 
 Print(r) << "nbr: (" << nbr_i << "," << nbr_j << "," << nbr_k << ")" << std::endl;
 
-Print(r) << "domain.contains(nbr): " << domain.contains(IntVect(nbr_i, nbr_j, nbr_k)) << std::endl;
+Print(r) << "domain.contains(nbr): " << domain.contains(nbr_i, nbr_j, nbr_k) << std::endl;
+Print(r) << "fabbox.contains(nbr): " << fbx.contains(nbr_i, nbr_j, nbr_k) << std::endl;
+
+Print(r) << "fbx: " << fbx << std::endl;
 
 exit(-1);
 }
@@ -1969,6 +1992,57 @@ else
                         eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
                     }
 #endif
+                }
+            });
+            Gpu::synchronize();
+        }
+        // ============================================================
+
+        // CHECK THE CONSISTENCY OF THE MERGING INFORMATION ===========
+        for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+            const Box & fbx = mfi.fabbox();
+
+            Array4<short const> const & eType_fab = this->eType.array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // ELEMENT TYPE
+                const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_valid = ELM_IS_VALID(etype);
+
+                if (elm_is_valid)
+                {
+                    // LOCAL VARIABLES
+                    int nbr_i, nbr_j, nbr_k, nbr_b;
+                    short nbr_etype;
+                    int nbr_BF_i, nbr_BF_j, nbr_BF_k;
+
+                    for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                    {
+                        NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+                        nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                        BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                        if (!fbx.contains(nbr_BF_i, nbr_BF_j, nbr_BF_k))
+                        {
+#if (AMREX_USE_CUDA)
+                            Abort("ERROR: IBVP_ImplicitMesh.H - ImplicitMesh::Make: Bad merging!");
+#else
+                            std::string msg;
+                            msg  = "\n";
+                            msg += "ERROR: IBVP_utils.H - ImplicitMesh::Make\n";
+                            msg += "| The merging connects cells in diffent fab boxes.\n";
+                            msg += "| cell: "+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"\n";
+                            msg += "| b: "+std::to_string(b)+"\n";
+                            msg += "| nbr_cell   : "+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"\n";
+                            msg += "| nbr_BF_cell: "+std::to_string(nbr_BF_i)+","+std::to_string(nbr_BF_j)+","+std::to_string(nbr_BF_k)+"\n";
+                            Abort(msg);
+#endif
+                        }
+                    }
                 }
             });
             Gpu::synchronize();
@@ -2273,8 +2347,12 @@ else
                     Real * R = &this->eFVInfo_host_mem[pos+AMREX_SPACEDIM];
 
                     linalg::zeros(AMREX_SPACEDIM*AMREX_SPACEDIM, R);
-
-//Print() << "xc(" << i << "," << j << "," << k << "): "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, xc);
+/*
+if (i == 0 && j == 75)
+{
+Print() << "xc(" << i << "," << j << "," << k << "): "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, xc);
+}
+*/
 
                     for (int n = 0; n < __DG_BASE_STENCIL_N_NBR__; ++n)
                     {
@@ -2283,33 +2361,41 @@ else
                         nbr_k = k+base_stencil_table_k[n];
                         nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
 
-                        BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+                        if (ELM_IS_NOT_EMPTY(nbr_etype))
+                        {
+                            BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
 
-                        AMREX_D_TERM
-                        (
-                            nbr_xc[0] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X1(dom));,
-                            nbr_xc[1] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X2(dom));,
-                            nbr_xc[2] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X3(dom));
-                        )
+                            AMREX_D_TERM
+                            (
+                                nbr_xc[0] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X1(dom));,
+                                nbr_xc[1] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X2(dom));,
+                                nbr_xc[2] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X3(dom));
+                            )
 
 #if (AMREX_SPACEDIM == 2)
-                        R[0+0*2] += (nbr_xc[0]-xc[0])*(nbr_xc[0]-xc[0]);
-                        R[0+1*2] += (nbr_xc[0]-xc[0])*(nbr_xc[1]-xc[1]);
-                        R[1+0*2]  = R[0+1*2];
-                        R[1+1*2] += (nbr_xc[1]-xc[1])*(nbr_xc[1]-xc[1]);
+                            R[0+0*2] += (nbr_xc[0]-xc[0])*(nbr_xc[0]-xc[0]);
+                            R[0+1*2] += (nbr_xc[0]-xc[0])*(nbr_xc[1]-xc[1]);
+                            R[1+0*2]  = R[0+1*2];
+                            R[1+1*2] += (nbr_xc[1]-xc[1])*(nbr_xc[1]-xc[1]);
 #endif
 #if (AMREX_SPACEDIM == 3)
-                        R[0+0*3] += (nbr_xc[0]-xc[0])*(nbr_xc[0]-xc[0]);
-                        R[0+1*3] += (nbr_xc[0]-xc[0])*(nbr_xc[1]-xc[1]);
-                        R[0+2*3] += (nbr_xc[0]-xc[0])*(nbr_xc[2]-xc[2]);
-                        R[1+0*3]  = R[0+1*3];
-                        R[2+0*3]  = R[0+2*3];
-                        R[1+1*3] += (nbr_xc[1]-xc[1])*(nbr_xc[1]-xc[1]);
-                        R[1+2*3] += (nbr_xc[2]-xc[2])*(nbr_xc[2]-xc[2]);
-                        R[2+1*3]  = R[1+2*3];
-                        R[2+2*3] += (nbr_xc[2]-xc[2])*(nbr_xc[2]-xc[2]);
+                            R[0+0*3] += (nbr_xc[0]-xc[0])*(nbr_xc[0]-xc[0]);
+                            R[0+1*3] += (nbr_xc[0]-xc[0])*(nbr_xc[1]-xc[1]);
+                            R[0+2*3] += (nbr_xc[0]-xc[0])*(nbr_xc[2]-xc[2]);
+                            R[1+0*3]  = R[0+1*3];
+                            R[2+0*3]  = R[0+2*3];
+                            R[1+1*3] += (nbr_xc[1]-xc[1])*(nbr_xc[1]-xc[1]);
+                            R[1+2*3] += (nbr_xc[2]-xc[2])*(nbr_xc[2]-xc[2]);
+                            R[2+1*3]  = R[1+2*3];
+                            R[2+2*3] += (nbr_xc[2]-xc[2])*(nbr_xc[2]-xc[2]);
 #endif
-//Print() << "nbr_xc(" << nbr_BF_i << "," << nbr_BF_j << "," << nbr_BF_k << "): "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_xc);
+/*
+if (i == 0 && j == 75)
+{
+Print() << "nbr_xc(" << nbr_BF_i << "," << nbr_BF_j << "," << nbr_BF_k << "): "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_xc);
+}
+*/
+                        }
                     }
 
                     if (ELM_IS_LARGE_OR_EXTENDED(etype))
@@ -2338,7 +2424,12 @@ else
                         R[2+1*3]  = R[1+2*3];
                         R[2+2*3] += (nbr_xc[2]-xc[2])*(nbr_xc[2]-xc[2]);
 #endif
-//Print() << "nbr_xc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_xc);
+/*
+if (i == 0 && j == 75)
+{
+Print() << "nbr_xc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_xc);
+}
+*/
                     }
 
 #if (AMREX_SPACEDIM == 2)
@@ -2349,6 +2440,7 @@ else
 #endif
 
 /*
+if (i == 0 && j == 75)
 {
     Real diag_w[AMREX_SPACEDIM*AMREX_SPACEDIM];
     Real tmp[AMREX_SPACEDIM*AMREX_SPACEDIM];
@@ -2393,9 +2485,8 @@ if (max_err > 1.0-12*std::max(R[0], std::max(R[1+AMREX_SPACEDIM], R[2+2*AMREX_SP
 #endif
 {
 Print() << "max_err: " << max_err << std::endl;
-exit(-1);
 }
-
+//exit(-1);
 }
 */
 

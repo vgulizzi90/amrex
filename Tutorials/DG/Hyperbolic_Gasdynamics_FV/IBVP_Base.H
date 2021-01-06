@@ -34,7 +34,7 @@
 #define SMALL_p 1.0e-10
 #define SMALL_rho 1.0e-19
 // ####################################################################
-
+int global_cnt = 0;
 /**
  * \brief This struct contains constants and methods for the considered IBVP. 
  *
@@ -85,7 +85,7 @@ struct IDEAL_GAS_BASE
             u3 = U[RHOV3]/rho;
         )
         const amrex::Real e = U[TE];
-        p = (g-1)*(e-0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3))); p = std::max(p, SMALL_p);
+        p = (g-1.0)*(e-0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3))); p = std::max(p, SMALL_p);
     }
 
     /**
@@ -514,7 +514,7 @@ struct IDEAL_GAS_BASE
         amrex::Real dpditer, zp, zm, denom;
         amrex::Real ustar;
 
-        amrex::Real ro, uo, po, sgnm, utrans1, utrans2;
+        amrex::Real ro, uo, po, sgnm AMREX_D_DECL(, utrans1, utrans2);
         amrex::Real wosq, co, wo, dpjmp, rstar, cstar, spout, spin, frac;
         amrex::Real rgdnv, ugdnv, pgdnv;
 
@@ -675,6 +675,525 @@ struct IDEAL_GAS_BASE
         this->RiemannSolver_P(rl, AMREX_D_DECL(ul, ut1l, ut2l), pl,
                               rr, AMREX_D_DECL(ur, ut1r, ut2r), pr,
                               URP);
+    }
+    // ################################################################
+
+    // BOUNDARY CONDITIONS ############################################
+    /**
+     * \brief Fill bcs_U memory to enforce wall boundary conditions.
+     *
+     * \param[in] un: pointer to memory containing the boundary outward unit normal.
+     * \param[in] U: pointer to memory that stores the conserved variables.
+     * \param[out] bcs_U: pointer to memory that will be filled with values suitably chosen to
+     *                    enforce the bcs.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void bcs_wall(const amrex::Real * un,
+                  const amrex::Real * U,
+                  amrex::Real * bcs_U) const
+    {
+        amrex::Real Un[DG_N_SOL];
+
+        this->eval_U2Un(un, U, Un);
+        Un[RHOV1] = -Un[RHOV1];
+        this->eval_Un2U(un, Un, bcs_U);
+    }
+
+    /**
+     * \brief Fill bcs_U memory to enforce prescribed velocity boundary conditions.
+     *
+     * \param[in] p_rho: prescribed density.
+     * \param[in] (p_u1, p_u2, p_u3): components of the prescribed velocity.
+     * \param[in] un: pointer to memory containing the boundary outward unit normal.
+     * \param[in] U: pointer to memory that stores the conserved variables.
+     * \param[out] bcs_U: pointer to memory that will be filled with values suitably chosen to
+     *                    enforce the bcs.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void bcs_prescribed_velocity(const amrex::Real p_rho, AMREX_D_DECL(const amrex::Real p_u1, const amrex::Real p_u2, const amrex::Real p_u3),
+                                 const amrex::Real * un,
+                                 const amrex::Real * U,
+                                 amrex::Real * bcs_U) const
+    {
+        // PARAMETERS -------------------------------------------------
+        const amrex::Real g = this->gamma;
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        amrex::Real rho, AMREX_D_DECL(u1n, u2t, u3t), p, a;
+        amrex::Real AMREX_D_DECL(p_u1n, p_u2t, p_u3t);
+        amrex::Real AL, BL, du, ps;
+        amrex::Real tmp, tmp2;
+        // ------------------------------------------------------------
+
+        // FIND THE COMPONENTS REFERRED TO THE UNIT NORMAL ------------
+        {
+            amrex::Real Un[DG_N_SOL];
+
+            this->eval_U2Un(un, U, Un);
+            this->eval_primary_variables(Un, rho, AMREX_D_DECL(u1n, u2t, u3t), p);
+            a = std::sqrt(g*p/rho);
+        }
+
+        {
+            const amrex::Real aux_U[DG_N_SOL] = {0.0, AMREX_D_DECL(p_u1, p_u2, p_u3), 0.0};
+            amrex::Real aux_Un[DG_N_SOL];
+
+            this->eval_U2Un(un, aux_U, aux_Un);
+
+            AMREX_D_TERM
+            (
+                p_u1n = aux_Un[RHOV1];,
+                p_u2t = aux_Un[RHOV2];,
+                p_u3t = aux_Un[RHOV3];
+            )
+        }
+        // ------------------------------------------------------------
+
+        // PRESSURE IN THE STAR REGION AND GHOST STATE ----------------
+        du = p_u1n-u1n;
+
+        // RAREFACTION
+        if (du > 0.0)
+        {
+            tmp2 = 1.0-0.5*(g-1.0)*du/a;
+
+            if (tmp2 < 0.0)
+            {
+                amrex::Print() << "un: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, un);
+                amrex::Print() << "p_u1n: " << p_u1n << std::endl;
+                amrex::Print() << "u1n: " << u1n << std::endl;
+                amrex::Print() << "a: " << a << std::endl;
+                amrex::Print() << "p: " << p << std::endl;
+                amrex::Print() << "tmp2: " << tmp2 << std::endl;
+                exit(-1);
+            }
+
+            ps = p*std::pow(tmp2, 2.0*g/(g-1.0));
+
+            // Speeds of the head and tail of the rarefaction
+            tmp = u1n-a;
+            tmp2 = p_u1n-a*tmp2;
+
+            // OUTLET
+            if (tmp > 0.0)
+            {
+                // Do nothing
+            }
+            else if (tmp2 < 0.0)
+            {
+                // OUTLET: us > 0 (STAR REGION - BEFORE CONTACT)
+                if (p_u1n >= 0.0)
+                {
+                    rho *= std::pow(ps/p, 1.0/g);
+                    u1n = p_u1n;
+                    p = ps;
+                }
+                // INLET: us < 0 (STAR REGION - PAST CONTACT)
+                else if (p_u1n < 0.0)
+                {
+                    rho = p_rho;
+                    AMREX_D_TERM
+                    (
+                        u1n = p_u1n;,
+                        u2t = p_u2t;,
+                        u3t = p_u3t;
+                    )
+                    p = ps;
+                }
+            } 
+            // INLET: WITHIN THE RAREFACTION
+            else
+            {
+amrex::Print() << "RAREFACTION - INLET WITHIN RAREFACTION" << std::endl;
+exit(-1);
+                tmp = std::pow(2.0/(g+1.0)+(g-1.0)/(g+1.0)*(u1n/a), 2.0/(g-1.0));
+
+                rho *= tmp;
+                u1n = 2.0/(g+1.0)*(a+0.5*(g-1.0)*u1n);
+                p *= std::pow(tmp, g);
+            }
+
+        }
+        // SHOCK
+        else
+        {
+            AL = 2.0/((g+1.0)*rho);
+            BL = (g-1.0)/(g+1.0)*p;
+            tmp = std::sqrt(4.0*AL*(BL+p)+du*du);
+            ps = p+0.5*(du*du/AL-tmp*du/AL);
+
+            // Speed of the shock
+            tmp2 = u1n-a*std::sqrt(2.0*(g+1.0)/g*ps/p+2.0*(g-1.0)/g);
+
+            // OUTLET
+            if (tmp2 >= 0.0)
+            {
+                // Do nothing
+            }
+            else
+            {
+                // OUTLET: us > 0
+                if (p_u1n >= 0.0)
+                {
+                    tmp = (g-1.0)/(g+1.0)*(p/ps)+1.0;
+                    tmp2 = (g-1.0)/(g+1.0)+p/ps;
+
+                    rho *= tmp/tmp2;
+                    u1n = p_u1n;
+                    p = ps;
+                }
+                // INLET: us < 0
+                else if (p_u1n < 0.0)
+                {
+                    rho = p_rho;
+                    AMREX_D_TERM
+                    (
+                        u1n = p_u1n;,
+                        u2t = p_u2t;,
+                        u3t = p_u3t;
+                    )
+                    p = ps;
+                }
+            }
+        }
+        // ------------------------------------------------------------
+
+        // GHOST STATE (CONSERVED VARIABLES) --------------------------
+        {
+            amrex::Real bcs_Un[DG_N_SOL];
+
+            bcs_Un[RHO] = rho;
+            AMREX_D_TERM
+            (
+                bcs_Un[RHOV1] = rho*u1n;,
+                bcs_Un[RHOV2] = rho*u2t;,
+                bcs_Un[RHOV3] = rho*u3t;
+            )
+            bcs_Un[TE] = p/(g-1.0)+0.5*rho*(AMREX_D_TERM(u1n*u1n,+u2t*u2t,+u3t*u3t));
+
+            this->eval_Un2U(un, bcs_Un, bcs_U);   
+        }
+        // ------------------------------------------------------------
+
+
+
+/*
+{
+    const amrex::Real aux_U[DG_N_SOL] = {0.0, AMREX_D_DECL(p_u1, p_u2, p_u3), 0.0};
+    amrex::Real aux_Un[DG_N_SOL];
+
+    this->eval_U2Un(un, aux_U, aux_Un);
+
+    AMREX_D_TERM
+    (
+        p_u1n = aux_Un[RHOV1];,
+        p_u2t = aux_Un[RHOV2];,
+        p_u3t = aux_Un[RHOV3];
+    )
+}
+amrex::Print() << "p_u1n: " << p_u1n << std::endl;
+amrex::Print() << "p_u2t: " << p_u2t << std::endl;
+
+{
+amrex::Real Un[DG_N_SOL], bcs_Un[DG_N_SOL], U_RP[DG_N_SOL];
+this->eval_U2Un(un, U, Un);
+this->eval_U2Un(un, bcs_U, bcs_Un);
+
+amrex::Print() << "RIEMANN PROBLEM STATES" << std::endl;
+this->eval_primary_variables(Un, rho, AMREX_D_DECL(u1n, u2t, u3t), p);
+amrex::Print() << "rho: " << rho << std::endl;
+amrex::Print() << "u1n: " << u1n << std::endl;
+amrex::Print() << "u2t: " << u2t << std::endl;
+amrex::Print() << "p: " << p << std::endl;
+this->eval_primary_variables(bcs_Un, tmp, AMREX_D_DECL(p_u1n, p_u2t, p_u3t), tmp2);
+amrex::Print() << "bcs_rho: " << tmp << std::endl;
+amrex::Print() << "bcs_u1n: " << p_u1n << std::endl;
+amrex::Print() << "bcs_u2t: " << p_u2t << std::endl;
+amrex::Print() << "bcs_p: " << tmp2 << std::endl;
+
+this->RiemannSolver_P(rho, u1n, u2t, p,
+                      tmp, p_u1n, p_u2t, tmp2,
+                      U_RP);
+this->eval_primary_variables(U_RP, rho, AMREX_D_DECL(u1n, u2t, u3t), p);
+amrex::Print() << "RIEMANN PROBLEM SOLUTION" << std::endl;
+amrex::Print() << "u1n: " << u1n << std::endl;
+amrex::Print() << "u2t: " << u2t << std::endl << std::endl;
+}
+
+global_cnt += 1;
+
+if (global_cnt == 20) exit(-1);
+*/
+    }
+
+    /**
+     * \brief Fill bcs_P memory to enforce prescribed pressure boundary conditions.
+     *
+     * \param[in] rhoB: prescribed density.
+     * \param[in] pB: prescribed pressure.
+     * \param[in] un: pointer to memory containing the boundary outward unit normal.
+     * \param[in] P: pointer to memory that stores the PRIMARY variables.
+     * \param[out] bcs_P: pointer to memory that will be filled with values suitably chosen to
+     *                    enforce the bcs.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void bcs_prescribed_pressure_P(AMREX_D_DECL(const amrex::Real rhoB, const amrex::Real u2tB, const amrex::Real u3tB), const amrex::Real pB,
+                                   const amrex::Real * un,
+                                   const amrex::Real * P,
+                                   amrex::Real * bcs_P) const
+    {
+        // PARAMETERS -------------------------------------------------
+        const amrex::Real g = this->gamma;
+        const amrex::Real ig = 1.0/g;
+        const amrex::Real gg = (g-1.0)/(g+1.0);
+        const amrex::Real gpg = 0.5*(g+1.0)/g;
+        const amrex::Real gmg = 0.5*(g-1.0)/g;
+        const amrex::Real igp = 2.0/(g+1.0);
+        const amrex::Real igm = 2.0/(g-1.0);
+
+        // WALL VELOCITY
+        const amrex::Real sw = 0.0;
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        amrex::Real rhoL, AMREX_D_DECL(u1L, u2L, u3L), pL, aL;
+        amrex::Real ps, us, rhosL;
+        amrex::Real rhoR, AMREX_D_DECL(u1R, u2R, u3R), pR;
+        // ------------------------------------------------------------
+
+        // FIND THE COMPONENTS REFERRED TO THE UNIT NORMAL ------------
+        {
+            amrex::Real Pn[DG_N_SOL];
+
+            this->eval_U2Un(un, P, Pn);
+            rhoL = Pn[RHO];
+            AMREX_D_TERM
+            (
+                u1L = Pn[RHOV1];,
+                u2L = Pn[RHOV2];,
+                u3L = Pn[RHOV3];
+            )
+            pL = Pn[TE];
+            
+            aL = std::sqrt(g*pL/rhoL);
+
+            ps = pB;
+        }
+        // ------------------------------------------------------------
+
+        // STAR REGION ------------------------------------------------
+        // SHOCK
+        if (ps > pL)
+        {
+            us = u1L-(ps-pL)*std::sqrt(igp/(rhoL*(ps+gg*pL)));
+            rhosL = (gg*(pL/ps)+1.0)/(pL/ps+gg)*rhoL;
+        }
+        // RAREFACTION
+        else
+        {
+            us = u1L+igm*aL*(1.0-std::pow(ps/pL, gmg));
+            rhosL = rhoL*std::pow(ps/pL, ig);
+        }
+        // ------------------------------------------------------------
+
+        // RIGHT STATE: PRIMARY VARIABLES -----------------------------
+        // SHOCK
+        if (ps > pL)
+        {
+            const amrex::Real sL = u1L-aL*std::sqrt(gpg*(ps/pL)+gmg);
+
+            if (sL > sw)
+            {
+                pR = pL;
+                u1R = u1L;
+                AMREX_D_TERM
+                (
+                    rhoR = rhoL;,
+                    u2R = u2L;,
+                    u3R = u3L;
+                )
+            }
+            else
+            {
+                pR = ps;
+                u1R = us;
+                if (us < sw)
+                {
+                    AMREX_D_TERM
+                    (
+                        rhoR = rhoB;,
+                        u2R = u2tB;,
+                        u3R = u3tB;
+                    )
+                    
+                }
+                else
+                {
+                    AMREX_D_TERM
+                    (
+                        rhoR = rhosL;,
+                        u2R = u2L;,
+                        u3R = u3L;
+                    )
+                }
+            }
+        }
+        // RAREFACTION
+        else
+        {
+            const amrex::Real sTL = us-aL*std::pow(ps/pL, gmg);
+            const amrex::Real sHL = u1L-aL;
+
+            if (sHL >= sw)
+            {
+                pR = pL;
+                u1R = u1L;
+                AMREX_D_TERM
+                (
+                    rhoR = rhoL;,
+                    u2R = u2L;,
+                    u3R = u3L;
+                )
+            }   
+            else
+            {
+                if (sTL > sw)
+                {
+                    rhoR = rhoL*std::pow(igp+(1.0/aL)*gg*(u1L-sw), igm);
+                    pR = pL*std::pow(rhoR/rhoL, g);
+                    u1R = igp*(aL+0.5*(g-1.0)*u1L+sw);
+                    u1R = us; // not sure
+amrex::Print() << "#4" << std::endl;
+exit(-1);
+
+                }
+                else
+                {
+                    pR = ps;
+                    u1R = us;
+                    if (us < sw)
+                    {
+                        AMREX_D_TERM
+                        (
+                            rhoR = rhoB;,
+                            u2R = u2tB;,
+                            u3R = u3tB;
+                        )
+                        
+                    }
+                    else
+                    {
+                        AMREX_D_TERM
+                        (
+                            rhoR = rhosL;,
+                            u2R = u2L;,
+                            u3R = u3L;
+                        )
+                    }
+                }
+            }
+        }
+
+        {
+            amrex::Real Pn[DG_N_SOL];
+            Pn[RHO] = rhoR;
+            AMREX_D_TERM
+            (
+                Pn[RHOV1] = u1R;,
+                Pn[RHOV2] = u2R;,
+                Pn[RHOV3] = u3R;
+            )
+            Pn[TE] = pR;
+
+            this->eval_Un2U(un, Pn, bcs_P);
+        }
+        // ------------------------------------------------------------
+    }
+    
+    /**
+     * \brief Fill bcs_P memory to enforce prescribed velocity boundary conditions.
+     *
+     * \param[in] rhoB: prescribed density.
+     * \param[in] (u1B, u2B, u3B): components of the prescribed velocity.
+     * \param[in] un: pointer to memory containing the boundary outward unit normal.
+     * \param[in] P: pointer to memory that stores the PRIMARY variables.
+     * \param[out] bcs_P: pointer to memory that will be filled with values suitably chosen to
+     *                    enforce the bcs.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void bcs_prescribed_velocity_P(const amrex::Real rhoB, AMREX_D_DECL(const amrex::Real u1B, const amrex::Real u2B, const amrex::Real u3B),
+                                   const amrex::Real * un,
+                                   const amrex::Real * P,
+                                   amrex::Real * bcs_P) const
+    {
+        // PARAMETERS -------------------------------------------------
+        const amrex::Real g = this->gamma;
+        const amrex::Real gp = 0.5*(g+1.0);
+        const amrex::Real igm = 2.0/(g-1.0);
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        amrex::Real AMREX_D_DECL(u1nB, u2tB, u3tB);
+        amrex::Real rhoL, u1L, pL, aL;
+        amrex::Real us, du, ps;
+        // ------------------------------------------------------------
+
+        // FIND THE COMPONENTS REFERRED TO THE UNIT NORMAL ------------
+        {
+            const amrex::Real aux_P[DG_N_SOL] = {0.0, AMREX_D_DECL(u1B, u2B, u3B), 0.0};
+            amrex::Real aux_Pn[DG_N_SOL];
+
+            this->eval_U2Un(un, aux_P, aux_Pn);
+
+            AMREX_D_TERM
+            (
+                u1nB = aux_Pn[RHOV1];,
+                u2tB = aux_Pn[RHOV2];,
+                u3tB = aux_Pn[RHOV3];
+            )
+        }
+
+        {
+            amrex::Real Pn[DG_N_SOL];
+
+            this->eval_U2Un(un, P, Pn);
+            rhoL = Pn[RHO];
+            u1L = Pn[RHOV1];
+            pL = Pn[TE];
+            
+            aL = std::sqrt(g*pL/rhoL);
+
+            us = u1nB;
+            du = u1L-us;
+        }
+        // ------------------------------------------------------------
+
+        // STAR REGION ------------------------------------------------
+        // SHOCK
+        if (us < u1L)
+        {
+            const amrex::Real delta = std::sqrt(4.0*g*rhoL*pL+rhoL*rhoL*gp*gp*du*du);
+            ps = pL+0.5*gp*rhoL*du*du+0.5*du*delta;
+        }
+        // RAREFACTION
+        else if ((u1L <= us) && (us < (u1L+igm*aL)))
+        {
+            ps = pL*std::pow((du+igm*aL)/(igm*aL), igm*g);
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: IBVP_Base.H - bcs_prescribed_velocity_P\n";
+            msg += "| Bad value of prescribed velocity.\n";
+            amrex::Abort(msg);
+        }
+        // ------------------------------------------------------------
+
+        // RIGHT STATE ------------------------------------------------
+        this->bcs_prescribed_pressure_P(AMREX_D_DECL(rhoB, u2tB, u3tB), ps, un, P, bcs_P);
+        // ------------------------------------------------------------
     }
     // ################################################################
 

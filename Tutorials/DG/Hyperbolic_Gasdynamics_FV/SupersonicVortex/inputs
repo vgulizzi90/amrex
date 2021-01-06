@@ -1,13 +1,13 @@
 # SPACE ###############################################################
-space.is_periodic = 0 0 0
-space.lo          = 0.0 0.0 0.0
-space.hi          = 1.0 1.0 1.0
+space.is_periodic = 0 0
+space.lo          = 0 0
+space.hi          = 1.43 1.43
 #######################################################################
 
 
 
 # TIME ################################################################
-time.T = 0.2
+time.T = 10.0
 time.n_steps = 50000
 #######################################################################
 
@@ -15,8 +15,8 @@ time.n_steps = 50000
 
 # DISCRETIZATION ######################################################
 # GRID ================================================================
-grid.n_cells      = 64 64 64
-grid.max_box_size = 8 8 8
+grid.n_cells      = 27 27
+grid.max_box_size = 8 8
 grid.CFL = 0.3
 
 # LEVEL SET FUNCTIONS
@@ -28,7 +28,7 @@ grid.space_q = 2
 implicit_mesh.space_q = 0
 implicit_mesh.space_q_ie = 2
 
-implicit_mesh.volume_fraction_threshold = 0.2
+implicit_mesh.volume_fraction_threshold = 0.3
 # =====================================================================
 
 # DISCONTINUOUS GALERKIN METHOD =======================================
@@ -41,45 +41,28 @@ dG.space_p = 0
 
 
 # PROBLEM #############################################################
-problem.int_params = 2
+problem.int_params = 0
 
-problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1 0.125 0.7 0.5 0.5
+problem.params = 1.4 1.0 2.25 1.0 1.384
 #######################################################################
-# NOTE: int_params and params contains the parameters of the problem,
-#       which should be input as follows
+# NOTE: params contains the parameters of the problem, which should be
+#       input as follows
 #
-#       int_param: eb_flag
-#       params: gamma, rhoL, uL, pL, s, rhoR, uR, pR, geo_parameters
+#       params: gamma, rho_inner, Mach_inner, r_inner, r_outer
 #
 #       where:
-#       - eb_flag: flag to activate the embedded boundary
-#                  0: no embedded boundary is present and a Riemann
-#                     problem is basically solved
-#                  1: an embedded Sod's tube is introduced
-#                  2: an embedded circle (in 2D) or sphere (in 3D) is
-#                     introduced
-#
 #       - gamma: specific heats ratio
-#       - (rhoL, uL, pL): left state
-#       - s: the shock location
-#       - (rhoR, uR, pR): right state
-#       
-#       if (problem.int_params == 0): geo_parameters: None
-#
-#       if (problem.int_params == 1): geo_parameters: diam theta phi
-#       - diam: diameter of the embedded Sod's tube
-#       - theta: inclination (or azimuth in 3D) of the embedded Sod's
-#                tube
-#       - phi: elevation of the embedded Sod's tube (used in 3D only)
-#
-#       if (problem.int_params == 2): geo_parameters: r x1 x2 x3
-#       - r: radius of the embedded circle (in 2D) or sphere (in 3D)
-#       - (x1,x2,x3): coordinates of the center of the circle/sphere
+#       - rho_inner: density at the inner radius of the circular
+#                    annulus
+#       - Mach_inner: mach number at the inner radius of the circular
+#                     annulus
+#       - r_inner, r_outer: inner and outer radii of the circular
+#                           annulus
 #
 #######################################################################
 
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 100000
+plot_int = 10000
 #######################################################################

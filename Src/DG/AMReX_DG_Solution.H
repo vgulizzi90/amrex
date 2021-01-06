@@ -643,8 +643,6 @@ void FillBoundaryCells(const Real t,
     // PARAMETERS =====================================================
     // GRID
     const Box domain = mesh.geom.Domain();
-    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
-    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
     const GpuArray<int, AMREX_SPACEDIM> is_periodic = mesh.geom.isPeriodicArray();
     // ================================================================
 
@@ -667,6 +665,7 @@ void FillBoundaryCells(const Real t,
         const Box & bx = mfi.validbox();
 
         Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
 
         Array4<Real> const & X_fab = X.array(mfi);
 
@@ -696,9 +695,9 @@ void FillBoundaryCells(const Real t,
                 {
                     AMREX_D_TERM
                     (
-                        x[0] = prob_lo[0]+(i-1+0.5)*dx[0];,
-                        x[1] = prob_lo[1]+(j  +0.5)*dx[1];,
-                        x[2] = prob_lo[2]+(k  +0.5)*dx[2];
+                        x[0] = eInfo_fab(i-1,j,k,DG::ELM_CENTROID_X1(dom));,
+                        x[1] = eInfo_fab(i-1,j,k,DG::ELM_CENTROID_X2(dom));,
+                        x[2] = eInfo_fab(i-1,j,k,DG::ELM_CENTROID_X3(dom));
                     )
                     AMREX_D_TERM
                     (
@@ -717,9 +716,9 @@ void FillBoundaryCells(const Real t,
                 {
                     AMREX_D_TERM
                     (
-                        x[0] = prob_lo[0]+(i+1+0.5)*dx[0];,
-                        x[1] = prob_lo[1]+(j  +0.5)*dx[1];,
-                        x[2] = prob_lo[2]+(k  +0.5)*dx[2];
+                        x[0] = eInfo_fab(i+1,j,k,DG::ELM_CENTROID_X1(dom));,
+                        x[1] = eInfo_fab(i+1,j,k,DG::ELM_CENTROID_X2(dom));,
+                        x[2] = eInfo_fab(i+1,j,k,DG::ELM_CENTROID_X3(dom));
                     )
                     AMREX_D_TERM
                     (
@@ -739,9 +738,9 @@ void FillBoundaryCells(const Real t,
                 {
                     AMREX_D_TERM
                     (
-                        x[0] = prob_lo[0]+(i  +0.5)*dx[0];,
-                        x[1] = prob_lo[1]+(j-1+0.5)*dx[1];,
-                        x[2] = prob_lo[2]+(k  +0.5)*dx[2];
+                        x[0] = eInfo_fab(i,j-1,k,DG::ELM_CENTROID_X1(dom));,
+                        x[1] = eInfo_fab(i,j-1,k,DG::ELM_CENTROID_X2(dom));,
+                        x[2] = eInfo_fab(i,j-1,k,DG::ELM_CENTROID_X3(dom));
                     )
                     AMREX_D_TERM
                     (
@@ -760,9 +759,9 @@ void FillBoundaryCells(const Real t,
                 {
                     AMREX_D_TERM
                     (
-                        x[0] = prob_lo[0]+(i  +0.5)*dx[0];,
-                        x[1] = prob_lo[1]+(j+1+0.5)*dx[1];,
-                        x[2] = prob_lo[2]+(k  +0.5)*dx[2];
+                        x[0] = eInfo_fab(i,j+1,k,DG::ELM_CENTROID_X1(dom));,
+                        x[1] = eInfo_fab(i,j+1,k,DG::ELM_CENTROID_X2(dom));,
+                        x[2] = eInfo_fab(i,j+1,k,DG::ELM_CENTROID_X3(dom));
                     )
                     AMREX_D_TERM
                     (
@@ -783,9 +782,9 @@ void FillBoundaryCells(const Real t,
                 {
                     AMREX_D_TERM
                     (
-                        x[0] = prob_lo[0]+(i  +0.5)*dx[0];,
-                        x[1] = prob_lo[1]+(j  +0.5)*dx[1];,
-                        x[2] = prob_lo[2]+(k-1+0.5)*dx[2];
+                        x[0] = eInfo_fab(i,j,k-1,DG::ELM_CENTROID_X1(dom));,
+                        x[1] = eInfo_fab(i,j,k-1,DG::ELM_CENTROID_X2(dom));,
+                        x[2] = eInfo_fab(i,j,k-1,DG::ELM_CENTROID_X3(dom));
                     )
                     AMREX_D_TERM
                     (
@@ -804,9 +803,9 @@ void FillBoundaryCells(const Real t,
                 {
                     AMREX_D_TERM
                     (
-                        x[0] = prob_lo[0]+(i  +0.5)*dx[0];,
-                        x[1] = prob_lo[1]+(j  +0.5)*dx[1];,
-                        x[2] = prob_lo[2]+(k+1+0.5)*dx[2];
+                        x[0] = eInfo_fab(i,j,k+1,DG::ELM_CENTROID_X1(dom));,
+                        x[1] = eInfo_fab(i,j,k+1,DG::ELM_CENTROID_X2(dom));,
+                        x[2] = eInfo_fab(i,j,k+1,DG::ELM_CENTROID_X3(dom));
                     )
                     AMREX_D_TERM
                     (

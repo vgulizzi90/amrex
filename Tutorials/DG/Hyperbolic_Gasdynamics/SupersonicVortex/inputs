@@ -1,0 +1,72 @@
+# SPACE ###############################################################
+space.is_periodic = 0 0
+space.lo          = 0 0
+space.hi          = 1.43 1.43
+#######################################################################
+
+
+
+# TIME ################################################################
+time.T = 1.0
+time.n_steps = 50000
+#######################################################################
+
+
+
+# DISCRETIZATION ######################################################
+# GRID ================================================================
+grid.n_cells      = 27 27
+grid.max_box_size = 8 8
+grid.CFL = 1.0
+
+# LEVEL SET FUNCTIONS
+grid.space_p = 2
+grid.space_q = 2
+# =====================================================================
+# NOTE: Remember that the CFL will be scaled as follows:
+#
+#       CFL := CFL/(1+2*p)
+#
+#       where p is the order of the dG basis functions (see below).
+# =====================================================================
+
+# IMPLICITLY-DEFINED MESH =============================================
+implicit_mesh.space_q = 2
+implicit_mesh.space_q_ie = 2
+
+implicit_mesh.volume_fraction_threshold = 0.3
+# =====================================================================
+
+# DISCONTINUOUS GALERKIN METHOD =======================================
+dG.space_p = 1
+# =====================================================================
+#######################################################################
+
+
+
+# PROBLEM #############################################################
+problem.int_params = 0
+
+problem.params = 1.4 1.0 2.25 1.0 1.384
+#######################################################################
+# NOTE: params contains the parameters of the problem, which should be
+#       input as follows
+#
+#       params: gamma, rho_inner, Mach_inner, r_inner, r_outer
+#
+#       where:
+#       - gamma: specific heats ratio
+#       - rho_inner: density at the inner radius of the circular
+#                    annulus
+#       - Mach_inner: mach number at the inner radius of the circular
+#                     annulus
+#       - r_inner, r_outer: inner and outer radii of the circular
+#                           annulus
+#
+#######################################################################
+
+
+
+# POST-PROCESSING INFO ################################################
+plot_int = 25
+#######################################################################
