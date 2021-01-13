@@ -160,6 +160,17 @@ public IDEAL_GAS_BASE
             )
             U[TE] = pL/(g-1.0)+0.5*rhoL*uL*uL;
         }
+
+/*
+U[RHO] = rhoL;
+AMREX_D_TERM
+(
+    U[RHOV1] = rhoL*uL;,
+    U[RHOV2] = 0.0;,
+    U[RHOV3] = 0.0;
+)
+U[TE] = pL/(g-1.0)+0.5*rhoL*uL*uL;
+*/
     }
     // ################################################################
 
@@ -226,6 +237,66 @@ public IDEAL_GAS_BASE
         Un[RHOV1] = -Un[RHOV1];
         this->eval_Un2U(un, Un, bcs_U);
     }
+
+    /**
+     * \brief Fill bcs_P memory to enforce boundary conditions.
+     *
+     * \param[in] dom: index of the domain.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the boundary outward unit normal.
+     * \param[in] P: pointer to memory that stores the PRIMARY variables at (t,x).
+     * \param[out] bcs_P: pointer to memory that will be filled with values suitably chosen to
+     *                    enforce the bcs at (t,x).
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_BCS_P(const int /*dom*/,
+                 const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
+                 const amrex::Real * P,
+                 amrex::Real * bcs_P) const
+    {
+        if (un[1] < -0.5)
+        {
+            bcs_P[RHO] = P[RHO];
+            AMREX_D_TERM
+            (
+                bcs_P[RHOV1] = P[RHOV1];,
+                bcs_P[RHOV2] = -P[RHOV2];,
+                bcs_P[RHOV3] = P[RHOV3];
+            )
+            bcs_P[TE] = P[TE];
+        }
+        else
+        {
+            bcs_P[RHO] = P[RHO];
+            AMREX_D_TERM
+            (
+                bcs_P[RHOV1] = P[RHOV1];,
+                bcs_P[RHOV2] = P[RHOV2];,
+                bcs_P[RHOV3] = P[RHOV3];
+            )
+            bcs_P[TE] = P[TE];
+        }
+    }
+
+    /**
+     * \brief Fill bcs_P memory to enforce boundary conditions on boundaries of the levelsets.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the boundary outward unit normal.
+     * \param[in] P: pointer to memory that stores the PRIMARY variables at (t,x).
+     * \param[out] bcs_P: pointer to memory that will be filled with values suitably chosen to
+     *                    enforce the bcs at (t,x).
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_PHI_BCS_P(const int /*dom*/,
+                     const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
+                     const amrex::Real * P,
+                     amrex::Real * bcs_P) const
+    {
+        this->bcs_wall(un, P, bcs_P);
+    }
     // ################################################################
 
     // NUMERICAL FLUXES ###############################################
@@ -248,7 +319,7 @@ public IDEAL_GAS_BASE
                     amrex::Real * NFn) const
     {
         amrex::Real bcs_P[DG_N_SOL];
-        this->F_BCS(dom, t, x, un, P, bcs_P);
+        this->F_BCS_P(dom, t, x, un, P, bcs_P);
         this->F_NF_ICS_P(dom, t, x, un, P, bcs_P, NFn);
     }
 
@@ -269,7 +340,7 @@ public IDEAL_GAS_BASE
                         amrex::Real * NFn) const
     {
         amrex::Real bcs_P[DG_N_SOL];
-        this->F_PHI_BCS(t, x, un, P, bcs_P);
+        this->F_PHI_BCS_P(dom, t, x, un, P, bcs_P);
         this->F_NF_ICS_P(dom, t, x, un, P, bcs_P, NFn);
     }
     // ################################################################

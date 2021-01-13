@@ -11,6 +11,7 @@
 #ifndef AMREX_DG_BASIS_FUNCTIONS_H_
 #define AMREX_DG_BASIS_FUNCTIONS_H_
 
+#define DG_BASIS_FUNCTIONS_TAYLOR -1
 #define DG_BASIS_FUNCTIONS_LEGENDRE_P 0
 #define DG_BASIS_FUNCTIONS_CHEBYSHEV_T 1
 
@@ -46,7 +47,24 @@ void DG_BF_1d_Table_NxL(const int N, const int L,
     const Real J = 2.0/dx;
     // ===========================
 
-#if (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_LEGENDRE_P)
+#if (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_TAYLOR)
+    // TAYLOR EXPANSION ===============================================
+    for (int n = 0; n < N; ++n) BF[n] = 1.0;
+    if (L > 0)
+    {
+        for (int n = 0; n < N; ++n) BF[n+N] = (x[n]-xm);
+    }
+    for (int l = 2; l <= L; ++l)
+    {
+        const Real il = 1.0/l;
+        for (int n = 0; n < N; ++n)
+        {
+            BF[n+l*N] = il*(x[n]-xm)*BF[n+(l-1)*N];
+        }   
+    }
+    // ================================================================
+
+#elif (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_LEGENDRE_P)
     // LEGENDRE POLYNOMIALS ===========================================
     for (int n = 0; n < N; ++n) BF[n] = 1.0;
     if (L > 0) for (int n = 0; n < N; ++n) BF[n+N] = J*(x[n]-xm);
@@ -55,8 +73,9 @@ void DG_BF_1d_Table_NxL(const int N, const int L,
     for (int n = 0; n < N; ++n)
         BF[n+l*N] = ((2*l-1)*(J*(x[n]-xm))*BF[n+(l-1)*N]-(l-1)*BF[n+(l-2)*N])/l;
     // ================================================================
+
 #else
-    Abort("AMReX_DG_BasisFunctions.H - DG_BF_1d_Table_NxL - Unexpected set for basis functions.")
+    Abort("AMReX_DG_BasisFunctions.H - DG_BF_1d_Table_NxL - Unexpected set for basis functions.");
 #endif
 }
 
@@ -83,7 +102,24 @@ void DG_BF_1d_Table_NxL__host__(const int N, const int L,
     const Real J = 2.0/dx;
     // ===========================
 
-#if (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_LEGENDRE_P)
+#if (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_TAYLOR)
+    // TAYLOR EXPANSION ===============================================
+    for (int n = 0; n < N; ++n) BF[n] = 1.0;
+    if (L > 0)
+    {
+        for (int n = 0; n < N; ++n) BF[n+N] = (x[n]-xm);
+    }
+    for (int l = 2; l <= L; ++l)
+    {
+        const Real il = 1.0/l;
+        for (int n = 0; n < N; ++n)
+        {
+            BF[n+l*N] = il*(x[n]-xm)*BF[n+(l-1)*N];
+        }   
+    }
+    // ================================================================
+
+#elif (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_LEGENDRE_P)
     // LEGENDRE POLYNOMIALS ===========================================
     for (int n = 0; n < N; ++n) BF[n] = 1.0;
     if (L > 0) for (int n = 0; n < N; ++n) BF[n+N] = J*(x[n]-xm);
@@ -93,7 +129,7 @@ void DG_BF_1d_Table_NxL__host__(const int N, const int L,
         BF[n+l*N] = ((2*l-1)*(J*(x[n]-xm))*BF[n+(l-1)*N]-(l-1)*BF[n+(l-2)*N])/l;
     // ================================================================
 #else
-    Abort("AMReX_DG_BasisFunctions.H - DG_BF_1d_Table_NxL__host__ - Unexpected set for basis functions.")
+    Abort("AMReX_DG_BasisFunctions.H - DG_BF_1d_Table_NxL__host__ - Unexpected set for basis functions.");
 #endif
 }
 
@@ -114,11 +150,31 @@ void DG_BF_1d_Table_NxL(const int N, const int L,
                         const T * x, const Real xlo, const Real xhi,
                         T * BF, T * dBF)
 {
-    // LOCAL PARAMETERS =========
+    // LOCAL PARAMETERS ==========
+    const Real xm = 0.5*(xhi+xlo);
     const Real J = 2.0/(xhi-xlo);
-    // ==========================
+    // ===========================
 
-#if (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_LEGENDRE_P)
+#if (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_TAYLOR)
+    // TAYLOR EXPANSION ===============================================
+    DG_BF_1d_Table_NxL(N, L, x, xlo, xhi, BF);
+    
+    for (int n = 0; n < N; ++n) dBF[n] = 0.0;
+    if (L > 0)
+    {
+        for (int n = 0; n < N; ++n) dBF[n+N] = 1.0;
+    }
+    for (int l = 2; l <= L; ++l)
+    {
+        const Real il = 1.0/l;
+        for (int n = 0; n < N; ++n)
+        {
+            dBF[n+l*N] = il*(BF[n+(l-1)*N]+(x[n]-xm)*dBF[n+(l-1)*N]);
+        }   
+    }
+    // ================================================================
+
+#elif (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_LEGENDRE_P)
     // LEGENDRE POLYNOMIALS AND THEIR DERIVATIVES =====================
     DG_BF_1d_Table_NxL(N, L, x, xlo, xhi, BF);
 
@@ -134,7 +190,7 @@ void DG_BF_1d_Table_NxL(const int N, const int L,
         dBF[n+l*N] *= J;
     // ================================================================
 #else
-    Abort("AMReX_DG_BasisFunctions.H - DG_BF_1d_Table_NxL - Unexpected set for basis functions.")
+    Abort("AMReX_DG_BasisFunctions.H - DG_BF_1d_Table_NxL - Unexpected set for basis functions.");
 #endif
 }
 
@@ -156,11 +212,31 @@ void DG_BF_1d_Table_NxL__host__(const int N, const int L,
                                 const T * x, const Real xlo, const Real xhi,
                                 T * BF, T * dBF)
 {
-    // LOCAL PARAMETERS =========
+    // LOCAL PARAMETERS ==========
+    const Real xm = 0.5*(xhi+xlo);
     const Real J = 2.0/(xhi-xlo);
-    // ==========================
+    // ===========================
 
-#if (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_LEGENDRE_P)
+#if (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_TAYLOR)
+    // TAYLOR EXPANSION ===============================================
+    DG_BF_1d_Table_NxL(N, L, x, xlo, xhi, BF);
+    
+    for (int n = 0; n < N; ++n) dBF[n] = 0.0;
+    if (L > 0)
+    {
+        for (int n = 0; n < N; ++n) dBF[n+N] = 1.0;
+    }
+    for (int l = 2; l <= L; ++l)
+    {
+        const Real il = 1.0/l;
+        for (int n = 0; n < N; ++n)
+        {
+            dBF[n+l*N] = il*(BF[n+(l-1)*N]+(x[n]-xm)*dBF[n+(l-1)*N]);
+        }   
+    }
+    // ================================================================
+
+#elif (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_LEGENDRE_P)
     // LEGENDRE POLYNOMIALS AND THEIR DERIVATIVES =====================
     DG_BF_1d_Table_NxL__host__(N, L, x, xlo, xhi, BF);
 
@@ -176,7 +252,7 @@ void DG_BF_1d_Table_NxL__host__(const int N, const int L,
         dBF[n+l*N] *= J;
     // ================================================================
 #else
-    Abort("AMReX_DG_BasisFunctions.H - DG_BF_1d_Table_NxL__host__ - Unexpected set for basis functions.")
+    Abort("AMReX_DG_BasisFunctions.H - DG_BF_1d_Table_NxL__host__ - Unexpected set for basis functions.");
 #endif
 }
 // ####################################################################

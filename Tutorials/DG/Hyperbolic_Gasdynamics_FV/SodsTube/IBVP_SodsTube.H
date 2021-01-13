@@ -199,8 +199,49 @@ public IDEAL_GAS_BASE
         }
         else
         {
-amrex::Print() << "HERE WE ARE - IDEAL_GAS.F_SOL0" << std::endl;
-exit(-1);
+            const amrex::Real theta = (this->params[8])*M_PI/180.0;
+            const amrex::Real cth = std::cos(theta);
+            const amrex::Real sth = std::sin(theta);
+#if (AMREX_SPACEDIM == 3)
+            const amrex::Real phi = (this->params[9])*M_PI/180.0;
+            const amrex::Real cph = std::cos(phi);
+            const amrex::Real sph = std::sin(phi);
+#endif
+#if (AMREX_SPACEDIM == 2)
+            const amrex::Real xi_dir[AMREX_SPACEDIM] = {AMREX_D_DECL(cth, sth, 0.0)};
+#endif
+#if (AMREX_SPACEDIM == 3)
+            const amrex::Real xi_dir[AMREX_SPACEDIM] = {AMREX_D_DECL(cth*cph, sth*cph, sph)};
+#endif
+            const amrex::Real y[AMREX_SPACEDIM] = {AMREX_D_DECL(x[0]-0.5, x[1]-0.5, x[2]-0.5)};
+            const amrex::Real xi = AMREX_D_TERM(xi_dir[0]*y[0],+xi_dir[1]*y[1],+xi_dir[2]*y[2]);
+
+            amrex::Real Uxi[DG_N_SOL];
+
+            if (xi > 0.0)
+            {
+                Uxi[RHO] = rhoR;
+                AMREX_D_TERM
+                (
+                    Uxi[RHOV1] = rhoR*uR;,
+                    Uxi[RHOV2] = 0.0;,
+                    Uxi[RHOV3] = 0.0;
+                )
+                Uxi[TE] = pR/(g-1.0)+0.5*rhoR*uR*uR;
+            }
+            else
+            {
+                Uxi[RHO] = rhoL;
+                AMREX_D_TERM
+                (
+                    Uxi[RHOV1] = rhoL*uL;,
+                    Uxi[RHOV2] = 0.0;,
+                    Uxi[RHOV3] = 0.0;
+                )
+                Uxi[TE] = pL/(g-1.0)+0.5*rhoL*uL*uL;
+            }
+
+            this->eval_Un2U(xi_dir, Uxi, U);
         }
         
     }
@@ -220,7 +261,7 @@ exit(-1);
     */
     AMREX_GPU_HOST_DEVICE
     void F_BCS(const int /*dom*/,
-               const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
+               const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * /*un*/,
                const amrex::Real * U,
                amrex::Real * bcs_U) const
     {
@@ -254,6 +295,52 @@ exit(-1);
         this->eval_U2Un(un, U, Un);
         Un[RHOV1] = -Un[RHOV1];
         this->eval_Un2U(un, Un, bcs_U);
+    }
+
+    /**
+     * \brief Fill bcs_P memory to enforce boundary conditions.
+     *
+     * \param[in] dom: index of the domain.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the boundary outward unit normal.
+     * \param[in] P: pointer to memory that stores the PRIMARY variables at (t,x).
+     * \param[out] bcs_P: pointer to memory that will be filled with values suitably chosen to
+     *                    enforce the bcs at (t,x).
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_BCS_P(const int /*dom*/,
+                 const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * /*un*/,
+                 const amrex::Real * P,
+                 amrex::Real * bcs_P) const
+    {
+        bcs_P[RHO] = P[RHO];
+        AMREX_D_TERM
+        (
+            bcs_P[RHOV1] = P[RHOV1];,
+            bcs_P[RHOV2] = P[RHOV2];,
+            bcs_P[RHOV3] = P[RHOV3];
+        )
+        bcs_P[TE] = P[TE];
+    }
+
+    /**
+     * \brief Fill bcs_P memory to enforce boundary conditions on boundaries of the levelsets.
+     *
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the boundary outward unit normal.
+     * \param[in] P: pointer to memory that stores the PRIMARY variables at (t,x).
+     * \param[out] bcs_P: pointer to memory that will be filled with values suitably chosen to
+     *                    enforce the bcs at (t,x).
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_PHI_BCS_P(const int /*dom*/,
+                     const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
+                     const amrex::Real * P,
+                     amrex::Real * bcs_P) const
+    {
+        this->bcs_wall(un, P, bcs_P);
     }
     // ################################################################
 

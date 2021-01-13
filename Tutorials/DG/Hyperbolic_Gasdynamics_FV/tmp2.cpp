@@ -1,3 +1,21 @@
+
+
+/**
+ * \brief Modified Monotonized Central Difference (MCD) limiter.
+*/
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+void ModMCDLimiter(const Real * dCL, const Real * dCR, Real * dC)
+{
+    for (int ru = 0; ru < DG_N_SOL; ++ru)
+    {
+        const Real dc = (dCL[ru]+dCR[ru]);
+        const Real sgn = (dc >= 0.0) ? +1.0 : -1.0;
+        const Real slope = 2.0*MCD_THETA*std::min(std::abs(dCL[ru]), std::abs(dCR[ru]));
+        const Real lim = (dCL[ru]*dCR[ru] >= 0.0) ? slope : 0.0;
+        dC[ru] = sgn*std::min(lim, std::abs(dc));
+    }
+}
+
 /** \brief Add contribution to the left and right differences.
  *
 */

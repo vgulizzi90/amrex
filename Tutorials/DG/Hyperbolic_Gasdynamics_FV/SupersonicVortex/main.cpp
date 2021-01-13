@@ -189,8 +189,11 @@ amrex::Print() << "#############################################################
             amrex::Print() << "| dom_err: " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << std::endl;
             amrex::Print() << "| bou_err: " << std::scientific << std::setprecision(5) << std::setw(12) << bou_err << std::endl;
 
-            fp << "| dom_err(t = 0): " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << "\n";
-            fp << "| bou_err(t = 0): " << std::scientific << std::setprecision(5) << std::setw(12) << bou_err << "\n";
+            if (amrex::ParallelDescriptor::IOProcessor())
+            {
+                fp << "| dom_err(t = 0): " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << "\n";
+                fp << "| bou_err(t = 0): " << std::scientific << std::setprecision(5) << std::setw(12) << bou_err << "\n";
+            }
         }
 
         // WRITE TO OUTPUT
@@ -299,8 +302,11 @@ amrex::Print() << "#############################################################
             amrex::Print() << "| dom_err: " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << std::endl;
             amrex::Print() << "| bou_err: " << std::scientific << std::setprecision(5) << std::setw(12) << bou_err << std::endl;
 
-            fp << "| dom_err(t = T): " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << "\n";
-            fp << "| bou_err(t = T): " << std::scientific << std::setprecision(5) << std::setw(12) << bou_err << "\n";
+            if (amrex::ParallelDescriptor::IOProcessor())
+            {
+                fp << "| dom_err(t = T): " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << "\n";
+                fp << "| bou_err(t = T): " << std::scientific << std::setprecision(5) << std::setw(12) << bou_err << "\n";
+            }
         }
 
         // CLOSING ====================================================

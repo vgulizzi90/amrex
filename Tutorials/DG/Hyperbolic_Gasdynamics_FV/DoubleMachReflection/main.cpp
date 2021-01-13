@@ -222,15 +222,15 @@ amrex::Print() << "#############################################################
         // SET INITIAL CONDITIONS =====================================
         amrex::Print() << "# COMPUTING PROJECTED INITIAL CONDITIONS " << std::endl;
         
-        amrex::DG::ProjectInitialConditions(mesh, matfactory, DG_N_SOL, X, IG);
+        amrex::FV::SetInitialConditions(mesh, matfactory, X, IG);
 
         // WRITE TO OUTPUT
         if (inputs.plot_int > 0)
         {
             const int n = 0;
             const amrex::Real t = 0.0;
-            amrex::DG::Export_VTK(output_folderpath, n, inputs.time.n_steps, "Solution",
-                                  t, mesh, matfactory, DG_N_SOL, X,
+            amrex::FV::Export_VTK(output_folderpath, n, inputs.time.n_steps, "Solution",
+                                  t, mesh, matfactory, X,
                                   IG);
         }
 
@@ -281,8 +281,8 @@ amrex::Print() << "#############################################################
                 // WRITE TO OUTPUT
                 if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(t/inputs.time.T-1.0) < 1.0e-12)))
                 {
-                    amrex::DG::Export_VTK(output_folderpath, n, inputs.time.n_steps, "Solution",
-                                          t, mesh, matfactory, DG_N_SOL, X,
+                    amrex::FV::Export_VTK(output_folderpath, n, inputs.time.n_steps, "Solution",
+                                          t, mesh, matfactory, X,
                                           IG);
                 }
 
@@ -297,8 +297,8 @@ amrex::Print() << "#############################################################
                 amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
                 amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
                                << dt << ", t = " << t
-                               << ", clock time per time step = " << tps 
-                               << ", estimated remaining time = " << eta << std::endl;
+                               << ", tts [s] = " << tps 
+                               << ", eta = " << amrex::DG::IO::Seconds2HoursMinutesSeconds(eta) << std::endl;
             }
 
             fp << "| clock time per time step: " << std::scientific << std::setprecision(5) << std::setw(12) << tps << " s\n";

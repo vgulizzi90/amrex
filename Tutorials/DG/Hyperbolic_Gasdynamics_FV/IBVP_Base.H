@@ -33,8 +33,13 @@
 // AUXILIARY PARAMETERS
 #define SMALL_p 1.0e-10
 #define SMALL_rho 1.0e-19
+
+//#define USE_EXACT_RIEMANN_SOLVER
+#define USE_MODIFIED_OSHER_SOLVER
+//#define USE_LOCAL_LAX_FRIEDRICHS_SOLVER
+//#define USE_ARTIFICIAL_VISCOSITY
 // ####################################################################
-int global_cnt = 0;
+
 /**
  * \brief This struct contains constants and methods for the considered IBVP. 
  *
@@ -203,6 +208,35 @@ struct IDEAL_GAS_BASE
         U[RHOV3] =     cth*Un[RHOV1]                  +sth*Un[RHOV3];
         U[TE] = Un[TE];
 #endif
+    }
+
+    /**
+    * \brief Compute the conserved variables from the primary variables.
+    *
+    * \param[in] P: pointer to memory containing the primary variables state vector.
+    * \param[out] U: pointer to memory that will contain the conserved variables state vector.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void F_P2U(const amrex::Real * P, amrex::Real * U) const
+    {
+        const amrex::Real g = this->gamma;
+        const amrex::Real rho = std::max(P[RHO], SMALL_rho);
+        AMREX_D_TERM
+        (
+            const amrex::Real u1 = P[RHOV1];,
+            const amrex::Real u2 = P[RHOV2];,
+            const amrex::Real u3 = P[RHOV3];
+        )
+        const amrex::Real p = std::max(P[TE], SMALL_p);
+        
+        U[RHO] = rho;
+        AMREX_D_TERM
+        (
+            U[RHOV1] = rho*u1;,
+            U[RHOV2] = rho*u2;,
+            U[RHOV3] = rho*u3;
+        )
+        U[TE] = p/(g-1.0)+0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3));
     }
     // ################################################################
 
@@ -676,6 +710,304 @@ struct IDEAL_GAS_BASE
                               rr, AMREX_D_DECL(ur, ut1r, ut2r), pr,
                               URP);
     }
+
+    /**
+     * \brief Solves the Riemann problem using the modified Osher solver.
+     *
+     * \param[in] Un_left: pointer to memory containing the conserved variables at the left of the shock
+     *                     expressed in the unit normal reference system.
+     * \param[in] Un_right: pointer to memory containing the conserved variables at the right of the
+     *                      shock expressed in the unit normal reference system.
+     * \param[out] NFn: pointer to memory that will contain the flux at the interface.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void OsherSolver_1(const amrex::Real * Un_left, const amrex::Real * Un_right,
+                       amrex::Real * NFn) const
+    {
+        // PARAMETERS =================================================
+        const amrex::Real g = this->gamma;
+        //const int qo = 1;
+        //const amrex::Real xG[1] = {0.5};
+        //const amrex::Real wG[1] = {1.0};
+        const int qo = 3;
+        const amrex::Real xG[3] = {0.5-0.1*std::sqrt(15.0), 0.5, 0.5+0.1*std::sqrt(15.0)};
+        const amrex::Real wG[3] = {5.0/18.0, 4.0/9.0, 5.0/18.0};
+        // ============================================================
+
+        // VARIABLES ==================================================
+        amrex::Real Uxi[DG_N_SOL], tmp[DG_N_SOL];
+        amrex::Real AMREX_D_DECL(u1, u2, u3), p, a, h;
+        amrex::Real AMREX_D_DECL(dm1, dm2, dm3), dr, de;
+        amrex::Real wn, w, wm, w_max;
+        // ============================================================
+
+        // INITIALIZATION =============================================
+        NFn[RHO] = 0.0;
+        AMREX_D_TERM
+        (
+            NFn[RHOV1] = 0.0;,
+            NFn[RHOV2] = 0.0;,
+            NFn[RHOV3] = 0.0;
+        )
+        NFn[TE] = 0.0;
+
+        dr = Un_right[RHO]-Un_left[RHO];
+        AMREX_D_TERM
+        (
+            dm1 = Un_right[RHOV1]-Un_left[RHOV1];,
+            dm2 = Un_right[RHOV2]-Un_left[RHOV2];,
+            dm3 = Un_right[RHOV3]-Un_left[RHOV3];
+        )
+        de = Un_right[TE]-Un_left[TE];
+
+        w_max = 0.0;
+        // ============================================================
+
+        // PERFORM THE LINE INTEGRAL ==================================
+        for (int i = 0; i < qo; ++i)
+        {
+            Uxi[RHO] = Un_left[RHO]+xG[i]*(Un_right[RHO]-Un_left[RHO]);
+            AMREX_D_TERM
+            (
+                Uxi[RHOV1] = Un_left[RHOV1]+xG[i]*(Un_right[RHOV1]-Un_left[RHOV1]);,
+                Uxi[RHOV2] = Un_left[RHOV2]+xG[i]*(Un_right[RHOV2]-Un_left[RHOV2]);,
+                Uxi[RHOV3] = Un_left[RHOV3]+xG[i]*(Un_right[RHOV3]-Un_left[RHOV3]);
+            )
+            Uxi[TE] = Un_left[TE]+xG[i]*(Un_right[TE]-Un_left[TE]);
+
+            this->eval_enthalpy_variables(Uxi, AMREX_D_DECL(u1, u2, u3), p, a, h);
+            wn = std::abs(u1-a);
+            w = std::abs(u1);
+            wm = std::abs(u1+a);
+            w_max = std::max(wn, wm);
+
+#if (AMREX_SPACEDIM == 2)
+            tmp[RHO] = (-((-1+g)*(de+dr*h-dm1*u1-dm2*u2)*(2*w-wm-wn))+a*(dm1*(wm-wn)+dr*u1*(-wm+wn)-a*dr*(-4*w+wm+wn)))/(2*a*a);
+            tmp[RHOV1] = 0.25*(2*dm1*(wm + wn) + ((-1 + g)*(u1*u1*(2*a*dm1*(2*w - wm - wn) + dr*(a*a - 2*h)*(wm - wn) + 
+                         dr*u2*u2*(wm - wn)) + dr*u1*u1*u1*u1*(wm - wn) + a*a*(2*de - 2*dm2*u2 + dr*u2*u2)*(wm - wn) + u1*u1*u1*(dm1*(-wm + wn) + 2*a*dr*(-2*w + wm + wn)) + 
+                         u1*(2*a*dm2*u2*(2*w - wm - wn) + u2*u2*(dm1*(-wm + wn) + 2*a*dr*(-2*w + wm + wn)) + 2*(dm1*h*(wm - wn) + a*a*dm1*(-wm + wn) + 
+                         a*de*(-2*w + wm + wn) - a*dr*h*(-2*w + wm + wn)))))/(a*a*a));
+            tmp[RHOV2] = ((-1 + g)*(2*a*dm2*(2*h - u1*u1)*w + 2*a*dm2*u2*u2*(w - wm - wn) + u2*u2*u2*(dr*u1*(wm - wn) + dm1*(-wm + wn) + a*dr*(-2*w + wm + wn)) + 
+                         u2*(2*(dm1*h*(wm - wn) + a*de*(-2*w + wm + wn)) + u1*(2*a*dm1*(2*w - wm - wn) + 2*dr*h*(-wm + wn) + 
+                         u1*(dr*u1*(wm - wn) + dm1*(-wm + wn) + a*dr*(-2*w + wm + wn))))))/(4*a*a*a);
+            tmp[TE] = ((-1 + g)*(u1*u1*u1*(a*dm1*(2*w - wm - wn) + dr*(a*a + h)*(wm - wn)) + a*dr*u1*u1*u1*u1*(-2*w + wm + wn) - 2*a*dm2*h*u2*(-2*w + wm + wn) + 
+                      u1*(u2*u2*(a*dm1*(2*w - wm - wn) + dr*(a*a + h)*(wm - wn)) + 2*(a*a*de - dr*h*h)*(wm - wn) + 2*a*a*dm2*u2*(-wm + wn)) + 
+                      2*h*(dm1*h*(wm - wn) + a*de*(wm + wn)) + u2*u2*(-2*a*de*w + dm1*h*(-wm + wn) + a*dr*h*(-2*w + wm + wn)) + 
+                      u1*u1*(-2*a*de*w + a*dr*h*(2*w - wm - wn) - dm1*(2*a*a + h)*(wm - wn) + 
+                      a*dr*u2*u2*(-2*w + wm + wn))))/(4*a*a*a);
+#endif
+#if (AMREX_SPACEDIM == 3)
+            tmp[RHO] = (-((-1+g)*(de+dr*h-dm1*u1-dm2*u2-dm3*u3)*(2*w-wm-wn))+a*(dm1*(wm-wn)+dr*u1*(-wm+wn)-a*dr*(-4*w+wm+wn)))/(2*a*a);
+            tmp[RHOV1] = 0.5*(a*dr*(-wm+wn)+dm1*(wm+wn)+(u1*(dm1*(wm-wn)+dr*u1*(-wm+wn)-2*a*dr*(-2*w+wm+wn)))/a+((-1+g)*(de+dr*h-dm1*u1-dm2*u2-dm3*u3)*(a*(wm-wn)+u1*(-2*w+wm+wn)))/(a*a));
+            tmp[RHOV2] = dm2*w + ((-1 + g)*u2*(-de - dr*h + dm1*u1 + dm2*u2 + dm3*u3)*(2*w - wm - wn))/(2*a*a) - (u2*(dr*u1*(wm - wn) + dm1*(-wm + wn) + a*dr*(-2*w + wm + wn)))/(2*a);
+            tmp[RHOV3] = (dm3*(-1 + g)*(2*h - u1*u1 - u2*u2)*w + (1 - g)*(-de - dr*h + dm1*u1 + dm2*u2)*u3*(-2*w + wm + wn) + dm3*(1 - g)*u3*u3*(-w + wm + wn) - a*u3*(dr*u1*(wm - wn) + dm1*(-wm + wn) + a*dr*(-2*w + wm + wn)))/(2*a*a);
+            tmp[TE] = 0.5*(2*de*w - ((-1 + g)*h*(de + dr*h - dm2*u2 - dm3*u3)*(2*w - wm - wn))/(a*a) + (dm1*h*(wm - wn))/a - dr*h*(-2*w + wm + wn) - (u1*u1*(dm1*(-1 + g)*(wm - wn) + a*dr*(-2*w + wm + wn)))/a + 
+                      u1*(-((dr*(a*a + h)*(wm - wn))/a) + dm1*(-2*w + wm + wn) + ((1 - g)*(a*(dm2*u2 + dm3*u3)*(wm - wn) + a*de*(-wm + wn) + a*dr*h*(-wm + wn) + dm1*h*(-2*w + wm + wn)))/(a*a)));
+#endif
+
+            NFn[RHO] -= 0.5*wG[i]*tmp[RHO];
+            AMREX_D_TERM
+            (
+                NFn[RHOV1] -= 0.5*wG[i]*tmp[RHOV1];,
+                NFn[RHOV2] -= 0.5*wG[i]*tmp[RHOV2];,
+                NFn[RHOV3] -= 0.5*wG[i]*tmp[RHOV3];
+            )
+            NFn[TE] -= 0.5*wG[i]*tmp[TE];
+        }
+        // ============================================================
+
+        {
+            const amrex::Real alpha = 0.1*w_max;
+            NFn[RHO] -= alpha*dr;
+            AMREX_D_TERM
+            (
+                NFn[RHOV1] -= alpha*dm1;,
+                NFn[RHOV2] -= alpha*dm2;,
+                NFn[RHOV3] -= alpha*dm3;
+            )
+            NFn[TE] -= alpha*de;
+        }
+
+        // AVERAGE FLUX CONTRIBUTION ==================================
+        this->eval_F1(Un_left, tmp);
+
+        NFn[RHO] += 0.5*tmp[RHO];
+        AMREX_D_TERM
+        (
+            NFn[RHOV1] += 0.5*tmp[RHOV1];,
+            NFn[RHOV2] += 0.5*tmp[RHOV2];,
+            NFn[RHOV3] += 0.5*tmp[RHOV3];
+        )
+        NFn[TE] += 0.5*tmp[TE];
+
+        this->eval_F1(Un_right, tmp);
+
+        NFn[RHO] += 0.5*tmp[RHO];
+        AMREX_D_TERM
+        (
+            NFn[RHOV1] += 0.5*tmp[RHOV1];,
+            NFn[RHOV2] += 0.5*tmp[RHOV2];,
+            NFn[RHOV3] += 0.5*tmp[RHOV3];
+        )
+        NFn[TE] += 0.5*tmp[TE];
+        // ============================================================
+    }
+
+    /**
+     * \brief Solves the Riemann problem using the local Lax-Friedrichs solver.
+     *
+     * \param[in] Un_left: pointer to memory containing the conserved variables at the left of the shock
+     *                     expressed in the unit normal reference system.
+     * \param[in] Un_right: pointer to memory containing the conserved variables at the right of the
+     *                      shock expressed in the unit normal reference system.
+     * \param[out] NFn: pointer to memory that will contain the flux at the interface.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void LaxFriedrichsSolver_1(const amrex::Real * Un_left, const amrex::Real * Un_right,
+                               amrex::Real * NFn) const
+    {
+        // PARAMETERS =================================================
+        const amrex::Real g = this->gamma;
+        //const int qo = 1;
+        //const amrex::Real xG[1] = {0.5};
+        //const amrex::Real wG[1] = {1.0};
+        const int qo = 3;
+        const amrex::Real xG[3] = {0.5-0.1*std::sqrt(15.0), 0.5, 0.5+0.1*std::sqrt(15.0)};
+        const amrex::Real wG[3] = {5.0/18.0, 4.0/9.0, 5.0/18.0};
+        // ============================================================
+
+        // VARIABLES ==================================================
+        amrex::Real Uxi[DG_N_SOL], tmp[DG_N_SOL];
+        amrex::Real AMREX_D_DECL(u1, u2, u3), p, a, h;
+        amrex::Real AMREX_D_DECL(dm1, dm2, dm3), dr, de;
+        amrex::Real wn, w, wm, w_max;
+        // ============================================================
+
+        // INITIALIZATION =============================================
+        NFn[RHO] = 0.0;
+        AMREX_D_TERM
+        (
+            NFn[RHOV1] = 0.0;,
+            NFn[RHOV2] = 0.0;,
+            NFn[RHOV3] = 0.0;
+        )
+        NFn[TE] = 0.0;
+
+        dr = Un_right[RHO]-Un_left[RHO];
+        AMREX_D_TERM
+        (
+            dm1 = Un_right[RHOV1]-Un_left[RHOV1];,
+            dm2 = Un_right[RHOV2]-Un_left[RHOV2];,
+            dm3 = Un_right[RHOV3]-Un_left[RHOV3];
+        )
+        de = Un_right[TE]-Un_left[TE];
+
+        w_max = 0.0;
+        // ============================================================
+
+        // PERFORM THE LINE INTEGRAL ==================================
+        for (int i = 0; i < qo; ++i)
+        {
+            Uxi[RHO] = Un_left[RHO]+xG[i]*(Un_right[RHO]-Un_left[RHO]);
+            AMREX_D_TERM
+            (
+                Uxi[RHOV1] = Un_left[RHOV1]+xG[i]*(Un_right[RHOV1]-Un_left[RHOV1]);,
+                Uxi[RHOV2] = Un_left[RHOV2]+xG[i]*(Un_right[RHOV2]-Un_left[RHOV2]);,
+                Uxi[RHOV3] = Un_left[RHOV3]+xG[i]*(Un_right[RHOV3]-Un_left[RHOV3]);
+            )
+            Uxi[TE] = Un_left[TE]+xG[i]*(Un_right[TE]-Un_left[TE]);
+
+            this->eval_enthalpy_variables(Uxi, AMREX_D_DECL(u1, u2, u3), p, a, h);
+            wn = std::abs(u1-a);
+            w = std::abs(u1);
+            wm = std::abs(u1+a);
+            w_max = std::max(wn, wm);
+        }
+
+        {
+            NFn[RHO] = -0.5*w_max*dr;
+            AMREX_D_TERM
+            (
+                NFn[RHOV1] = -0.5*w_max*dm1;,
+                NFn[RHOV2] = -0.5*w_max*dm2;,
+                NFn[RHOV3] = -0.5*w_max*dm3;
+            )
+            NFn[TE] = -0.5*w_max*de;
+        }
+        // ============================================================
+
+        // AVERAGE FLUX CONTRIBUTION ==================================
+        this->eval_F1(Un_left, tmp);
+
+        NFn[RHO] += 0.5*tmp[RHO];
+        AMREX_D_TERM
+        (
+            NFn[RHOV1] += 0.5*tmp[RHOV1];,
+            NFn[RHOV2] += 0.5*tmp[RHOV2];,
+            NFn[RHOV3] += 0.5*tmp[RHOV3];
+        )
+        NFn[TE] += 0.5*tmp[TE];
+
+        this->eval_F1(Un_right, tmp);
+
+        NFn[RHO] += 0.5*tmp[RHO];
+        AMREX_D_TERM
+        (
+            NFn[RHOV1] += 0.5*tmp[RHOV1];,
+            NFn[RHOV2] += 0.5*tmp[RHOV2];,
+            NFn[RHOV3] += 0.5*tmp[RHOV3];
+        )
+        NFn[TE] += 0.5*tmp[TE];
+        // ============================================================
+    }
+
+    /**
+     * \brief Add artificial viscosity to the computed numerical flux.
+     *
+     * \param[in] Un_left: pointer to memory containing the CONSERVED variables.
+     * \param[in] Un_right: pointer to memory containing the neighbor CONSERVED variables.
+     * \param[inout] NFn: pointer to memory that will contain the updated numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void AddArtificialViscosity(const amrex::Real * Un_left, const amrex::Real * Un_right,
+                                amrex::Real * NFn) const
+    {
+        const amrex::Real g = this->gamma;
+        amrex::Real rl, AMREX_D_DECL(ul, ut1l, ut2l), pl, al;
+        amrex::Real rr, AMREX_D_DECL(ur, ut1r, ut2r), pr, ar;
+        amrex::Real dr, AMREX_D_DECL(dm1, dm2, dm3), de;
+        amrex::Real K;
+
+        this->eval_primary_variables(Un_left, rl, AMREX_D_DECL(ul, ut1l, ut2l), pl);
+        this->eval_primary_variables(Un_right, rr, AMREX_D_DECL(ur, ut1r, ut2r), pr);
+
+        al = std::sqrt(g*pl/rl);
+        ar = std::sqrt(g*pr/rr);
+        
+        K = 4.0*std::abs(ul-ur)+0.1*std::abs(al-ar);
+
+        K = std::max(std::abs(al+ul), std::abs(al-ul));
+        K = std::max(K, std::max(std::abs(ar+ur), std::abs(ar-ur)));
+        K *= 0.1;
+
+        dr = Un_right[RHO]-Un_left[RHO];
+        AMREX_D_TERM
+        (
+            dm1 = Un_right[RHOV1]-Un_left[RHOV1];,
+            dm2 = Un_right[RHOV2]-Un_left[RHOV2];,
+            dm3 = Un_right[RHOV3]-Un_left[RHOV3];
+        )
+        de = Un_right[TE]-Un_left[TE];
+        
+        NFn[RHO] -= K*dr;
+        AMREX_D_TERM
+        (
+            NFn[RHOV1] -= K*dm1;,
+            NFn[RHOV2] -= K*dm2;,
+            NFn[RHOV3] -= K*dm3;
+        )
+        NFn[TE] -= K*de;
+    }
     // ################################################################
 
     // BOUNDARY CONDITIONS ############################################
@@ -697,234 +1029,6 @@ struct IDEAL_GAS_BASE
         this->eval_U2Un(un, U, Un);
         Un[RHOV1] = -Un[RHOV1];
         this->eval_Un2U(un, Un, bcs_U);
-    }
-
-    /**
-     * \brief Fill bcs_U memory to enforce prescribed velocity boundary conditions.
-     *
-     * \param[in] p_rho: prescribed density.
-     * \param[in] (p_u1, p_u2, p_u3): components of the prescribed velocity.
-     * \param[in] un: pointer to memory containing the boundary outward unit normal.
-     * \param[in] U: pointer to memory that stores the conserved variables.
-     * \param[out] bcs_U: pointer to memory that will be filled with values suitably chosen to
-     *                    enforce the bcs.
-    */
-    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void bcs_prescribed_velocity(const amrex::Real p_rho, AMREX_D_DECL(const amrex::Real p_u1, const amrex::Real p_u2, const amrex::Real p_u3),
-                                 const amrex::Real * un,
-                                 const amrex::Real * U,
-                                 amrex::Real * bcs_U) const
-    {
-        // PARAMETERS -------------------------------------------------
-        const amrex::Real g = this->gamma;
-        // ------------------------------------------------------------
-
-        // VARIABLES --------------------------------------------------
-        amrex::Real rho, AMREX_D_DECL(u1n, u2t, u3t), p, a;
-        amrex::Real AMREX_D_DECL(p_u1n, p_u2t, p_u3t);
-        amrex::Real AL, BL, du, ps;
-        amrex::Real tmp, tmp2;
-        // ------------------------------------------------------------
-
-        // FIND THE COMPONENTS REFERRED TO THE UNIT NORMAL ------------
-        {
-            amrex::Real Un[DG_N_SOL];
-
-            this->eval_U2Un(un, U, Un);
-            this->eval_primary_variables(Un, rho, AMREX_D_DECL(u1n, u2t, u3t), p);
-            a = std::sqrt(g*p/rho);
-        }
-
-        {
-            const amrex::Real aux_U[DG_N_SOL] = {0.0, AMREX_D_DECL(p_u1, p_u2, p_u3), 0.0};
-            amrex::Real aux_Un[DG_N_SOL];
-
-            this->eval_U2Un(un, aux_U, aux_Un);
-
-            AMREX_D_TERM
-            (
-                p_u1n = aux_Un[RHOV1];,
-                p_u2t = aux_Un[RHOV2];,
-                p_u3t = aux_Un[RHOV3];
-            )
-        }
-        // ------------------------------------------------------------
-
-        // PRESSURE IN THE STAR REGION AND GHOST STATE ----------------
-        du = p_u1n-u1n;
-
-        // RAREFACTION
-        if (du > 0.0)
-        {
-            tmp2 = 1.0-0.5*(g-1.0)*du/a;
-
-            if (tmp2 < 0.0)
-            {
-                amrex::Print() << "un: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, un);
-                amrex::Print() << "p_u1n: " << p_u1n << std::endl;
-                amrex::Print() << "u1n: " << u1n << std::endl;
-                amrex::Print() << "a: " << a << std::endl;
-                amrex::Print() << "p: " << p << std::endl;
-                amrex::Print() << "tmp2: " << tmp2 << std::endl;
-                exit(-1);
-            }
-
-            ps = p*std::pow(tmp2, 2.0*g/(g-1.0));
-
-            // Speeds of the head and tail of the rarefaction
-            tmp = u1n-a;
-            tmp2 = p_u1n-a*tmp2;
-
-            // OUTLET
-            if (tmp > 0.0)
-            {
-                // Do nothing
-            }
-            else if (tmp2 < 0.0)
-            {
-                // OUTLET: us > 0 (STAR REGION - BEFORE CONTACT)
-                if (p_u1n >= 0.0)
-                {
-                    rho *= std::pow(ps/p, 1.0/g);
-                    u1n = p_u1n;
-                    p = ps;
-                }
-                // INLET: us < 0 (STAR REGION - PAST CONTACT)
-                else if (p_u1n < 0.0)
-                {
-                    rho = p_rho;
-                    AMREX_D_TERM
-                    (
-                        u1n = p_u1n;,
-                        u2t = p_u2t;,
-                        u3t = p_u3t;
-                    )
-                    p = ps;
-                }
-            } 
-            // INLET: WITHIN THE RAREFACTION
-            else
-            {
-amrex::Print() << "RAREFACTION - INLET WITHIN RAREFACTION" << std::endl;
-exit(-1);
-                tmp = std::pow(2.0/(g+1.0)+(g-1.0)/(g+1.0)*(u1n/a), 2.0/(g-1.0));
-
-                rho *= tmp;
-                u1n = 2.0/(g+1.0)*(a+0.5*(g-1.0)*u1n);
-                p *= std::pow(tmp, g);
-            }
-
-        }
-        // SHOCK
-        else
-        {
-            AL = 2.0/((g+1.0)*rho);
-            BL = (g-1.0)/(g+1.0)*p;
-            tmp = std::sqrt(4.0*AL*(BL+p)+du*du);
-            ps = p+0.5*(du*du/AL-tmp*du/AL);
-
-            // Speed of the shock
-            tmp2 = u1n-a*std::sqrt(2.0*(g+1.0)/g*ps/p+2.0*(g-1.0)/g);
-
-            // OUTLET
-            if (tmp2 >= 0.0)
-            {
-                // Do nothing
-            }
-            else
-            {
-                // OUTLET: us > 0
-                if (p_u1n >= 0.0)
-                {
-                    tmp = (g-1.0)/(g+1.0)*(p/ps)+1.0;
-                    tmp2 = (g-1.0)/(g+1.0)+p/ps;
-
-                    rho *= tmp/tmp2;
-                    u1n = p_u1n;
-                    p = ps;
-                }
-                // INLET: us < 0
-                else if (p_u1n < 0.0)
-                {
-                    rho = p_rho;
-                    AMREX_D_TERM
-                    (
-                        u1n = p_u1n;,
-                        u2t = p_u2t;,
-                        u3t = p_u3t;
-                    )
-                    p = ps;
-                }
-            }
-        }
-        // ------------------------------------------------------------
-
-        // GHOST STATE (CONSERVED VARIABLES) --------------------------
-        {
-            amrex::Real bcs_Un[DG_N_SOL];
-
-            bcs_Un[RHO] = rho;
-            AMREX_D_TERM
-            (
-                bcs_Un[RHOV1] = rho*u1n;,
-                bcs_Un[RHOV2] = rho*u2t;,
-                bcs_Un[RHOV3] = rho*u3t;
-            )
-            bcs_Un[TE] = p/(g-1.0)+0.5*rho*(AMREX_D_TERM(u1n*u1n,+u2t*u2t,+u3t*u3t));
-
-            this->eval_Un2U(un, bcs_Un, bcs_U);   
-        }
-        // ------------------------------------------------------------
-
-
-
-/*
-{
-    const amrex::Real aux_U[DG_N_SOL] = {0.0, AMREX_D_DECL(p_u1, p_u2, p_u3), 0.0};
-    amrex::Real aux_Un[DG_N_SOL];
-
-    this->eval_U2Un(un, aux_U, aux_Un);
-
-    AMREX_D_TERM
-    (
-        p_u1n = aux_Un[RHOV1];,
-        p_u2t = aux_Un[RHOV2];,
-        p_u3t = aux_Un[RHOV3];
-    )
-}
-amrex::Print() << "p_u1n: " << p_u1n << std::endl;
-amrex::Print() << "p_u2t: " << p_u2t << std::endl;
-
-{
-amrex::Real Un[DG_N_SOL], bcs_Un[DG_N_SOL], U_RP[DG_N_SOL];
-this->eval_U2Un(un, U, Un);
-this->eval_U2Un(un, bcs_U, bcs_Un);
-
-amrex::Print() << "RIEMANN PROBLEM STATES" << std::endl;
-this->eval_primary_variables(Un, rho, AMREX_D_DECL(u1n, u2t, u3t), p);
-amrex::Print() << "rho: " << rho << std::endl;
-amrex::Print() << "u1n: " << u1n << std::endl;
-amrex::Print() << "u2t: " << u2t << std::endl;
-amrex::Print() << "p: " << p << std::endl;
-this->eval_primary_variables(bcs_Un, tmp, AMREX_D_DECL(p_u1n, p_u2t, p_u3t), tmp2);
-amrex::Print() << "bcs_rho: " << tmp << std::endl;
-amrex::Print() << "bcs_u1n: " << p_u1n << std::endl;
-amrex::Print() << "bcs_u2t: " << p_u2t << std::endl;
-amrex::Print() << "bcs_p: " << tmp2 << std::endl;
-
-this->RiemannSolver_P(rho, u1n, u2t, p,
-                      tmp, p_u1n, p_u2t, tmp2,
-                      U_RP);
-this->eval_primary_variables(U_RP, rho, AMREX_D_DECL(u1n, u2t, u3t), p);
-amrex::Print() << "RIEMANN PROBLEM SOLUTION" << std::endl;
-amrex::Print() << "u1n: " << u1n << std::endl;
-amrex::Print() << "u2t: " << u2t << std::endl << std::endl;
-}
-
-global_cnt += 1;
-
-if (global_cnt == 20) exit(-1);
-*/
     }
 
     /**
@@ -1215,6 +1319,7 @@ exit(-1);
                     const amrex::Real * P, const amrex::Real * nbr_P,
                     amrex::Real * NFn) const
     {
+#ifdef USE_EXACT_RIEMANN_SOLVER
         // VARIABLES
         amrex::Real Pn[DG_N_SOL], nbr_Pn[DG_N_SOL];
         amrex::Real U_RP[DG_N_SOL], tmp[DG_N_SOL];
@@ -1232,7 +1337,57 @@ exit(-1);
                               std::max(nbr_Pn[TE], SMALL_p),
                               U_RP);
         this->eval_F1(U_RP, tmp);
+
+#ifdef USE_ARTIFICIAL_VISCOSITY
+        amrex::Real Un[DG_N_SOL], nbr_Un[DG_N_SOL];
+        this->F_P2U(Pn, Un);
+        this->F_P2U(nbr_Pn, nbr_Un);
+        this->AddArtificialViscosity(Un, nbr_Un, tmp);
+#endif
+
         this->eval_Un2U(un, tmp, NFn);
+
+#endif
+
+#ifdef USE_MODIFIED_OSHER_SOLVER
+        amrex::Real U[DG_N_SOL], nbr_U[DG_N_SOL];
+        amrex::Real Un[DG_N_SOL], nbr_Un[DG_N_SOL];
+        
+        // EVAL THE CONSERVED VARIABLES
+        this->F_P2U(P, U);
+        this->F_P2U(nbr_P, nbr_U);
+
+        // EXPRESS THE STATE IN THE UNIT NORMAL REFERENCE SYSTEM
+        this->eval_U2Un(un, U, Un);
+        this->eval_U2Un(un, nbr_U, nbr_Un);
+
+        // CALL OSHER SOLVER
+        // We use U as a temporary variable
+        this->OsherSolver_1(Un, nbr_Un, U);
+        this->eval_Un2U(un, U, NFn);
+
+#ifdef USE_ARTIFICIAL_VISCOSITY
+#endif
+
+#endif
+
+#ifdef USE_LOCAL_LAX_FRIEDRICHS_SOLVER
+        amrex::Real U[DG_N_SOL], nbr_U[DG_N_SOL];
+        amrex::Real Un[DG_N_SOL], nbr_Un[DG_N_SOL];
+        
+        // EVAL THE CONSERVED VARIABLES
+        this->F_P2U(P, U);
+        this->F_P2U(nbr_P, nbr_U);
+
+        // EXPRESS THE STATE IN THE UNIT NORMAL REFERENCE SYSTEM
+        this->eval_U2Un(un, U, Un);
+        this->eval_U2Un(un, nbr_U, nbr_Un);
+
+        // CALL OSHER SOLVER
+        // We use U as a temporary variable
+        this->LaxFriedrichsSolver_1(Un, nbr_Un, U);
+        this->eval_Un2U(un, U, NFn);
+#endif
     }
     // ################################################################
 

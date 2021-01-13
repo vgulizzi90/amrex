@@ -97,11 +97,18 @@ amrex::Print() << "#############################################################
                 const std::string phi_info = "PH"+std::to_string((int) std::round(phi));
 #endif
 
+#ifdef USE_EXACT_RIEMANN_SOLVER
+                const std::string RS_info = "ER";
+#endif
+#ifdef USE_MODIFIED_OSHER_SOLVER
+                const std::string RS_info = "MO";
+#endif
+
 #if (AMREX_SPACEDIM == 2)
-                output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+diam_info+"_"+theta_info});
+                output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+diam_info+"_"+theta_info+"_"+RS_info});
 #endif
 #if (AMREX_SPACEDIM == 3)
-                output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+diam_info+"_"+theta_info+"_"+phi_info});
+                output_folderpath = amrex::DG::IO::MakePath({".", problem+"_"+mesh_info+"_"+diam_info+"_"+theta_info+"_"+phi_info+"_"+RS_info});
 #endif
             }
             else if (inputs.problem.int_params[0] == 2)
@@ -321,8 +328,8 @@ exit(-1);
         {
             const int n = 0;
             const amrex::Real t = 0.0;
-            amrex::DG::Export_VTK(output_folderpath, n, inputs.time.n_steps, "Solution",
-                                  t, mesh, matfactory, DG_N_SOL, X,
+            amrex::FV::Export_VTK(output_folderpath, n, inputs.time.n_steps, "Solution",
+                                  t, mesh, matfactory, X,
                                   IG);
         }
 
@@ -373,8 +380,8 @@ exit(-1);
                 // WRITE TO OUTPUT
                 if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(t/inputs.time.T-1.0) < 1.0e-12)))
                 {
-                    amrex::DG::Export_VTK(output_folderpath, n, inputs.time.n_steps, "Solution",
-                                          t, mesh, matfactory, DG_N_SOL, X,
+                    amrex::FV::Export_VTK(output_folderpath, n, inputs.time.n_steps, "Solution",
+                                          t, mesh, matfactory, X,
                                           IG);
                 }
 
@@ -389,8 +396,8 @@ exit(-1);
                 amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
                 amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
                                << dt << ", t = " << t
-                               << ", clock time per time step = " << tps 
-                               << ", estimated remaining time = " << eta << std::endl;
+                               << ", tts [s] = " << tps 
+                               << ", eta = " << amrex::DG::IO::Seconds2HoursMinutesSeconds(eta) << std::endl;
             }
 
             fp << "| clock time per time step: " << std::scientific << std::setprecision(5) << std::setw(12) << tps << " s\n";

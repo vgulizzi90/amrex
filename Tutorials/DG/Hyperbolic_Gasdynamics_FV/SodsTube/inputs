@@ -25,10 +25,14 @@ grid.space_q = 2
 # =====================================================================
 
 # IMPLICITLY-DEFINED MESH =============================================
-implicit_mesh.space_q = 0
+implicit_mesh.space_q = 2
 implicit_mesh.space_q_ie = 2
 
-implicit_mesh.volume_fraction_threshold = 0.2
+# In 2D
+#implicit_mesh.volume_fraction_threshold = 0.2
+
+# In 3D
+implicit_mesh.volume_fraction_threshold = 0.15
 # =====================================================================
 
 # DISCONTINUOUS GALERKIN METHOD =======================================
@@ -41,9 +45,16 @@ dG.space_p = 0
 
 
 # PROBLEM #############################################################
-problem.int_params = 2
+problem.int_params = 1
 
-problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1 0.125 0.7 0.5 0.5
+# if problem.int_params = 0
+#problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1
+
+# if problem.int_params = 1
+problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1 0.2 60.0 30.0
+
+# if problem.int_params = 2
+#problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1 0.125 0.7 0.5 0.5
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
 #       which should be input as follows
@@ -81,5 +92,5 @@ problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1 0.125 0.7 0.5 0.5
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 100000
+plot_int = 1000
 #######################################################################

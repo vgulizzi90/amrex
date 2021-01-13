@@ -14,6 +14,10 @@
 #ifndef AMREX_DG_IMPLICIT_MESH_H_
 #define AMREX_DG_IMPLICIT_MESH_H_
 
+#define __i__ 233
+#define __j__ 65
+#define __k__ 0
+
 namespace amrex
 {
 namespace DG
@@ -735,15 +739,6 @@ bool ELM_IS_STANDARD_CELL(const int etype)
 
 
 // AUXILIARY FUNCTIONS FOR LOOPS OVER QUADRATURE POINTS ###############
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-/**
- * \brief In progress.
- *
-*/
-void BUO_QUAD_INFO()
-{
-
-}
 // ####################################################################
 
 
@@ -764,7 +759,7 @@ struct ImplicitMesh
     
     // GRID
     Geometry geom;
-    const Real abs_tol = 1.0e-12;
+    const Real abs_tol = 1.0e-14;
     Real rel_tol;
 
     BoxArray cc_ba;
@@ -1468,6 +1463,85 @@ struct ImplicitMesh
                         )
                     }
 
+// DOUBLE-MACH
+/*
+{
+const int q = 0;
+const long pos = eIntBouQuad_mem_pos+(AMREX_SPACEDIM+1+AMREX_SPACEDIM)*q;
+
+const Real n1 = std::cos(41.0/180.0*M_PI);
+const Real n2 = -std::sin(41.0/180.0*M_PI);
+
+const Real yL = std::tan(49.0/180.0*M_PI)*(i*dx[0]-5.2);
+const Real yU = std::tan(49.0/180.0*M_PI)*((i+1)*dx[0]-5.2);
+Real x1, x2, w;
+
+//Print() << "yL: " << yL << std::endl;
+//Print() << "yU: " << yU << std::endl;
+if (yL > j*dx[1])
+{
+    //Print() << "case A" << std::endl;
+    const Real x_tmp = 5.2+(j+1)*dx[1]/std::tan(49.0/180.0*M_PI);
+    x1 = 0.5*(i*dx[0]+x_tmp);
+    x2 = std::tan(49.0/180.0*M_PI)*(x1-5.2);
+    w = (x_tmp-i*dx[0])/std::cos(49.0/180.0*M_PI);
+}
+else if (yU < ((j+1)*dx[1]))
+{
+    //Print() << "case B" << std::endl;
+    const Real x_tmp = 5.2+j*dx[1]/std::tan(49.0/180.0*M_PI);
+    x1 = 0.5*((i+1)*dx[0]+x_tmp);
+    x2 = std::tan(49.0/180.0*M_PI)*(x1-5.2);
+    //w = std::sqrt(((i+1)*dx[0]-x_tmp)*((i+1)*dx[0]-x_tmp)+(yU-j*dx[1])*(yU-j*dx[1]));
+    w = ((i+1)*dx[0]-x_tmp)/std::cos(49.0/180.0*M_PI);
+}
+else
+{
+    //Print() << "case C" << std::endl;
+    const Real xU_tmp = 5.2+(j+1)*dx[1]/std::tan(49.0/180.0*M_PI);
+    const Real xL_tmp = 5.2+j*dx[1]/std::tan(49.0/180.0*M_PI);
+    x1 = 0.5*(xU_tmp+xL_tmp);
+    x2 = std::tan(49.0/180.0*M_PI)*(x1-5.2);
+    //w = std::sqrt((xU_tmp-xL_tmp)*(xU_tmp-xL_tmp)+dx[1]*dx[1]);
+    w = (xU_tmp-xL_tmp)/std::cos(49.0/180.0*M_PI);
+}
+
+//Print() << "x1: " << x1 << std::endl;
+//Print() << "x2: " << x2 << std::endl;
+//Print() << "w : " << w  << std::endl;
+//Print() << "n1: " << n1 << std::endl;
+//Print() << "n2: " << n2 << std::endl;
+
+//Print() << "this->eIntBouQuad_host_mem[pos+0]: " << this->eIntBouQuad_host_mem[pos+0] << std::endl;
+//Print() << "this->eIntBouQuad_host_mem[pos+1]: " << this->eIntBouQuad_host_mem[pos+1] << std::endl;
+//Print() << "this->eIntBouQuad_host_mem[pos+AMREX_SPACEDIM]: " << this->eIntBouQuad_host_mem[pos+AMREX_SPACEDIM] << std::endl;
+//Print() << "this->eIntBouQuad_host_mem[pos+AMREX_SPACEDIM+1+0]: " << this->eIntBouQuad_host_mem[pos+AMREX_SPACEDIM+1+0] << std::endl;
+//Print() << "this->eIntBouQuad_host_mem[pos+AMREX_SPACEDIM+1+1]: " << this->eIntBouQuad_host_mem[pos+AMREX_SPACEDIM+1+1] << std::endl;
+
+this->eIntBouQuad_host_mem[pos+0] = x1;
+this->eIntBouQuad_host_mem[pos+1] = x2;
+this->eIntBouQuad_host_mem[pos+AMREX_SPACEDIM] = w;
+this->eIntBouQuad_host_mem[pos+AMREX_SPACEDIM+1+0] = n1;
+this->eIntBouQuad_host_mem[pos+AMREX_SPACEDIM+1+1] = n2;
+
+if (yL > j*dx[1])
+{
+    //Print() << "case A" << std::endl;
+    //exit(-1);
+}
+else if (yU < ((j+1)*dx[1]))
+{
+    //Print() << "case B" << std::endl;
+    //exit(-1);
+}
+else
+{
+    //Print() << "case C" << std::endl;
+    //exit(-1);
+}
+}
+*/
+
                     // Update memory (nodes coordinates + weights +
                     // unit normal components)
                     eIntBouQuad_mem_pos += (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*bou_Nq;
@@ -1681,6 +1755,36 @@ struct ImplicitMesh
                                 )
                                 this->eBouQuad_host_mem[pos+AMREX_SPACEDIM] = quad.nodes[q].w;
                             }
+
+// DOUBLE-MACH
+/*
+if (dir == 0)
+{
+const int q = 0;
+const long pos = eBouQuad_mem_pos+(AMREX_SPACEDIM+1)*q;
+
+const Real x1 = i*dx[0];
+const Real x2 = 0.5*((j+1)*dx[1]+std::tan(49.0/180.0*M_PI)*(i*dx[0]-5.2));
+const Real w = (j+1)*dx[1]-std::tan(49.0/180.0*M_PI)*(i*dx[0]-5.2);
+
+this->eBouQuad_host_mem[pos+0] = (x1-cell_lo[0]+delta[0]);
+this->eBouQuad_host_mem[pos+1] = (x2-cell_lo[1]+delta[1]);
+this->eBouQuad_host_mem[pos+AMREX_SPACEDIM] = w;
+}
+else if (dir == 1)
+{
+const int q = 0;
+const long pos = eBouQuad_mem_pos+(AMREX_SPACEDIM+1)*q;
+
+const Real x2 = j*dx[1];
+const Real x1 = 0.5*(i*dx[0]+(5.2+x2/std::tan(49.0/180.0*M_PI)));
+const Real w = (5.2+x2/std::tan(49.0/180.0*M_PI))-i*dx[0];
+
+this->eBouQuad_host_mem[pos+0] = (x1-cell_lo[0]+delta[0]);
+this->eBouQuad_host_mem[pos+1] = (x2-cell_lo[1]+delta[1]);
+this->eBouQuad_host_mem[pos+AMREX_SPACEDIM] = w;
+}
+*/
 
                             // Update memory (nodes coordinates + weights)
                             eBouQuad_mem_pos += (AMREX_SPACEDIM+1)*bou_Nq;
@@ -2298,6 +2402,7 @@ else
                 Real xc[AMREX_SPACEDIM], nbr_xc[AMREX_SPACEDIM];
                 long pos;
                 Real w[AMREX_SPACEDIM], v[AMREX_SPACEDIM*AMREX_SPACEDIM];
+                int n_ls_pnts;
 
                 // LOOP OVER THE ELEMENT IN THE STENCIL
                 stencil_is_standard = true;
@@ -2317,6 +2422,8 @@ else
                 if (stencil_is_standard)
                 {
                     eFVInfo_pos_fab(i,j,k,ELM_FV_INFO_POS(dom)) = 0;
+
+                    n_ls_pnts = 4;
                 }
                 else if (elm_is_valid)
                 {
@@ -2348,11 +2455,13 @@ else
 
                     linalg::zeros(AMREX_SPACEDIM*AMREX_SPACEDIM, R);
 /*
-if (i == 0 && j == 75)
+if (i == __i__ && j == __j__)
 {
 Print() << "xc(" << i << "," << j << "," << k << "): "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, xc);
 }
 */
+
+                    n_ls_pnts = 0;
 
                     for (int n = 0; n < __DG_BASE_STENCIL_N_NBR__; ++n)
                     {
@@ -2372,6 +2481,8 @@ Print() << "xc(" << i << "," << j << "," << k << "): "; IO::PrintRealArray2D(1, 
                                 nbr_xc[2] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X3(dom));
                             )
 
+                            if ((nbr_BF_i != i) || (nbr_BF_j != j) || (nbr_BF_k != k)) n_ls_pnts += 1;
+
 #if (AMREX_SPACEDIM == 2)
                             R[0+0*2] += (nbr_xc[0]-xc[0])*(nbr_xc[0]-xc[0]);
                             R[0+1*2] += (nbr_xc[0]-xc[0])*(nbr_xc[1]-xc[1]);
@@ -2390,7 +2501,7 @@ Print() << "xc(" << i << "," << j << "," << k << "): "; IO::PrintRealArray2D(1, 
                             R[2+2*3] += (nbr_xc[2]-xc[2])*(nbr_xc[2]-xc[2]);
 #endif
 /*
-if (i == 0 && j == 75)
+if (i == __i__ && j == __j__)
 {
 Print() << "nbr_xc(" << nbr_BF_i << "," << nbr_BF_j << "," << nbr_BF_k << "): "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_xc);
 }
@@ -2406,6 +2517,8 @@ Print() << "nbr_xc(" << nbr_BF_i << "," << nbr_BF_j << "," << nbr_BF_k << "): ";
                             nbr_xc[1] = this->eFVInfo_host_mem[pos+1];,
                             nbr_xc[2] = this->eFVInfo_host_mem[pos+2];
                         )
+
+                        n_ls_pnts += 1;
 
 #if (AMREX_SPACEDIM == 2)
                         R[0+0*2] += (nbr_xc[0]-xc[0])*(nbr_xc[0]-xc[0]);
@@ -2425,7 +2538,7 @@ Print() << "nbr_xc(" << nbr_BF_i << "," << nbr_BF_j << "," << nbr_BF_k << "): ";
                         R[2+2*3] += (nbr_xc[2]-xc[2])*(nbr_xc[2]-xc[2]);
 #endif
 /*
-if (i == 0 && j == 75)
+if (i == __i__ && j == __j__)
 {
 Print() << "nbr_xc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_xc);
 }
@@ -2440,7 +2553,8 @@ Print() << "nbr_xc: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, nbr_xc);
 #endif
 
 /*
-if (i == 0 && j == 75)
+//if (i == __i__ && j == __j__)
+if (n_ls_pnts != 4)
 {
     Real diag_w[AMREX_SPACEDIM*AMREX_SPACEDIM];
     Real tmp[AMREX_SPACEDIM*AMREX_SPACEDIM];
@@ -2460,6 +2574,7 @@ if (i == 0 && j == 75)
                   v, AMREX_SPACEDIM, 0.0,
                   vwvT, AMREX_SPACEDIM);
 
+Print() << "i: " << i << ", j: " << j << ", k: " << k << ", n_ls_pnts: " << n_ls_pnts << std::endl;
 Print() << "R: " << std::endl;
 IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, R);
 Print() << "w: "; IO::PrintRealArray2D(1, AMREX_SPACEDIM, w);
@@ -2486,7 +2601,7 @@ if (max_err > 1.0-12*std::max(R[0], std::max(R[1+AMREX_SPACEDIM], R[2+2*AMREX_SP
 {
 Print() << "max_err: " << max_err << std::endl;
 }
-//exit(-1);
+exit(-1);
 }
 */
 

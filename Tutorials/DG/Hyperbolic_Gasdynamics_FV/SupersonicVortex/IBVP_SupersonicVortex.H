@@ -186,51 +186,6 @@ exit(-1);
 
     // BOUNDARY CONDITIONS ############################################
     /**
-     * \brief Fill bcs_U memory to enforce boundary conditions.
-     *
-     * \param[in] dom: index of the domain.
-     * \param[in] t: time.
-     * \param[in] x: pointer to memory containing the space location.
-     * \param[in] un: pointer to memory containing the boundary outward unit normal.
-     * \param[in] U: pointer to memory that stores the conserved variables at (t,x).
-     * \param[out] bcs_U: pointer to memory that will be filled with values suitably chosen to
-     *                    enforce the bcs at (t,x).
-    */
-    AMREX_GPU_HOST_DEVICE
-    void F_BCS(const int /*dom*/,
-               const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
-               const amrex::Real * U,
-               amrex::Real * bcs_U) const
-    {
-        amrex::Real exact_U[DG_N_SOL], rho, u1, u2;
-
-        this->F_EXACT(t, x, exact_U);
-        rho = exact_U[RHO];
-        u1 = exact_U[RHOV1]/exact_U[RHO];
-        u2 = exact_U[RHOV2]/exact_U[RHO];
-
-        this->bcs_prescribed_velocity(rho, AMREX_D_DECL(u1, u2, u3), un, U, bcs_U);
-    }
-    
-    /**
-     * \brief Fill bcs_U memory to enforce boundary conditions on boundaries of the levelsets.
-     *
-     * \param[in] t: time.
-     * \param[in] x: pointer to memory containing the space location.
-     * \param[in] un: pointer to memory containing the boundary outward unit normal.
-     * \param[in] U: pointer to memory that stores the conserved variables at (t,x).
-     * \param[out] bcs_U: pointer to memory that will be filled with values suitably chosen to
-     *                    enforce the bcs at (t,x).
-    */
-    AMREX_GPU_HOST_DEVICE
-    void F_PHI_BCS(const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
-                   const amrex::Real * U,
-                   amrex::Real * bcs_U) const
-    {
-        this->bcs_wall(un, U, bcs_U);
-    }
-
-    /**
      * \brief Fill bcs_P memory to enforce boundary conditions.
      *
      * \param[in] dom: index of the domain.
