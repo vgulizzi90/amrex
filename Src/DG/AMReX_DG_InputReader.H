@@ -143,7 +143,10 @@ struct InputReaderBase
     // DATA MEMBERS ###################################################
     int verbosity;
 
+    std::string plot_filepath;
     int plot_int;
+
+    std::string checkpoint_filepath;
     int checkpoint_int;
     // ################################################################
 
@@ -155,19 +158,25 @@ struct InputReaderBase
     checkpoint_int{-1}
     {
         // VARIABLES ==================================================
+        const time_t date_and_time = time(0);
+        
         amrex::ParmParse pp;
         // ============================================================
-        
+
         // VERBOSITY ==================================================
         pp.query("verbosity", this->verbosity);
         // ============================================================
 
         // OUTPUT FILE INTERVAL =======================================
+        this->plot_filepath = "plt"+std::to_string(date_and_time);
         pp.query("plot_int", this->plot_int);
+        pp.query("plot_filepath", this->plot_filepath);
         // ============================================================
 
         // CHECKPOINT FILE INTERVAL ===================================
+        this->checkpoint_filepath = "chk"+std::to_string(date_and_time);
         pp.query("checkpoint_int", this->checkpoint_int);
+        pp.query("checkpoint_filepath", this->checkpoint_filepath);
         // ============================================================
     }
     // ################################################################

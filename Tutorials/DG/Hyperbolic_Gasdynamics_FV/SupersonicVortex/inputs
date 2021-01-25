@@ -48,7 +48,7 @@ problem.params = 1.4 1.0 2.25 1.0 1.384
 # NOTE: params contains the parameters of the problem, which should be
 #       input as follows
 #
-#       params: gamma, rho_inner, Mach_inner, r_inner, r_outer
+#       params: gamma rho_inner Mach_inner r_inner r_outer
 #
 #       where:
 #       - gamma: specific heats ratio

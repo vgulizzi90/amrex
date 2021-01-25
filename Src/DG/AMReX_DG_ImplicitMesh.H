@@ -985,7 +985,7 @@ struct ImplicitMesh
         if (im_flag)
         {
             BoxList bl;
-            int n_empty_boxes;
+            //int n_empty_boxes;
 
             for (MFIter mfi(this->PHI); mfi.isValid(); ++mfi)
             {

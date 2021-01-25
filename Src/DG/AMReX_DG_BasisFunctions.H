@@ -151,7 +151,9 @@ void DG_BF_1d_Table_NxL(const int N, const int L,
                         T * BF, T * dBF)
 {
     // LOCAL PARAMETERS ==========
+#if (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_TAYLOR)
     const Real xm = 0.5*(xhi+xlo);
+#endif
     const Real J = 2.0/(xhi-xlo);
     // ===========================
 
@@ -213,7 +215,9 @@ void DG_BF_1d_Table_NxL__host__(const int N, const int L,
                                 T * BF, T * dBF)
 {
     // LOCAL PARAMETERS ==========
+#if (DG_BASIS_FUNCTIONS == DG_BASIS_FUNCTIONS_TAYLOR)
     const Real xm = 0.5*(xhi+xlo);
+#endif
     const Real J = 2.0/(xhi-xlo);
     // ===========================
 

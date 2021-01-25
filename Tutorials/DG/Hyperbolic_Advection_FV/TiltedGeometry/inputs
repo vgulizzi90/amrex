@@ -1,14 +1,13 @@
 # SPACE ###############################################################
-space.is_periodic = 0 0
-space.lo          = 0.0 0.0
-space.hi          = 7.5 3.75
+space.is_periodic = 0 0 0
+space.lo          = 0.0 0.0 0.0
+space.hi          = 1.0 1.0 1.0
 #######################################################################
 
 
 
 # TIME ################################################################
-#time.T = 1.2e-5
-time.T = 0.2921464429
+time.T = 0.2
 time.n_steps = 50000
 #######################################################################
 
@@ -16,20 +15,24 @@ time.n_steps = 50000
 
 # DISCRETIZATION ######################################################
 # GRID ================================================================
-grid.n_cells      = 256 128
-grid.max_box_size = 8 8
+grid.n_cells      = 64 64 64
+grid.max_box_size = 8 8 8
 grid.CFL = 0.3
 
 # LEVEL SET FUNCTIONS
-grid.space_p = 1
-grid.space_q = 1
+grid.space_p = 2
+grid.space_q = 2
 # =====================================================================
 
 # IMPLICITLY-DEFINED MESH =============================================
-implicit_mesh.space_q = 0
-implicit_mesh.space_q_ie = 0
+implicit_mesh.space_q = 2
+implicit_mesh.space_q_ie = 2
 
-implicit_mesh.volume_fraction_threshold = 0.3
+# In 2D
+implicit_mesh.volume_fraction_threshold = 0.2
+
+# In 3D
+#implicit_mesh.volume_fraction_threshold = 0.15
 # =====================================================================
 
 # DISCONTINUOUS GALERKIN METHOD =======================================
@@ -44,32 +47,37 @@ dG.space_p = 0
 # PROBLEM #############################################################
 problem.int_params = 1
 
-#problem.params = 1.6666666666666667 3.61e-4 0.0 7.42e6 4.2041015625 3.29e-5 0.0 1.95e4 5.2 49.0
-problem.params = 1.6666666666666667 10.9726443769 0.0 380.5128205128 4.2041015625 1.0 0.0 1.0 5.2 49.0
+# if problem.int_params = 0
+#problem.params = 
+
+# if problem.int_params = 1
+problem.params = 0.2 30.0 60.0
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
 #       which should be input as follows
 #
 #       int_param: eb_flag
-#       params: gamma rhoL uL pL Sx rhoR uR pR Px theta (degree)
+#       params: geo_parameters
 #
 #       where:
 #       - eb_flag: flag to activate the embedded boundary
 #                  0: no embedded boundary is present and a Riemann
 #                     problem is basically solved
-#                  1: a plane is embedded into the grid
+#                  1: an embedded Sod's tube is introduced
+#       
+#       if (problem.int_params == 0): geo_parameters: None
 #
-#       - gamma: specific heats ratio
-#       - (rhoL, uL, pL): left state
-#       - Sx: the shock location
-#       - (rhoR, uR, pR): right state
-#       - Px: the x coordinate of the point P(Px,0) on the plane
-#       - theta: the plane orientation.
+#       if (problem.int_params == 1): geo_parameters: diam theta phi
+#       - diam: diameter of the embedded Sod's tube
+#       - theta: inclination (or azimuth in 3D) of the embedded Sod's
+#                tube
+#       - phi: elevation of the embedded Sod's tube (used in 3D only)
 #
 #######################################################################
 
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 10000
+plot_int = 1
+plot_filepath = PROBLEM_D020_TH30_m64x64
 #######################################################################

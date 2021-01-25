@@ -34,8 +34,8 @@
 #define SMALL_p 1.0e-10
 #define SMALL_rho 1.0e-19
 
-//#define USE_EXACT_RIEMANN_SOLVER
-#define USE_MODIFIED_OSHER_SOLVER
+#define USE_EXACT_RIEMANN_SOLVER
+//#define USE_MODIFIED_OSHER_SOLVER
 //#define USE_LOCAL_LAX_FRIEDRICHS_SOLVER
 //#define USE_ARTIFICIAL_VISCOSITY
 // ####################################################################
@@ -867,13 +867,12 @@ struct IDEAL_GAS_BASE
                                amrex::Real * NFn) const
     {
         // PARAMETERS =================================================
-        const amrex::Real g = this->gamma;
+        //const amrex::Real g = this->gamma;
         //const int qo = 1;
         //const amrex::Real xG[1] = {0.5};
         //const amrex::Real wG[1] = {1.0};
         const int qo = 3;
         const amrex::Real xG[3] = {0.5-0.1*std::sqrt(15.0), 0.5, 0.5+0.1*std::sqrt(15.0)};
-        const amrex::Real wG[3] = {5.0/18.0, 4.0/9.0, 5.0/18.0};
         // ============================================================
 
         // VARIABLES ==================================================
@@ -1011,6 +1010,27 @@ struct IDEAL_GAS_BASE
     // ################################################################
 
     // BOUNDARY CONDITIONS ############################################
+    /**
+     * \brief Fill bcs_P memory to enforce wall boundary conditions.
+     *
+     * \param[in] un: pointer to memory containing the boundary outward unit normal.
+     * \param[in] P: pointer to memory that stores the PRIMARY variables.
+     * \param[in] BP: pointer to memory that stores the desired PRIMARY variables.
+     * \param[out] bcs_P: pointer to memory that will be filled with values suitably chosen to
+     *                    enforce the bcs.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void bcs_inflow_P(const amrex::Real * un,
+                      const amrex::Real * P,
+                      const amrex::Real * BP,
+                      amrex::Real * bcs_P) const
+    {
+        
+
+amrex::Print() << "bcs_inflow_P" << std::endl;
+exit(-1);
+    }
+    
     /**
      * \brief Fill bcs_U memory to enforce wall boundary conditions.
      *

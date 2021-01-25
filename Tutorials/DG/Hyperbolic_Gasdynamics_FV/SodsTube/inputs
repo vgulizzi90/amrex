@@ -51,16 +51,17 @@ problem.int_params = 1
 #problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1
 
 # if problem.int_params = 1
-problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1 0.2 60.0 30.0
+problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1 0.2 30.0 60.0
 
 # if problem.int_params = 2
 #problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1 0.125 0.7 0.5 0.5
+#problem.params = 1.4 3.73333333333 1.25 4.5 0.2 1.4 0.0 1.0 0.15 0.5 0.5 0.5
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
 #       which should be input as follows
 #
 #       int_param: eb_flag
-#       params: gamma, rhoL, uL, pL, s, rhoR, uR, pR, geo_parameters
+#       params: gamma rhoL uL pL s rhoR uR pR geo_parameters
 #
 #       where:
 #       - eb_flag: flag to activate the embedded boundary

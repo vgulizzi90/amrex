@@ -1,14 +1,13 @@
 # SPACE ###############################################################
 space.is_periodic = 0 0
-space.lo          = 0.0 0.0
-space.hi          = 7.5 3.75
+space.lo          = -3.0 -4.0
+space.hi          = 5.0 +4.0
 #######################################################################
 
 
 
 # TIME ################################################################
-#time.T = 1.2e-5
-time.T = 0.2921464429
+time.T = 40.0
 time.n_steps = 50000
 #######################################################################
 
@@ -16,18 +15,18 @@ time.n_steps = 50000
 
 # DISCRETIZATION ######################################################
 # GRID ================================================================
-grid.n_cells      = 256 128
+grid.n_cells      = 32 32
 grid.max_box_size = 8 8
 grid.CFL = 0.3
 
 # LEVEL SET FUNCTIONS
-grid.space_p = 1
-grid.space_q = 1
+grid.space_p = 3
+grid.space_q = 3
 # =====================================================================
 
 # IMPLICITLY-DEFINED MESH =============================================
 implicit_mesh.space_q = 0
-implicit_mesh.space_q_ie = 0
+implicit_mesh.space_q_ie = 3
 
 implicit_mesh.volume_fraction_threshold = 0.3
 # =====================================================================
@@ -42,34 +41,49 @@ dG.space_p = 0
 
 
 # PROBLEM #############################################################
-problem.int_params = 1
+problem.int_params = -1
+problem.params = 1.4 0.8 1.25
 
-#problem.params = 1.6666666666666667 3.61e-4 0.0 7.42e6 4.2041015625 3.29e-5 0.0 1.95e4 5.2 49.0
-problem.params = 1.6666666666666667 10.9726443769 0.0 380.5128205128 4.2041015625 1.0 0.0 1.0 5.2 49.0
+#problem.int_params = 0
+#problem.params = 1.4 0.8 1.25 0.5 0.1
+
+#problem.int_params = 4
+#problem.params = 1.4 0.8 1.25 0.0 0.0 12.0
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
 #       which should be input as follows
 #
 #       int_param: eb_flag
-#       params: gamma rhoL uL pL Sx rhoR uR pR Px theta (degree)
+#       params: gamma mach_inf AoA geo_parameters
 #
 #       where:
 #       - eb_flag: flag to activate the embedded boundary
-#                  0: no embedded boundary is present and a Riemann
-#                     problem is basically solved
-#                  1: a plane is embedded into the grid
+#                  -1: no embedded boundary
+#                  0: embedded ellipse with axes a and b centered at
+#                     (1.5,0)
+#                  4: NACA 4-digit airfoil
 #
 #       - gamma: specific heats ratio
-#       - (rhoL, uL, pL): left state
-#       - Sx: the shock location
-#       - (rhoR, uR, pR): right state
-#       - Px: the x coordinate of the point P(Px,0) on the plane
-#       - theta: the plane orientation.
+#       - mach_inf: free-stream Mach number
+#       - AoA: angle of attack
+#
+#       if (problem.int_params == -1): geo_parameters: None
+#
+#       if (problem.int_params == 0): geo_parameters: a b
+#       - a, b: axes of the ellipse
+#
+#       if (problem.int_params == 4): geo_parameters: c p th
+#       - c: maximum camber in percentage of the cord
+#       - p: position of maximum camber in tenths of the cord
+#       - th: maximum thickness in percentage of the cord
 #
 #######################################################################
 
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 10000
+plot_int = 10
+plot_filepath = PROBLEM_M08_AoA125_m32x32
+#plot_filepath = PROBLEM_Ellipse_M08_AoA125_m192x128
+#plot_filepath = PROBLEM_NACA0012_M08_AoA125_m128x128
 #######################################################################

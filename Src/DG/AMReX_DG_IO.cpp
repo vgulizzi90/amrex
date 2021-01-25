@@ -322,6 +322,8 @@ std::string MakeGlobalOutputFilepath(const std::string & folderpath_root,
 */
 void MakeFolder(const std::string & folderpath)
 {
+    UtilRenameDirectoryToOld(folderpath);
+    
     if (ParallelDescriptor::IOProcessor())
     {
         if (!UtilCreateDirectory(folderpath, 0755))
