@@ -6,11 +6,10 @@
  * \brief Definitions, contants and typedefs.
 */
 
-#include <algoim_quad.hpp>
-
 #ifndef AMREX_DG_CONSTANTS_H_
 #define AMREX_DG_CONSTANTS_H_
 
+#include <algoim_quad.hpp>
 
 namespace amrex
 {
@@ -79,6 +78,10 @@ namespace DG
 #define __DG_ELM_COLOR_N_COMP_PER_DOM__ 1
 
 #define __DG_ELM_COLOR_UNDEFINED__ -1
+
+// AMR
+#define __DG_CELL_UNMASKED__ 0
+#define __DG_CELL_MASKED__ 1
 // ####################################################################
 
 // TYPEDEFS ###########################################################

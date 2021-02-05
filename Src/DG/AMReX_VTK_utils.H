@@ -6,12 +6,13 @@
  * \brief Contains utilities to export in VTK format.
 */
 
-#include <AMReX_Vector.H>
-#include <AMReX_PlotFileUtil.H>
-#include <AMReX_DG_IO.H>
-
 #ifndef AMREX_VTK_UTILS_H_
 #define AMREX_VTK_UTILS_H_
+
+#include <AMReX_Vector.H>
+#include <AMReX_PlotFileUtil.H>
+
+#include <AMReX_DG_IO.H>
 
 namespace amrex
 {

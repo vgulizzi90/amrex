@@ -6,11 +6,11 @@
  * \brief Contains operators to manage dG methods over implicitly-defined meshes.
 */
 
-#include <AMReX_DG_InputReader.H>
-#include <AMReX_DG_ImplicitMesh.H>
-
 #ifndef AMREX_DG_MATRIX_FACTORY_H_
 #define AMREX_DG_MATRIX_FACTORY_H_
+
+#include <AMReX_DG_InputReader.H>
+#include <AMReX_DG_ImplicitMesh.H>
 
 namespace amrex
 {
@@ -38,6 +38,12 @@ struct MatrixFactory
     long mem_for_eMMCh;
     Gpu::HostVector<Real> eMMCh_host_mem;
     Gpu::DeviceVector<Real> eMMCh_device_mem;
+
+    // INTERPOLATION OPERATOR
+    longMultiFab space_Dom_I_pos;
+    long mem_for_space_Dom_I;
+    Gpu::HostVector<Real> space_Dom_I_host_mem;
+    Gpu::DeviceVector<Real> space_Dom_I_device_mem;
     // ################################################################
 
     // CONSTRUCTOR ####################################################
@@ -56,12 +62,24 @@ struct MatrixFactory
     // ################################################################
 
     // INITIALIZATION #################################################
+    void define(const amrex::Geometry & input_geom, const int input_dG_space_p, const int input_dG_space_q)
+    {
+        // STANDARD ELEMENT ===========================================
+        this->std_elem.define(input_geom.CellSize(), input_dG_space_p, input_dG_space_q);
+        // ============================================================   
+    }
+
+    void define(const amrex::Geometry & input_geom, const amrex::BoxArray & /*input_ba*/, const amrex::DistributionMapping & /*input_dm*/, const InputReader & inputs)
+    {
+        this->define(input_geom, inputs.dG.space_p, inputs.dG.space_p+1);
+    }
+
     void define(const InputReader & inputs)
     {
         // VARIABLES ==================================================
         RealBox rbx;
         Box ibx;
-        Geometry geom;
+        Geometry input_geom;
         // ============================================================
 
         // GEOMETRY ===================================================
@@ -76,12 +94,10 @@ struct MatrixFactory
         )
         ibx.setBig(inputs.grid.n_cells-1);
 
-        geom.define(ibx, &rbx, inputs.space.coord_sys, inputs.space.is_periodic.data());
+        input_geom.define(ibx, &rbx, inputs.space.coord_sys, inputs.space.is_periodic.data());
         // ============================================================
 
-        // STANDARD ELEMENT ===========================================
-        this->std_elem.define(geom.CellSize(), inputs.dG.space_p, inputs.dG.space_p+1);
-        // ============================================================
+        this->define(input_geom, inputs.dG.space_p, inputs.dG.space_p+1);
     }
     // ################################################################
 
@@ -215,8 +231,8 @@ struct MatrixFactory
                         eMMCh_pos_fab(i,j,k,dom) = 0L;
                     }
                 }
-                // -----------------------------------------------------
-                // PARTIAL ELEMENTS ------------------------------------
+                // ----------------------------------------------------
+                // PARTIAL ELEMENTS -----------------------------------
                 else if (elm_is_partial)
                 {
                     // QUADRATURE INFO
@@ -378,6 +394,305 @@ struct MatrixFactory
     void EvalMassMatrices(const ImplicitMesh & mesh)
     {
         this->EvalMassMatrices(1, mesh);
+    }
+    // ################################################################
+
+    // INTERPOLATION OPERATOR #########################################
+    /**
+     * \brief Eval and store the interpolation operator with respect to a coarser mesh.
+     *
+     * \param[in] N_DOM: number of domains that will be considered.
+     * \param[in] mesh: data structure containing the mesh.
+     * \param[in] rr: refinement ratio.
+     * \param[in] c_eType: shortMultiFab structure containing the merging information.
+     * \param[in] c_sp: order of the basis functions at the coarse level.
+    */
+    void EvalInterpolationOperator(const int N_DOM,
+                                   const ImplicitMesh & mesh,
+                                   const IntVect & rr,
+                                   const shortMultiFab & c_eType,
+                                   const int c_sp)
+    {
+        // PROFILING --------------------------------------------------
+        BL_PROFILE("EvalInterpolationOperator(const int, const ImplicitMesh &, const IntVect &, ....)");
+        // ------------------------------------------------------------
+
+        // PARAMETERS =================================================
+        // GRID
+        const GpuArray<Real, AMREX_SPACEDIM> f_dx = mesh.geom.CellSizeArray();
+        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+        // GRID (COARSE MESH)
+        const GpuArray<Real, AMREX_SPACEDIM> c_dx = {AMREX_D_DECL(f_dx[0]*rr[0], f_dx[1]*rr[1], f_dx[2]*rr[2])};
+
+        // STANDARD ELEMENT
+        const int f_sp = this->std_elem.p;
+        const int f_sNp = this->std_elem.Np;
+
+        // STANDARD ELEMENT (COARSE MESH)
+        const int c_sNp = AMREX_D_TERM((1+c_sp),*(1+c_sp),*(1+c_sp));
+
+        // IMPLICIT MESH
+        //const Real * eDomQuad_mem_ptr = mesh.eDomQuad_host_mem.data();
+
+        // MULTIFAB INFO
+        const int space_Dom_I_pos_n_comp = N_DOM;
+        // ============================================================
+
+        // VARIABLES ==================================================
+        long space_Dom_I_mem_pos;
+        // ============================================================
+
+        // INITIALIZATION =============================================
+        this->space_Dom_I_pos.define(mesh.cc_ba, mesh.dm, space_Dom_I_pos_n_comp, this->dom_data_ngr);
+        this->space_Dom_I_pos = -1L;
+
+        space_Dom_I_mem_pos = 0L;
+        // ============================================================
+
+        // THE FIRST BLOCK OF MEMORY STORES THE STANDARD ELEMENT INFO =
+        {
+            const int size = f_sNp*c_sNp*AMREX_D_TERM(rr[0],*rr[1],*rr[2]);
+
+            // Resize memory
+            this->space_Dom_I_host_mem.resize(size);
+
+            // Store data
+            for (int k = 0; k < size; ++k)
+            {
+                this->space_Dom_I_host_mem[k] = this->std_elem.IBfTBc[k];
+            }
+
+            // Update memory
+            space_Dom_I_mem_pos += size;
+        }
+        // ============================================================
+
+        // EVAL AND STORE THE INTERPOLATION OPERATOR ==================
+        for (MFIter mfi(mesh.eType); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.fabbox();
+            const Dim3 lo = lbound(bx);
+            const Dim3 hi = ubound(bx);
+
+            // FINE MESH
+            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+            //Array4<int const> const & eDomQuad_Nq_fab = mesh.eDomQuad_Nq.array(mfi);
+            //Array4<long const> const & eDomQuad_pos_fab = mesh.eDomQuad_pos.array(mfi);
+
+            // COARSE MESH
+            Array4<short const> const & c_eType_fab = c_eType.array(mfi);
+
+            // INTERPOLATION OPERATOR
+            Array4<long> const & space_Dom_I_pos_fab = this->space_Dom_I_pos.array(mfi);
+
+            for (int dom = 0; dom < N_DOM; ++dom)
+            for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i)
+            {
+                // LOCAL VARIABLES
+                Real f_BF_lo[AMREX_SPACEDIM], f_BF_hi[AMREX_SPACEDIM];
+                Real c_BF_lo[AMREX_SPACEDIM], c_BF_hi[AMREX_SPACEDIM];
+                //Real x[AMREX_SPACEDIM], w;
+                //Real I[__DG_SOL_MAX_SPACE_Np__*__DG_SOL_MAX_SPACE_Np__];
+
+                // INDICES OF THE COARSE CELL
+#if (AMREX_SPACEDIM == 1)
+Print() << "EvalInterpolationOperator: AMREX_SPACEDIM == 1" << std::endl;
+exit(-1);
+#endif
+#if (AMREX_SPACEDIM == 2)
+                const int pi = (i%rr[0] >= 0) ? i%rr[0] : (i%rr[0]+rr[0]);
+                const int pj = (j%rr[1] >= 0) ? j%rr[1] : (j%rr[1]+rr[1]);
+                const int c_i = (i-pi)/rr[0];
+                const int c_j = (j-pj)/rr[1];
+                const int c_k = k;
+                const int I_pos = (pi+pj*rr[0])*f_sNp*c_sNp;
+#endif
+#if (AMREX_SPACEDIM == 3)
+Print() << "EvalInterpolationOperator: AMREX_SPACEDIM == 3" << std::endl;
+exit(-1);
+#endif
+
+                // ELEMENT TYPE
+                const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                const short c_etype = c_eType_fab(c_i,c_j,c_k,ELM_TYPE(dom));
+
+                // SUPPORT OF THE BASIS FUNCTIONS
+                BF_CELL(&prob_lo[0], &f_dx[0], i, j, k, etype, f_BF_lo, f_BF_hi);
+                BF_CELL(&prob_lo[0], &c_dx[0], c_i, c_j, c_k, c_etype, c_BF_lo, c_BF_hi);
+
+                // BASIS FUNCTIONS
+                DG_SOL_space_BF f_bf(f_sp, f_BF_lo, f_BF_hi);
+                DG_SOL_space_BF c_bf(c_sp, c_BF_lo, c_BF_hi);
+
+                // EMPTY ELEMENTS -------------------------------------
+                if (ELM_IS_EMPTY(etype))
+                {
+                    // Store memory offset
+                    space_Dom_I_pos_fab(i,j,k,dom) = -1L;
+                }
+                // ----------------------------------------------------
+                // ENTIRE ELEMENTS ------------------------------------
+                else if (ELM_IS_ENTIRE(etype))
+                {
+                    // NOTE: If the element is extended, we must 
+                    //       provide the contribution of the small
+                    //       elements.
+                    if (ELM_IS_EXTENDED(etype))
+                    {
+Print() << "EvalInterpolationOperator - entire extended element" << std::endl;
+exit(-1);
+                    }
+                    else
+                    {
+                        space_Dom_I_pos_fab(i,j,k,dom) = I_pos;
+                    }
+                }
+                // ----------------------------------------------------
+                // PARTIAL ELEMENTS -----------------------------------
+                else if (ELM_IS_LARGE(etype) || ELM_IS_SMALL(etype))
+                {
+Print() << "i,j,k: " << i << "," << j << "," << k << std::endl;
+Print() << ELM_TYPE_DESCRIPTION(etype) << std::endl;
+
+Print() << "EvalInterpolationOperator - large or small element" << std::endl;
+exit(-1);
+                }
+                // ----------------------------------------------------
+            }
+        }
+
+        // STORE MEMORY INFO
+        this->mem_for_space_Dom_I = space_Dom_I_mem_pos;
+        // ============================================================
+
+        // COPY MEMORY TO THE DEVICE ==================================
+#ifdef AMREX_USE_GPU
+        this->space_Dom_I_device_mem.resize(this->space_Dom_I_host_mem.size());
+
+        Gpu::copy(Gpu::hostToDevice, this->space_Dom_I_host_mem.begin(), this->space_Dom_I_host_mem.end(), this->space_Dom_I_device_mem.begin());
+#endif
+        // ============================================================
+
+        // ADD THE CONTRIBUTION FOR THE EXTENDED ELEMENTS =============
+#ifdef AMREX_USE_GPU
+        //Real * space_Dom_I_mem_ptr = this->space_Dom_I_device_mem.data();
+#else
+        //Real * space_Dom_I_mem_ptr = this->space_Dom_I_host_mem.data();
+#endif
+
+        for (MFIter mfi(mesh.eType); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.fabbox();
+
+            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // ELEMENT TYPE
+                const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+
+                if (ELM_IS_EXTENDED(etype))
+                {
+Print() << "EvalInterpolationOperator - extended elements" << std::endl;
+exit(-1);
+                }
+            });
+            Gpu::synchronize();
+        }
+        // ============================================================
+    }
+    
+    /**
+     * \brief Eval and store the interpolation operator with respect to a coarser mesh.
+     *
+     * \param[in] N_DOM: number of domains that will be considered.
+     * \param[in] mesh: data structure containing the mesh.
+     * \param[in] rr: refinement ratio.
+     * \param[in] c_mesh: data structure containing the coarser mesh.
+     * \param[in] c_matfactory: data structure containing the coarser matrix factory.
+    */
+    void EvalInterpolationOperator(const int N_DOM,
+                                   const ImplicitMesh & mesh,
+                                   const IntVect & rr,
+                                   const ImplicitMesh & c_mesh,
+                                   const MatrixFactory & c_matfactory)
+    {
+        // CONSISTENCY CHECK ==========================================
+        {
+            const bool bad_rr[AMREX_SPACEDIM] = 
+            {
+                AMREX_D_DECL
+                (
+                    std::abs(this->std_elem.dx[0]*rr[0]-c_matfactory.std_elem.dx[0]) > mesh.rel_tol,
+                    std::abs(this->std_elem.dx[1]*rr[1]-c_matfactory.std_elem.dx[1]) > mesh.rel_tol,
+                    std::abs(this->std_elem.dx[2]*rr[2]-c_matfactory.std_elem.dx[2]) > mesh.rel_tol
+                )
+            };
+
+            if (AMREX_D_TERM(bad_rr[0], || bad_rr[1], || bad_rr[2]))
+            {
+                std::string msg;
+                msg  = "\n";
+                msg += "ERROR: AMReX_DG_MatrixFactory.H - MatrixFactory::EvalInterpolationOperator\n";
+                msg += "| The input coarse ImplicitMesh is not consistent with the input fine ImplicitMesh:\n";
+                msg += "| Input coarse dx = "+AMREX_D_TERM(std::to_string(c_matfactory.std_elem.dx[0]),+","+
+                                                           std::to_string(c_matfactory.std_elem.dx[1]),+","+
+                                                           std::to_string(c_matfactory.std_elem.dx[2]))+"\n";
+                msg += "| This fine dx = "+AMREX_D_TERM(std::to_string(this->std_elem.dx[0]),+","+
+                                                        std::to_string(this->std_elem.dx[1]),+","+
+                                                        std::to_string(this->std_elem.dx[2]))+"\n";
+                msg += "| Refinement ratios = "+AMREX_D_TERM(std::to_string(rr[0]),+","+
+                                                             std::to_string(rr[1]),+","+
+                                                             std::to_string(rr[2]))+"\n";
+                Abort(msg);
+            }
+        }
+        // ============================================================
+
+        // INIT THE INTERPOLATION OPERATOR FOR THE STANDARD ELEMENT ===
+        this->std_elem.InitInterpolation(c_matfactory.std_elem, rr);
+        // ============================================================
+
+        // CALL THE MAIN FUNCTION =====================================
+        if (isMFIterSafe(mesh.eType, c_mesh.eType))
+        {
+            EvalInterpolationOperator(N_DOM, mesh, rr, c_mesh.eType, c_matfactory.std_elem.p);
+        }
+        else
+        {
+            const BoxArray safe_c_ba = coarsen(mesh.cc_ba, rr);
+            const DistributionMapping & f_dm = mesh.dm;
+            const int eType_n_comp = c_mesh.eType.n_comp;
+            const IntVect eType_n_grow = c_mesh.eType.n_grow;
+            shortMultiFab safe_c_eType(safe_c_ba, f_dm, eType_n_comp, eType_n_grow);
+            
+            safe_c_eType.ParallelCopy(c_mesh.eType, 0, 0, eType_n_comp, eType_n_grow, eType_n_grow, c_mesh.geom.periodicity());
+
+            EvalInterpolationOperator(N_DOM, mesh, rr, safe_c_eType, c_matfactory.std_elem.p);
+        }
+        // ============================================================
+    }
+
+    /**
+     * \brief Eval and store the interpolation operator with respect to a coarser mesh.
+     *
+     * \param[in] mesh: data structure containing the mesh.
+     * \param[in] rr: refinement ratio.
+     * \param[in] c_mesh: data structure containing the coarser mesh.
+     * \param[in] c_matfactory: data structure containing the coarser matrix factory.
+    */
+    void EvalInterpolationOperator(const ImplicitMesh & mesh,
+                                   const IntVect & rr,
+                                   const ImplicitMesh & c_mesh,
+                                   const MatrixFactory & c_matfactory)
+    {
+        const int N_DOM = 1;
+        this->EvalInterpolationOperator(N_DOM, mesh, rr, c_mesh, c_matfactory);
     }
     // ################################################################
 };

@@ -361,31 +361,6 @@ void MakeStepFolder(const std::string & folderpath_root, const int n, const int 
     ParallelDescriptor::Barrier();
 }
 
-/**
- * \brief Print (ii,jj,kk,comp) of multifab.
-*/
-void PrintMultiFabEntry(const MultiFab & mf, const int ii, const int jj, const int kk, const int comp)
-{
-    // PARAMETERS
-    const int n_comp = mf.n_comp;
-
-    for (MFIter mfi(mf); mfi.isValid(); ++mfi)
-    {
-        const Box & bx = mfi.validbox();
-        Array4<Real const> const & fab = mf.array(mfi);
-
-        ParallelFor(bx, n_comp,
-        [=] AMREX_GPU_DEVICE (int i, int j, int k, int u) noexcept
-        {
-            if (i == ii && j == jj && k == kk && u == comp)
-            {
-                Print() << "mf(" << i << "," << j << "," << k << "," << u << "): " << fab(i,j,k,u) << std::endl;
-            }
-        });
-        Gpu::synchronize();
-    }
-}
-
 } // namespace IO
 } // namespace DG
 } // namespace amrex

@@ -6,10 +6,10 @@
  * \brief Contains output functions for implicit-mesh discontinuous Galerkin methods.
 */
 
-#include <AMReX_DG_IO.H>
-
 #ifndef AMREX_DG_SOLUTION_OUTPUT_H_
 #define AMREX_DG_SOLUTION_OUTPUT_H_
+
+#include <AMReX_DG_IO.H>
 
 namespace amrex
 {
@@ -28,10 +28,10 @@ namespace DG
  * \param[in] geom: a Geometry object that contains geometry information.
  * \param[in] std_elem: a StandardRectangle<AMREX_SPACEDIM> object that contains evaluation grid
  *                      points and basis functions data.
+ * \param[in] mask: a iMultiFab object that contains a single value for each cell.
  * \param[in] N_SOL: Number of unknown solution fields.
  * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
  *               unknown solution fields.
- * \param[in] tags: a charMultiFab object that contains a two-value data for each cell.
  * \param[in] IBVP: a class that must have two methods with the following prototypes:
  *
  *                  void F_FIELDS_NAMES(Vector<std::string> & fields_names) const;
@@ -45,9 +45,9 @@ void Export_VTK(const std::string & folderpath_root,
                 const Real t,
                 const Geometry & geom,
                 const StandardRectangle<AMREX_SPACEDIM> & std_elem,
+                const iMultiFab & mask,
                 const int N_SOL,
                 const MultiFab & X,
-                const charMultiFab & tags,
                 const IBVP_CLASS & IBVP)
 {
     // PARAMETERS =====================================================
@@ -233,7 +233,7 @@ void Export_VTK(const std::string & folderpath_root,
         const Dim3 hi = ubound(bx);
 
         Array4<Real const> const & X_fab = X.array(mfi);
-        Array4<char const> const & tags_fab = tags.array(mfi);
+        Array4<int const> const & mask_fab = mask.array(mfi);
 
         for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
@@ -322,7 +322,7 @@ void Export_VTK(const std::string & folderpath_root,
 
                 // VTK CELL FIELDS ------------------------------------
                 // TAG
-                VTK_cell_fields_ptr[0][VTK_cell_field_pos] = tags_fab(i,j,k,0);
+                VTK_cell_fields_ptr[0][VTK_cell_field_pos] = mask_fab(i,j,k);
                 // ----------------------------------------------------
 
                 VTK_cell_conn_pos += VTK_cell_conn_len;
@@ -396,10 +396,10 @@ void Export_VTK(const std::string & folderpath_root,
                 const MultiFab & X,
                 const IBVP_CLASS & IBVP)
 {
-    charMultiFab tags(X.boxarray, X.distributionMap, 1, 1);
-    tags = 0;
+    iMultiFab mask(X.boxarray, X.distributionMap, 1, X.n_grow);
+    mask = __DG_CELL_UNMASKED__;
 
-    Export_VTK(folderpath_root, n, n_steps, filename_root, t, geom, std_elem, N_SOL, X, tags, IBVP);
+    Export_VTK(folderpath_root, n, n_steps, filename_root, t, geom, std_elem, mask, N_SOL, X, IBVP);
 }
 
 /**
@@ -497,9 +497,9 @@ void ExportBase_VTK(const std::string & folderpath_root,
  * \param[in] filename_root: root of the output filename.
  * \param[in] t: time.
  * \param[in] mesh: the ImplicitMesh object that will be exported.
+ * \param[in] mask: a iMultiFab object that contains a single value for each cell.
  * \param[in] N_PHI: number of levelsets contained in mesh.
  * \param[in] N_DOM: number of domains to be considered.
- * \param[in] tags: a charMultiFab object that contains a two-value data for each cell.
 */
 void ExportImplicitMesh_DomData_VTK(const std::string & folderpath_root,
                                     const int n, 
@@ -507,9 +507,9 @@ void ExportImplicitMesh_DomData_VTK(const std::string & folderpath_root,
                                     const std::string & filename_root,
                                     const Real /*t*/,
                                     const ImplicitMesh & mesh,
+                                    const iMultiFab & mask,
                                     const int N_PHI,
-                                    const int N_DOM,
-                                    const charMultiFab & tags)
+                                    const int N_DOM)
 {
     // PARAMETERS =====================================================
     // CURRENT PROCESSOR
@@ -692,7 +692,7 @@ void ExportImplicitMesh_DomData_VTK(const std::string & folderpath_root,
 
         Array4<Real const> const & PHI_fab = mesh.PHI.array(mfi);
         Array4<short const> const & eType_fab = mesh.eType.array(mfi);
-        Array4<char const> const & tags_fab = tags.array(mfi);
+        Array4<int const> const & mask_fab = mask.array(mfi);
 
         for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
@@ -797,7 +797,7 @@ void ExportImplicitMesh_DomData_VTK(const std::string & folderpath_root,
                 }
 
                 // TAG
-                VTK_cell_fields_ptr[5+N_DOM][VTK_cell_field_pos] = tags_fab(i,j,k,0);
+                VTK_cell_fields_ptr[5+N_DOM][VTK_cell_field_pos] = mask_fab(i,j,k);
                 // ----------------------------------------------------
 
                 VTK_cell_conn_pos += VTK_cell_conn_len;
@@ -854,7 +854,7 @@ void ExportImplicitMesh_DomData_VTK(const std::string & folderpath_root,
  * \param[in] mesh: the ImplicitMesh object that will be exported.
  * \param[in] N_PHI: number of levelsets contained in mesh.
  * \param[in] N_DOM: number of domains to be considered.
- * \param[in] tags: a charMultiFab object that contains a two-value data for each cell.
+ * \param[in] mask: a iMultiFab object that contains a single value for each cell.
 */
 void ExportImplicitMesh_BouData_VTK(const std::string & folderpath_root,
                                     const int n, 
@@ -862,9 +862,9 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath_root,
                                     const std::string & filename_root,
                                     const Real /*t*/,
                                     const ImplicitMesh & mesh,
+                                    const iMultiFab & mask,
                                     const int N_PHI,
-                                    const int N_DOM,
-                                    const charMultiFab & tags)
+                                    const int N_DOM)
 {
     // PARAMETERS =====================================================
     // GRID
@@ -1048,7 +1048,7 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath_root,
             Array4<Real const> const & PHI_fab = mesh.PHI.array(mfi);
             Array4<short const> const & eType_fab = mesh.eType.array(mfi);
             Array4<short const> const & eBouType_fab = mesh.eBouType[dir].array(mfi);
-            Array4<char const> const & tags_fab = tags.array(mfi);
+            Array4<int const> const & mask_fab = mask.array(mfi);
 
             for (int fk = lo.z; fk <= hi.z; ++fk)
             for (int fj = lo.y; fj <= hi.y; ++fj)
@@ -1061,7 +1061,7 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath_root,
                 int m_etype, p_etype;
                 bool m_elm_is_small, p_elm_is_small, cells_are_merged;
                 int m_merged_b, p_merged_b;
-                char m_tag, p_tag;
+                int m_mask, p_mask;
                 Real x[AMREX_SPACEDIM];
                 Real m_PHI[__DG_MAX_N_PHI__], p_PHI[__DG_MAX_N_PHI__];
 
@@ -1199,20 +1199,20 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath_root,
                     // TAG
                     {
                         // elm^-
-                        m_tag = tags_fab(mi,mj,mk,0);
+                        m_mask = mask_fab(mi,mj,mk);
 
                         // elm^+
-                        p_tag = tags_fab(pi,pj,pk,0);
+                        p_mask = mask_fab(pi,pj,pk);
 
                         // If both cells are tagged, so is their shared
                         // boundary
-                        if (m_tag == p_tag)
+                        if ((m_mask == __DG_CELL_MASKED__) && (p_mask == __DG_CELL_MASKED__))
                         {
-                            VTK_cell_fields_ptr[N_DOM+N_DOM][VTK_cell_field_pos] = m_tag;
+                            VTK_cell_fields_ptr[N_DOM+N_DOM][VTK_cell_field_pos] = __DG_CELL_MASKED__;
                         }
                         else
                         {
-                            VTK_cell_fields_ptr[N_DOM+N_DOM][VTK_cell_field_pos] = 0;
+                            VTK_cell_fields_ptr[N_DOM+N_DOM][VTK_cell_field_pos] = __DG_CELL_UNMASKED__;
                         }
                     }
                     // ------------------------------------------------
@@ -1270,7 +1270,6 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath_root,
  * \param[in] mesh: the ImplicitMesh object that will be exported.
  * \param[in] N_PHI: number of levelsets contained in mesh.
  * \param[in] N_DOM: number of domains to be considered.
- * \param[in] tags: a charMultiFab object that contains a two-value data for each cell.
 */
 void ExportImplicitMesh_Centroids_VTK(const std::string & folderpath_root,
                                       const int n, 
@@ -1472,9 +1471,9 @@ void ExportImplicitMesh_Centroids_VTK(const std::string & folderpath_root,
  * \param[in] filename_root: root of the output filename.
  * \param[in] t: time.
  * \param[in] mesh: the ImplicitMesh object that will be exported.
+ * \param[in] mask: a iMultiFab object that contains a single value for each cell.
  * \param[in] N_PHI: number of levelsets contained in mesh.
  * \param[in] N_DOM: number of domains to be considered.
- * \param[in] tags: a charMultiFab object that contains a two-value data for each cell.
 */
 void ExportImplicitMesh_VTK(const std::string & folderpath_root,
                             const int n, 
@@ -1482,16 +1481,14 @@ void ExportImplicitMesh_VTK(const std::string & folderpath_root,
                             const std::string & filename_root,
                             const Real t,
                             const ImplicitMesh & mesh,
+                            const iMultiFab & mask,
                             const int N_PHI,
-                            const int N_DOM,
-                            const charMultiFab & tags)
+                            const int N_DOM)
 {
     ExportImplicitMesh_DomData_VTK(folderpath_root, n, n_steps, filename_root+"Dom",
-                                   t, mesh, N_PHI, N_DOM,
-                                   tags);
+                                   t, mesh, mask, N_PHI, N_DOM);
     ExportImplicitMesh_BouData_VTK(folderpath_root, n, n_steps, filename_root+"Bou",
-                                   t, mesh, N_PHI, N_DOM,
-                                   tags);
+                                   t, mesh, mask, N_PHI, N_DOM);
     ExportImplicitMesh_Centroids_VTK(folderpath_root, n, n_steps, filename_root+"Centroids",
                                      t, mesh, N_DOM);
 }
@@ -1518,10 +1515,10 @@ void ExportImplicitMesh_VTK(const std::string & folderpath_root,
                             const int N_PHI,
                             const int N_DOM)
 {
-    charMultiFab tags(mesh.PHI.boxarray, mesh.PHI.distributionMap, 1, mesh.dom_data_ngr);
-    tags = 0;
+    iMultiFab mask(mesh.PHI.boxarray, mesh.PHI.distributionMap, 1, mesh.PHI.n_grow);
+    mask = __DG_CELL_UNMASKED__;
 
-    ExportImplicitMesh_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, N_PHI, N_DOM, tags);
+    ExportImplicitMesh_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, mask, N_PHI, N_DOM);
 }
 
 /**
@@ -1544,10 +1541,10 @@ void ExportImplicitMesh_VTK(const std::string & folderpath_root,
 {
     const int N_PHI = 1;
     const int N_DOM = 1;
-    charMultiFab tags(mesh.PHI.boxarray, mesh.PHI.distributionMap, 1, mesh.dom_data_ngr);
-    tags = 0;
+    iMultiFab mask(mesh.PHI.boxarray, mesh.PHI.distributionMap, 1, mesh.PHI.n_grow);
+    mask = __DG_CELL_UNMASKED__;
 
-    ExportImplicitMesh_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, N_PHI, N_DOM, tags);
+    ExportImplicitMesh_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, mask, N_PHI, N_DOM);
 }
 
 /**
@@ -1563,11 +1560,11 @@ void ExportImplicitMesh_VTK(const std::string & folderpath_root,
  *                  mesh.
  * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
  *                        mesh.
+ * \param[in] mask: a iMultiFab object that contains a single value for each cell.
  * \param[in] N_PHI: number of levelsets contained in mesh.
  * \param[in] N_SOL: Number of unknown solution fields.
  * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
  *               unknown solution fields.
- * \param[in] tags: a charMultiFab object that contains a two-value data for each cell.
  * \param[in] IBVP: a class that must have two methods with the following prototypes:
  *
  *                  void F_FIELDS_NAMES(Vector<std::string> & fields_names) const;
@@ -1582,10 +1579,10 @@ void Export_VTK(const std::string & folderpath_root,
                 const Real t,
                 const ImplicitMesh & mesh,
                 const MatrixFactory & matfactory,
+                const iMultiFab & mask,
                 const int N_PHI,
                 const int N_SOL,
                 const MultiFab & X,
-                const charMultiFab & tags,
                 const IBVP_CLASS & IBVP)
 {
     // PARAMETERS =====================================================
@@ -1788,7 +1785,7 @@ void Export_VTK(const std::string & folderpath_root,
         Array4<Real const> const & PHI_fab = mesh.PHI.array(mfi);
         Array4<short const> const & eType_fab = mesh.eType.array(mfi);
         Array4<Real const> const & X_fab = X.array(mfi);
-        Array4<char const> const & tags_fab = tags.array(mfi);
+        Array4<int const> const & mask_fab = mask.array(mfi);
 
         for (int k = lo.z; k <= hi.z; ++k)
         for (int j = lo.y; j <= hi.y; ++j)
@@ -1900,7 +1897,7 @@ void Export_VTK(const std::string & folderpath_root,
 
                 // VTK CELL FIELDS ------------------------------------
                 // TAG
-                VTK_cell_fields_ptr[0][VTK_cell_field_pos] = tags_fab(i,j,k,0);
+                VTK_cell_fields_ptr[0][VTK_cell_field_pos] = mask_fab(i,j,k);
                 // ----------------------------------------------------
 
                 VTK_cell_conn_pos += VTK_cell_conn_len;
@@ -1978,8 +1975,8 @@ void Export_VTK(const std::string & folderpath_root,
 {
     const int N_PHI = 1;
 
-    charMultiFab tags(X.boxarray, X.distributionMap, 1, X.n_grow);
-    tags = 0;
+    iMultiFab mask(X.boxarray, X.distributionMap, 1, X.n_grow);
+    mask = __DG_CELL_UNMASKED__;
 
     Export_VTK(folderpath_root, n, n_steps, filename_root,
                t,
@@ -1987,8 +1984,199 @@ void Export_VTK(const std::string & folderpath_root,
                matfactory,
                N_PHI,
                N_SOL,
-               X, tags,
+               X, mask,
                IBVP);
+}
+
+/**
+ * \brief Export solution contained in an AMR data structure to VTK format.
+ *
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
+ * \param[in] n: time step index.
+ * \param[in] n_steps: maximum number of time steps.
+ * \param[in] t: time.
+ * \param[in] N_PHI: Number of level set functions.
+ * \param[in] N_DOM: Number of domains.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] AMR: the input AMR class.
+ * \param[in] IBVP: a class that must have two methods with the following prototypes:
+ *
+ *                  void F_FIELDS_NAMES(Vector<std::string> & fields_names) const;
+ *                  void F_FIELDS(const Real t, const Real * x, const Real * PHI, const Real * SOL, Real * F) const;
+*/
+template <typename AMR_CLASS, typename IBVP_CLASS>
+void Export_VTK(const std::string & folderpath_root,
+                const int n, 
+                const int n_steps,
+                const Real t,
+                const int N_PHI,
+                const int N_DOM,
+                const int N_SOL,
+                const AMR_CLASS & AMR,
+                const IBVP_CLASS & IBVP)
+{
+    const int finest_level = AMR.maxLevel();
+
+    for (int lev = 0; lev <= finest_level; ++lev)
+    {
+        std::string filename_root;
+        
+        if (AMR.LevelIsValid(lev))
+        {
+            const ImplicitMesh & mesh = *AMR.meshes[lev];
+            const MatrixFactory & matfactory = *AMR.matfactories[lev];
+            const iMultiFab & mask = AMR.masks[lev];
+            const MultiFab & X = AMR.Xs[lev];
+
+            filename_root = "ImplicitMesh_Lv"+std::to_string(lev)+"_";
+            ExportImplicitMesh_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, mask, N_PHI, N_DOM);
+            
+            filename_root = "Solution_Lv"+std::to_string(lev);
+            Export_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, matfactory, mask, N_PHI, N_SOL, X, IBVP);
+        }
+    }
+}
+
+/**
+ * \brief Export solution contained in an AMR data structure to VTK format.
+ *
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
+ * \param[in] n: time step index.
+ * \param[in] n_steps: maximum number of time steps.
+ * \param[in] t: time.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] AMR: the input AMR class.
+ * \param[in] IBVP: a class that must have two methods with the following prototypes:
+ *
+ *                  void F_FIELDS_NAMES(Vector<std::string> & fields_names) const;
+ *                  void F_FIELDS(const Real t, const Real * x, const Real * PHI, const Real * SOL, Real * F) const;
+*/
+template <typename AMR_CLASS, typename IBVP_CLASS>
+void Export_VTK(const std::string & folderpath_root,
+                const int n, 
+                const int n_steps,
+                const Real t,
+                const int N_SOL,
+                const AMR_CLASS & AMR,
+                const IBVP_CLASS & IBVP)
+{
+    const int N_PHI = 1;
+    const int N_DOM = 1;
+
+    Export_VTK(folderpath_root, n, n_steps,
+               t,
+               N_PHI,
+               N_DOM,
+               N_SOL,
+               AMR,
+               IBVP);
+}
+
+/**
+ * \brief Export solution contained in an AMR data structure to VTK format.
+ *
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
+ * \param[in] n: time step index.
+ * \param[in] n_steps: maximum number of time steps.
+ * \param[in] t: time.
+ * \param[in] N_PHI: Number of level set functions.
+ * \param[in] N_DOM: Number of domains.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] AMR: the input AMR class.
+ * \param[in] IBVP: a class that must have two methods with the following prototypes:
+ *
+ *                  void F_FIELDS_NAMES(Vector<std::string> & fields_names) const;
+ *                  void F_FIELDS(const Real t, const Real * x, const Real * PHI, const Real * SOL, Real * F) const;
+*/
+template <typename AMR_CLASS, typename IBVP_CLASS, typename SLOPE_LIMITER>
+void Export_VTK(const std::string & folderpath_root,
+                const int n, 
+                const int n_steps,
+                const Real t,
+                const int N_PHI,
+                const int N_DOM,
+                const int N_SOL,
+                const AMR_CLASS & AMR,
+                const IBVP_CLASS & IBVP,
+                const SLOPE_LIMITER & LIMITER)
+{
+    const int finest_level = AMR.maxLevel();
+
+    for (int lev = 0; lev <= finest_level; ++lev)
+    {
+        std::string filename_root;
+        
+        if (AMR.LevelIsValid(lev))
+        {
+            const ImplicitMesh & mesh = *AMR.meshes[lev];
+            const MatrixFactory & matfactory = *AMR.matfactories[lev];
+            const iMultiFab & mask = AMR.masks[lev];
+            const MultiFab & X = AMR.Xs[lev];
+
+            filename_root = "ImplicitMesh_Lv"+std::to_string(lev)+"_";
+            ExportImplicitMesh_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, mask, N_PHI, N_DOM);
+            
+            filename_root = "Solution_Lv"+std::to_string(lev);
+            Export_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, matfactory, mask, N_PHI, N_SOL, X, IBVP);
+        }
+    }
+
+    {
+        const int lev = AMR.maxLevel()+1;
+        std::string filename_root;
+
+        const ImplicitMesh & mesh = LIMITER.mesh;
+        const MatrixFactory & matfactory = LIMITER.matfactory;
+        const iMultiFab & mask = LIMITER.mask;
+        const MultiFab & X = LIMITER.X;
+
+        filename_root = "ImplicitMesh_Lv"+std::to_string(lev)+"_";
+        ExportImplicitMesh_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, mask, N_PHI, N_DOM);
+        
+        filename_root = "Solution_Lv"+std::to_string(lev);
+        Export_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, matfactory, mask, N_PHI, N_SOL, X, IBVP);
+    }
+}
+
+/**
+ * \brief Export solution contained in an AMR data structure to VTK format.
+ *
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
+ * \param[in] n: time step index.
+ * \param[in] n_steps: maximum number of time steps.
+ * \param[in] t: time.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] AMR: the input AMR class.
+ * \param[in] IBVP: a class that must have two methods with the following prototypes:
+ *
+ *                  void F_FIELDS_NAMES(Vector<std::string> & fields_names) const;
+ *                  void F_FIELDS(const Real t, const Real * x, const Real * PHI, const Real * SOL, Real * F) const;
+*/
+template <typename AMR_CLASS, typename IBVP_CLASS, typename SLOPE_LIMITER>
+void Export_VTK(const std::string & folderpath_root,
+                const int n, 
+                const int n_steps,
+                const Real t,
+                const int N_SOL,
+                const AMR_CLASS & AMR,
+                const IBVP_CLASS & IBVP,
+                const SLOPE_LIMITER & LIMITER)
+{
+    const int N_PHI = 1;
+    const int N_DOM = 1;
+
+    Export_VTK(folderpath_root, n, n_steps,
+               t,
+               N_PHI,
+               N_DOM,
+               N_SOL,
+               AMR,
+               IBVP,
+               LIMITER);
 }
 
 } // namespace DG

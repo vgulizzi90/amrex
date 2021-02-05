@@ -6,12 +6,13 @@
  * \brief Contains contants and data structures to evaluate the DG solution in time and space.
 */
 
-#include <algoim_quad.hpp>
-
-#include <AMReX_DG_BasisFunctions.H>
-
 #ifndef AMREX_DG_BFX_H_
 #define AMREX_DG_BFX_H_
+
+#include <algoim_quad.hpp>
+
+#include <AMReX_DG_Constants.H>
+#include <AMReX_DG_BasisFunctions.H>
 
 namespace amrex
 {
@@ -373,6 +374,69 @@ public DG_space_BF<N, DG_MAX_p, DG_MAX_Np>
 
 typedef DG_space_BFX<AMREX_SPACEDIM, __DG_PHI_MAX_SPACE_p__, __DG_PHI_MAX_SPACE_Np__> DG_PHI_space_BFX;
 typedef DG_space_BFX<AMREX_SPACEDIM, __DG_SOL_MAX_SPACE_p__, __DG_SOL_MAX_SPACE_Np__> DG_SOL_space_BFX;
+
+
+/**
+ * \brief This struct computes the linearly reconstructed solution fields.
+ *
+*/
+template <int N, int DG_MAX_p, int DG_MAX_Np>
+struct DG_space_RX
+{
+    // DATA MEMBERS ===================================================
+    Array4<Real const> const & fab;
+    Array4<Real const> const & slopes_fab;
+    const Real * xc;
+    int i, j, k;
+    int u;
+    // ================================================================
+
+    // CONSTRUCTORS ===================================================
+    AMREX_GPU_HOST_DEVICE
+    DG_space_RX(Array4<Real const> const & fab_, Array4<Real const> const & slopes_fab_,
+                const Real * xc_,
+                const int i_, const int j_, const int k_)
+    :
+    fab{fab_},
+    slopes_fab{slopes_fab_},
+    xc{xc_},
+    i{i_}, j{j_}, k{k_},
+    u{-1}
+    {}
+    // ================================================================
+
+    // MISC ===========================================================
+    // ================================================================
+
+    // EVAL THE SOLUTION AT LOCATION x ================================
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    Real eval(const Real * x)
+    {
+        Real res;
+
+        res = this->fab(this->i,this->j,this->k,this->u);
+        AMREX_D_TERM
+        (
+            res += this->slopes_fab(this->i,this->j,this->k,0+AMREX_SPACEDIM*(this->u))*(x[0]-this->xc[0]);,
+            res += this->slopes_fab(this->i,this->j,this->k,1+AMREX_SPACEDIM*(this->u))*(x[1]-this->xc[1]);,
+            res += this->slopes_fab(this->i,this->j,this->k,2+AMREX_SPACEDIM*(this->u))*(x[2]-this->xc[2]);
+        )
+
+        return res;
+    }
+
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval(const Real * x, const int u_lo, const int u_hi, Real * SOL)
+    {
+        for (this->u = u_lo; this->u < u_hi; ++this->u)
+        {
+            SOL[this->u] = this->eval(x);
+        }
+    }
+    // ================================================================
+};
+
+typedef DG_space_RX<AMREX_SPACEDIM, __DG_SOL_MAX_SPACE_p__, __DG_SOL_MAX_SPACE_Np__> DG_SOL_space_RX;
 
 
 /**

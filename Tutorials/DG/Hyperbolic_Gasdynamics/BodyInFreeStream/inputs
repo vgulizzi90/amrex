@@ -1,0 +1,99 @@
+# SPACE ###############################################################
+geometry.prob_lo     = 0.0 0.0 0.0
+geometry.prob_hi     = 1.0 1.0 1.0
+geometry.is_periodic = 0 0 0
+#######################################################################
+
+
+
+# TIME ################################################################
+time.T = 1.0
+time.n_steps = 3
+#######################################################################
+
+
+
+# DISCRETIZATION ######################################################
+# AMR =================================================================
+amr.v = 1
+
+#amr.restart = 
+
+amr.n_cell        = 16 16 16
+amr.max_grid_size = 4 4 4
+amr.max_level     = 2
+amr.ref_ratio     = 2 2 2 2 2 2
+amr.regrid_int    = 2
+# =====================================================================
+
+
+# AMR GRIDS ===========================================================
+grids.CFL = 1.0 1.0 1.0
+
+# LEVEL SET FUNCTIONS
+grids.space_p = 2 2 2
+grids.space_q = 2 2 2
+# =====================================================================
+
+
+# IMPLICITLY-DEFINED MESH =============================================
+implicit_meshes.space_q = 2 2 2
+implicit_meshes.space_q_ie = 2 2 2
+
+implicit_meshes.volume_fraction_threshold = 0.3 0.3 0.3
+# =====================================================================
+
+
+# DISCONTINUOUS GALERKIN METHOD =======================================
+dG.space_p = 1 1 0
+# =====================================================================
+#######################################################################
+
+
+
+# PROBLEM #############################################################
+#problem.int_params = -1
+#problem.params = 1.4 0.8 1.25 # in 2D
+#problem.params = 1.4 0.8 1.25 1.00 # in 3D
+
+problem.int_params = 0
+problem.params = 1.4 0.8 1.25 0.10 0.15 0.45 0.5 # in 2D
+#problem.params = 1.4 0.8 1.25 0.15 0.10 0.125 0.45 0.5 0.55 # in 3D
+#######################################################################
+# NOTE: params contains the parameters of the problem, which should be
+#       input as follows
+#
+#       params: gamma Mach_inf flow_direction geo_parameters
+#
+#       where:
+#       - eb_flag: flag to activate the embedded boundary
+#                  -1: no embedded boundary
+#
+#       - gamma: specific heats ratio
+#       - Mach_inf: free-stream Mach number
+#       - flow_direction (in 2D):
+#         - alpha: angle of attack (in degrees)
+#       - flow_direction (in 3D):
+#         - alpha, beta: angle attack, angle of sideslip (in degrees)
+#
+#       if (problem.int_params == -1):
+#        geo_parameters: None
+#       if (problem.int_params == 0 and AMREX_SPACEDIM == 2):
+#        geo_parameters: a b x y
+#        - a, b: axes of the ellipse
+#        - x, y: coordinates of the center of the ellipse
+#       if (problem.int_params == 0 and AMREX_SPACEDIM == 3):
+#        geo_parameters: a b c x y z
+#        - a, b, c: axes of the ellipsoid
+#        - x, y, z: coordinates of the center of the ellipsoid
+#
+#######################################################################
+
+
+
+# POST-PROCESSING INFO ################################################
+plot_int = 1
+plot_filepath = PROBLEM
+checkpoint_int = 1
+checkpoint_filepath = PROBLEM
+#######################################################################

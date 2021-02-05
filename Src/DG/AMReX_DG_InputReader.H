@@ -6,10 +6,10 @@
  * \brief A file containing data structures used for reading input files.
 */
 
-#include <AMReX_ParmParse.H>
-
 #ifndef AMREX_DG_INPUT_READER_H_
 #define AMREX_DG_INPUT_READER_H_
+
+#include <AMReX_ParmParse.H>
 
 namespace amrex
 {
@@ -141,21 +141,34 @@ struct ProblemInput
 struct InputReaderBase
 {
     // DATA MEMBERS ###################################################
-    int verbosity;
+    bool use_sub_cell_limiter;
 
     std::string plot_filepath;
     int plot_int;
 
     std::string checkpoint_filepath;
     int checkpoint_int;
+
+    int regrid_int;
     // ################################################################
 
     // CONSTRUCTOR ####################################################
-    InputReaderBase()
+    InputReaderBase(const bool read_from_file = true)
     :
-    verbosity{1},
+    use_sub_cell_limiter{false},
     plot_int{-1},
-    checkpoint_int{-1}
+    checkpoint_int{-1},
+    regrid_int{-1}
+    {
+        if (read_from_file)
+        {
+            this->ReadFromInputFile();
+        }
+    }
+    // ################################################################
+
+    // READ INPUT FILE ################################################
+    void ReadFromInputFile()
     {
         // VARIABLES ==================================================
         const time_t date_and_time = time(0);
@@ -163,8 +176,12 @@ struct InputReaderBase
         amrex::ParmParse pp;
         // ============================================================
 
-        // VERBOSITY ==================================================
-        pp.query("verbosity", this->verbosity);
+        // SUBCELL LIMITER ============================================
+        {
+            std::string tmp;
+            pp.query("use_sub_cell_limiter", tmp);
+            this->use_sub_cell_limiter = (tmp.compare("true") == 0);
+        }
         // ============================================================
 
         // OUTPUT FILE INTERVAL =======================================
@@ -178,12 +195,16 @@ struct InputReaderBase
         pp.query("checkpoint_int", this->checkpoint_int);
         pp.query("checkpoint_filepath", this->checkpoint_filepath);
         // ============================================================
+
+        // REGRIDDING =================================================
+        pp.query("regrid_int", this->regrid_int);
+        // ============================================================
     }
     // ################################################################
 };
 
 /**
- * \brief Input reader for single-level single-patch problem
+ * \brief Input reader for single-patch problem
  *
 */
 struct InputReader
@@ -200,9 +221,37 @@ public InputReaderBase
     // ################################################################
 
     // CONSTRUCTOR ####################################################
-    InputReader()
+    InputReader(const bool read_from_file = true)
     :
-    InputReaderBase()
+    InputReaderBase(read_from_file)
+    {
+        if (read_from_file)
+        {
+            this->ReadFromInputFile();
+        }
+    }
+    // ################################################################
+
+    // AUXILIARY FUNCTION #############################################
+    bool Plot() const
+    {
+        return (this->plot_int > 0);
+    }
+
+    bool Plot(const int n, const Real t) const
+    {
+        bool res;
+        res = (n%(this->plot_int) == 0);
+        res = res || (n == this->time.n_steps);
+        res = res || (std::abs(t/this->time.T-1.0) < 1.0e-12);
+        res = res && (this->plot_int > 0);
+
+        return res;
+    }
+    // ################################################################
+
+    // READ INPUT FILE ################################################
+    void ReadFromInputFile()
     {
         // SPACE ======================================================
         {
@@ -247,9 +296,9 @@ public InputReaderBase
                 }
             }
 
-            pp.query("CFL", this->grid.CFL);
+            pp.get("CFL", this->grid.CFL);
 
-            pp.query("space_p", this->grid.space_p);
+            pp.get("space_p", this->grid.space_p);
 
             this->grid.time_p = this->grid.space_p;
             pp.query("time_p", this->grid.time_p);
@@ -268,7 +317,7 @@ public InputReaderBase
 
             ParmParse pp("implicit_mesh");
 
-            pp.query("space_q", this->implicit_mesh.space_q);
+            pp.get("space_q", this->implicit_mesh.space_q);
 
             this->implicit_mesh.space_q_ie = this->implicit_mesh.space_q;
             pp.query("space_q_ie", this->implicit_mesh.space_q_ie);
@@ -302,6 +351,190 @@ public InputReaderBase
     }
     // ################################################################
 };
+
+namespace AMR
+{
+
+/**
+ * \brief Input reader for single-patch AMR problem
+ *
+*/
+struct InputReader
+:
+public InputReaderBase
+{
+    // DATA MEMBERS ###################################################
+    SpaceInput space;
+    TimeInput time;
+    Vector<GridInput> grids;
+    Vector<ImplicitMeshInput> implicit_meshes;
+    Vector<DGInput> dG;
+    ProblemInput problem;
+    // ################################################################
+
+    // CONSTRUCTOR ####################################################
+    InputReader(const int n_levels, const bool read_from_file = true)
+    :
+    InputReaderBase(read_from_file)
+    {
+        if (read_from_file)
+        {
+            this->ReadFromInputFile(n_levels);
+        }
+    }
+    // ################################################################
+
+    // AUXILIARY FUNCTION #############################################
+    bool Plot() const
+    {
+        return (this->plot_int > 0);
+    }
+
+    bool Plot(const int n, const Real t) const
+    {
+        bool res;
+        res = (n%(this->plot_int) == 0);
+        res = res || (n == this->time.n_steps);
+        res = res || (std::abs(t/this->time.T-1.0) < 1.0e-12);
+        res = res && (this->plot_int > 0);
+
+        return res;
+    }
+    // ################################################################
+
+    // READ INPUT FILE ################################################
+    void ReadFromInputFile(const int n_levels)
+    {
+        // SPACE ======================================================
+        {
+            ParmParse pp("geometry");
+
+            pp.queryarr("is_periodic", this->space.is_periodic);
+            pp.query("coord_sys", this->space.coord_sys);
+            pp.getarr("prob_lo", this->space.lo);
+            pp.getarr("prob_hi", this->space.hi);
+        }
+        // ============================================================
+
+        // TIME =======================================================
+        {
+            ParmParse pp("time");
+
+            pp.get("T", this->time.T);
+            pp.get("n_steps", this->time.n_steps);
+        }
+        // ============================================================
+
+        // GRIDS ======================================================
+        // INITIALIZATION
+        {
+            this->grids.resize(n_levels);
+        }
+
+        // READ FROM FILE
+        {
+            Vector<int> int_aux;
+            Vector<Real> aux;
+
+            ParmParse pp("grids");
+
+            pp.getarr("CFL", aux);
+            for (int l = 0; l < n_levels; ++l)
+            {
+                this->grids[l].CFL = aux[l];
+            }
+
+            pp.getarr("space_p", int_aux);
+            for (int l = 0; l < n_levels; ++l)
+            {
+                this->grids[l].space_p = int_aux[l];
+                this->grids[l].space_q = int_aux[l];
+            }
+
+            if (pp.contains("space_q"))
+            {
+                pp.getarr("space_q", int_aux);
+                for (int l = 0; l < n_levels; ++l)
+                {
+                    this->grids[l].space_q = int_aux[l];
+                }
+            }
+        }
+        // ============================================================
+        
+        // MESHES =======================================================
+        // INITIALIZATION
+        {
+            this->implicit_meshes.resize(n_levels);
+        }
+
+        // READ FROM FILE
+        {
+            Vector<int> int_aux;
+            Vector<Real> aux;
+
+            ParmParse pp("implicit_meshes");
+
+            pp.getarr("space_q", int_aux);
+            for (int l = 0; l < n_levels; ++l)
+            {
+                this->implicit_meshes[l].space_q = int_aux[l];
+                this->implicit_meshes[l].space_q_ie = int_aux[l];
+            }
+
+            if (pp.contains("space_q_ie"))
+            {
+                pp.queryarr("space_q_ie", int_aux);
+                for (int l = 0; l < n_levels; ++l)
+                {
+                    this->implicit_meshes[l].space_q_ie = int_aux[l];
+                }
+            }
+
+            if (pp.contains("volume_fraction_threshold"))
+            {
+                pp.queryarr("volume_fraction_threshold", aux);
+                for (int l = 0; l < n_levels; ++l)
+                {
+                    this->implicit_meshes[l].VFT = aux[l];
+                }
+            }
+        }
+        // ============================================================
+
+        // DISCONTINUOUS GALERKIN METHODS =============================
+        // INITIALIZATION
+        {
+            this->dG.resize(n_levels);
+        }
+
+        // READ FROM FILE
+        {
+            ParmParse pp("dG");
+
+            Vector<int> int_aux;
+
+            pp.getarr("space_p", int_aux);
+            for (int l = 0; l < n_levels; ++l)
+            {
+                this->dG[l].space_p = int_aux[l];
+            }
+        }
+        // ============================================================
+
+        // PROBLEM ====================================================
+        {
+            ParmParse pp("problem");
+
+            pp.queryarr("int_params", this->problem.int_params);
+            pp.queryarr("params", this->problem.params);
+        }
+        // ============================================================
+    }
+    // ################################################################
+};
+
+} // namespace AMR
 
 } // namespace DG
 } // namespace amrex

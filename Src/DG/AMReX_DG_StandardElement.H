@@ -6,15 +6,17 @@
  * \brief Constants and data structures of standard elements for discontinuous Galerkin methods.
 */
 
+#ifndef AMREX_DG_STANDARD_ELEMENTS_H_
+#define AMREX_DG_STANDARD_ELEMENTS_H_
+
 #include <AMReX_GpuContainers.H>
+
+#include <algoim_quad.hpp>
 
 #include <AMReX_DG_IO.H>
 #include <AMReX_DG_Quadrature.H>
 #include <AMReX_DG_BasisFunctions.H>
 #include <AMReX_DG_LinAlg.H>
-
-#ifndef AMREX_DG_STANDARD_ELEMENTS_H_
-#define AMREX_DG_STANDARD_ELEMENTS_H_
 
 namespace amrex
 {
@@ -75,15 +77,24 @@ struct StandardRectangle
     Gpu::ManagedVector<Real> bou_XI2g;
     Gpu::ManagedVector<Real> bou_XI3g;
 
+    // INTERPOLATION
+    IntVect rr;
+    Gpu::ManagedVector<Real> IBfTBc;
+    Gpu::ManagedVector<Real> I;
+
     // SLOpe OPERATOR
     Gpu::ManagedVector<Real> SLOpe;
     // ################################################################
 
     // CONSTRUCTOR ####################################################
     StandardRectangle()
+    :
+    rr{IntVect::TheZeroVector()}
     {}
 
     StandardRectangle(const Real * dx_, const int p_, const int q_)
+    :
+    rr{IntVect::TheZeroVector()}
     {
         this->define(dx_, p_, q_);
     }
@@ -770,6 +781,203 @@ struct StandardRectangle
         const int p_ = 0;
         const int q_ = 0;
         this->define(dx_, p_, q_);
+    }
+    // ################################################################
+
+    // INTERPOLATION OPERATOR #########################################
+    /**
+     * \brief This method initializes the interpolation operator.
+     *
+     * \param[in] coarse: coarser standard element.
+     * \param[in] input_rr: refinement ratio.
+    */
+    void InitInterpolation(const StandardRectangle & coarse, const IntVect & input_rr)
+    {
+        // QUICK RETURN ===============================================
+        if ((this->p == coarse.p) && (this->rr == input_rr))
+        {
+            return;
+        }
+        // ============================================================
+
+        // PARAMETERS =================================================
+        // ============================================================
+
+        // VARIABLES ==================================================
+        int Nq;
+        const Real * XI1q, * XI2q, * XI3q, * Wq;
+        const Real * aux_dx;
+        Real w;
+        
+        // Basis functions
+        Vector<Real> c_BF, f_BF;
+        // ============================================================
+
+        // SET THE REFINEMENT RATIO ===================================
+        this->rr = input_rr;
+
+        // SMALL CHECK
+        if (AMREX_D_TERM(input_rr[0] == 0, || input_rr[1] == 0, || input_rr[2] == 0))
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_StandardElement.H - UnitHyperrectangle::InitInterpolation\n";
+            msg += "| The input refinement ratio cannot be zero:\n";
+            msg += "| Input rr = "+AMREX_D_TERM(std::to_string(input_rr[0]),+","+
+                                                std::to_string(input_rr[1]),+","+
+                                                std::to_string(input_rr[2]))+"\n";
+            Abort(msg);
+        }
+        // ============================================================
+
+        // PICK THE ELEMENT WITH THE HIGHER ORDER QUADRATURE SCHEME ===
+        if (this->q >= coarse.q)
+        {
+            Nq = this->dom_Nq;
+            XI1q = this->dom_XI1q.data();
+            XI2q = this->dom_XI2q.data();
+            XI3q = this->dom_XI3q.data();
+            Wq = this->dom_Wq.data();
+            aux_dx = this->dx;
+            w = 1.0;
+        }
+        else
+        {
+            Nq = coarse.dom_Nq;
+            XI1q = coarse.dom_XI1q.data();
+            XI2q = coarse.dom_XI2q.data();
+            XI3q = coarse.dom_XI3q.data();
+            Wq = coarse.dom_Wq.data();
+            aux_dx = coarse.dx;
+            w = (AMREX_D_TERM(this->dx[0],*this->dx[1],*this->dx[2]));
+            w /= (AMREX_D_TERM(coarse.dx[0],*coarse.dx[1],*coarse.dx[2]));
+        }
+        // ============================================================
+
+        // ALLOCATE MEMORY FOR THE INTERPOLATION OPERATOR =============
+        {
+            int size;
+
+            size = Nq*coarse.Np;
+            c_BF.resize(size);
+
+            size = Nq*this->Np;
+            f_BF.resize(size);
+
+            size = this->Np*coarse.Np*AMREX_D_TERM(input_rr[0],*input_rr[1],*input_rr[2]);
+            this->IBfTBc.resize(size);
+            std::fill(this->IBfTBc.begin(), this->IBfTBc.end(), 0.0);
+
+            this->I.resize(size);
+            std::fill(this->I.begin(), this->I.end(), 0.0);
+        }
+        // ============================================================
+
+        // EVAL THE BASIS FUNCTIONS OF THIS (FINE) ELEMENT ============
+        {
+            const Real zero[3] = {0.0, 0.0, 0.0};
+            const int f_size_1d = Nq*(1+this->p);
+            Vector<Real> f_P1(f_size_1d), f_P2(f_size_1d), f_P3(f_size_1d);
+
+            if (DIM == 1)
+            {
+                // DOMAIN
+                DG_space_1d_BF_Table_NxL(Nq, this->p,
+                                         XI1q, 0.0, aux_dx[0],
+                                         f_BF.data());
+            }
+            else if (DIM == 2)
+            {
+                // DOMAIN
+                DG_space_2d_BF_Table_NxL(Nq, this->p,
+                                         XI1q, XI2q, zero, aux_dx,
+                                         f_P1.data(), f_P2.data(),
+                                         f_BF.data());
+                
+            }
+            else if (DIM == 3)
+            {
+                // DOMAIN
+                DG_space_3d_BF_Table_NxL(Nq, this->p,
+                                         XI1q, XI2q, XI3q, zero, aux_dx,
+                                         f_P1.data(), f_P2.data(), f_P3.data(),
+                                         f_BF.data());
+            }
+            else
+            {
+                std::string msg;
+                msg  = "\n";
+                msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::InitInterpolation\n";
+                msg += "| Dimension = "+std::to_string(DIM)+" not implemented yet\n";
+                Abort(msg);
+            }
+        }
+        // ============================================================
+
+        // COMPUTE THE INTERPOLATION OPERATOR =========================
+        if (DIM == 2)
+        {
+            const int c_size_1d = Nq*(1+coarse.p);
+
+            Real c_lo[DIM];
+            Real c_hi[DIM];
+            Vector<Real> c_P1(c_size_1d), c_P2(c_size_1d);
+
+            // OPERATOR
+            Vector<Real> I_tmp(this->Np*coarse.Np);
+
+            for (int f_j = 0; f_j < input_rr[1]; ++f_j)
+            for (int f_i = 0; f_i < input_rr[0]; ++f_i)
+            {
+                // EVAL THE BASIS FUNCTIONS (COARSE ELEMENT)
+                c_lo[0] =             -f_i *aux_dx[0]; c_lo[1] =             -f_j *aux_dx[1];
+                c_hi[0] = (input_rr[0]-f_i)*aux_dx[0]; c_hi[1] = (input_rr[1]-f_j)*aux_dx[1];
+
+                DG_space_2d_BF_Table_NxL(Nq, coarse.p,
+                                         XI1q, XI2q, c_lo, c_hi,
+                                         c_P1.data(), c_P2.data(),
+                                         c_BF.data());
+
+                // EVAL THE INTERPOLATION OPERATOR
+                std::fill(I_tmp.begin(), I_tmp.end(), 0.0);
+
+                for (int c = 0; c < (coarse.Np); ++c)
+                for (int r = 0; r < (this->Np); ++r)
+                for (int k = 0; k < (Nq); ++k)
+                {
+                    const int pos = r+c*(this->Np);
+                    const int pos_r = k+r*Nq;
+                    const int pos_c = k+c*Nq;
+
+                    I_tmp[pos] += f_BF[pos_r]*c_BF[pos_c]*Wq[k]*w;
+                }
+
+                const int pos = (f_i+f_j*input_rr[0])*this->Np*coarse.Np;
+                
+                std::copy(I_tmp.begin(), I_tmp.end(), &this->IBfTBc[pos]);
+                
+                linalg::matmul(this->Np, this->Np, coarse.Np, this->iMM.data(), I_tmp.data(), &this->I[pos]);
+
+/*
+Print() << std::endl << "c_lo: "; IO::PrintRealArray2D(1, DIM, c_lo);
+Print() << "c_hi: "; IO::PrintRealArray2D(1, DIM, c_hi);
+Print() << "I_ptr(" << f_i << "," << f_j << "): " << std::endl;
+IO::PrintRealArray2D(this->Np, coarse.Np, &this->I[pos]);
+Print() << "IBfTBc_ptr(" << f_i << "," << f_j << "): " << std::endl;
+IO::PrintRealArray2D(this->Np, coarse.Np, &this->IBfTBc[pos]);
+exit(-1);
+*/
+            }
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::InitInterpolation\n";
+            msg += "| Dimension = "+std::to_string(DIM)+" not implemented yet\n";
+            Abort(msg);
+        }
+        // ============================================================
     }
     // ################################################################
 

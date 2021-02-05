@@ -19,6 +19,7 @@
 #include <AMReX_DG_ImplicitMesh.H>
 #include <AMReX_DG_MatrixFactory.H>
 #include <AMReX_DG_Solution.H>
+#include <AMReX_DG_AMR.H>
 #include <AMReX_DG_Solution_Hyperbolic.H>
 #include <AMReX_DG_Solution_Parabolic.H>
 #include <AMReX_DG_Solution_Output.H>

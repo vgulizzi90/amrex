@@ -1,35 +1,44 @@
 # SPACE ###############################################################
-space.is_periodic = 0 0
-space.lo          = 0 0
-space.hi          = 1.43 1.43
+geometry.prob_lo     = 0.0 0.0
+geometry.prob_hi     = 1.43 1.43
+geometry.is_periodic = 0 0
 #######################################################################
 
 
 
 # TIME ################################################################
 time.T = 10.0
-time.n_steps = 50000
+time.n_steps = 10000
 #######################################################################
 
 
 
 # DISCRETIZATION ######################################################
-# GRID ================================================================
-grid.n_cells      = 16 16
-grid.max_box_size = 8 8
-grid.CFL = 1.0
+# AMR =================================================================
+amr.v = 1
+
+#amr.restart = 
+
+amr.n_cell        = 16 16 16
+amr.max_grid_size = 4 4 4
+amr.max_level     = 0
+# =====================================================================
+
+
+# AMR GRIDS ===========================================================
+grids.CFL = 1.0
 
 # LEVEL SET FUNCTIONS
-grid.space_p = 2
-grid.space_q = 2
+grids.space_p = 2
+grids.space_q = 2
 # =====================================================================
 
 
 # IMPLICITLY-DEFINED MESH =============================================
-implicit_mesh.space_q = 2
-implicit_mesh.space_q_ie = 2
+implicit_meshes.space_q = 2
+implicit_meshes.space_q_ie = 2
 
-implicit_mesh.volume_fraction_threshold = 0.3
+implicit_meshes.volume_fraction_threshold = 0.3
 # =====================================================================
 
 
@@ -63,6 +72,8 @@ problem.params = 1.4 1.0 2.25 1.0 1.384
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 10000
-plot_filepath = PROBLEM_m16x16_p1
+plot_int = 1
+plot_filepath = PROBLEM
+checkpoint_int = 1
+checkpoint_filepath = PROBLEM
 #######################################################################

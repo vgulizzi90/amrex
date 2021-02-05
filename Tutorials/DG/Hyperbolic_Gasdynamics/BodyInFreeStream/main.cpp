@@ -1,16 +1,17 @@
+#include <tr1/cmath>
 #include <AMReX_Print.H>
 
 #include <AMReX_DG.H>
 
 // PDES INFORMATION ###################################################
 // SUMMARY:
-// In this tutorial, we solve the Gasdynamics equations for the
-// supersonic vortex problem using the discontinuous Galerkin method
+// In this tutorial, we solve the Gasdynamics equations for a body
+// immersed in a free stream using the discontinuous Galerkin method
 // and the implicitly defined mesh.
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
-#include "IBVP_SupersonicVortex.H"
+#include "IBVP_BodyInFreeStream.H"
 #include "../IBVP_utils.H"
 // ====================================================================
 // ####################################################################
@@ -26,8 +27,8 @@ void main_main()
     amrex::Print() << "# Author: Vincenzo Gulizzi (vgulizzi@lbl.gov)                          " << std::endl;
     amrex::Print() << "#######################################################################" << std::endl;
     amrex::Print() << "# SUMMARY:                                                             " << std::endl;
-    amrex::Print() << "# In this tutorial, we solve the Gasdynamics equations for the         " << std::endl;
-    amrex::Print() << "# supersonic vortex problem using the discontinuous Galerkin method    " << std::endl;
+    amrex::Print() << "# In this tutorial, we solve the Gasdynamics equations for a body      " << std::endl;
+    amrex::Print() << "# immersed in a free stream using the discontinuous Galerkin method    " << std::endl;
     amrex::Print() << "# and the implicitly defined mesh.                                     " << std::endl;
     amrex::Print() << "#                                                                      " << std::endl;
     amrex::Print() << "#######################################################################" << std::endl;
@@ -38,38 +39,16 @@ void main_main()
     // ================================================================
 
 
-    // THIS TEST IS SUPPOSED TO RUN ONLY FOR AMREX_SPACEDIM = 2 =======
-#if (AMREX_SPACEDIM != 2)
-    {
-        std::string msg;
-        msg  = "\n";
-        msg += "ERROR: main.cpp\n";
-        msg += "| This problem can be run only for AMREX_SPACEDIM = 2.\n";
-        amrex::Abort(msg);
-    }
-#endif
-    // ================================================================
-
-
     // PARAMETERS =====================================================
     const int IOProc = amrex::ParallelDescriptor::IOProcessorNumber();
-
-    // NUMBER OF GHOST ROWS
-    const int ngr = 1;
     // ================================================================
 
 
     // VARIABLES ======================================================
     amrex::Real start_time, stop_time;
+    int RK_order;
 
-    // INPUTS
-    amrex::DG::InputReader inputs;
-
-    // SOLUTION MULTIFAB
-    amrex::MultiFab X;
-
-    // IBVP
-    IDEAL_GAS IG(inputs.problem.int_params, inputs.problem.params);
+    AMR_IDEAL_GAS amr;
     // ================================================================
 
 
@@ -77,7 +56,7 @@ void main_main()
     {
         // MAKE OUTPUT FOLDER =========================================
         {
-            amrex::DG::IO::MakeFolder(inputs.plot_filepath);
+            amrex::DG::IO::MakeFolder(amr.inputs.plot_filepath);
         }
         // ============================================================
 
@@ -86,7 +65,7 @@ void main_main()
         std::ofstream fp;
         if (amrex::ParallelDescriptor::IOProcessor())
         {
-            const std::string stats_filepath = amrex::DG::IO::MakePath({inputs.plot_filepath, "Stats.txt"});
+            const std::string stats_filepath = amrex::DG::IO::MakePath({amr.inputs.plot_filepath, "Stats.txt"});
 
             time_t date_and_time = time(0);
             char * date_and_time_ = ctime(&date_and_time);
@@ -104,13 +83,14 @@ void main_main()
             fp << "| Using GPUs: false" << std::endl;
 #endif
             fp << "| Number of MPI ranks: " << amrex::ParallelDescriptor::NProcs() << std::endl;
+            fp << "| Number of AMR levels: " << amr.maxLevel()+1 << std::endl;
         }
         // ============================================================
 
 
         // HEADER =====================================================
         {
-            amrex::Print() << "# SUPERSONIC VORTEX TEST" << std::endl;
+            amrex::Print() << "# BODY-IN-FREE-STREAM TEST" << std::endl;
         }
         // ============================================================
 
@@ -120,82 +100,67 @@ void main_main()
         // ============================================================
 
 
-        // MAKE THE IMPLICIT-MESH =====================================
-        amrex::DG::ImplicitMesh mesh(inputs);
+        // SET INITIAL CONDITIONS =====================================
+        amr.Init();
 
-        mesh.MakeFromScratch(IG);
-
-        // WRITE THE LEVELSETS TO OUTPUT
-        if (inputs.plot_int > 0)
+        // CHECK QUADRATURE
         {
-            const int n = 0;
-            const amrex::Real t = 0.0;
-            amrex::DG::ExportImplicitMesh_VTK(inputs.plot_filepath, n, inputs.time.n_steps, "ImplicitMesh", t, mesh);
-        }
-        // ============================================================
-
-
-        // CHECK THE COMPUTED QUADRATURE RULES ========================
-        {
-            const amrex::Real ri = inputs.problem.params[3];
-            const amrex::Real ro = inputs.problem.params[4];
+            const amrex::Real * prob_lo = amr.Geom(0).ProbLo();
+            const amrex::Real * prob_hi = amr.Geom(0).ProbHi();
+            const amrex::Real len[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_hi[0]-prob_lo[0],
+                                                                  prob_hi[1]-prob_lo[1],
+                                                                  prob_hi[2]-prob_lo[2])};
 
             amrex::Real volume;
             amrex::Real surface;
 
-            volume = 0.25*M_PI*(ro*ro-ri*ri);
-            surface = 0.5*M_PI*(ro+ri);
-
-            mesh.CheckQuadratureRules(volume, surface);
-        }
-        // ============================================================
-
-
-        // INIT THE MATRIX FACTORY ====================================
-        amrex::DG::MatrixFactory matfactory(inputs);
-
-        matfactory.EvalMassMatrices(mesh);
-        // ============================================================
-
-
-        // INIT MULTIFAB ==============================================
-        {
-            const int p = inputs.dG.space_p;
-            const int X_n_comp = DG_N_SOL*(AMREX_D_PICK(1+p, (1+p)*(1+p), (1+p)*(1+p)*(1+p)));
-            X.define(mesh.cc_ba, mesh.dm, X_n_comp, ngr);
-        }
-        // ============================================================
-
-
-        // SET INITIAL CONDITIONS =====================================
-        amrex::Print() << "# COMPUTING PROJECTED INITIAL CONDITIONS " << std::endl;
-        
-        amrex::DG::ProjectInitialConditions(mesh, matfactory, DG_N_SOL, X, IG);
-
-        // EVAL ERROR
-        {
-            amrex::Real dom_err;
-            dom_err = EvalErrorInfNorm(0.0, mesh, matfactory, DG_N_SOL, X, IG);
-                      
-            amrex::Print() << "| dom_err: " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << std::endl;
-
-            if (amrex::ParallelDescriptor::IOProcessor())
+            if (amr.IG.eb_flag == -1)
             {
-                fp << "| dom_err(t = 0): " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << "\n";
+                volume = AMREX_D_TERM(len[0],*len[1],*len[2]);
+                surface = 0.0;
             }
+            else if (amr.IG.eb_flag == 0)
+            {
+                amrex::Real a[AMREX_SPACEDIM] = {AMREX_D_DECL(amr.IG.params[2],
+                                                              amr.IG.params[3],
+                                                              amr.IG.params[4])};
+                std::sort(a, a+AMREX_SPACEDIM, std::greater<amrex::Real>());
+
+#if (AMREX_SPACEDIM == 2)
+                const amrex::Real e = std::sqrt(1.0-a[1]*a[1]/(a[0]*a[0]));
+                volume = len[0]*len[1]-M_PI*a[0]*a[1];
+                surface = 4.0*a[0]*std::tr1::comp_ellint_2(e);
+#endif
+#if (AMREX_SPACEDIM == 3)
+                const amrex::Real cph = a[2]/a[0];
+                const amrex::Real sph = std::sqrt(1.0-cph*cph);
+                const amrex::Real k = (a[0]/a[1])*std::sqrt((a[1]*a[1]-a[2]*a[2])/(a[0]*a[0]-a[2]*a[2]));
+                const amrex::Real E = std::tr1::ellint_1(std::acos(cph), k);
+                const amrex::Real F = std::tr1::ellint_2(std::acos(cph), k);
+                volume = len[0]*len[1]*len[1]-(4.0/3.0)*M_PI*a[0]*a[1]*a[2];
+                surface = a[2]*a[2]+a[0]*a[1]/sph*(E*sph*sph+F*cph*cph);
+                surface *= 2.0*M_PI;
+#endif
+            }
+            else
+            {
+amrex::Print() << "main.cpp - CHECK THE COMPUTED QUADRATURE RULES" << std::endl;
+exit(-1);
+            }
+
+            amr.CheckQuadratureRules(volume, surface);
         }
 
-        // WRITE TO OUTPUT
-        if (inputs.plot_int > 0)
+        // EXPORT
+        if (amr.inputs.plot_int > 0)
         {
             const int n = 0;
             const amrex::Real t = 0.0;
-            amrex::DG::Export_VTK(inputs.plot_filepath, n, inputs.time.n_steps, "Solution",
-                                  t, mesh, matfactory, DG_N_SOL, X,
-                                  IG);
+            amrex::DG::Export_VTK(amr.inputs.plot_filepath, n, amr.inputs.time.n_steps,
+                                  t, DG_N_SOL, amr, amr.IG);
         }
 
-        if (X.contains_nan())
+        if (amr.contains_nan())
         {
             std::string msg;
             msg  = "\n";
@@ -206,12 +171,30 @@ void main_main()
         // ============================================================
 
 
+        // GET THE ORDER OF THE RUNGE-KUTTA SCHEME ====================
+        {
+            int p;
+
+            // LEVEL 0
+            p = amr.inputs.dG[0].space_p;
+            RK_order = p+1;
+
+            // FINER LEVELS 
+            for (int lev = 1; lev <= amr.maxLevel(); ++lev)
+            {
+                if (amr.LevelIsValid(lev))
+                {
+                    p = amr.inputs.dG[lev].space_p;
+                    RK_order = std::max(RK_order, p+1);
+                }
+            }
+        }
+        // ============================================================
+
+
         // ADVANCE IN TIME ============================================
         amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
         {
-            const int p = inputs.dG.space_p;
-            const int RK_order = p+1;
-
             int n;
             amrex::Real t, dt, dom_err;
             amrex::Real tps_start, tps_stop, tps, eta;
@@ -224,37 +207,32 @@ void main_main()
             n = 0;
             t = 0.0;
             dt = 0.0;
-            while ((t < inputs.time.T*(1.0-1.0e-12)) && (n < inputs.time.n_steps))
+            while ((t < amr.inputs.time.T*(1.0-1.0e-12)) && (n < amr.inputs.time.n_steps))
             {
                 // CLOCK TIME PER TIME STEP TIC
                 tps_start = amrex::second();
 
                 // COMPUTE NEXT TIME STEP
-                dt = amrex::DG::Hyperbolic::Explicit::Compute_dt(t+0.5*dt, mesh, matfactory, DG_N_SOL, X, IG);
-                dt *= inputs.grid.CFL/(1.0+2.0*p);
-                dt = std::min(t+dt, inputs.time.T)-t;
+                // CFL condition is taken care of inside Compute_dt
+                dt = amrex::DG::Hyperbolic::Explicit::Compute_dt(t+0.5*dt, DG_N_SOL, amr, amr.IG);
+                dt = std::min(t+dt, amr.inputs.time.T)-t;
 
                 // TIME STEP
                 amrex::DG::Hyperbolic::Explicit::TakeRungeKuttaTimeStep(RK_order, dt, t,
-                                                                        mesh, matfactory,
-                                                                        DG_N_SOL, X,
-                                                                        IG);
+                                                                        amr.meshes, amr.matfactories, amr.masks,
+                                                                        DG_N_SOL, amr.Xs, amr.IG);
+amrex::Print() << "main.cpp - TIME STEP" << std::endl;
+exit(-1);
 
                 // UPDATE TIME STEP
                 n += 1;
                 t += dt;
-
-                // EVAL ERROR
-                {
-                    dom_err = EvalErrorInfNorm(t, mesh, matfactory, DG_N_SOL, X, IG);
-                }
-
+                
                 // WRITE TO OUTPUT
-                if ((inputs.plot_int > 0) && ((n%inputs.plot_int == 0) || (std::abs(t/inputs.time.T-1.0) < 1.0e-12)))
+                if ((amr.inputs.plot_int > 0) && ((n%amr.inputs.plot_int == 0) || (std::abs(t/amr.inputs.time.T-1.0) < 1.0e-12)))
                 {
-                    amrex::DG::Export_VTK(inputs.plot_filepath, n, inputs.time.n_steps, "Solution",
-                                          t, mesh, matfactory, DG_N_SOL, X,
-                                          IG);
+                    amrex::DG::Export_VTK(amr.inputs.plot_filepath, n, amr.inputs.time.n_steps,
+                                          t, DG_N_SOL, amr, amr.IG);
                 }
 
                 // CLOCK TIME PER TIME STEP TOC
@@ -262,21 +240,18 @@ void main_main()
                 amrex::ParallelDescriptor::ReduceRealMax(tps_stop, IOProc);
 
                 tps = (tps*n+(tps_stop-tps_start))/(n+1);
-                eta = (inputs.time.T-t)/dt*tps;
+                eta = (amr.inputs.time.T-t)/dt*tps;
 
                 // REPORT TO SCREEN
                 amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
                 amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
-                               << dt << ", t = " << t << ", dom_err = " << dom_err
+                               << dt << ", t = " << t
                                << ", tts [s] = " << tps 
                                << ", eta = " << amrex::DG::IO::Seconds2HoursMinutesSeconds(eta) << std::endl;
             }
 
-            amrex::Print() << "| dom_err: " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << std::endl;
-
             if (amrex::ParallelDescriptor::IOProcessor())
             {
-                fp << "| dom_err(t = T): " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << "\n";
                 fp << "| clock time per time step: " << std::scientific << std::setprecision(5) << std::setw(12) << tps << " s\n";
             }
         }

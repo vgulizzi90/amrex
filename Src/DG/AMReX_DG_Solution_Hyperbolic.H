@@ -6,17 +6,18 @@
  * \brief Contains functions for implicit-mesh discontinuous Galerkin methods for hyperbolic PDEs.
 */
 
+#ifndef AMREX_DG_SOLUTION_HYPERBOLIC_H_
+#define AMREX_DG_SOLUTION_HYPERBOLIC_H_
+
 #include <AMReX_Geometry.H>
 #include <AMReX_MFIter.H>
 #include <AMReX_MultiFab.H>
+#include <AMReX_MultiFabUtil.H>
 
 #include <AMReX_DG_Constants.H>
 #include <AMReX_DG_StandardElement.H>
 #include <AMReX_DG_ImplicitMesh.H>
 #include <AMReX_DG_MatrixFactory.H>
-
-#ifndef AMREX_DG_SOLUTION_HYPERBOLIC_H_
-#define AMREX_DG_SOLUTION_HYPERBOLIC_H_
 
 namespace amrex
 {
@@ -27,6 +28,9 @@ namespace Hyperbolic
 
 namespace Explicit
 {
+// ####################################################################
+// SINGLE-LEVEL ROUTINES ##############################################
+// ####################################################################
 /**
  * \brief Compute the maximum time step.
  *
@@ -35,11 +39,9 @@ namespace Explicit
  *                  mesh.
  * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
  *                        mesh.
- * \param[in] N_DOM: number of domains to be considered.
+ * \param[in] tags: a iMultiFab object that contains a single value for each cell.
+ * \param[in] N_DOM: Number of domains to be considered.
  * \param[in] N_SOL: Number of unknown solution fields.
- * \param[in] Sol2Dom: Vector containing information regarding over which domain each unknown
- *                     solution field is defined; Sol2Dom[ru] = dom means that the ru-th unknown
- *                     solution field is defined over the dom-th domain.
  * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
  *               unknown solution fields.
  * \param[in] IBVP: a class that must have a method with the following prototype:
@@ -52,9 +54,9 @@ template <typename IBVP_CLASS>
 Real Compute_dt(const Real t,
                 const ImplicitMesh & mesh,
                 const MatrixFactory & matfactory,
+                const iMultiFab & mask,
                 const int N_DOM,
                 const int N_SOL,
-                const Gpu::ManagedVector<int> & /*Sol2Dom*/,
                 const MultiFab & X,
                 const IBVP_CLASS & IBVP)
 {
@@ -76,9 +78,6 @@ Real Compute_dt(const Real t,
 
     // DG
     const int sp = matfactory.std_elem.p;
-
-    // SOLUTIONS-TO-DOMAIN CORRESPONDENCE
-    //const int * Sol2Dom_ptr = Sol2Dom.data();
 
     // MAX REAL
     const Real max_real = std::numeric_limits<Real>::max();
@@ -114,6 +113,8 @@ Real Compute_dt(const Real t,
 
         Array4<int const> const & eDomQuad_Nq_fab = mesh.eDomQuad_Nq.array(mfi);
         Array4<long const> const & eDomQuad_pos_fab = mesh.eDomQuad_pos.array(mfi);
+
+        Array4<int const> const & mask_fab = mask.array(mfi);
         
         Array4<Real const> const & X_fab = X.array(mfi);
         Array4<Real> const & dt_fab = dt.array(mfi);
@@ -124,7 +125,7 @@ Real Compute_dt(const Real t,
             // ELEMENT TYPE
             const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
 
-            if (ELM_IS_NOT_EMPTY(etype))
+            if (ELM_IS_NOT_EMPTY(etype) && CELL_IS_NOT_MASKED(mask_fab(i,j,k)))
             {
                 // LOCAL PARAMETERS
                 const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
@@ -207,6 +208,42 @@ exit(-1);
  *                  mesh.
  * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
  *                        mesh.
+ * \param[in] N_DOM: Number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] Sol2Dom: Vector containing information regarding over which domain each unknown
+ *                     solution field is defined; Sol2Dom[ru] = dom means that the ru-th unknown
+ *                     solution field is defined over the dom-th domain.
+ * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
+ *               unknown solution fields.
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  Real F_DT(const int dom, const Real * dx, const Real t, const Real * x, const Real * SOL) const;
+ *
+ * \return the maximum time step.
+*/
+template <typename IBVP_CLASS>
+Real Compute_dt(const Real t,
+                const ImplicitMesh & mesh,
+                const MatrixFactory & matfactory,
+                const int N_DOM,
+                const int N_SOL,
+                const MultiFab & X,
+                const IBVP_CLASS & IBVP)
+{
+    iMultiFab mask(X.boxarray, X.distributionMap, 1, X.n_grow);
+    mask = __DG_CELL_UNMASKED__;
+
+    return Compute_dt(t, mesh, matfactory, mask, N_DOM, N_SOL, X, IBVP);
+}
+
+/**
+ * \brief Compute the maximum time step.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
+ *                        mesh.
  * \param[in] N_SOL: Number of unknown solution fields.
  * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
  *               unknown solution fields.
@@ -225,8 +262,7 @@ Real Compute_dt(const Real t,
                 const IBVP_CLASS & IBVP)
 {
     const int N_DOM = 1;
-    const Gpu::ManagedVector<int> Sol2Dom(N_SOL, 0);
-    return Compute_dt(t, mesh, matfactory, N_DOM, N_SOL, Sol2Dom, X, IBVP);
+    return Compute_dt(t, mesh, matfactory, N_DOM, N_SOL, X, IBVP);
 }
 
 /**
@@ -429,7 +465,7 @@ void Eval_dXdt_DomContrib(const Real t,
  *
  * The following integral is evaluated: 
  *
- * int_{dVh} V_{,i}^T NFn
+ * int_{dVh} V^T NFn
  *
  * \param[in] t: time.
  * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
@@ -887,36 +923,6 @@ void Eval_dXdt(const Real t,
     Eval_dXdt_BouContrib(t, mesh, matfactory, N_SOL, Sol2Dom, X, dXdt, IBVP);
     // ================================================================
 
-/*
-Print() << "dXdt.sum(0): " << dXdt.sum(0) << std::endl;
-Print() << "dXdt.sum(1): " << dXdt.sum(1) << std::endl;
-Print() << "dXdt.sum(2): " << dXdt.sum(2) << std::endl;
-Print() << "dXdt.sum(3): " << dXdt.sum(3) << std::endl;
-
-Print() << "dXdt.sum(0+4): " << dXdt.sum(0+4) << std::endl;
-Print() << "dXdt.sum(1+4): " << dXdt.sum(1+4) << std::endl;
-Print() << "dXdt.sum(2+4): " << dXdt.sum(2+4) << std::endl;
-Print() << "dXdt.sum(3+4): " << dXdt.sum(3+4) << std::endl;
-
-Print() << "dXdt.sum(0+2*4): " << dXdt.sum(0+2*4) << std::endl;
-Print() << "dXdt.sum(1+2*4): " << dXdt.sum(1+2*4) << std::endl;
-Print() << "dXdt.sum(2+2*4): " << dXdt.sum(2+2*4) << std::endl;
-Print() << "dXdt.sum(3+2*4): " << dXdt.sum(3+2*4) << std::endl;
-
-Print() << "dXdt.sum(0+3*4): " << dXdt.sum(0+3*4) << std::endl;
-Print() << "dXdt.sum(1+3*4): " << dXdt.sum(1+3*4) << std::endl;
-Print() << "dXdt.sum(2+3*4): " << dXdt.sum(2+3*4) << std::endl;
-Print() << "dXdt.sum(3+3*4): " << dXdt.sum(3+3*4) << std::endl;
-
-Print() << "dXdt.sum(0+4*4): " << dXdt.sum(0+4*4) << std::endl;
-Print() << "dXdt.sum(1+4*4): " << dXdt.sum(1+4*4) << std::endl;
-Print() << "dXdt.sum(2+4*4): " << dXdt.sum(2+4*4) << std::endl;
-Print() << "dXdt.sum(3+4*4): " << dXdt.sum(3+4*4) << std::endl;
-
-Print() << "HELLO - Eval_dXdt" << std::endl;
-exit(-1);
-*/
-
     // EXTENDED ELEMENTS AND MULTIPLICATION BY INVERSE MASS MATRIX ====
     AddSmallElementsContribution(mesh, matfactory, N_SOL, Sol2Dom, dXdt);
     MultiplyByInverseMassMatrix(mesh, matfactory, N_SOL, Sol2Dom, dXdt);
@@ -941,7 +947,7 @@ exit(-1);
  * \param[inout] X: a MultiFab object that contains the coefficients of the basis functions for the
  *                  unknown solution fields. On exit, the coefficients will be updated according to
  *                  the selected Runge-Kutta algorithm.
- * \param[out] tags: a charMultiFab object that contains information about which cells are tagged
+ * \param[out] tags: a TagBoxArray object that contains information about which cells are tagged
  *                   for limiting.
  * \param[in] IBVP: a class that must have methods with the following prototypes:
  *
@@ -959,7 +965,7 @@ void TakeRungeKuttaTimeStep(const int RK_order,
                             const int N_SOL,
                             const Gpu::ManagedVector<int> & Sol2Dom,
                             MultiFab & X_new,
-                            charMultiFab & tags,
+                            TagBoxArray & tags,
                             const IBVP_CLASS & IBVP,
                             const bool apply_slope_limiter = false)
 {
@@ -1214,13 +1220,11 @@ exit(-1);
  * \param[inout] X: a MultiFab object that contains the coefficients of the basis functions for the
  *                  unknown solution fields. On exit, the coefficients will be updated according to
  *                  the selected Runge-Kutta algorithm.
- * \param[out] tags: a charMultiFab object that contains information about which cells are tagged
+ * \param[out] tags: a TagBoxArray object that contains information about which cells are tagged
  *                   for limiting.
  * \param[in] IBVP: a class that must have methods with the following prototypes:
  *
  *                  XXXX
- *
- * \param[in] apply_slope_limiter: flag that, if true, enables the slope limiter.
  *
 */
 template <typename IBVP_CLASS>
@@ -1234,8 +1238,8 @@ void TakeRungeKuttaTimeStep(const int RK_order,
 {
     const int N_DOM = 1;
     const Gpu::ManagedVector<int> Sol2Dom(N_SOL, 0);
-    charMultiFab tags(X_new.boxarray, X_new.distributionMap, 1, X_new.n_grow);
-    tags = 0;
+    TagBoxArray tags(X_new.boxarray, X_new.distributionMap, X_new.n_grow);
+    tags.setVal(TagBox::CLEAR);
 
     TakeRungeKuttaTimeStep(RK_order, dt, t,
                            mesh, matfactory,
@@ -1244,6 +1248,3010 @@ void TakeRungeKuttaTimeStep(const int RK_order,
                            tags,
                            IBVP);
 }
+// ####################################################################
+// ####################################################################
+
+
+
+// ####################################################################
+// ADAPTIVE MESH REFINEMENT ROUTINES ##################################
+// ####################################################################
+/**
+ * \brief Compute the maximum time step.
+ *
+ * \param[in] t: time.
+ * \param[in] N_DOM: number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] AMR: the input AMR class.
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  Real F_DT(const int dom, const Real * dx, const Real t, const Real * x, const Real * SOL) const;
+ *
+ * \return the maximum time step.
+*/
+template <typename AMR_CLASS, typename IBVP_CLASS>
+Real Compute_dt(const Real t,
+                const int N_DOM,
+                const int N_SOL,
+                const AMR_CLASS & AMR,
+                const IBVP_CLASS & IBVP)
+{
+    // PARAMETERS =====================================================
+    const int finest_level = AMR.maxLevel();
+    // ================================================================
+
+    // VARIABLES ======================================================
+    Real dt_min, dt_level;
+    // ================================================================
+
+    // CYCLE OVER THE LEVELS ==========================================
+    dt_min = std::numeric_limits<Real>::max();
+
+    for (int lev = 0; lev <= finest_level; ++lev)
+    {
+        if (AMR.LevelIsValid(lev))
+        {
+            const Real CFL = AMR.inputs.grids[lev].CFL;
+            const int p = AMR.inputs.dG[lev].space_p;
+
+            const ImplicitMesh & mesh = *AMR.meshes[lev];
+            const MatrixFactory & matfactory = *AMR.matfactories[lev];
+            const iMultiFab & mask = AMR.masks[lev];
+            const MultiFab & X = AMR.Xs[lev];
+
+            dt_level = Compute_dt(t, mesh, matfactory, mask, N_DOM, N_SOL, X, IBVP);
+            dt_level *= CFL/(1.0+2.0*p);
+
+            dt_min = std::min(dt_min, dt_level);
+        }
+    }
+    // ================================================================
+
+    return dt_min;
+}
+
+/**
+ * \brief Compute the maximum time step.
+ *
+ * \param[in] t: time.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] AMR: the input AMR class.
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  Real F_DT(const int dom, const Real * dx, const Real t, const Real * x, const Real * SOL) const;
+ *
+ * \return the maximum time step.
+*/
+template <typename AMR_CLASS, typename IBVP_CLASS>
+Real Compute_dt(const Real t,
+                const int N_SOL,
+                const AMR_CLASS & AMR,
+                const IBVP_CLASS & IBVP)
+{
+    const int N_DOM = 1;
+    return Compute_dt(t, N_DOM, N_SOL, AMR, IBVP);
+}
+
+/**
+ * \brief Eval the time derivative of the dG coefficients: Domain contribution.
+ *
+ * The following integral is evaluated: 
+ *
+ * int_{Vh} V_{,i}^T F_i
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: the ImplicitMesh object.
+ * \param[in] matfactory: the MatrixFactory object.
+ * \param[in] N_DOM: Number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
+ *               unknown solution fields.
+ * \param[out] dXdt: a MultiFab object that will contain the time derivative of the coefficients of
+ *                   the basis functions for the unknown solution fields.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  void F_F(const int dom,
+ *                           const Real t, const Real * x,
+ *                           const Real * SOL, Real * F1, Real * F2, Real * F3) const;
+ *
+*/
+template <typename IBVP_CLASS>
+void Eval_dXdt_DomContrib(const Real t,
+                          const ImplicitMesh & mesh,
+                          const MatrixFactory & matfactory,
+                          const int N_DOM,
+                          const int N_SOL,
+                          const MultiFab & X,
+                          MultiFab & dXdt,
+                          const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("Eval_dXdt_DomContrib(const Real, const ImplicitMesh &, ....)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS =====================================================
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+    // IMPLICIT MESH
+#ifdef AMREX_USE_CUDA
+    const Real * eDomQuad_mem_ptr = mesh.eDomQuad_device_mem.data();
+#else
+    const Real * eDomQuad_mem_ptr = mesh.eDomQuad_host_mem.data();
+#endif
+
+    // DG
+    const int sp = matfactory.std_elem.p;
+    const int sNp = matfactory.std_elem.Np;
+    // ================================================================
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    IsProblemManageable("AMReX_DG_Solution_Hyperbolic.H", "Eval_dXdt_DomContrib", N_SOL);
+    // ================================================================
+
+    // EVAL THE INTEGRALS =============================================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+#ifdef AMREX_DEBUG
+        Array4<Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
+#endif
+        
+        Array4<int const> const & eDomQuad_Nq_fab = mesh.eDomQuad_Nq.array(mfi);
+        Array4<long const> const & eDomQuad_pos_fab = mesh.eDomQuad_pos.array(mfi);
+        
+        Array4<Real const> const & X_fab = X.array(mfi);
+
+        Array4<Real> const & dXdt_fab = dXdt.array(mfi);
+
+        ParallelFor(bx, N_DOM,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+#ifdef AMREX_DEBUG
+            const Real vf = eInfo_fab(i,j,k,ELM_VOLUME_FRACTION(dom));
+#endif
+
+            if (ELM_IS_NOT_EMPTY(etype))
+            {
+                // LOCAL PARAMETERS
+                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                   prob_lo[1]+j*dx[1],
+                                                                   prob_lo[2]+k*dx[2])};
+#ifdef AMREX_DEBUG
+                const Real cell_v = AMREX_D_TERM(dx[0],*dx[1],*dx[2]);
+#endif
+                const int dom_Nq = eDomQuad_Nq_fab(i,j,k,ELM_DOM_QUAD_NQ(dom));
+                const long pos = eDomQuad_pos_fab(i,j,k,ELM_DOM_QUAD_POS(dom));
+                const Real * xptr = &eDomQuad_mem_ptr[pos];
+
+                // LOCAL VARIABLES
+                int BF_i, BF_j, BF_k;
+                Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
+                Real x[AMREX_SPACEDIM], w;
+                Real SOL[__DG_MAX_N_SOL__];
+                Real AMREX_D_DECL(F1[__DG_MAX_N_SOL__], F2[__DG_MAX_N_SOL__], F3[__DG_MAX_N_SOL__]);
+                Real integrand;
+#ifdef AMREX_DEBUG
+                Real elm_v;
+#endif
+
+                // SUPPORT OF THE BASIS FUNCTIONS
+                BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
+
+                // SOLUTION
+                DG_SOL_space_BFX sol(sp, BF_lo, BF_hi, X_fab, BF_i, BF_j, BF_k);
+
+                // COMPUTE THE INTEGRAL
+#ifdef AMREX_DEBUG
+                elm_v = 0.0;
+#endif
+                for (int q = 0; q < dom_Nq; ++q)
+                {
+                    // QUADRATURE POINT AND WEIGHT
+                    const long x_pos = (AMREX_SPACEDIM+1)*q;
+                    AMREX_D_TERM
+                    (
+                        x[0] = xptr[x_pos+0]+cell_lo[0];,
+                        x[1] = xptr[x_pos+1]+cell_lo[1];,
+                        x[2] = xptr[x_pos+2]+cell_lo[2];
+                    )
+                    w = xptr[x_pos+AMREX_SPACEDIM];
+
+                    // EVAL SOLUTION
+                    sol.eval(x, 0, N_SOL, SOL);
+
+                    // FLUXES
+                    IBVP.F_F(dom, t, x, SOL, AMREX_D_DECL(F1, F2, F3));
+
+                    // INTEGRAL CONTRIBUTION
+                    for (int ru = 0; ru < N_SOL; ++ru)
+                    for (int rs = 0; rs < sNp; ++rs)
+                    {
+                        AMREX_D_TERM
+                        (
+                            integrand  = sol.dBFdx1[rs]*F1[ru];,
+                            integrand += sol.dBFdx2[rs]*F2[ru];,
+                            integrand += sol.dBFdx3[rs]*F3[ru];
+                        )
+                        
+                        dXdt_fab(i,j,k,rs+ru*sNp) += integrand*w;
+                    }
+#ifdef AMREX_DEBUG
+                    // INTEGRATION TEST
+                    elm_v += w;
+#endif
+                }
+                
+                // INTEGRATION TEST
+#ifdef AMREX_DEBUG
+                if (std::abs(elm_v/cell_v-vf)*100.0 > 1.0e-2)
+                {
+                    std::string msg;
+                    msg  = "\n";
+                    msg +=  "ERROR: AMReX_DG_Solution_Hyperbolic.H - Eval_dXdt_DomContrib\n";
+                    msg += "| Error in the domain quadrature.\n";
+                    msg += "| The number of quadrature points might not be enough.\n";
+                    msg += "| Cell: "+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"\n";
+                    msg += "| elm_v          : "+std::to_string(elm_v)+".\n";
+                    msg += "| vf*cell_v      : "+std::to_string(vf*cell_v)+".\n";
+                    msg += "| elm_v-vf*cell_v: "+std::to_string(elm_v-vf*cell_v)+".\n";
+                    msg += "| err (%)        : "+std::to_string(std::abs(elm_v/cell_v-vf)*100.0)+".\n";
+                    Abort(msg);
+                }
+#endif
+            }
+        });
+        Gpu::synchronize();
+    }
+    // ================================================================
+}
+
+/**
+ * \brief Auxiliary function used for evaluating the boundary flux at a wall.
+ *
+ */
+AMREX_GPU_HOST_DEVICE
+template <typename IBVP_CLASS>
+AMREX_FORCE_INLINE
+void BOU_FX_WALL(const Real t,
+                 const int dom,
+                 const Real * cell_lo, const Real * un,
+                 const int bou_Nq, const Real * x_ptr,
+                 DG_SOL_space_RX & sol,
+                 const int N_SOL,
+                 const int fi, const int fj, const int fk,
+                 Array4<Real> const & FX_fab, const int offset,
+                 const IBVP_CLASS & IBVP)
+{
+    // VARIABLES
+    Real integrand;
+    Real SOL[__DG_MAX_N_SOL__], NFn[__DG_MAX_N_SOL__];
+
+    // COMPUTE THE INTEGRAL
+    for (int q = 0; q < bou_Nq; ++q)
+    {
+        // QUADRATURE POINT AND WEIGHT
+        const long x_pos = (AMREX_SPACEDIM+1)*q;
+        const Real x[AMREX_SPACEDIM] = {AMREX_D_DECL(x_ptr[x_pos+0]+cell_lo[0],
+                                                     x_ptr[x_pos+1]+cell_lo[1],
+                                                     x_ptr[x_pos+2]+cell_lo[2])};
+        const Real w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+        // EVAL SOLUTION
+        sol.eval(x, 0, N_SOL, SOL);
+
+        // NUMERICAL FLUX
+        IBVP.F_NF_BCS(dom, t, x, un, SOL, NFn);
+
+        // INTEGRAL CONTRIBUTION
+        for (int ru = 0; ru < N_SOL; ++ru)
+        {
+            integrand = NFn[ru];
+            FX_fab(fi,fj,fk,offset+ru) += integrand*w;
+        }
+    }
+}
+
+/**
+ * \brief Auxiliary function used for evaluating the boundary flux at a wall.
+ *
+ */
+AMREX_GPU_HOST_DEVICE
+template <typename IBVP_CLASS>
+AMREX_FORCE_INLINE
+void BOU_FX_ICS(const Real t,
+                const int dom,
+                const Real * cell_lo, const Real * un,
+                const int bou_Nq, const Real * x_ptr,
+                DG_SOL_space_RX & sol, DG_SOL_space_RX & nbr_sol,
+                const int N_SOL,
+                const int fi, const int fj, const int fk,
+                Array4<Real> const & FX_fab, const int offset,
+                const IBVP_CLASS & IBVP)
+{
+    // VARIABLES
+    Real integrand;
+    Real SOL[__DG_MAX_N_SOL__], nbr_SOL[__DG_MAX_N_SOL__], NFn[__DG_MAX_N_SOL__];
+
+    // COMPUTE THE INTEGRAL
+    for (int q = 0; q < bou_Nq; ++q)
+    {
+        // QUADRATURE POINT AND WEIGHT
+        const long x_pos = (AMREX_SPACEDIM+1)*q;
+        const Real x[AMREX_SPACEDIM] = {AMREX_D_DECL(x_ptr[x_pos+0]+cell_lo[0],
+                                                     x_ptr[x_pos+1]+cell_lo[1],
+                                                     x_ptr[x_pos+2]+cell_lo[2])};
+        const Real w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+        // EVAL SOLUTION
+        sol.eval(x, 0, N_SOL, SOL);
+        nbr_sol.eval(x, 0, N_SOL, nbr_SOL);
+
+        // NUMERICAL FLUX
+        IBVP.F_NF_ICS(dom, t, x, un, SOL, nbr_SOL, NFn);
+
+        // INTEGRAL CONTRIBUTION
+        for (int ru = 0; ru < N_SOL; ++ru)
+        {
+            integrand = NFn[ru];
+            FX_fab(fi,fj,fk,ru) += integrand*w;
+            integrand = NFn[ru];
+            FX_fab(fi,fj,fk,offset+ru) -= integrand*w;
+        }
+    }
+}
+
+/**
+ * \brief Auxiliary function used for evaluating the boundary flux at a wall.
+ *
+ */
+AMREX_GPU_HOST_DEVICE
+template <typename IBVP_CLASS>
+AMREX_FORCE_INLINE
+void BOU_FX_ICS(const Real t,
+                const int dom,
+                const Real * cell_lo, const Real * un,
+                const int bou_Nq, const Real * x_ptr,
+                DG_SOL_space_BFX & sol, DG_SOL_space_RX & nbr_sol,
+                const int N_SOL, const int sNp,
+                const int fi, const int fj, const int fk,
+                Array4<Real> const & FX_fab, const int offset,
+                const IBVP_CLASS & IBVP)
+{
+    // VARIABLES
+    Real integrand;
+    Real SOL[__DG_MAX_N_SOL__], nbr_SOL[__DG_MAX_N_SOL__], NFn[__DG_MAX_N_SOL__];
+
+    // COMPUTE THE INTEGRAL
+    for (int q = 0; q < bou_Nq; ++q)
+    {
+        // QUADRATURE POINT AND WEIGHT
+        const long x_pos = (AMREX_SPACEDIM+1)*q;
+        const Real x[AMREX_SPACEDIM] = {AMREX_D_DECL(x_ptr[x_pos+0]+cell_lo[0],
+                                                     x_ptr[x_pos+1]+cell_lo[1],
+                                                     x_ptr[x_pos+2]+cell_lo[2])};
+        const Real w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+        // EVAL SOLUTION
+        sol.eval(x, 0, N_SOL, SOL);
+        nbr_sol.eval(x, 0, N_SOL, nbr_SOL);
+
+        // NUMERICAL FLUX
+        IBVP.F_NF_ICS(dom, t, x, un, SOL, nbr_SOL, NFn);
+
+        // INTEGRAL CONTRIBUTION
+        for (int ru = 0; ru < N_SOL; ++ru)
+        {
+            for (int rs = 0; rs < sNp; ++rs)
+            {
+                integrand = sol.BF[rs]*NFn[ru];
+                FX_fab(fi,fj,fk,rs+ru*sNp) += integrand*w;
+            }
+            integrand = NFn[ru];
+            FX_fab(fi,fj,fk,offset+ru) -= integrand*w;
+        }
+    }
+}
+
+/**
+ * \brief Auxiliary function used for evaluating the boundary flux at a wall.
+ *
+ */
+AMREX_GPU_HOST_DEVICE
+template <typename IBVP_CLASS>
+AMREX_FORCE_INLINE
+void BOU_FX_ICS(const Real t,
+                const int dom,
+                const Real * cell_lo, const Real * un,
+                const int bou_Nq, const Real * x_ptr,
+                DG_SOL_space_RX & sol, DG_SOL_space_BFX & nbr_sol,
+                const int N_SOL, const int nbr_sNp,
+                const int fi, const int fj, const int fk,
+                Array4<Real> const & FX_fab, const int offset,
+                const IBVP_CLASS & IBVP)
+{
+    // VARIABLES
+    Real integrand;
+    Real SOL[__DG_MAX_N_SOL__], nbr_SOL[__DG_MAX_N_SOL__], NFn[__DG_MAX_N_SOL__];
+
+    // COMPUTE THE INTEGRAL
+    for (int q = 0; q < bou_Nq; ++q)
+    {
+        // QUADRATURE POINT AND WEIGHT
+        const long x_pos = (AMREX_SPACEDIM+1)*q;
+        const Real x[AMREX_SPACEDIM] = {AMREX_D_DECL(x_ptr[x_pos+0]+cell_lo[0],
+                                                     x_ptr[x_pos+1]+cell_lo[1],
+                                                     x_ptr[x_pos+2]+cell_lo[2])};
+        const Real w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+        // EVAL SOLUTION
+        sol.eval(x, 0, N_SOL, SOL);
+        nbr_sol.eval(x, 0, N_SOL, nbr_SOL);
+
+        // NUMERICAL FLUX
+        IBVP.F_NF_ICS(dom, t, x, un, SOL, nbr_SOL, NFn);
+
+        // INTEGRAL CONTRIBUTION
+        for (int ru = 0; ru < N_SOL; ++ru)
+        {
+            integrand = NFn[ru];
+            FX_fab(fi,fj,fk,ru) += integrand*w;
+            for (int rs = 0; rs < nbr_sNp; ++rs)
+            {
+                integrand = nbr_sol.BF[rs]*NFn[ru];
+                FX_fab(fi,fj,fk,offset+rs+ru*nbr_sNp) -= integrand*w;
+            }
+        }
+    }
+}
+
+/**
+ * \brief Eval the boundary fluxes at the cell interfaces.
+ *
+ * The following integral is evaluated: 
+ *
+ * int_{dVh} V^T NFn
+ *
+ * This routine is intended to be used for single-level applications
+ * or for the coarsest level in a multi-level applications.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] N_DOM: Number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the state vector of the unknown solution fields.
+ * \param[in] dX: a MultiFab object that contains the slopes of the unknown solution fields.
+ * \param[out] FX: a MultiFab object that will contain the FX.
+ * \param[in] offset: an integer used for accessing the FX components.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS>
+void Eval_dXdt_BouFluxes_FV(const Real t,
+                            const ImplicitMesh & mesh,
+                            const int N_DOM,
+                            const int N_SOL,
+                            const MultiFab & X,
+                            const MultiFab & dX,
+                            Array<MultiFab, AMREX_SPACEDIM> & FX,
+                            const int offset,
+                            const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("Eval_dXdt_BouFluxes_FV(const Real, const ImplicitMesh &, ....)");
+    // ----------------------------------------------------------------
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    IsProblemManageable("AMReX_DG_Solution_Hyperbolic.H", "Eval_dXdt_BouFluxes_FV", N_SOL);
+    // ================================================================
+
+    // PARAMETERS =====================================================
+    // GRID
+    const Box domain = mesh.geom.Domain();
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+    const GpuArray<int, AMREX_SPACEDIM> is_periodic = mesh.geom.isPeriodicArray();
+
+    // IMPLICIT MESH
+#ifdef AMREX_USE_CUDA
+    Real const * eBouQuad_mem_ptr = mesh.eBouQuad_device_mem.data();
+#else
+    Real const * eBouQuad_mem_ptr = mesh.eBouQuad_host_mem.data();
+#endif
+    // ================================================================
+
+    // INITIALIZATION =================================================
+    for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+    {
+        FX[dim] = 0.0;
+    }
+    // ================================================================
+
+    // EVAL THE INTEGRALS: CELL BOUNDARIES ============================
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+        const int b = 2*dir;
+        
+        for (MFIter mfi(FX[dir]); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+            Array4<Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
+            Array4<short const> const & eBouType_fab = mesh.eBouType[dir].array(mfi);
+            Array4<int const> const & eBouQuad_Nq_fab = mesh.eBouQuad_Nq[dir].array(mfi);
+            Array4<long const> const & eBouQuad_pos_fab = mesh.eBouQuad_pos[dir].array(mfi);
+
+            Array4<Real const> const & X_fab = X.array(mfi);
+            Array4<Real const> const & dX_fab = dX.array(mfi);
+
+            Array4<Real> const & FX_fab = FX[dir].array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int fi, int fj, int fk, int dom) noexcept
+            {
+                // ELEMENT BOUNDARY TYPE
+                const short bou_type = eBouType_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
+
+                if (ELM_BOU_IS_VALID(bou_type))
+                {
+                    // LOCAL PARAMETERS
+                    const int ff = (dir == 0) ? fi : ((dir == 1) ? fj : fk);
+                    const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+fi*dx[0],
+                                                                       prob_lo[1]+fj*dx[1],
+                                                                       prob_lo[2]+fk*dx[2])};
+                    const int bou_Nq = eBouQuad_Nq_fab(fi,fj,fk,ELM_BOU_QUAD_NQ(dom, b));
+                    const long pos = eBouQuad_pos_fab(fi,fj,fk,ELM_BOU_QUAD_POS(dom, b));
+                    const Real * xptr = &eBouQuad_mem_ptr[pos];
+
+                    // LOCAL VARIABLES
+                    int i, j, k, nbr_i, nbr_j, nbr_k;
+                    
+                    int BF_i, BF_j, BF_k;
+                    Real xc[AMREX_SPACEDIM];
+                    int nbr_BF_i, nbr_BF_j, nbr_BF_k;
+                    Real nbr_xc[AMREX_SPACEDIM];
+
+                    // FACE INDICES TO ADJACENT NEIGHBORS INDICES
+                    FACE2NBRS(fi, fj, fk, dir, i, j, k, nbr_i, nbr_j, nbr_k);
+
+                    // ELEMENT INFO
+                    const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                    const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+
+                    // SELECT TYPE OF CELL BOUNDARY
+                    // WALL
+                    if ((ff == domain.smallEnd(dir)) && (is_periodic[dir] == 0))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = -1.0;
+
+                        // SOLUTION
+                        BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+                        AMREX_D_TERM
+                        (
+                            nbr_xc[0] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X1(dom));,
+                            nbr_xc[1] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X2(dom));,
+                            nbr_xc[2] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X3(dom));
+                        )
+                        DG_SOL_space_RX nbr_sol(X_fab, dX_fab, nbr_xc, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                        // COMPUTE THE INTEGRAL
+                        BOU_FX_WALL(t, dom, cell_lo, un, bou_Nq, xptr, nbr_sol, N_SOL, fi, fj, fk, FX_fab, offset, IBVP);
+                    }
+                    // WALL
+                    else if ((ff == (domain.bigEnd(dir)+1)) && (is_periodic[dir] == 0))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // SOLUTION
+                        BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+                        AMREX_D_TERM
+                        (
+                            xc[0] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X1(dom));,
+                            xc[1] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X2(dom));,
+                            xc[2] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X3(dom));
+                        )
+                        DG_SOL_space_RX sol(X_fab, dX_fab, xc, BF_i, BF_j, BF_k);
+
+                        // COMPUTE THE INTEGRAL
+                        BOU_FX_WALL(t, dom, cell_lo, un, bou_Nq, xptr, sol, N_SOL, fi, fj, fk, FX_fab, 0, IBVP);
+                    }
+                    // INTRAPHASE
+                    else
+                    {
+                        // UNIT NORMAL
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // SOLUTION
+                        BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+                        AMREX_D_TERM
+                        (
+                            xc[0] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X1(dom));,
+                            xc[1] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X2(dom));,
+                            xc[2] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X3(dom));
+                        )
+                        DG_SOL_space_RX sol(X_fab, dX_fab, xc, BF_i, BF_j, BF_k);
+                        BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+                        AMREX_D_TERM
+                        (
+                            nbr_xc[0] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X1(dom));,
+                            nbr_xc[1] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X2(dom));,
+                            nbr_xc[2] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X3(dom));
+                        )
+                        DG_SOL_space_RX nbr_sol(X_fab, dX_fab, nbr_xc, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                        // COMPUTE THE INTEGRAL
+                        BOU_FX_ICS(t, dom, cell_lo, un, bou_Nq, xptr, sol, nbr_sol, N_SOL, fi, fj, fk, FX_fab, offset, IBVP);
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+    }
+    // ================================================================
+}
+
+/**
+ * \brief Eval the boundary fluxes at the cell interfaces.
+ *
+ * The following integral is evaluated: 
+ *
+ * int_{dVh} V^T NFn
+ *
+ * \param[in] t: time.
+ * \param[in] c_rr: refinement ratio of the coarser level.
+ * \param[in] c_eType: a shortMultiFab object containing the elementy type information at coarse
+ *                     level.
+ * \param[in] c_sp: space order of the coarse level.
+ * \param[in] c_X: a MultiFab object containing the coefficients of the basis functions at the
+ *                 coarse level.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] N_DOM: Number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the state vector of the unknown solution fields.
+ * \param[in] dX: a MultiFab object that contains the slopes of the unknown solution fields.
+ * \param[out] FX: a MultiFab object that will contain the FX.
+ * \param[in] offset: an integer used for accessing the FX components.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS>
+void Eval_dXdt_BouFluxes_FV(const Real t,
+                            const IntVect c_rr,
+                            const shortMultiFab & c_eType,
+                            const int c_sp,
+                            const MultiFab & c_X,
+                            const ImplicitMesh & mesh,
+                            const int N_DOM,
+                            const int N_SOL,
+                            const MultiFab & X,
+                            const MultiFab & dX,
+                            Array<MultiFab, AMREX_SPACEDIM> & FX,
+                            const int offset,
+                            const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("Eval_dXdt_BouFluxes_FV(const Real, const IntVect, const shortMultiFab &, ....)");
+    // ----------------------------------------------------------------
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    IsProblemManageable("AMReX_DG_Solution_Hyperbolic.H", "Eval_dXdt_BouFluxes_FV", N_SOL);
+    // ================================================================
+
+    // PARAMETERS =====================================================
+    // GRID
+    const Box domain = mesh.geom.Domain();
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+    const GpuArray<int, AMREX_SPACEDIM> is_periodic = mesh.geom.isPeriodicArray();
+
+    const GpuArray<Real, AMREX_SPACEDIM> c_dx = {AMREX_D_DECL(dx[0]*c_rr[0], dx[1]*c_rr[1], dx[2]*c_rr[2])};
+
+    // IMPLICIT MESH
+#ifdef AMREX_USE_CUDA
+    Real const * eBouQuad_mem_ptr = mesh.eBouQuad_device_mem.data();
+#else
+    Real const * eBouQuad_mem_ptr = mesh.eBouQuad_host_mem.data();
+#endif
+    
+    // DG
+    const int c_sNp = AMREX_D_TERM((1+c_sp),*(1+c_sp),*(1+c_sp));
+
+    // PARALLEL COPY?
+    const bool parallel_copy_is_needed = (!isMFIterSafe(X, c_X));
+    // ================================================================
+
+    // VARIABLES ======================================================
+    shortMultiFab safe_c_eType;
+    const shortMultiFab * safe_c_eType_ptr;
+    MultiFab safe_c_X;
+    const MultiFab * safe_c_X_ptr;
+    // ================================================================
+
+    // SAFE COARSE DATA ===============================================
+    if (parallel_copy_is_needed)
+    {
+        const BoxArray safe_c_ba = coarsen(mesh.cc_ba, c_rr);
+        const DistributionMapping & f_dm = mesh.dm;
+        const int eType_n_comp = c_eType.n_comp;
+        const IntVect & eType_n_grow = c_eType.n_grow;
+        const int X_n_comp = c_X.n_comp;
+        const IntVect & X_n_grow = c_X.n_grow;
+        
+        safe_c_eType.define(safe_c_ba, f_dm, eType_n_comp, eType_n_grow);
+        safe_c_eType.ParallelCopy(c_eType, 0, 0, eType_n_comp, eType_n_grow, eType_n_grow, mesh.geom.periodicity());
+        
+        safe_c_X.define(safe_c_ba, f_dm, X_n_comp, X_n_grow, MFInfo(), FArrayBoxFactory());
+        safe_c_X.ParallelCopy(c_X, 0, 0, X_n_comp, X_n_grow, X_n_grow, mesh.geom.periodicity());
+
+        safe_c_eType_ptr = &safe_c_eType;
+        safe_c_X_ptr = &safe_c_X;
+    }
+    else
+    {
+        safe_c_eType_ptr = &c_eType;
+        safe_c_X_ptr = &c_X;
+    }
+    // ================================================================
+
+    // INITIALIZATION =================================================
+    for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+    {
+        FX[dim] = 0.0;
+    }
+    // ================================================================
+
+    // EVAL THE INTEGRALS: CELL BOUNDARIES ============================
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+        const int b = 2*dir;
+        
+        for (MFIter mfi(FX[dir]); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & c_eType_fab = safe_c_eType_ptr->array(mfi);
+            Array4<Real const> const & c_X_fab = safe_c_X_ptr->array(mfi);
+
+            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+            Array4<Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
+            Array4<short const> const & eBouType_fab = mesh.eBouType[dir].array(mfi);
+            Array4<int const> const & eBouQuad_Nq_fab = mesh.eBouQuad_Nq[dir].array(mfi);
+            Array4<long const> const & eBouQuad_pos_fab = mesh.eBouQuad_pos[dir].array(mfi);
+
+            Array4<Real const> const & X_fab = X.array(mfi);
+            Array4<Real const> const & dX_fab = dX.array(mfi);
+
+            Array4<Real> const & FX_fab = FX[dir].array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int fi, int fj, int fk, int dom) noexcept
+            {
+                // ELEMENT BOUNDARY TYPE
+                const short bou_type = eBouType_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
+
+                if (ELM_BOU_IS_VALID(bou_type))
+                {
+                    // LOCAL PARAMETERS
+                    const int ff = (dir == 0) ? fi : ((dir == 1) ? fj : fk);
+                    const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+fi*dx[0],
+                                                                       prob_lo[1]+fj*dx[1],
+                                                                       prob_lo[2]+fk*dx[2])};
+                    const int bou_Nq = eBouQuad_Nq_fab(fi,fj,fk,ELM_BOU_QUAD_NQ(dom, b));
+                    const long pos = eBouQuad_pos_fab(fi,fj,fk,ELM_BOU_QUAD_POS(dom, b));
+                    const Real * xptr = &eBouQuad_mem_ptr[pos];
+
+                    // LOCAL VARIABLES
+                    int i, j, k, nbr_i, nbr_j, nbr_k;
+                    
+                    int BF_i, BF_j, BF_k;
+                    Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
+                    Real xc[AMREX_SPACEDIM];
+                    int nbr_BF_i, nbr_BF_j, nbr_BF_k;
+                    Real nbr_BF_lo[AMREX_SPACEDIM], nbr_BF_hi[AMREX_SPACEDIM];
+                    Real nbr_xc[AMREX_SPACEDIM];
+
+                    // FACE INDICES TO ADJACENT NEIGHBORS INDICES
+                    FACE2NBRS(fi, fj, fk, dir, i, j, k, nbr_i, nbr_j, nbr_k);
+
+                    // ELEMENT INFO
+                    const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                    const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                    const bool elm_is_ghost = ELM_IS_GHOST(etype);
+                    const bool nbr_is_ghost = ELM_IS_GHOST(nbr_etype);
+
+                    // SELECT TYPE OF CELL BOUNDARY
+                    // WALL
+                    if ((ff == domain.smallEnd(dir)) && (is_periodic[dir] == 0))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = -1.0;
+
+                        // SOLUTION
+                        BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+                        AMREX_D_TERM
+                        (
+                            nbr_xc[0] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X1(dom));,
+                            nbr_xc[1] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X2(dom));,
+                            nbr_xc[2] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X3(dom));
+                        )
+                        DG_SOL_space_RX nbr_sol(X_fab, dX_fab, nbr_xc, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                        // COMPUTE THE INTEGRAL
+                        BOU_FX_WALL(t, dom, cell_lo, un, bou_Nq, xptr, nbr_sol, N_SOL, fi, fj, fk, FX_fab, offset, IBVP);
+                    }
+                    // WALL
+                    else if ((ff == (domain.bigEnd(dir)+1)) && (is_periodic[dir] == 0))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // SOLUTION
+                        BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+                        AMREX_D_TERM
+                        (
+                            xc[0] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X1(dom));,
+                            xc[1] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X2(dom));,
+                            xc[2] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X3(dom));
+                        )
+                        DG_SOL_space_RX sol(X_fab, dX_fab, xc, BF_i, BF_j, BF_k);
+
+                        // COMPUTE THE INTEGRAL
+                        BOU_FX_WALL(t, dom, cell_lo, un, bou_Nq, xptr, sol, N_SOL, fi, fj, fk, FX_fab, 0, IBVP);
+                    }
+                    // INTRAPHASE
+                    else
+                    {
+                        // UNIT NORMAL
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // INTRAPHASE BETWEEN LEVEL AND COARSER LEVEL
+                        if (elm_is_ghost)
+                        {
+                            // CELL OF THE COARSER LEVEL
+                            int c_i, c_j, c_k;
+                            FINE_TO_COARSE(i, j, k, c_rr, c_i, c_j, c_k);
+                            const short c_etype = c_eType_fab(c_i,c_j,c_k,ELM_TYPE(dom));
+
+                            // SOLUTION
+                            BF_CELL(&prob_lo[0], &c_dx[0], c_i, c_j, c_k, c_etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
+                            DG_SOL_space_BFX sol(c_sp, BF_lo, BF_hi, c_X_fab, BF_i, BF_j, BF_k);
+                            BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+                            AMREX_D_TERM
+                            (
+                                nbr_xc[0] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X1(dom));,
+                                nbr_xc[1] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X2(dom));,
+                                nbr_xc[2] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X3(dom));
+                            )
+                            DG_SOL_space_RX nbr_sol(X_fab, dX_fab, nbr_xc, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                            // COMPUTE THE INTEGRAL
+                            BOU_FX_ICS(t, dom, cell_lo, un, bou_Nq, xptr, sol, nbr_sol, N_SOL, c_sNp, fi, fj, fk, FX_fab, offset, IBVP);
+
+                            // NEEDED TO USE average_down_faces
+                            for (int ru = 0; ru < N_SOL; ++ru)
+                            for (int rs = 0; rs < c_sNp; ++rs)
+                            {
+                                FX_fab(fi,fj,fk,rs+ru*c_sNp) *= c_rr[dir];
+                            }
+                        }
+                        // INTRAPHASE BETWEEN LEVEL AND COARSER LEVEL
+                        else if (nbr_is_ghost)
+                        {
+                            // BASIS FUNCTIONS OF THE COARSER LEVEL
+                            int c_nbr_i, c_nbr_j, c_nbr_k;
+                            FINE_TO_COARSE(nbr_i, nbr_j, nbr_k, c_rr, c_nbr_i, c_nbr_j, c_nbr_k);
+                            const short c_nbr_etype = c_eType_fab(c_nbr_i,c_nbr_j,c_nbr_k,ELM_TYPE(dom));
+
+                            // SOLUTION
+                            BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+                            AMREX_D_TERM
+                            (
+                                xc[0] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X1(dom));,
+                                xc[1] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X2(dom));,
+                                xc[2] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X3(dom));
+                            )
+                            DG_SOL_space_RX sol(X_fab, dX_fab, xc, BF_i, BF_j, BF_k);
+                            BF_CELL(&prob_lo[0], &c_dx[0], c_nbr_i, c_nbr_j, c_nbr_k, c_nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_BF_lo, nbr_BF_hi);
+                            DG_SOL_space_BFX nbr_sol(c_sp, nbr_BF_lo, nbr_BF_hi, c_X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                            // COMPUTE THE INTEGRAL
+                            BOU_FX_ICS(t, dom, cell_lo, un, bou_Nq, xptr, sol, nbr_sol, N_SOL, c_sNp, fi, fj, fk, FX_fab, offset, IBVP);
+
+                            // NEEDED TO USE average_down_faces
+                            for (int ru = 0; ru < N_SOL; ++ru)
+                            for (int rs = 0; rs < c_sNp; ++rs)
+                            {
+                                FX_fab(fi,fj,fk,offset+rs+ru*c_sNp) *= c_rr[dir];
+                            }
+                        }
+                        // INTRAPHASE WITHIN LEVEL
+                        else
+                        {
+                            // SOLUTION
+                            BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+                            AMREX_D_TERM
+                            (
+                                xc[0] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X1(dom));,
+                                xc[1] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X2(dom));,
+                                xc[2] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X3(dom));
+                            )
+                            DG_SOL_space_RX sol(X_fab, dX_fab, xc, BF_i, BF_j, BF_k);
+                            BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+                            AMREX_D_TERM
+                            (
+                                nbr_xc[0] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X1(dom));,
+                                nbr_xc[1] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X2(dom));,
+                                nbr_xc[2] = eInfo_fab(nbr_BF_i,nbr_BF_j,nbr_BF_k,ELM_CENTROID_X3(dom));
+                            )
+                            DG_SOL_space_RX nbr_sol(X_fab, dX_fab, nbr_xc, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                            // COMPUTE THE INTEGRAL
+                            BOU_FX_ICS(t, dom, cell_lo, un, bou_Nq, xptr, sol, nbr_sol, N_SOL, fi, fj, fk, FX_fab, offset, IBVP);
+                        }
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+    }
+    // ================================================================
+}
+
+/**
+ * \brief Eval the fluxes at the internal boundaries and add contribution to the time derivatives.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
+ *                        mesh.
+ * \param[in] N_DOM: Number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the state vector of the unknown solution fields.
+ * \param[in] dX: a MultiFab object that contains the slopes of the unknown solution fields.
+ * \param[in] FX: a MultiFab object that contains the fluxes.
+ * \param[in] offset: an integer used for accessing the FX components.
+ * \param[out] dXdt: a MultiFab object that will contain the time derivative of the the state vector
+ *                   of the unknown solution fields.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS>
+void Eval_dXdt_BouContrib_FV(const Real t,
+                             const ImplicitMesh & mesh,
+                             const int N_DOM,
+                             const int N_SOL,
+                             const MultiFab & X,
+                             const MultiFab & dX,
+                             const Array<MultiFab, AMREX_SPACEDIM> & FX,
+                             const int offset,
+                             MultiFab & dXdt,
+                             const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("Eval_dXdt_BouContrib_FV(const Real, const ImplicitMesh &, ....)");
+    // ----------------------------------------------------------------
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    IsProblemManageable("AMReX_DG_Solution_Hyperbolic.H", "Eval_dXdt_BouContrib_FV", N_SOL);
+    // ================================================================
+
+    // PARAMETERS =====================================================
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+    // IMPLICIT MESH
+#ifdef AMREX_USE_CUDA
+    Real const * eIntBouQuad_mem_ptr = mesh.eIntBouQuad_device_mem.data();
+#else
+    Real const * eIntBouQuad_mem_ptr = mesh.eIntBouQuad_host_mem.data();
+#endif
+    // ================================================================
+
+    // ADD FLUX CONTRIBUTION: INTERNAL BOUNDARIES =====================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
+
+        Array4<int const> const & eIntBouQuad_Nq_fab = mesh.eIntBouQuad_Nq.array(mfi);
+        Array4<long const> const & eIntBouQuad_pos_fab = mesh.eIntBouQuad_pos.array(mfi);
+
+        Array4<Real const> const & X_fab = X.array(mfi);
+        Array4<Real const> const & dX_fab = dX.array(mfi);
+
+        Array4<Real> const & dXdt_fab = dXdt.array(mfi);
+
+        ParallelFor(bx, N_DOM,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+
+            if (ELM_IS_NOT_EMPTY(etype))
+            {
+                // LOCAL PARAMETERS
+                const int bou_Nq = eIntBouQuad_Nq_fab(i,j,k,ELM_INT_BOU_QUAD_NQ(dom));
+                const long pos = eIntBouQuad_pos_fab(i,j,k,ELM_INT_BOU_QUAD_POS(dom));
+                const Real * xptr = &eIntBouQuad_mem_ptr[pos];
+
+                // NEIGHBOR DOMAIN (IF ANY)
+                const int nbr_dom = IBVP.F_DOM2NBRDOM(dom);
+
+                // LOCAL VARIABLES
+                int BF_i, BF_j, BF_k;
+                Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
+                Real xc[AMREX_SPACEDIM];
+                Real x[AMREX_SPACEDIM], w, un[AMREX_SPACEDIM];
+                Real SOL[__DG_MAX_N_SOL__];
+                Real NFn[__DG_MAX_N_SOL__];
+                Real integrand;
+                
+                // SUPPORT OF THE BASIS FUNCTIONS
+                BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
+
+                // SOLUTION
+                AMREX_D_TERM
+                (
+                    xc[0] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X1(dom));,
+                    xc[1] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X2(dom));,
+                    xc[2] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X3(dom));
+                )
+                DG_SOL_space_RX sol(X_fab, dX_fab, xc, BF_i, BF_j, BF_k);
+
+                if (nbr_dom == -1)
+                {
+                    // COMPUTE THE INTEGRAL
+                    for (int q = 0; q < bou_Nq; ++q)
+                    {
+                        // QUADRATURE POINT AND WEIGHT
+                        const long x_pos = (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*q;
+                        AMREX_D_TERM
+                        (
+                            x[0] = xptr[x_pos+0];,
+                            x[1] = xptr[x_pos+1];,
+                            x[2] = xptr[x_pos+2];
+                        )
+                        w = xptr[x_pos+AMREX_SPACEDIM];
+
+                        // UNIT NORMAL
+                        AMREX_D_TERM
+                        (
+                            un[0] = xptr[x_pos+AMREX_SPACEDIM+1+0];,
+                            un[1] = xptr[x_pos+AMREX_SPACEDIM+1+1];,
+                            un[2] = xptr[x_pos+AMREX_SPACEDIM+1+2];
+                        )
+
+                        // EVAL SOLUTION
+                        sol.eval(x, 0, N_SOL, SOL);
+
+                        // NUMERICAL FLUX
+                        IBVP.F_NF_PHI_BCS(dom, t, x, un, SOL, NFn);
+
+                        // INTEGRAL CONTRIBUTION
+                        for (int ru = 0; ru < N_SOL; ++ru)
+                        {
+                            integrand = NFn[ru];
+                            dXdt_fab(i,j,k,ru) -= integrand*w;
+                        }
+                    }
+                }
+                else
+                {
+Print() << "Eval_dXdt_BouContrib_FV - NUMERICAL FLUX - nbr_dom != -1" << std::endl;
+exit(-1);
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+    // ================================================================
+
+    // ADD FLUX CONTRIBUTION: CELL BOUNDARIES =========================
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+        const int b = 2*dir;
+
+        for (MFIter mfi(X); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+            Array4<Real const> const & FX_fab = FX[dir].array(mfi);
+
+            Array4<Real> const & dXdt_fab = dXdt.array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // ELEMENT TYPE
+                const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+
+                if (ELM_IS_NOT_EMPTY(etype))
+                {
+                    // LOCAL VARIABLES
+                    int fi, fj, fk;
+
+                    GRID_FACE(i, j, k, b+1, fi, fj, fk);
+
+                    for (int ru = 0; ru < N_SOL; ++ru)
+                    {
+                        dXdt_fab(i,j,k,ru) -= (FX_fab(fi,fj,fk,ru)+FX_fab(i,j,k,offset+ru));
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+    }
+    // ================================================================
+
+    // SHARE INFO =====================================================
+    dXdt.FillBoundary(mesh.geom.periodicity());
+    // ================================================================
+}
+
+/**
+ * \brief Auxiliary function used for evaluating the boundary flux at a wall.
+ *
+ */
+AMREX_GPU_HOST_DEVICE
+template <typename IBVP_CLASS>
+AMREX_FORCE_INLINE
+void BOU_FX_WALL(const Real t,
+                 const int dom,
+                 const Real * cell_lo, const Real * un,
+                 const int bou_Nq, const Real * x_ptr,
+                 DG_SOL_space_BFX & sol,
+                 const int N_SOL, const int sNp,
+                 const int fi, const int fj, const int fk,
+                 Array4<Real> const & FX_fab, const int offset,
+                 const IBVP_CLASS & IBVP)
+{
+    // VARIABLES
+    Real integrand;
+    Real SOL[__DG_MAX_N_SOL__], NFn[__DG_MAX_N_SOL__];
+
+    // COMPUTE THE INTEGRAL
+    for (int q = 0; q < bou_Nq; ++q)
+    {
+        // QUADRATURE POINT AND WEIGHT
+        const long x_pos = (AMREX_SPACEDIM+1)*q;
+        const Real x[AMREX_SPACEDIM] = {AMREX_D_DECL(x_ptr[x_pos+0]+cell_lo[0],
+                                                     x_ptr[x_pos+1]+cell_lo[1],
+                                                     x_ptr[x_pos+2]+cell_lo[2])};
+        const Real w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+        // EVAL SOLUTION
+        sol.eval(x, 0, N_SOL, SOL);
+
+        // NUMERICAL FLUX
+        IBVP.F_NF_BCS(dom, t, x, un, SOL, NFn);
+
+        // INTEGRAL CONTRIBUTION
+        for (int ru = 0; ru < N_SOL; ++ru)
+        for (int rs = 0; rs < sNp; ++rs)
+        {
+            integrand = sol.BF[rs]*NFn[ru];
+            FX_fab(fi,fj,fk,offset+rs+ru*sNp) += integrand*w;
+        }
+    }
+}
+
+/**
+ * \brief Auxiliary function used for evaluating the boundary flux at a wall.
+ *
+ */
+AMREX_GPU_HOST_DEVICE
+template <typename IBVP_CLASS>
+AMREX_FORCE_INLINE
+void BOU_FX_ICS(const Real t,
+                const int dom,
+                const Real * cell_lo, const Real * un,
+                const int bou_Nq, const Real * x_ptr,
+                DG_SOL_space_BFX & sol, DG_SOL_space_BFX & nbr_sol,
+                const int N_SOL, const int sNp, const int nbr_sNp,
+                const int fi, const int fj, const int fk,
+                Array4<Real> const & FX_fab, const int offset,
+                const IBVP_CLASS & IBVP)
+{
+    // VARIABLES
+    Real integrand;
+    Real SOL[__DG_MAX_N_SOL__], nbr_SOL[__DG_MAX_N_SOL__], NFn[__DG_MAX_N_SOL__];
+
+    // COMPUTE THE INTEGRAL
+    for (int q = 0; q < bou_Nq; ++q)
+    {
+        // QUADRATURE POINT AND WEIGHT
+        const long x_pos = (AMREX_SPACEDIM+1)*q;
+        const Real x[AMREX_SPACEDIM] = {AMREX_D_DECL(x_ptr[x_pos+0]+cell_lo[0],
+                                                     x_ptr[x_pos+1]+cell_lo[1],
+                                                     x_ptr[x_pos+2]+cell_lo[2])};
+        const Real w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+        // EVAL SOLUTION
+        sol.eval(x, 0, N_SOL, SOL);
+        nbr_sol.eval(x, 0, N_SOL, nbr_SOL);
+
+        // NUMERICAL FLUX
+        IBVP.F_NF_ICS(dom, t, x, un, SOL, nbr_SOL, NFn);
+
+        // INTEGRAL CONTRIBUTION
+        for (int ru = 0; ru < N_SOL; ++ru)
+        {
+            for (int rs = 0; rs < sNp; ++rs)
+            {
+                integrand = sol.BF[rs]*NFn[ru];
+                FX_fab(fi,fj,fk,rs+ru*sNp) += integrand*w;
+            }
+            for (int rs = 0; rs < nbr_sNp; ++rs)
+            {
+                integrand = nbr_sol.BF[rs]*NFn[ru];
+                FX_fab(fi,fj,fk,offset+rs+ru*nbr_sNp) -= integrand*w;
+            }
+        }
+    }
+}
+
+/**
+ * \brief Eval the boundary fluxes at the cell interfaces.
+ *
+ * The following integral is evaluated: 
+ *
+ * int_{dVh} V_{,i}^T NFn
+ *
+ * This routine is intended to be used for single-level applications
+ * or for the coarsest level in a multi-level applications.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: the ImplicitMesh object.
+ * \param[in] matfactory: the MatrixFactory object.
+ * \param[in] N_DOM: Number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
+ *               unknown solution fields.
+ * \param[out] FX: an array of MultiFab objects that will contain the fluxes.
+ * \param[in] offset: an integer used for accessing the FX components.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS>
+void Eval_dXdt_BouFluxes(const Real t,
+                         const ImplicitMesh & mesh,
+                         const MatrixFactory & matfactory,
+                         const int N_DOM,
+                         const int N_SOL,
+                         const MultiFab & X,
+                         Array<MultiFab, AMREX_SPACEDIM> & FX,
+                         const int offset,
+                         const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("Eval_dXdt_BouFluxes(const Real, const ImplicitMesh &, const MatrixFactory &, ....)");
+    // ----------------------------------------------------------------
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    IsProblemManageable("AMReX_DG_Solution_Hyperbolic.H", "Eval_dXdt_BouFluxes", N_SOL);
+    // ================================================================
+
+    // PARAMETERS =====================================================
+    // GRID
+    const Box domain = mesh.geom.Domain();
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+    const GpuArray<int, AMREX_SPACEDIM> is_periodic = mesh.geom.isPeriodicArray();
+
+    // IMPLICIT MESH
+#ifdef AMREX_USE_CUDA
+    Real const * eBouQuad_mem_ptr = mesh.eBouQuad_device_mem.data();
+#else
+    Real const * eBouQuad_mem_ptr = mesh.eBouQuad_host_mem.data();
+#endif
+    
+    // DG
+    const int sp = matfactory.std_elem.p;
+    const int sNp = matfactory.std_elem.Np;
+    // ================================================================
+
+    // VARIABLES ======================================================
+    // ================================================================
+
+    // INITIALIZATION =================================================
+    for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+    {
+        FX[dim] = 0.0;
+    }
+    // ================================================================
+
+    // EVAL THE INTEGRALS: CELL BOUNDARIES ============================
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+        const int b = 2*dir;
+        
+        for (MFIter mfi(FX[dir]); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+            Array4<short const> const & eBouType_fab = mesh.eBouType[dir].array(mfi);
+            Array4<int const> const & eBouQuad_Nq_fab = mesh.eBouQuad_Nq[dir].array(mfi);
+            Array4<long const> const & eBouQuad_pos_fab = mesh.eBouQuad_pos[dir].array(mfi);
+
+            Array4<Real const> const & X_fab = X.array(mfi);
+
+            Array4<Real> const & FX_fab = FX[dir].array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int fi, int fj, int fk, int dom) noexcept
+            {
+                // ELEMENT BOUNDARY TYPE
+                const short bou_type = eBouType_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
+
+                if (ELM_BOU_IS_VALID(bou_type))
+                {
+                    // LOCAL PARAMETERS
+                    const int ff = (dir == 0) ? fi : ((dir == 1) ? fj : fk);
+                    const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+fi*dx[0],
+                                                                       prob_lo[1]+fj*dx[1],
+                                                                       prob_lo[2]+fk*dx[2])};
+                    const int bou_Nq = eBouQuad_Nq_fab(fi,fj,fk,ELM_BOU_QUAD_NQ(dom, b));
+                    const long pos = eBouQuad_pos_fab(fi,fj,fk,ELM_BOU_QUAD_POS(dom, b));
+                    const Real * xptr = &eBouQuad_mem_ptr[pos];
+
+                    // LOCAL VARIABLES
+                    int i, j, k, nbr_i, nbr_j, nbr_k;
+                    
+                    int BF_i, BF_j, BF_k;
+                    Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
+                    int nbr_BF_i, nbr_BF_j, nbr_BF_k;
+                    Real nbr_BF_lo[AMREX_SPACEDIM], nbr_BF_hi[AMREX_SPACEDIM];
+
+                    // FACE INDICES TO ADJACENT NEIGHBORS INDICES
+                    FACE2NBRS(fi, fj, fk, dir, i, j, k, nbr_i, nbr_j, nbr_k);
+
+                    // ELEMENT INFO
+                    const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                    const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+
+                    // SELECT TYPE OF CELL BOUNDARY
+                    // WALL
+                    if ((ff == domain.smallEnd(dir)) && (is_periodic[dir] == 0))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = -1.0;
+
+                        // SOLUTION
+                        BF_CELL(&prob_lo[0], &dx[0], nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_BF_lo, nbr_BF_hi);
+                        DG_SOL_space_BFX nbr_sol(sp, nbr_BF_lo, nbr_BF_hi, X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                        // COMPUTE THE INTEGRAL
+                        BOU_FX_WALL(t, dom, cell_lo, un, bou_Nq, xptr, nbr_sol, N_SOL, sNp, fi, fj, fk, FX_fab, offset, IBVP);
+
+                    }
+                    // WALL
+                    else if ((ff == (domain.bigEnd(dir)+1)) && (is_periodic[dir] == 0))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // SOLUTION
+                        BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
+                        DG_SOL_space_BFX sol(sp, BF_lo, BF_hi, X_fab, BF_i, BF_j, BF_k);
+
+                        // COMPUTE THE INTEGRAL
+                        BOU_FX_WALL(t, dom, cell_lo, un, bou_Nq, xptr, sol, N_SOL, sNp, fi, fj, fk, FX_fab, 0, IBVP);
+                    }
+                    // INTRAPHASE
+                    else
+                    {
+                        // UNIT NORMAL
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // SOLUTION
+                        BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
+                        DG_SOL_space_BFX sol(sp, BF_lo, BF_hi, X_fab, BF_i, BF_j, BF_k);
+                        BF_CELL(&prob_lo[0], &dx[0], nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_BF_lo, nbr_BF_hi);
+                        DG_SOL_space_BFX nbr_sol(sp, nbr_BF_lo, nbr_BF_hi, X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                        // COMPUTE THE INTEGRAL
+                        BOU_FX_ICS(t, dom, cell_lo, un, bou_Nq, xptr, sol, nbr_sol, N_SOL, sNp, sNp, fi, fj, fk, FX_fab, offset, IBVP);
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+    }
+    // ================================================================
+}
+
+/**
+ * \brief Eval the boundary fluxes at the cell interfaces.
+ *
+ * The following integral is evaluated: 
+ *
+ * int_{dVh} V_{,i}^T NFn
+ *
+ * \param[in] t: time.
+ * \param[in] c_rr: refinement ratio of the coarser level.
+ * \param[in] c_eType: a shortMultiFab object containing the elementy type information at coarser
+ *                     level.
+ * \param[in] c_X: a MultiFab object containing the coefficients of the basis functions at the
+ *                 coarser level.
+ * \param[in] mesh: the ImplicitMesh object.
+ * \param[in] matfactory: the MatrixFactory object.
+ * \param[in] N_DOM: Number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
+ *               unknown solution fields.
+ * \param[out] FX: an array of MultiFab objects that will contain the fluxes.
+ * \param[in] offset: an integer used for accessing the FX components.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS>
+void Eval_dXdt_BouFluxes(const Real t,
+                         const IntVect c_rr,
+                         const shortMultiFab & c_eType,
+                         const int c_sp,
+                         const MultiFab & c_X,
+                         const ImplicitMesh & mesh,
+                         const MatrixFactory & matfactory,
+                         const int N_DOM,
+                         const int N_SOL,
+                         const MultiFab & X,
+                         Array<MultiFab, AMREX_SPACEDIM> & FX,
+                         const int offset,
+                         const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("Eval_dXdt_BouFluxes(const Real, const IntVect, const shortMultiFab &, ....)");
+    // ----------------------------------------------------------------
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    IsProblemManageable("AMReX_DG_Solution_Hyperbolic.H", "Eval_dXdt_BouFluxes", N_SOL);
+    // ================================================================
+
+    // PARAMETERS =====================================================
+    // GRID
+    const Box domain = mesh.geom.Domain();
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+    const GpuArray<int, AMREX_SPACEDIM> is_periodic = mesh.geom.isPeriodicArray();
+
+    const GpuArray<Real, AMREX_SPACEDIM> c_dx = {AMREX_D_DECL(dx[0]*c_rr[0], dx[1]*c_rr[1], dx[2]*c_rr[2])};
+
+    // IMPLICIT MESH
+#ifdef AMREX_USE_CUDA
+    Real const * eBouQuad_mem_ptr = mesh.eBouQuad_device_mem.data();
+#else
+    Real const * eBouQuad_mem_ptr = mesh.eBouQuad_host_mem.data();
+#endif
+    
+    // DG
+    const int sp = matfactory.std_elem.p;
+    const int sNp = matfactory.std_elem.Np;
+
+    const int c_sNp = AMREX_D_TERM((1+c_sp),*(1+c_sp),*(1+c_sp));
+
+    // PARALLEL COPY?
+    const bool parallel_copy_is_needed = (!isMFIterSafe(X, c_X));
+    // ================================================================
+
+    // VARIABLES ======================================================
+    shortMultiFab safe_c_eType;
+    const shortMultiFab * safe_c_eType_ptr;
+    MultiFab safe_c_X;
+    const MultiFab * safe_c_X_ptr;
+    // ================================================================
+
+    // SAFE COARSE DATA ===============================================
+    if (parallel_copy_is_needed)
+    {
+        const BoxArray safe_c_ba = coarsen(mesh.cc_ba, c_rr);
+        const DistributionMapping & f_dm = mesh.dm;
+        const int eType_n_comp = c_eType.n_comp;
+        const IntVect & eType_n_grow = c_eType.n_grow;
+        const int X_n_comp = c_X.n_comp;
+        const IntVect & X_n_grow = c_X.n_grow;
+        
+        safe_c_eType.define(safe_c_ba, f_dm, eType_n_comp, eType_n_grow);
+        safe_c_eType.ParallelCopy(c_eType, 0, 0, eType_n_comp, eType_n_grow, eType_n_grow, mesh.geom.periodicity());
+        
+        safe_c_X.define(safe_c_ba, f_dm, X_n_comp, X_n_grow, MFInfo(), FArrayBoxFactory());
+        safe_c_X.ParallelCopy(c_X, 0, 0, X_n_comp, X_n_grow, X_n_grow, mesh.geom.periodicity());
+
+        safe_c_eType_ptr = &safe_c_eType;
+        safe_c_X_ptr = &safe_c_X;
+    }
+    else
+    {
+        safe_c_eType_ptr = &c_eType;
+        safe_c_X_ptr = &c_X;
+    }
+    // ================================================================
+
+    // INITIALIZATION =================================================
+    for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+    {
+        FX[dim] = 0.0;
+    }
+    // ================================================================
+
+    // EVAL THE INTEGRALS: CELL BOUNDARIES ============================
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+        const int b = 2*dir;
+        
+        for (MFIter mfi(FX[dir]); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & c_eType_fab = safe_c_eType_ptr->array(mfi);
+            Array4<Real const> const & c_X_fab = safe_c_X_ptr->array(mfi);
+
+            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+            Array4<short const> const & eBouType_fab = mesh.eBouType[dir].array(mfi);
+            Array4<int const> const & eBouQuad_Nq_fab = mesh.eBouQuad_Nq[dir].array(mfi);
+            Array4<long const> const & eBouQuad_pos_fab = mesh.eBouQuad_pos[dir].array(mfi);
+
+            Array4<Real const> const & X_fab = X.array(mfi);
+
+            Array4<Real> const & FX_fab = FX[dir].array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int fi, int fj, int fk, int dom) noexcept
+            {
+                // ELEMENT BOUNDARY TYPE
+                const short bou_type = eBouType_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
+
+                if (ELM_BOU_IS_VALID(bou_type))
+                {
+                    // LOCAL PARAMETERS
+                    const int ff = (dir == 0) ? fi : ((dir == 1) ? fj : fk);
+                    const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+fi*dx[0],
+                                                                       prob_lo[1]+fj*dx[1],
+                                                                       prob_lo[2]+fk*dx[2])};
+                    const int bou_Nq = eBouQuad_Nq_fab(fi,fj,fk,ELM_BOU_QUAD_NQ(dom, b));
+                    const long pos = eBouQuad_pos_fab(fi,fj,fk,ELM_BOU_QUAD_POS(dom, b));
+                    const Real * xptr = &eBouQuad_mem_ptr[pos];
+
+                    // LOCAL VARIABLES
+                    int i, j, k, nbr_i, nbr_j, nbr_k;
+                    
+                    int BF_i, BF_j, BF_k;
+                    Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
+                    int nbr_BF_i, nbr_BF_j, nbr_BF_k;
+                    Real nbr_BF_lo[AMREX_SPACEDIM], nbr_BF_hi[AMREX_SPACEDIM];
+
+                    // FACE INDICES TO ADJACENT NEIGHBORS INDICES
+                    FACE2NBRS(fi, fj, fk, dir, i, j, k, nbr_i, nbr_j, nbr_k);
+
+                    // ELEMENT INFO
+                    const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                    const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                    const bool elm_is_ghost = ELM_IS_GHOST(etype);
+                    const bool nbr_is_ghost = ELM_IS_GHOST(nbr_etype);
+
+                    // SELECT TYPE OF CELL BOUNDARY
+                    // WALL
+                    if ((ff == domain.smallEnd(dir)) && (is_periodic[dir] == 0))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = -1.0;
+
+                        // SOLUTION
+                        BF_CELL(&prob_lo[0], &dx[0], nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_BF_lo, nbr_BF_hi);
+                        DG_SOL_space_BFX nbr_sol(sp, nbr_BF_lo, nbr_BF_hi, X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                        // COMPUTE THE INTEGRAL
+                        BOU_FX_WALL(t, dom, cell_lo, un, bou_Nq, xptr, nbr_sol, N_SOL, sNp, fi, fj, fk, FX_fab, offset, IBVP);
+                    }
+                    // WALL
+                    else if ((ff == (domain.bigEnd(dir)+1)) && (is_periodic[dir] == 0))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // SOLUTION
+                        BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
+                        DG_SOL_space_BFX sol(sp, BF_lo, BF_hi, X_fab, BF_i, BF_j, BF_k);
+
+                        // COMPUTE THE INTEGRAL
+                        BOU_FX_WALL(t, dom, cell_lo, un, bou_Nq, xptr, sol, N_SOL, sNp, fi, fj, fk, FX_fab, 0, IBVP);
+                    }
+                    // INTRAPHASE
+                    else
+                    {
+                        // UNIT NORMAL
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // INTRAPHASE BETWEEN LEVEL AND COARSER LEVEL
+                        if (elm_is_ghost)
+                        {
+                            // CELL OF THE COARSER LEVEL
+                            int c_i, c_j, c_k;
+                            FINE_TO_COARSE(i, j, k, c_rr, c_i, c_j, c_k);
+                            const short c_etype = c_eType_fab(c_i,c_j,c_k,ELM_TYPE(dom));
+
+                            // SOLUTION
+                            BF_CELL(&prob_lo[0], &c_dx[0], c_i, c_j, c_k, c_etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
+                            DG_SOL_space_BFX sol(sp, BF_lo, BF_hi, c_X_fab, BF_i, BF_j, BF_k);
+                            BF_CELL(&prob_lo[0], &dx[0], nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_BF_lo, nbr_BF_hi);
+                            DG_SOL_space_BFX nbr_sol(sp, nbr_BF_lo, nbr_BF_hi, X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                            // COMPUTE THE INTEGRAL
+                            BOU_FX_ICS(t, dom, cell_lo, un, bou_Nq, xptr, sol, nbr_sol, N_SOL, c_sNp, sNp, fi, fj, fk, FX_fab, offset, IBVP);
+
+                            // NEEDED TO USE average_down_faces
+                            for (int ru = 0; ru < N_SOL; ++ru)
+                            for (int rs = 0; rs < c_sNp; ++rs)
+                            {
+                                FX_fab(fi,fj,fk,rs+ru*c_sNp) *= c_rr[dir];
+                            }
+                        }
+                        // INTRAPHASE BETWEEN LEVEL AND COARSER LEVEL
+                        else if (nbr_is_ghost)
+                        {
+                            // BASIS FUNCTIONS OF THE COARSER LEVEL
+                            int c_nbr_i, c_nbr_j, c_nbr_k;
+                            FINE_TO_COARSE(nbr_i, nbr_j, nbr_k, c_rr, c_nbr_i, c_nbr_j, c_nbr_k);
+                            const short c_nbr_etype = c_eType_fab(c_nbr_i,c_nbr_j,c_nbr_k,ELM_TYPE(dom));
+
+                            // SOLUTION
+                            BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
+                            DG_SOL_space_BFX sol(sp, BF_lo, BF_hi, X_fab, BF_i, BF_j, BF_k);
+                            BF_CELL(&prob_lo[0], &c_dx[0], c_nbr_i, c_nbr_j, c_nbr_k, c_nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_BF_lo, nbr_BF_hi);
+                            DG_SOL_space_BFX nbr_sol(sp, nbr_BF_lo, nbr_BF_hi, c_X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                            // COMPUTE THE INTEGRAL
+                            BOU_FX_ICS(t, dom, cell_lo, un, bou_Nq, xptr, sol, nbr_sol, N_SOL, sNp, c_sNp, fi, fj, fk, FX_fab, offset, IBVP);
+
+                            // NEEDED TO USE average_down_faces
+                            for (int ru = 0; ru < N_SOL; ++ru)
+                            for (int rs = 0; rs < c_sNp; ++rs)
+                            {
+                                FX_fab(fi,fj,fk,offset+rs+ru*c_sNp) *= c_rr[dir];
+                            }
+                        }
+                        // INTRAPHASE WITHIN LEVEL
+                        else
+                        {
+                            // SOLUTION
+                            BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
+                            DG_SOL_space_BFX sol(sp, BF_lo, BF_hi, X_fab, BF_i, BF_j, BF_k);
+                            BF_CELL(&prob_lo[0], &dx[0], nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_BF_lo, nbr_BF_hi);
+                            DG_SOL_space_BFX nbr_sol(sp, nbr_BF_lo, nbr_BF_hi, X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                            // COMPUTE THE INTEGRAL
+                            BOU_FX_ICS(t, dom, cell_lo, un, bou_Nq, xptr, sol, nbr_sol, N_SOL, sNp, sNp, fi, fj, fk, FX_fab, offset, IBVP);
+                        }
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+    }
+    // ================================================================
+}
+
+/**
+ * \brief Eval the fluxes at the internal boundaries and add contribution to the time derivatives.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] matfactory: a MatrixFactory object containing the operator for the implicitly-defined
+ *                        mesh.
+ * \param[in] N_DOM: Number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
+ *               unknown solution fields.
+ * \param[in] FX: a MultiFab object that contains the fluxes.
+ * \param[in] offset: an integer used for accessing the FX components.
+ * \param[out] dXdt: a MultiFab object that will contain the time derivative of the the state vector
+ *                   of the unknown solution fields.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS>
+void Eval_dXdt_BouContrib(const Real t,
+                          const ImplicitMesh & mesh,
+                          const MatrixFactory & matfactory,
+                          const int N_DOM,
+                          const int N_SOL,
+                          const MultiFab & X,
+                          const Array<MultiFab, AMREX_SPACEDIM> & FX,
+                          const int offset,
+                          MultiFab & dXdt,
+                          const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("Eval_dXdt_BouContrib(const Real, const ImplicitMesh &, ....)");
+    // ----------------------------------------------------------------
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    IsProblemManageable("AMReX_DG_Solution_Hyperbolic.H", "Eval_dXdt_BouContrib", N_SOL);
+    // ================================================================
+
+    // PARAMETERS =====================================================
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+    // IMPLICIT MESH
+#ifdef AMREX_USE_CUDA
+    Real const * eIntBouQuad_mem_ptr = mesh.eIntBouQuad_device_mem.data();
+#else
+    Real const * eIntBouQuad_mem_ptr = mesh.eIntBouQuad_host_mem.data();
+#endif
+
+    // DG
+    const int sp = matfactory.std_elem.p;
+    const int sNp = matfactory.std_elem.Np;
+    // ================================================================
+
+    // ADD FLUX CONTRIBUTION: INTERNAL BOUNDARIES =====================
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+        Array4<int const> const & eIntBouQuad_Nq_fab = mesh.eIntBouQuad_Nq.array(mfi);
+        Array4<long const> const & eIntBouQuad_pos_fab = mesh.eIntBouQuad_pos.array(mfi);
+
+        Array4<Real const> const & X_fab = X.array(mfi);
+
+        Array4<Real> const & dXdt_fab = dXdt.array(mfi);
+
+        ParallelFor(bx, N_DOM,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+
+            if (ELM_IS_NOT_EMPTY(etype))
+            {
+                // LOCAL PARAMETERS
+                const int bou_Nq = eIntBouQuad_Nq_fab(i,j,k,ELM_INT_BOU_QUAD_NQ(dom));
+                const long pos = eIntBouQuad_pos_fab(i,j,k,ELM_INT_BOU_QUAD_POS(dom));
+                const Real * xptr = &eIntBouQuad_mem_ptr[pos];
+
+                // NEIGHBOR DOMAIN (IF ANY)
+                const int nbr_dom = IBVP.F_DOM2NBRDOM(dom);
+
+                // LOCAL VARIABLES
+                int BF_i, BF_j, BF_k;
+                Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
+                Real x[AMREX_SPACEDIM], w, un[AMREX_SPACEDIM];
+                Real SOL[__DG_MAX_N_SOL__];
+                Real NFn[__DG_MAX_N_SOL__];
+                Real integrand;
+                
+                // SUPPORT OF THE BASIS FUNCTIONS
+                BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
+
+                // SOLUTION
+                DG_SOL_space_BFX sol(sp, BF_lo, BF_hi, X_fab, BF_i, BF_j, BF_k);
+
+                if (nbr_dom == -1)
+                {
+                    // COMPUTE THE INTEGRAL
+                    for (int q = 0; q < bou_Nq; ++q)
+                    {
+                        // QUADRATURE POINT AND WEIGHT
+                        const long x_pos = (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*q;
+                        AMREX_D_TERM
+                        (
+                            x[0] = xptr[x_pos+0];,
+                            x[1] = xptr[x_pos+1];,
+                            x[2] = xptr[x_pos+2];
+                        )
+                        w = xptr[x_pos+AMREX_SPACEDIM];
+
+                        // UNIT NORMAL
+                        AMREX_D_TERM
+                        (
+                            un[0] = xptr[x_pos+AMREX_SPACEDIM+1+0];,
+                            un[1] = xptr[x_pos+AMREX_SPACEDIM+1+1];,
+                            un[2] = xptr[x_pos+AMREX_SPACEDIM+1+2];
+                        )
+
+                        // EVAL SOLUTION
+                        sol.eval(x, 0, N_SOL, SOL);
+
+                        // NUMERICAL FLUX
+                        IBVP.F_NF_PHI_BCS(dom, t, x, un, SOL, NFn);
+
+                        // INTEGRAL CONTRIBUTION
+                        for (int ru = 0; ru < N_SOL; ++ru)
+                        for (int rs = 0; rs < sNp; ++rs)
+                        {
+                            integrand = sol.BF[rs]*NFn[ru];
+                            dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+                        }
+                    }
+                }
+                else
+                {
+Print() << "Eval_dXdt_BouContrib - NUMERICAL FLUX - nbr_dom != -1" << std::endl;
+exit(-1);
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+    // ================================================================
+
+    // ADD FLUX CONTRIBUTION: CELL BOUNDARIES =========================
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+        const int b = 2*dir;
+
+        for (MFIter mfi(X); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+            Array4<Real const> const & FX_fab = FX[dir].array(mfi);
+
+            Array4<Real> const & dXdt_fab = dXdt.array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // ELEMENT TYPE
+                const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+
+                if (ELM_IS_NOT_EMPTY(etype))
+                {
+                    // LOCAL VARIABLES
+                    int fi, fj, fk;
+
+                    GRID_FACE(i, j, k, b+1, fi, fj, fk);
+
+                    for (int ru = 0; ru < N_SOL; ++ru)
+                    for (int rs = 0; rs < sNp; ++rs)
+                    {
+                        dXdt_fab(i,j,k,rs+ru*sNp) -= (FX_fab(fi,fj,fk,rs+ru*sNp)+FX_fab(i,j,k,offset+rs+ru*sNp));
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+    }
+    // ================================================================
+
+    // SHARE INFO =====================================================
+    dXdt.FillBoundary(mesh.geom.periodicity());
+    // ================================================================
+}
+
+/**
+ * \brief Eval the time derivative of the dG coefficients.
+ *
+ * \param[in] t: time.
+ * \param[in] n_valid_levels: Number of valid levels to be considered.
+ * \param[in] ref_ratios: a vector containing refinement rations between consecutive levels.
+ * \param[in] meshes: a vector containing the ImplicitMesh objects at different levels.
+ * \param[in] matfactories: a vector containing the MatrixFactory objects at different levels.
+ * \param[in] N_DOM: Number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] Sol2Dom: Vector containing information regarding over which domain each unknown
+ *                     solution field is defined; Sol2Dom[ru] = dom means that the ru-th unknown
+ *                     solution field is defined over the dom-th domain.
+ * \param[in] Xs: a vector of MultiFab objects that contain the coefficients of the basis functions
+ *                for the unknown solution fields.
+ * \param[out] dXdt: a vector of MultiFab objects that will contain the time derivative of the
+ *                   coefficients of the basis functions for the unknown solution fields.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS>
+void Eval_dXdt(const Real t,
+               const int n_valid_levels,
+               const Vector<IntVect> & ref_ratios,
+               const Vector<ImplicitMesh *> & meshes,
+               const Vector<MatrixFactory *> & matfactories,
+               const int N_DOM,
+               const int N_SOL,
+               const Gpu::ManagedVector<int> & Sol2Dom,
+               const Vector<MultiFab> & Xs,
+               Vector<MultiFab> & dXdt,
+               const IBVP_CLASS & IBVP)
+{
+    // VARIABLES ======================================================
+    int offset;
+    Vector<Array<MultiFab, AMREX_SPACEDIM>> FX(n_valid_levels);
+    Vector<MultiFab> dXs(n_valid_levels);
+    // ================================================================
+
+    // INITIALIZATION =================================================
+    {
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            dXdt[lev] = 0.0;
+        }
+            
+        // HIGHEST ORDER AMONG LEVELS
+        int h_sp;
+
+        h_sp = 0;
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            h_sp = std::max(h_sp, matfactories[lev]->std_elem.p);
+        }
+        const int h_sNp = AMREX_D_TERM((1+h_sp),*(1+h_sp),*(1+h_sp));
+
+        // OFFSET USED FOR ACCESSING FX
+        offset = h_sNp*N_SOL;
+        
+        // As the number of components for the fluxes at each level, we
+        // use the maximum among all the levels. This will facilitate
+        // the use of the average_down_faces function.
+        const int FX_n_comp = 2*offset;
+
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+            {
+                FX[lev][dim] = MultiFab(meshes[lev]->fc_ba[dim], meshes[lev]->dm, FX_n_comp, 0);
+                FX[lev][dim] = 0.0;
+            }
+        }
+
+        // MULTIFAB STORING SLOPES
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            if (matfactories[lev]->std_elem.p == 0)
+            {
+                dXs[lev].define(Xs[lev].boxarray, Xs[lev].distributionMap, AMREX_SPACEDIM*N_SOL, 1);
+                dXs[lev] = 0.0;
+            }
+        }
+    }
+    // ================================================================
+
+    // DOMAIN CONTRIBUTION TO THE TIME DERIVATIVES ====================
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        // FINITE-VOLUME APPROACH
+        if (matfactories[lev]->std_elem.p == 0)
+        {
+            // Nothing (for now)
+        }
+        // DISCONTINUOUS GALERKIN APPROACH
+        else
+        {
+            Eval_dXdt_DomContrib(t, *meshes[lev], *matfactories[lev], N_DOM, N_SOL, Xs[lev], dXdt[lev], IBVP);
+        }
+    }
+    // ================================================================
+
+    // SLOPE RECONSTRUCTION FOR FINITE-VOLUME APPROACHES ==============
+    {
+        const int lev = n_valid_levels-1;
+
+        if (matfactories[lev]->std_elem.p == 0)
+        {
+            IBVP.F_R_SLOPES(t, *meshes[lev], N_DOM, N_SOL, Xs[lev], dXs[lev]);
+
+#ifdef AMREX_DEBUG
+        if (dXs[lev].contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - Eval_dXdt\n";
+            msg += "| The reconstructed slopes contain nans at level "+std::to_string(lev)+".\n";
+            Abort(msg);
+        }
+#endif
+        }
+    }
+    // ================================================================
+
+    // CELL BOUNDARY FLUXES ===========================================
+    // LEVEL 0 --------------------------------------------------------
+    {
+        const int lev = 0;
+        
+        // FINITE-VOLUME APPROACH (USING RECONSTRUCTED SLOPES)
+        if (matfactories[lev]->std_elem.p == 0)
+        {
+            Eval_dXdt_BouFluxes_FV(t,
+                                   *meshes[lev],
+                                   N_DOM, N_SOL,
+                                   Xs[lev], dXs[lev], FX[lev], offset,
+                                   IBVP);
+        }
+        // DISCONTINUOUS GALERKIN APPROACH
+        else
+        {
+            Eval_dXdt_BouFluxes(t,
+                                *meshes[lev], *matfactories[lev],
+                                N_DOM, N_SOL,
+                                Xs[lev], FX[lev], offset,
+                                IBVP);
+        }
+    }
+    // ----------------------------------------------------------------
+
+    // LEVEL > 0 ------------------------------------------------------
+    for (int lev = 1; lev < n_valid_levels; ++lev)
+    {
+        const IntVect c_rr = ref_ratios[lev-1];
+        const ImplicitMesh & c_mesh = *meshes[lev-1];
+        const shortMultiFab & c_eType = c_mesh.eType;
+        const MatrixFactory & c_matfactory = *matfactories[lev-1];
+        const int c_sp = c_matfactory.std_elem.p;
+        const MultiFab & c_X = Xs[lev-1];
+
+        // FINITE-VOLUME APPROACH (USING RECONSTRUCTED SLOPES)
+        if (matfactories[lev]->std_elem.p == 0)
+        {
+            Eval_dXdt_BouFluxes_FV(t,
+                                    c_rr, c_eType, c_sp, c_X,
+                                    *meshes[lev],
+                                    N_DOM, N_SOL,
+                                    Xs[lev], dXs[lev], FX[lev], offset,
+                                    IBVP);
+        }
+        // DISCONTINUOUS GALERKIN APPROACH
+        else
+        {
+            Eval_dXdt_BouFluxes(t,
+                                c_rr, c_eType, c_sp, c_X,
+                                *meshes[lev], *matfactories[lev],
+                                N_DOM, N_SOL,
+                                Xs[lev], FX[lev], offset,
+                                IBVP);
+        }
+    }
+    // ----------------------------------------------------------------
+    // ================================================================
+
+    // AVERAGE DOWN THE FLUXES ========================================
+    for (int lev = (n_valid_levels-1); lev > 0; --lev)
+    {
+        average_down_faces(GetArrOfConstPtrs(FX[lev]), GetArrOfPtrs(FX[lev-1]), ref_ratios[lev-1], meshes[lev-1]->geom);
+    }
+    // ================================================================
+
+    // BOUNDARY CONTRIBUTION TO THE TIME DERIVATIVES ==================
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        // FINITE-VOLUME APPROACH (USING RECONSTRUCTED SLOPES)
+        if (matfactories[lev]->std_elem.p == 0)
+        {
+            Eval_dXdt_BouContrib_FV(t, *meshes[lev], N_DOM, N_SOL, Xs[lev], dXs[lev], FX[lev], offset, dXdt[lev], IBVP);
+        }
+        // DISCONTINUOUS GALERKIN APPROACH
+        else
+        {
+            Eval_dXdt_BouContrib(t, *meshes[lev], *matfactories[lev], N_DOM, N_SOL, Xs[lev], FX[lev], offset, dXdt[lev], IBVP);
+        }
+    }
+    // ================================================================
+
+    // EXTENDED ELEMENTS AND MULTIPLICATION BY INVERSE MASS MATRIX ====
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        AddSmallElementsContribution(*meshes[lev], *matfactories[lev], N_SOL, Sol2Dom, dXdt[lev]);
+        MultiplyByInverseMassMatrix(*meshes[lev], *matfactories[lev], N_SOL, Sol2Dom, dXdt[lev]);
+    }
+    // ================================================================
+
+#ifdef AMREX_DEBUG
+    // CHECK COMPUTED TIME DERIVATIVES ================================
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        if (dXdt[lev].contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - Eval_dXdt\n";
+            msg += "| dXdt contains nans at level "+std::to_string(lev)+".\n";
+            Abort(msg);
+        }
+    }
+    // ================================================================
+#endif
+}
+
+/**
+ * \brief Advance in time using high-order Runge-Kutta schemes.
+ *
+ * \param[in] RK_order: order of the Runge-Kutta scheme.
+ * \param[in] dt: time step.
+ * \param[in] t: time.
+ * \param[in] ref_ratios: a vector containing refinement rations between consecutive levels.
+ * \param[in] meshes: a vector containing the ImplicitMesh objects at different levels.
+ * \param[in] matfactories: a vector containing the MatrixFactory objects at different levels.
+ * \param[in] N_DOM: number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] Sol2Dom: Vector containing information regarding over which domain each unknown
+ *                     solution field is defined; Sol2Dom[ru] = dom means that the ru-th unknown
+ *                     solution field is defined over the dom-th domain.
+ * \param[inout] Xs: a vector of MultiFab objects that contain the coefficients of the basis
+ *                   functions for the unknown solution fields. On exit, the coefficients will be
+ *                   updated according to the selected Runge-Kutta algorithm.
+ * \param[in] masks: a vector containing the iMultiFab tags objects at different levels.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS>
+void TakeRungeKuttaTimeStep(const int RK_order,
+                            const Real dt, const Real t,
+                            const Vector<IntVect> & ref_ratios,
+                            const Vector<ImplicitMesh *> & meshes,
+                            const Vector<MatrixFactory *> & matfactories,
+                            const int N_DOM,
+                            const int N_SOL,
+                            const Gpu::ManagedVector<int> & Sol2Dom,
+                            Vector<MultiFab> & Xs,
+                            Vector<iMultiFab> & masks,
+                            const IBVP_CLASS & IBVP)
+{
+    
+    // PARAMETERS =====================================================
+    const int n_levels = meshes.size();
+    // ================================================================
+
+    // VARIABLES ======================================================
+    int n_valid_levels;
+    Vector<MultiFab> Xs_old(n_levels);
+    // ================================================================
+
+    // FIND THE NUMBER OF VALID LEVELS ================================
+    n_valid_levels = 0;
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        if ((meshes[lev] != nullptr) && (matfactories[lev] != nullptr))
+        {
+            n_valid_levels += 1;
+        }
+    }
+    // ================================================================
+
+    // SWAP NEW AND OLD ===============================================
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        Xs_old[lev].define(Xs[lev].boxarray, Xs[lev].distributionMap, Xs[lev].n_comp, Xs[lev].n_grow);
+        std::swap(Xs_old[lev], Xs[lev]);
+    }
+    // ================================================================
+
+    // RK1 ============================================================
+    if (RK_order == 1)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - TakeRungeKuttaTimeStep\n";
+        msg += "| Unexpected order: "+std::to_string(RK_order)+"\n";
+        Abort(msg);
+    }
+    // ================================================================
+    // RK2 ============================================================
+    else if (RK_order == 2)
+    {
+        // NEEDED MULTIFABS
+        Vector<MultiFab> dXdt(n_valid_levels);
+        Vector<MultiFab> X1(n_valid_levels);
+        
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            const MultiFab & X = Xs[lev];
+            
+            dXdt[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            X1[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+        }
+
+        // RK2 STEP 1 -------------------------------------------------
+        // dXdt := dXdt(t, X_old)
+        Eval_dXdt(t, n_valid_levels, ref_ratios, meshes, matfactories, N_DOM, N_SOL, Sol2Dom, Xs_old, dXdt, IBVP);
+
+        // X1 := X_old+dt*dXdt
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            MultiFab::LinComb(X1[lev], 1.0, Xs_old[lev], 0, dt, dXdt[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+        }
+        // ------------------------------------------------------------
+
+        // RK2 STEP 2 -------------------------------------------------
+        // dXdt := dXdt(t+dt, X1)
+        Eval_dXdt(t+dt, n_valid_levels, ref_ratios, meshes, matfactories, N_DOM, N_SOL, Sol2Dom, X1, dXdt, IBVP);
+
+        // X_new := (1/2)*X_old+(1/2)*X1+(dt/2)*dXdt
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            MultiFab::LinComb(Xs[lev], 0.5, Xs_old[lev], 0, 0.5, X1[lev], 0, 0, Xs[lev].n_comp, Xs[lev].n_grow);
+            MultiFab::Saxpy(Xs[lev], 0.5*dt, dXdt[lev], 0, 0, Xs[lev].n_comp, Xs[lev].n_grow);
+        }
+        // ------------------------------------------------------------
+    }
+    // ================================================================
+    // ================================================================
+    else
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - TakeRungeKuttaTimeStep\n";
+        msg += "| Unexpected order: "+std::to_string(RK_order)+"\n";
+        Abort(msg);
+    }
+    // ================================================================
+
+#ifdef AMREX_DEBUG
+    // CHECK SOLUTION =================================================
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        const MultiFab & X = Xs[lev];
+
+        if (X.contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - TakeRungeKuttaTimeStep\n";
+            msg += "| Solution contains nans at level "+std::to_string(lev)+".\n";
+            Abort(msg);
+        }
+    }
+    // ================================================================
+#endif
+
+    // RESTRICT: PROJECT FINE SOLUTION ONTO THE COARSE LEVEL ==========
+    for (int lev = (n_valid_levels-1); lev > 0; --lev)
+    {
+        AMR::Restrict(N_SOL, Sol2Dom,
+                     *meshes[lev], *matfactories[lev], Xs[lev],
+                     ref_ratios[lev-1],
+                     *meshes[lev-1], *matfactories[lev-1], masks[lev-1], Xs[lev-1]);
+
+#ifdef AMREX_DEBUG
+        if (Xs[lev-1].contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - TakeRungeKuttaTimeStep\n";
+            msg += "| Solution contains nans at level "+std::to_string(lev-1)+" after restriction.\n";
+            Abort(msg);
+        }
+#endif
+    }
+    // ================================================================
+}
+
+/**
+ * \brief Advance in time using high-order Runge-Kutta schemes.
+ *
+ * \param[in] RK_order: order of the Runge-Kutta scheme.
+ * \param[in] dt: time step.
+ * \param[in] t: time.
+ * \param[in] ref_ratios: a vector containing refinement rations between consecutive levels.
+ * \param[in] meshes: a vector containing the ImplicitMesh objects at different levels.
+ * \param[in] matfactories: a vector containing the MatrixFactory objects at different levels.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[inout] Xs: a vector of MultiFab objects that contain the coefficients of the basis
+ *                   functions for the unknown solution fields. On exit, the coefficients will be
+ *                   updated according to the selected Runge-Kutta algorithm.
+ * \param[in] masks: a vector containing the iMultiFab tags objects at different levels.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS>
+void TakeRungeKuttaTimeStep(const int RK_order,
+                            const Real dt, const Real t,
+                            const Vector<IntVect> & ref_ratios,
+                            const Vector<ImplicitMesh *> & meshes,
+                            const Vector<MatrixFactory *> & matfactories,
+                            const int N_SOL,
+                            Vector<MultiFab> & Xs,
+                            Vector<iMultiFab> & masks,
+                            const IBVP_CLASS & IBVP)
+{
+    const int N_DOM = 1;
+    const Gpu::ManagedVector<int> Sol2Dom(N_SOL, 0);
+
+    TakeRungeKuttaTimeStep(RK_order, dt, t,
+                           ref_ratios, meshes, matfactories,
+                           N_DOM, N_SOL, Sol2Dom,
+                           Xs, masks,
+                           IBVP);
+}
+
+/**
+ * \brief Eval the time derivative of the dG coefficients.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: the ImplicitMesh object.
+ * \param[in] matfactory: the MatrixFactory object.
+ * \param[in] N_DOM: Number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] Sol2Dom: Vector containing information regarding over which domain each unknown
+ *                     solution field is defined; Sol2Dom[ru] = dom means that the ru-th unknown
+ *                     solution field is defined over the dom-th domain.
+ * \param[in] X: a MultiFab object that contains the coefficients of the basis functions for the
+ *               unknown solution fields.
+ * \param[out] dXdt: the MultiFab objects that will contain the time derivative of the coefficients
+ *                   of the basis functions for the unknown solution fields.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS, typename SLOPE_LIMITER>
+void Eval_Tentative_dXdt_SingleLevel(const Real t,
+                                     const ImplicitMesh & mesh,
+                                     const MatrixFactory & matfactory,
+                                     const int N_DOM,
+                                     const int N_SOL,
+                                     const Gpu::ManagedVector<int> & Sol2Dom,
+                                     const MultiFab & X,
+                                     MultiFab & dXdt,
+                                     const IBVP_CLASS & IBVP,
+                                     const SLOPE_LIMITER & LIMITER)
+{
+    // VARIABLES ======================================================
+    Array<MultiFab, AMREX_SPACEDIM> LFX;
+    Array<MultiFab, AMREX_SPACEDIM> FX;
+    // ================================================================
+
+    // PARAMETERS =====================================================
+    const int sp = matfactory.std_elem.p;
+    const int offset = matfactory.std_elem.Np*N_SOL;
+    const int FX_n_comp = 2*offset;
+    // ================================================================
+
+    // INITIALIZATION =================================================
+    dXdt = 0.0;
+
+    for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+    {
+        LFX[dim] = MultiFab(LIMITER.mesh.fc_ba[dim], LIMITER.mesh.dm, FX_n_comp, 0);
+        LFX[dim] = 0.0;
+
+        FX[dim] = MultiFab(mesh.fc_ba[dim], mesh.dm, FX_n_comp, 0);
+        FX[dim] = 0.0;
+    }
+    // ================================================================
+
+    // DOMAIN CONTRIBUTION TO THE TIME DERIVATIVES ====================
+    Eval_dXdt_DomContrib(t, mesh, matfactory, N_DOM, N_SOL, X, dXdt, IBVP);
+    // ================================================================
+
+    // CELL BOUNDARY FLUXES ===========================================
+    Eval_dXdt_BouFluxes(t, mesh, matfactory, N_DOM, N_SOL, X, FX, offset, IBVP);
+    Eval_dXdt_BouFluxes(t, LIMITER.rr, mesh.eType, sp, X,
+                        LIMITER.mesh, LIMITER.matfactory,
+                        N_DOM, N_SOL,
+                        LIMITER.X, LFX, offset,
+                        IBVP);
+    // ================================================================
+
+    // AVERAGE DOWN THE FLUXES ========================================
+    average_down_faces(GetArrOfConstPtrs(LFX), GetArrOfPtrs(FX), LIMITER.rr, mesh.geom);
+    // ================================================================
+
+    // BOUNDARY CONTRIBUTION TO THE TIME DERIVATIVES ==================
+    Eval_dXdt_BouContrib(t, mesh, matfactory, N_DOM, N_SOL, X, FX, offset, dXdt, IBVP);
+    // ================================================================
+
+    // EXTENDED ELEMENTS AND MULTIPLICATION BY INVERSE MASS MATRIX ====
+    AddSmallElementsContribution(mesh, matfactory, N_SOL, Sol2Dom, dXdt);
+    MultiplyByInverseMassMatrix(mesh, matfactory, N_SOL, Sol2Dom, dXdt);
+    // ================================================================
+}
+
+/**
+ * \brief Eval the time derivative of the dG coefficients.
+ *
+ * \param[in] t: time.
+ * \param[in] n_valid_levels: Number of valid levels to be considered.
+ * \param[in] ref_ratios: a vector containing refinement rations between consecutive levels.
+ * \param[in] meshes: a vector containing the ImplicitMesh objects at different levels.
+ * \param[in] matfactories: a vector containing the MatrixFactory objects at different levels.
+ * \param[in] N_DOM: Number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] Sol2Dom: Vector containing information regarding over which domain each unknown
+ *                     solution field is defined; Sol2Dom[ru] = dom means that the ru-th unknown
+ *                     solution field is defined over the dom-th domain.
+ * \param[in] Xs: a vector of MultiFab objects that contain the coefficients of the basis functions
+ *                for the unknown solution fields.
+ * \param[out] dXdt: a vector of MultiFab objects that will contain the time derivative of the
+ *                   coefficients of the basis functions for the unknown solution fields.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS, typename SLOPE_LIMITER>
+void Eval_Tentative_dXdt_MultiLevel(const Real /*t*/,
+                                    const int /*n_valid_levels*/,
+                                    const Vector<IntVect> & /*ref_ratios*/,
+                                    const Vector<ImplicitMesh *> & /*meshes*/,
+                                    const Vector<MatrixFactory *> & /*matfactories*/,
+                                    const int /*N_DOM*/,
+                                    const int /*N_SOL*/,
+                                    const Gpu::ManagedVector<int> & /*Sol2Dom*/,
+                                    const Vector<MultiFab> & /*Xs*/,
+                                    Vector<MultiFab> & /*dXdt*/,
+                                    const IBVP_CLASS & /*IBVP*/,
+                                    const SLOPE_LIMITER & /*LIMITER*/)
+{
+Print() << "Eval_Tentative_dXdt_MultiLevel" << std::endl;
+exit(-1);
+}
+
+/**
+ * \brief Eval the time derivative of the dG coefficients.
+ *
+ * \param[in] t: time.
+ * \param[in] n_valid_levels: Number of valid levels to be considered.
+ * \param[in] ref_ratios: a vector containing refinement rations between consecutive levels.
+ * \param[in] meshes: a vector containing the ImplicitMesh objects at different levels.
+ * \param[in] matfactories: a vector containing the MatrixFactory objects at different levels.
+ * \param[in] N_DOM: Number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] Sol2Dom: Vector containing information regarding over which domain each unknown
+ *                     solution field is defined; Sol2Dom[ru] = dom means that the ru-th unknown
+ *                     solution field is defined over the dom-th domain.
+ * \param[in] Xs: a vector of MultiFab objects that contain the coefficients of the basis functions
+ *                for the unknown solution fields.
+ * \param[out] dXdt: a vector of MultiFab objects that will contain the time derivative of the
+ *                   coefficients of the basis functions for the unknown solution fields.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS, typename SLOPE_LIMITER>
+void Eval_Tentative_dXdt(const Real t,
+                         const int n_valid_levels,
+                         const Vector<IntVect> & ref_ratios,
+                         const Vector<ImplicitMesh *> & meshes,
+                         const Vector<MatrixFactory *> & matfactories,
+                         const int N_DOM,
+                         const int N_SOL,
+                         const Gpu::ManagedVector<int> & Sol2Dom,
+                         const Vector<MultiFab> & Xs,
+                         Vector<MultiFab> & dXdt,
+                         const IBVP_CLASS & IBVP,
+                         const SLOPE_LIMITER & LIMITER)
+{
+    if (n_valid_levels == 1)
+    {
+        Eval_Tentative_dXdt_SingleLevel(t, *meshes[0], *matfactories[0],
+                                        N_DOM, N_SOL, Sol2Dom,
+                                        Xs[0], dXdt[0],
+                                        IBVP, LIMITER);
+    }
+    else
+    {
+        Eval_Tentative_dXdt_MultiLevel(t, n_valid_levels, ref_ratios, meshes, matfactories,
+                                       N_DOM, N_SOL, Sol2Dom,
+                                       Xs, dXdt,
+                                       IBVP, LIMITER);
+    }
+}
+
+/**
+ * \brief Eval the time derivative of the dG coefficients.
+ *
+ * \param[in] t: time.
+ * \param[in] n_valid_levels: Number of valid levels to be considered.
+ * \param[in] ref_ratios: a vector containing refinement rations between consecutive levels.
+ * \param[in] meshes: a vector containing the ImplicitMesh objects at different levels.
+ * \param[in] matfactories: a vector containing the MatrixFactory objects at different levels.
+ * \param[in] N_DOM: Number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] Sol2Dom: Vector containing information regarding over which domain each unknown
+ *                     solution field is defined; Sol2Dom[ru] = dom means that the ru-th unknown
+ *                     solution field is defined over the dom-th domain.
+ * \param[in] Xs: a vector of MultiFab objects that contain the coefficients of the basis functions
+ *                for the unknown solution fields.
+ * \param[out] dXdt: a vector of MultiFab objects that will contain the time derivative of the
+ *                   coefficients of the basis functions for the unknown solution fields.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS, typename SLOPE_LIMITER>
+void Eval_dXdt(const Real t,
+               const int n_valid_levels,
+               const Vector<IntVect> & ref_ratios,
+               const Vector<ImplicitMesh *> & meshes,
+               const Vector<MatrixFactory *> & matfactories,
+               const int N_DOM,
+               const int N_SOL,
+               const Gpu::ManagedVector<int> & Sol2Dom,
+               const Vector<MultiFab> & Xs,
+               Vector<MultiFab> & dXdt,
+               MultiFab & dLXdt,
+               const IBVP_CLASS & IBVP,
+               const SLOPE_LIMITER & LIMITER)
+{
+    // VARIABLES ======================================================
+    int offset;
+    Array<MultiFab, AMREX_SPACEDIM> LFX;
+    Vector<Array<MultiFab, AMREX_SPACEDIM>> FX(n_valid_levels);
+    // ================================================================
+
+    // INITIALIZATION =================================================
+    {
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            dXdt[lev] = 0.0;
+        }
+        dLXdt = 0.0;
+            
+        // HIGHEST ORDER AMONG LEVELS
+        int h_sp;
+
+        h_sp = 0;
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            h_sp = std::max(h_sp, matfactories[lev]->std_elem.p);
+        }
+        const int h_sNp = AMREX_D_TERM((1+h_sp),*(1+h_sp),*(1+h_sp));
+
+        // OFFSET USED FOR ACCESSING FX
+        offset = h_sNp*N_SOL;
+        
+        // As the number of components for the fluxes at each level, we
+        // use the maximum among all the levels. This will facilitate
+        // the use of the average_down_faces function.
+        const int FX_n_comp = 2*offset;
+
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+            {
+                FX[lev][dim] = MultiFab(meshes[lev]->fc_ba[dim], meshes[lev]->dm, FX_n_comp, 0);
+                FX[lev][dim] = 0.0;
+            }
+        }
+
+        {
+            for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+            {
+                LFX[dim] = MultiFab(LIMITER.mesh.fc_ba[dim], LIMITER.mesh.dm, FX_n_comp, 0);
+                LFX[dim] = 0.0;
+            }
+        }
+    }
+    // ================================================================
+
+    // DOMAIN CONTRIBUTION TO THE TIME DERIVATIVES ====================
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        Eval_dXdt_DomContrib(t, *meshes[lev], *matfactories[lev], N_DOM, N_SOL, Xs[lev], dXdt[lev], IBVP);
+    }
+
+    // LIMITER GRID
+    {
+        // Nothing
+    }
+    // ================================================================
+
+    // CELL BOUNDARY FLUXES ===========================================
+    // LEVEL 0 --------------------------------------------------------
+    {
+        const int lev = 0;
+        Eval_dXdt_BouFluxes(t, *meshes[lev], *matfactories[lev], N_DOM, N_SOL, Xs[lev], FX[lev], offset, IBVP);
+    }
+    // ----------------------------------------------------------------
+    
+    // LEVEL > 0 ------------------------------------------------------
+    for (int lev = 1; lev < n_valid_levels; ++lev)
+    {
+Print() << "Eval_dXdt - More levels to be added" << std::endl;
+exit(-1);
+    }
+    // ----------------------------------------------------------------
+
+    // LIMITER GRID ---------------------------------------------------
+    {
+        const int lev = n_valid_levels-1;
+        const int sp = matfactories[lev]->std_elem.p;
+
+        Eval_dXdt_BouFluxes(t, LIMITER.rr, meshes[lev]->eType, sp, Xs[lev],
+                            LIMITER.mesh, LIMITER.matfactory,
+                            N_DOM, N_SOL,
+                            LIMITER.X, LFX, offset,
+                            IBVP);
+    }
+    // ----------------------------------------------------------------
+    // ================================================================
+
+    // AVERAGE DOWN THE FLUXES ========================================
+    for (int lev = (n_valid_levels-1); lev > 0; --lev)
+    {
+        average_down_faces(GetArrOfConstPtrs(FX[lev]), GetArrOfPtrs(FX[lev-1]), ref_ratios[lev-1], meshes[lev-1]->geom);
+    }
+
+    // LIMITER GRID
+    {
+        const int lev = n_valid_levels-1;
+
+        average_down_faces(GetArrOfConstPtrs(LFX), GetArrOfPtrs(FX[lev]), LIMITER.rr, meshes[lev]->geom);
+    }
+    // ================================================================
+
+    // BOUNDARY CONTRIBUTION TO THE TIME DERIVATIVES ==================
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        Eval_dXdt_BouContrib(t, *meshes[lev], *matfactories[lev], N_DOM, N_SOL, Xs[lev], FX[lev], offset, dXdt[lev], IBVP);
+    }
+
+    // LIMITER GRID
+    {
+        Eval_dXdt_BouContrib(t, LIMITER.mesh, LIMITER.matfactory, N_DOM, N_SOL, LIMITER.X, LFX, offset, dLXdt, IBVP);
+    }
+    // ================================================================
+
+    // EXTENDED ELEMENTS AND MULTIPLICATION BY INVERSE MASS MATRIX ====
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        AddSmallElementsContribution(*meshes[lev], *matfactories[lev], N_SOL, Sol2Dom, dXdt[lev]);
+        MultiplyByInverseMassMatrix(*meshes[lev], *matfactories[lev], N_SOL, Sol2Dom, dXdt[lev]);
+    }
+
+    // LIMITER GRID
+    {
+        AddSmallElementsContribution(LIMITER.mesh, LIMITER.matfactory, N_SOL, Sol2Dom, dLXdt);
+        MultiplyByInverseMassMatrix(LIMITER.mesh, LIMITER.matfactory, N_SOL, Sol2Dom, dLXdt);
+    }
+    // ================================================================
+
+#ifdef AMREX_DEBUG
+    // CHECK COMPUTED TIME DERIVATIVES ================================
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        if (dXdt[lev].contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - Eval_dXdt\n";
+            msg += "| dXdt contains nans at level "+std::to_string(lev)+".\n";
+            Abort(msg);
+        }
+    }
+    {
+        if (dLXdt.contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - Eval_dXdt\n";
+            msg += "| dLXdt contains nans.\n";
+            Abort(msg);
+        }
+    }
+    // ================================================================
+#endif
+}
+
+/**
+ * \brief Advance in time using high-order Runge-Kutta schemes.
+ *
+ * \param[in] RK_order: order of the Runge-Kutta scheme.
+ * \param[in] dt: time step.
+ * \param[in] t: time.
+ * \param[in] ref_ratios: a vector containing refinement rations between consecutive levels.
+ * \param[in] meshes: a vector containing the ImplicitMesh objects at different levels.
+ * \param[in] matfactories: a vector containing the MatrixFactory objects at different levels.
+ * \param[in] N_DOM: number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] Sol2Dom: Vector containing information regarding over which domain each unknown
+ *                     solution field is defined; Sol2Dom[ru] = dom means that the ru-th unknown
+ *                     solution field is defined over the dom-th domain.
+ * \param[inout] Xs: a vector of MultiFab objects that contain the coefficients of the basis
+ *                   functions for the unknown solution fields. On exit, the coefficients will be
+ *                   updated according to the selected Runge-Kutta algorithm.
+ * \param[in] masks: a vector containing the iMultiFab tags objects at different levels.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS, typename SLOPE_LIMITER>
+void TakeRungeKuttaTimeStep(const int RK_order,
+                            const Real dt, const Real t,
+                            const Vector<IntVect> & ref_ratios,
+                            const Vector<ImplicitMesh *> & meshes,
+                            const Vector<MatrixFactory *> & matfactories,
+                            const int N_DOM,
+                            const int N_SOL,
+                            const Gpu::ManagedVector<int> & Sol2Dom,
+                            Vector<MultiFab> & Xs,
+                            Vector<iMultiFab> & masks,
+                            const IBVP_CLASS & IBVP,
+                            SLOPE_LIMITER & LIMITER)
+{
+    
+    // PARAMETERS =====================================================
+    const int n_levels = meshes.size();
+    // ================================================================
+
+    // VARIABLES ======================================================
+    int n_valid_levels;
+    Vector<MultiFab> Xs_old(n_levels);
+    MultiFab LX_old;
+    // ================================================================
+
+    // FIND THE NUMBER OF VALID LEVELS ================================
+    n_valid_levels = 0;
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        if ((meshes[lev] != nullptr) && (matfactories[lev] != nullptr))
+        {
+            n_valid_levels += 1;
+        }
+    }
+    // ================================================================
+
+    // SWAP NEW AND OLD ===============================================
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        Xs_old[lev].define(Xs[lev].boxarray, Xs[lev].distributionMap, Xs[lev].n_comp, Xs[lev].n_grow);
+        std::swap(Xs_old[lev], Xs[lev]);
+    }
+    {
+        LX_old.define(LIMITER.X.boxarray, LIMITER.X.distributionMap, LIMITER.X.n_comp, LIMITER.X.n_grow);
+        MultiFab::Copy(LX_old, LIMITER.X, 0, 0, LIMITER.X.n_comp, LIMITER.X.n_grow);
+    }
+    // ================================================================
+
+    // RK1 ============================================================
+    if (RK_order == 1)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - TakeRungeKuttaTimeStep\n";
+        msg += "| Unexpected order: "+std::to_string(RK_order)+"\n";
+        Abort(msg);
+    }
+    // ================================================================
+    // RK2 ============================================================
+    else if (RK_order == 2)
+    {
+        // NEEDED MULTIFABS
+        Vector<MultiFab> dXdt(n_valid_levels);
+        Vector<MultiFab> X1(n_valid_levels);
+        MultiFab dLXdt, LX1;
+
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            const MultiFab & X = Xs[lev];
+            
+            dXdt[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            X1[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+        }
+        {
+            const MultiFab & X = LIMITER.X;
+
+            dLXdt.define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            LX1.define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+        }
+
+        // RK2 STEP 1 -------------------------------------------------
+        // TENTATIVE STEP
+        {
+            Eval_Tentative_dXdt(t, n_valid_levels, ref_ratios, meshes, matfactories, N_DOM, N_SOL, Sol2Dom, Xs_old, dXdt, IBVP, LIMITER);
+
+            const int lev = n_valid_levels-1;
+            MultiFab::LinComb(X1[lev], 1.0, Xs_old[lev], 0, dt, dXdt[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+
+            IBVP.F_UPDATE_TROUBLED(t, *meshes[lev], *matfactories[lev], X1[lev], masks[lev]);
+            LIMITER.UpdateMask(masks[lev]);
+        }
+
+        // dXdt := dXdt(t, X_old)
+        Eval_dXdt(t, n_valid_levels, ref_ratios, meshes, matfactories, N_DOM, N_SOL, Sol2Dom, Xs_old, dXdt, dLXdt, IBVP, LIMITER);
+
+        // X1 := X_old+dt*dXdt
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            MultiFab::LinComb(X1[lev], 1.0, Xs_old[lev], 0, dt, dXdt[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+        }
+        {
+            MultiFab::LinComb(LX1, 1.0, LIMITER.X, 0, dt, dLXdt, 0, 0, LIMITER.X.n_comp, LIMITER.X.n_grow);
+            std::swap(LX1, LIMITER.X);
+        }
+        // ------------------------------------------------------------
+
+        // RK2 STEP 2 -------------------------------------------------
+        // TENTATIVE STEP
+        {   
+            Eval_Tentative_dXdt(t+dt, n_valid_levels, ref_ratios, meshes, matfactories, N_DOM, N_SOL, Sol2Dom, X1, dXdt, IBVP, LIMITER);
+
+            const int lev = n_valid_levels-1;
+            MultiFab::LinComb(Xs[lev], 0.5, Xs_old[lev], 0, 0.5, X1[lev], 0, 0, Xs[lev].n_comp, Xs[lev].n_grow);
+            MultiFab::Saxpy(Xs[lev], 0.5*dt, dXdt[lev], 0, 0, Xs[lev].n_comp, Xs[lev].n_grow);
+
+            IBVP.F_UPDATE_TROUBLED(t, *meshes[lev], *matfactories[lev], Xs[lev], masks[lev]);
+            LIMITER.UpdateMask(masks[lev]);
+        }
+
+        // dXdt := dXdt(t+dt, X1)
+        Eval_dXdt(t+dt, n_valid_levels, ref_ratios, meshes, matfactories, N_DOM, N_SOL, Sol2Dom, X1, dXdt, dLXdt, IBVP, LIMITER);
+
+        // X_new := (1/2)*X_old+(1/2)*X1+(dt/2)*dXdt
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            MultiFab::LinComb(Xs[lev], 0.5, Xs_old[lev], 0, 0.5, X1[lev], 0, 0, Xs[lev].n_comp, Xs[lev].n_grow);
+            MultiFab::Saxpy(Xs[lev], 0.5*dt, dXdt[lev], 0, 0, Xs[lev].n_comp, Xs[lev].n_grow);
+        }
+        {
+            std::swap(LX1, LIMITER.X);
+            MultiFab::LinComb(LIMITER.X, 0.5, LX_old, 0, 0.5, LX1, 0, 0, LIMITER.X.n_comp, LIMITER.X.n_grow);
+            MultiFab::Saxpy(LIMITER.X, 0.5*dt, dLXdt, 0, 0, LIMITER.X.n_comp, LIMITER.X.n_grow);
+        }
+        // ------------------------------------------------------------
+    }
+    // ================================================================
+    // ================================================================
+    else
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - TakeRungeKuttaTimeStep\n";
+        msg += "| Unexpected order: "+std::to_string(RK_order)+"\n";
+        Abort(msg);
+    }
+    // ================================================================
+
+#ifdef AMREX_DEBUG
+    // CHECK SOLUTION =================================================
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        const MultiFab & X = Xs[lev];
+
+        if (X.contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - TakeRungeKuttaTimeStep\n";
+            msg += "| Solution contains nans at level "+std::to_string(lev)+".\n";
+            Abort(msg);
+        }
+    }
+    // ================================================================
+#endif
+
+    // RESTRICT: PROJECT FINE SOLUTION ONTO THE COARSE LEVEL ==========
+    {
+        const int lev = n_valid_levels-1;
+
+        AMR::Restrict(N_SOL, Sol2Dom,
+                      LIMITER.mesh, LIMITER.matfactory, LIMITER.X,
+                      LIMITER.rr,
+                      *meshes[lev], *matfactories[lev], masks[lev], Xs[lev]);
+    }
+
+    for (int lev = (n_valid_levels-1); lev > 0; --lev)
+    {
+        AMR::Restrict(N_SOL, Sol2Dom,
+                     *meshes[lev], *matfactories[lev], Xs[lev],
+                     ref_ratios[lev-1],
+                     *meshes[lev-1], *matfactories[lev-1], masks[lev-1], Xs[lev-1]);
+
+#ifdef AMREX_DEBUG
+        if (Xs[lev-1].contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - TakeRungeKuttaTimeStep\n";
+            msg += "| Solution contains nans at level "+std::to_string(lev-1)+" after restriction.\n";
+            Abort(msg);
+        }
+#endif
+    }
+    // ================================================================
+
+    // RE-INITIATE LIMITER MASK =======================================
+    {
+        const int lev = n_valid_levels-1;
+
+        IBVP.F_EVAL_TROUBLED(t, *meshes[lev], *matfactories[lev], Xs[lev], masks[lev]);
+
+        LIMITER.Remake(*meshes[lev], *matfactories[lev], Xs[lev], masks[lev]);
+
+        AMR::Interpolate(N_SOL, Sol2Dom, *meshes[lev], *matfactories[lev], Xs[lev],
+                         LIMITER.rr,
+                         LIMITER.mesh, LIMITER.matfactory, LIMITER.X);
+    }
+    // ================================================================
+}
+
+/**
+ * \brief Advance in time using high-order Runge-Kutta schemes.
+ *
+ * \param[in] RK_order: order of the Runge-Kutta scheme.
+ * \param[in] dt: time step.
+ * \param[in] t: time.
+ * \param[in] ref_ratios: a vector containing refinement rations between consecutive levels.
+ * \param[in] meshes: a vector containing the ImplicitMesh objects at different levels.
+ * \param[in] matfactories: a vector containing the MatrixFactory objects at different levels.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[inout] Xs: a vector of MultiFab objects that contain the coefficients of the basis
+ *                   functions for the unknown solution fields. On exit, the coefficients will be
+ *                   updated according to the selected Runge-Kutta algorithm.
+ * \param[in] masks: a vector containing the iMultiFab tags objects at different levels.
+ * \param[in] IBVP: a class that must have methods with the following prototypes:
+ *
+ *                  XXXX
+ *
+*/
+template <typename IBVP_CLASS, typename SLOPE_LIMITER>
+void TakeRungeKuttaTimeStep(const int RK_order,
+                            const Real dt, const Real t,
+                            const Vector<IntVect> & ref_ratios,
+                            const Vector<ImplicitMesh *> & meshes,
+                            const Vector<MatrixFactory *> & matfactories,
+                            const int N_SOL,
+                            Vector<MultiFab> & Xs,
+                            Vector<iMultiFab> & masks,
+                            const IBVP_CLASS & IBVP,
+                            SLOPE_LIMITER & LIMITER)
+{
+    const int N_DOM = 1;
+    const Gpu::ManagedVector<int> Sol2Dom(N_SOL, 0);
+
+    TakeRungeKuttaTimeStep(RK_order, dt, t,
+                           ref_ratios, meshes, matfactories,
+                           N_DOM, N_SOL, Sol2Dom,
+                           Xs, masks,
+                           IBVP,
+                           LIMITER);
+}
+// ####################################################################
+// ####################################################################
+
 
 } // namespace Explicit
 

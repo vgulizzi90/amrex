@@ -6,10 +6,10 @@
  * \brief Routines for computing the basis functions for discontinuous Galerkin methods.
 */
 
-#include <AMReX_REAL.H>
-
 #ifndef AMREX_DG_BASIS_FUNCTIONS_H_
 #define AMREX_DG_BASIS_FUNCTIONS_H_
+
+#include <AMReX_REAL.H>
 
 #define DG_BASIS_FUNCTIONS_TAYLOR -1
 #define DG_BASIS_FUNCTIONS_LEGENDRE_P 0

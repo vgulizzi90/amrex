@@ -45,8 +45,8 @@ amr.check_int               = 100    # number of timesteps between checkpoints
 
 # PLOTFILES
 amr.plot_files_output = 1
-amr.plot_file         = plt     # root name of plotfile
-amr.plot_int          = 200     # number of timesteps between plotfiles
+amr.plot_file         = test_amr/plt     # root name of plotfile
+amr.plot_int          = 400     # number of timesteps between plotfiles
 amr.derive_plot_vars  = pressure x_velocity y_velocity z_velocity
 
 # EB
@@ -58,7 +58,7 @@ physics.gamma  = 1.6666666666666667
 physics.eos_mu = 41.57255
 
 physics.use_const_visc = 1
-physics.const_visc_mu = 1.21e-2
+physics.const_visc_mu = 0.0
 physics.const_visc_ki = 0.0
 physics.const_lambda  = 1.7e3 
 

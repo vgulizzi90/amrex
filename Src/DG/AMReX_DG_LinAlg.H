@@ -6,12 +6,12 @@
  * \brief Linear algebra routines.
 */
 
+#ifndef AMREX_DG_LINALG_H_
+#define AMREX_DG_LINALG_H_
+
 #include <AMReX_Gpu.H>
 
 #include <AMReX_REAL.H>
-
-#ifndef AMREX_DG_LINALG_H_
-#define AMREX_DG_LINALG_H_
 
 #define THIRD (1.0/3.0)
 
@@ -1646,6 +1646,24 @@ bool contains_nan(const int m, Real * a)
         if (std::isnan(a[i])) return true;
     }
     return false;
+}
+
+/**
+ * \brief Copy the transpose of a matrix a with shape a1xa2 into the matrix b.
+ *
+ * \param[in] a1, a2: Number of rows/column of the matrix a;
+ * \param[in] a: Pointer to memory containing the matrix a;
+ * \param[out] b: Pointer to memory that will contain the matrix b;
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void transpose(const int a1, const int a2, const Real * a, Real * b)
+{
+    for (int j = 0; j < a2; ++j)
+    for (int i = 0; i < a1; ++i)
+    {
+        b[j+i*a2] = a[i+j*a1];
+    }
 }
 
 /**

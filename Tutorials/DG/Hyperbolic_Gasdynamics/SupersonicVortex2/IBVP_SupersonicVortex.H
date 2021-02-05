@@ -2,7 +2,7 @@
 // Author : Vincenzo Gulizzi (LBL)
 // Contact: vgulizzi@lbl.gov
 //
-/** \file IBVP_SupersonicVortex.H
+/** \file IBVP_BodyInFreeStream.H
  * \brief Contains constants and data structures for the considered IBVP.
 */
 
@@ -164,6 +164,13 @@ public IDEAL_GAS_BASE
         U[RHOV1] = rho*u;
         U[RHOV2] = rho*v;
         U[TE] = ig*p+0.5*rho*(u*u+v*v);
+
+        /* Constant initial state
+        U[RHO] = 1.0;
+        U[RHOV1] = 0.0;
+        U[RHOV2] = 0.0;
+        U[TE] = ig;
+        */
     }
     // ================================================================
     // To be used in paraview:
@@ -331,6 +338,115 @@ public IDEAL_GAS_BASE
         F[TE+1] = M;
         F[TE+2] = U[TE];
         F[TE+3] = p/(rho*(g-1.0));
+    }
+    // ================================================================
+};
+// ####################################################################
+// ####################################################################
+
+
+
+// ####################################################################
+// IDEAL GAS: AMR #####################################################
+// ####################################################################
+/**
+ * \brief This struct contains constants and methods for adaptive mesh refinement. 
+ *
+*/
+struct AMR_IDEAL_GAS
+:
+public amrex::DG::AMR::Base
+{
+    // DATA MEMBERS ===================================================
+    IDEAL_GAS IG;
+    // ================================================================
+
+
+    // CONSTRUCTOR ====================================================
+    AMR_IDEAL_GAS()
+    :
+    Base(),
+    IG(this->inputs.problem.int_params, this->inputs.problem.params)
+    {}
+    // ================================================================
+
+
+    // MAKE NEW LEVEL FROM SCRATCH ====================================
+    virtual void MakeNewLevelFromScratch(int lev, amrex::Real /*time*/, const amrex::BoxArray & ba, const amrex::DistributionMapping & dm) override
+    {
+        // PARAMETERS -------------------------------------------------
+        const int ngr = 1;
+        // ------------------------------------------------------------
+        
+        // VARIABLES --------------------------------------------------
+        amrex::DG::InputReader level_inputs(false);
+        // ------------------------------------------------------------
+
+        // INPUTS AT CURRENT LEVEL ------------------------------------
+        this->ExtractLevelInputs(lev, level_inputs);
+        // ------------------------------------------------------------
+
+        // IMPLICIT MESH ----------------------------------------------
+        this->meshes[lev] = new amrex::DG::ImplicitMesh();
+        this->meshes[lev]->define(this->Geom(lev), ba, dm, level_inputs);
+        this->meshes[lev]->MakeFromScratch(this->IG);
+        // ------------------------------------------------------------
+        
+        // MATRIX FACTORY ---------------------------------------------
+        this->matfactories[lev] = new amrex::DG::MatrixFactory();
+        this->matfactories[lev]->define(this->Geom(lev), ba, dm, level_inputs);
+        this->matfactories[lev]->EvalMassMatrices(*this->meshes[lev]);
+        // ------------------------------------------------------------
+
+        // MASKS ------------------------------------------------------
+        this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, ngr);
+        this->masks[lev] = 0;
+        // ------------------------------------------------------------
+
+        // SOLUTION MULTIFAB ------------------------------------------
+        const int p = level_inputs.dG.space_p;
+        const int X_n_comp = DG_N_SOL*(AMREX_D_PICK(1+p, (1+p)*(1+p), (1+p)*(1+p)*(1+p)));
+        
+        this->Xs[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, X_n_comp, ngr);
+        this->Xs[lev] = 0.0;
+        // ------------------------------------------------------------
+
+        // SOLUTION INITIAL CONDITIONS --------------------------------
+        amrex::DG::ProjectInitialConditions(*this->meshes[lev],
+                                            *this->matfactories[lev],
+                                            DG_N_SOL, this->Xs[lev],
+                                            this->IG);
+        // ------------------------------------------------------------
+    }
+    // ================================================================
+
+
+    // TAG CELL FOR REFINEMENT ========================================
+    virtual void ErrorEst(int /*lev*/, amrex::TagBoxArray & /*tags*/, amrex::Real /*time*/, int /*ngr*/) override
+    {
+        return;
+    }
+    // ================================================================
+
+
+    // INITIALIZATION =================================================
+    /**
+     * \brief Initialize AMR data.
+     * 
+    */
+    void Init()
+    {
+        // PARAMETERS -------------------------------------------------
+        const amrex::Real t = 0.0;
+        // ------------------------------------------------------------
+
+        // CALL PARENT CLASS METHOD -----------------------------------
+        this->InitFromScratch(t);
+        // -----------------------------------------------------------
+
+        // UPDATE MASKS ----
+        this->UpdateMasks();
+        // -----------------
     }
     // ================================================================
 };
