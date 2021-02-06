@@ -22,6 +22,12 @@ endif
 
 include $(AMREX_HOME)/Tools/GNUMake/Make.machines
 
+ifdef USE_GPU
+  USE_GPU := $(strip $(USE_GPU))
+else
+  USE_GPU := FALSE
+endif
+
 ifdef USE_DPCPP
   USE_DPCPP := $(strip $(USE_DPCPP))
 else
@@ -30,7 +36,8 @@ endif
 
 ifeq ($(USE_DPCPP),TRUE)
   override COMP = dpcpp
-  DEFINES += -DAMREX_USE_DPCPP -DAMREX_USE_GPU
+  DEFINES += -DAMREX_USE_DPCPP
+  USE_GPU := TRUE
   USE_CUDA := FALSE
   USE_HIP := FALSE
   # disable ccache for now
@@ -620,8 +627,6 @@ ifeq ($(USE_FORCE_INLINE),TRUE)
     CPPFLAGS += -DAMREX_USE_FORCE_INLINE
 endif
 
-USE_GPU := FALSE
-
 ifeq ($(USE_ACC),TRUE)
 
   USE_GPU := TRUE
@@ -647,6 +652,10 @@ ifeq ($(USE_HIP),TRUE)
 
     GPUSuffix := .HIP
 
+    ifeq ($(HIP_INDIRECT_FUNCTION),TRUE)
+      DEFINES += -DAMREX_HIP_INDIRECT_FUNCTION
+    endif
+
 else ifeq ($(USE_CUDA),TRUE)
 
     USE_GPU := TRUE
@@ -667,7 +676,7 @@ else ifeq ($(USE_CUDA),TRUE)
     ifeq ($(USE_MPI),TRUE)
       # Make sure that the C/C++ MPI
       # wrappers are calling nvcc to compile the code.
-      # Right now we handle OpenMPI/Spectrum MPI and MPICH.
+      # Right now we handle OpenMPI/Spectrum MPI, MPICH, and HPE MPT.
       # Other MPI implementations could be added later.
 
       export OMPI_CC := nvcc
@@ -679,6 +688,10 @@ else ifeq ($(USE_CUDA),TRUE)
       export MPICH_CXX := nvcc
       export MPICH_F77 := $(FC)
       export MPICH_FC  := $(F90)
+
+      export MPICXX_CXX := nvcc
+      export MPICC_CC   := nvcc
+      export MPIF90_F90 := $(F90)
     endif
 
     DEFINES += -DAMREX_USE_CUDA

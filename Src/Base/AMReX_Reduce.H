@@ -309,7 +309,7 @@ public:
             Reduce::detail::for_each_parallel<0, ReduceTuple, Ps...>(*dp,r, gh);
         });
 #else
-#ifdef AMREX_USE_CUDA
+#if defined(AMREX_USE_CUDA) || (defined(AMREX_USE_HIP) && defined(AMREX_HIP_INDIRECT_FUNCTION))
         if (Gpu::inFuseRegion() && Gpu::inFuseReductionRegion()
             && ec.numBlocks.x*ec.numThreads.x <= Gpu::getFuseSizeThreshold())
         {
@@ -626,16 +626,33 @@ bool AnyOf (N n, T const* v, P&& pred)
     Gpu::LaunchSafeGuard lsg(true);
     Gpu::DeviceScalar<int> ds(0);
     int* dp = ds.dataPtr();
-#ifdef AMREX_USE_DPCPP
-    // xxxxx DPCPP todo: Anyof N: better version
-    amrex::ParallelFor(n, [=] (int i) noexcept
-    {
-        int r = pred(v[i]) ? 1 : 0;
-        Gpu::Atomic::LogicalOr(dp, r);
-    });
-#else
     auto ec = Gpu::ExecutionConfig(n);
     ec.numBlocks.x = std::min(ec.numBlocks.x, Gpu::Device::maxBlocksPerLaunch());
+
+#ifdef AMREX_USE_DPCPP
+    const int num_ints = std::max(Gpu::Device::warp_size, int(ec.numThreads.x)/Gpu::Device::warp_size) + 1;
+    const std::size_t shared_mem_bytes = num_ints*sizeof(int);
+    amrex::launch(ec.numBlocks.x, ec.numThreads.x, shared_mem_bytes, Gpu::nullStream(),
+    [=] AMREX_GPU_DEVICE (Gpu::Handler const& gh) noexcept {
+        int* has_any = &(static_cast<int*>(gh.sharedMemory())[num_ints-1]);
+        if (gh.threadIdx() == 0) { *has_any = *dp; }
+        gh.sharedBarrier();
+
+        if (!(*has_any))
+        {
+            int r = false;
+            for (N i = gh.blockDim()*gh.blockIdx()+gh.threadIdx(), stride = gh.blockDim()*gh.gridDim();
+                 i < n && !r; i += stride)
+            {
+                r = pred(v[i]) ? 1 : 0;
+            }
+
+            r = Gpu::blockReduce<Gpu::Device::warp_size>
+                (r, Gpu::warpReduce<Gpu::Device::warp_size,int,amrex::Plus<int> >(), 0, gh);
+            if (gh.threadIdx() == 0 && r) { *dp = 1; }
+        }
+    });
+#else
     amrex::launch(ec.numBlocks.x, ec.numThreads.x, 0, 0,
     [=] AMREX_GPU_DEVICE () noexcept {
         __shared__ int has_any;
@@ -665,19 +682,40 @@ bool AnyOf (Box const& box, P&& pred)
     Gpu::LaunchSafeGuard lsg(true);
     Gpu::DeviceScalar<int> ds(0);
     int* dp = ds.dataPtr();
-#ifdef AMREX_USE_DPCPP
-    // xxxxx DPCPP todo: Anyof Box: better version
-    amrex::ParallelFor(box, [=] (int i, int j, int k) noexcept
-    {
-        int r = pred(i,j,k) ? 1 : 0;
-        Gpu::Atomic::LogicalOr(dp, r);
-    });
-#else
     int ncells = box.numPts();
     const auto lo  = amrex::lbound(box);
     const auto len = amrex::length(box);
     auto ec = Gpu::ExecutionConfig(ncells);
     ec.numBlocks.x = std::min(ec.numBlocks.x, Gpu::Device::maxBlocksPerLaunch());
+
+#ifdef AMREX_USE_DPCPP
+    const int num_ints = std::max(Gpu::Device::warp_size, int(ec.numThreads.x)/Gpu::Device::warp_size) + 1;
+    const std::size_t shared_mem_bytes = num_ints*sizeof(int);
+    amrex::launch(ec.numBlocks.x, ec.numThreads.x, shared_mem_bytes, Gpu::nullStream(),
+    [=] AMREX_GPU_DEVICE (Gpu::Handler const& gh) noexcept {
+        int* has_any = &(static_cast<int*>(gh.sharedMemory())[num_ints-1]);
+        if (gh.threadIdx() == 0) { *has_any = *dp; }
+        gh.sharedBarrier();
+
+        if (!(*has_any))
+        {
+            int r = false;
+            for (int icell = gh.blockDim()*gh.blockIdx()+gh.threadIdx(), stride = gh.blockDim()*gh.gridDim();
+                 icell < ncells && !r; icell += stride) {
+                int k =  icell /   (len.x*len.y);
+                int j = (icell - k*(len.x*len.y)) /   len.x;
+                int i = (icell - k*(len.x*len.y)) - j*len.x;
+                i += lo.x;
+                j += lo.y;
+                k += lo.z;
+                r = pred(i,j,k) ? 1 : 0;
+            }
+            r = Gpu::blockReduce<Gpu::Device::warp_size>
+                (r, Gpu::warpReduce<Gpu::Device::warp_size,int,amrex::Plus<int> >(), 0, gh);
+            if (gh.threadIdx() == 0 && r) { *dp = 1; }
+        }
+    });
+#else
     AMREX_LAUNCH_KERNEL(ec.numBlocks, ec.numThreads, 0, 0,
     [=] AMREX_GPU_DEVICE () noexcept {
         __shared__ int has_any;
@@ -842,7 +880,7 @@ template <typename T, typename N, typename F,
 T Sum (N n, F&& f, T init_val = 0)
 {
     T r = init_val;
-#ifdef _OPENMP
+#ifdef AMREX_USE_OMP
 #pragma omp parallel for reduction(+:r)
 #endif
     for (N i = 0; i < n; ++i) {
@@ -879,7 +917,7 @@ template <typename T, typename N, typename F,
 T Min (N n, F&& f, T init_val = std::numeric_limits<T>::max())
 {
     T r = init_val;
-#ifdef _OPENMP
+#ifdef AMREX_USE_OMP
 #pragma omp parallel for reduction(min:r)
 #endif
     for (N i = 0; i < n; ++i) {
@@ -916,7 +954,7 @@ template <typename T, typename N, typename F,
 T Max (N n, F&& f, T init_val = std::numeric_limits<T>::lowest())
 {
     T r = init_val;
-#ifdef _OPENMP
+#ifdef AMREX_USE_OMP
 #pragma omp parallel for reduction(max:r)
 #endif
     for (N i = 0; i < n; ++i) {
@@ -957,7 +995,7 @@ std::pair<T,T> Min (N n, F&& f)
 {
     T r_min = std::numeric_limits<T>::max();
     T r_max = std::numeric_limits<T>::lowest();
-#ifdef _OPENMP
+#ifdef AMREX_USE_OMP
 #pragma omp parallel for reduction(min:r_min) reduction(max:r_max)
 #endif
     for (N i = 0; i < n; ++i) {
