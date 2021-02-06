@@ -8,7 +8,7 @@ geometry.is_periodic = 0 0 0
 
 # TIME ################################################################
 time.T = 0.2
-time.n_steps = 100
+time.n_steps = 500
 #######################################################################
 
 
@@ -55,8 +55,11 @@ use_sub_cell_limiter = true
 
 
 # PROBLEM #############################################################
-problem.int_params = -1
-problem.params = 1.4 1.0 0.0 1.0 0.50 0.125 0.0 0.1
+#problem.int_params = -1
+#problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1
+
+problem.int_params = 1
+problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.2 30.0 0.0
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
 #       which should be input as follows

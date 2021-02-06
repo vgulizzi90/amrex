@@ -160,7 +160,7 @@ exit(-1);
 
             Array4<short const> const & eType_fab = mesh.eType.array(mfi);
 
-            Array4<TAG_T> const & tags_fab = tags.array(mfi);
+            auto tags_fab = tags.array(mfi);
 
             ParallelFor(bx,
             [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
@@ -202,7 +202,7 @@ exit(-1);
 
             Array4<short const> const & eType_fab = mesh.eType.array(mfi);
 
-            Array4<TAG_T> const & tags_fab = tags.array(mfi);
+            auto tags_fab = tags.array(mfi);
 
             ParallelFor(bx,
             [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept

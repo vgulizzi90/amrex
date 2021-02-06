@@ -433,7 +433,7 @@ struct MatrixFactory
         const int c_sNp = AMREX_D_TERM((1+c_sp),*(1+c_sp),*(1+c_sp));
 
         // IMPLICIT MESH
-        //const Real * eDomQuad_mem_ptr = mesh.eDomQuad_host_mem.data();
+        const Real * eDomQuad_mem_ptr = mesh.eDomQuad_host_mem.data();
 
         // MULTIFAB INFO
         const int space_Dom_I_pos_n_comp = N_DOM;
@@ -478,8 +478,8 @@ struct MatrixFactory
             // FINE MESH
             Array4<short const> const & eType_fab = mesh.eType.array(mfi);
 
-            //Array4<int const> const & eDomQuad_Nq_fab = mesh.eDomQuad_Nq.array(mfi);
-            //Array4<long const> const & eDomQuad_pos_fab = mesh.eDomQuad_pos.array(mfi);
+            Array4<int const> const & eDomQuad_Nq_fab = mesh.eDomQuad_Nq.array(mfi);
+            Array4<long const> const & eDomQuad_pos_fab = mesh.eDomQuad_pos.array(mfi);
 
             // COARSE MESH
             Array4<short const> const & c_eType_fab = c_eType.array(mfi);
@@ -492,11 +492,16 @@ struct MatrixFactory
             for (int j = lo.y; j <= hi.y; ++j)
             for (int i = lo.x; i <= hi.x; ++i)
             {
+                // LOCAL PARAMETERS
+                const Real f_cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*f_dx[0],
+                                                                     prob_lo[1]+j*f_dx[1],
+                                                                     prob_lo[2]+k*f_dx[2])};
+
                 // LOCAL VARIABLES
                 Real f_BF_lo[AMREX_SPACEDIM], f_BF_hi[AMREX_SPACEDIM];
                 Real c_BF_lo[AMREX_SPACEDIM], c_BF_hi[AMREX_SPACEDIM];
-                //Real x[AMREX_SPACEDIM], w;
-                //Real I[__DG_SOL_MAX_SPACE_Np__*__DG_SOL_MAX_SPACE_Np__];
+                Real x[AMREX_SPACEDIM], w;
+                Real I[__DG_SOL_MAX_SPACE_Np__*__DG_SOL_MAX_SPACE_Np__];
 
                 // INDICES OF THE COARSE CELL
 #if (AMREX_SPACEDIM == 1)
@@ -543,8 +548,17 @@ exit(-1);
                     //       elements.
                     if (ELM_IS_EXTENDED(etype))
                     {
-Print() << "EvalInterpolationOperator - entire extended element" << std::endl;
-exit(-1);
+                        // Store memory offset
+                        space_Dom_I_pos_fab(i,j,k,dom) = space_Dom_I_mem_pos;
+
+                        // Expand memory
+                        this->space_Dom_I_host_mem.resize(space_Dom_I_mem_pos+f_sNp*c_sNp);
+
+                        // Store data
+                        std::copy(&this->std_elem.IBfTBc[I_pos], &this->std_elem.IBfTBc[I_pos+f_sNp*c_sNp], &this->space_Dom_I_host_mem[space_Dom_I_mem_pos]);
+
+                        // Update memory
+                        space_Dom_I_mem_pos += f_sNp*c_sNp;
                     }
                     else
                     {
@@ -555,11 +569,49 @@ exit(-1);
                 // PARTIAL ELEMENTS -----------------------------------
                 else if (ELM_IS_LARGE(etype) || ELM_IS_SMALL(etype))
                 {
-Print() << "i,j,k: " << i << "," << j << "," << k << std::endl;
-Print() << ELM_TYPE_DESCRIPTION(etype) << std::endl;
+                    // QUADRATURE INFO
+                    const int dom_Nq = eDomQuad_Nq_fab(i,j,k,ELM_DOM_QUAD_NQ(dom));
+                    const long pos = eDomQuad_pos_fab(i,j,k,ELM_DOM_QUAD_POS(dom));
+                    const Real * xptr = &eDomQuad_mem_ptr[pos];
+                    long x_pos;
 
-Print() << "EvalInterpolationOperator - large or small element" << std::endl;
-exit(-1);
+                    // Store memory offset
+                    space_Dom_I_pos_fab(i,j,k,dom) = space_Dom_I_mem_pos;
+
+                    // Expand memory
+                    this->space_Dom_I_host_mem.resize(space_Dom_I_mem_pos+f_sNp*c_sNp);
+
+                    // Store data
+                    std::fill(I, I+f_sNp*c_sNp, 0.0);
+
+                    for (int q = 0; q < dom_Nq; ++q)
+                    {
+                        x_pos = (AMREX_SPACEDIM+1)*q;
+                        AMREX_D_TERM
+                        (
+                            x[0] = xptr[x_pos+0]+f_cell_lo[0];,
+                            x[1] = xptr[x_pos+1]+f_cell_lo[1];,
+                            x[2] = xptr[x_pos+2]+f_cell_lo[2];
+                        )
+                        w = xptr[x_pos+AMREX_SPACEDIM];
+
+                        f_bf.eval_BF_only_table(x);
+                        c_bf.eval_BF_only_table(x);
+
+                        for (int cs = 0; cs < c_sNp; ++cs)
+                        for (int rs = 0; rs < f_sNp; ++rs)
+                        {
+                            I[rs+cs*f_sNp] += f_bf.BF[rs]*c_bf.BF[cs]*w;
+                        }
+                    }
+
+                    for (int rs = 0; rs < (f_sNp*c_sNp); ++rs)
+                    {
+                        this->space_Dom_I_host_mem[space_Dom_I_mem_pos+rs] = I[rs];
+                    }
+
+                    // Update memory
+                    space_Dom_I_mem_pos += f_sNp*c_sNp;
                 }
                 // ----------------------------------------------------
             }
@@ -578,17 +630,20 @@ exit(-1);
         // ============================================================
 
         // ADD THE CONTRIBUTION FOR THE EXTENDED ELEMENTS =============
+        /*
 #ifdef AMREX_USE_GPU
-        //Real * space_Dom_I_mem_ptr = this->space_Dom_I_device_mem.data();
+        Real * space_Dom_I_mem_ptr = this->space_Dom_I_device_mem.data();
 #else
-        //Real * space_Dom_I_mem_ptr = this->space_Dom_I_host_mem.data();
+        Real * space_Dom_I_mem_ptr = this->space_Dom_I_host_mem.data();
 #endif
 
         for (MFIter mfi(mesh.eType); mfi.isValid(); ++mfi)
         {
-            const Box & bx = mfi.fabbox();
+            const Box & bx = mfi.validbox();
 
             Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+            Array4<long const> const & space_Dom_I_pos_fab = this->space_Dom_I_pos.array(mfi);
 
             ParallelFor(bx, N_DOM,
             [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
@@ -598,12 +653,34 @@ exit(-1);
 
                 if (ELM_IS_EXTENDED(etype))
                 {
-Print() << "EvalInterpolationOperator - extended elements" << std::endl;
-exit(-1);
+                    const long pos = space_Dom_I_pos_fab(i,j,k,dom);
+
+                    int nbr_i, nbr_j, nbr_k, nbr_b;
+                    long nbr_pos;
+
+                    for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                    {
+                        NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+
+                        const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                        const bool nbr_is_small = ELM_IS_SMALL(nbr_etype);
+                        const int nbr_merged_b = (nbr_is_small) ? (nbr_etype/10) : -1;
+
+                        if (nbr_merged_b == nbr_b)
+                        {
+                            nbr_pos = space_Dom_I_pos_fab(nbr_i,nbr_j,nbr_k,dom);
+
+                            for (int rs = 0; rs < (f_sNp*c_sNp); ++rs)
+                            {
+                                space_Dom_I_mem_ptr[pos+rs] += space_Dom_I_mem_ptr[nbr_pos+rs];
+                            }
+                        }
+                    }
                 }
             });
             Gpu::synchronize();
         }
+        */
         // ============================================================
     }
     

@@ -118,6 +118,56 @@ void main_main()
                 volume = AMREX_D_TERM(len[0],*len[1],*len[2]);
                 surface = 0.0;
             }
+            else if (amr.IG.eb_flag == 1)
+            {
+                const amrex::Real diam = amr.inputs.problem.params[8];
+                const amrex::Real theta = amr.inputs.problem.params[9]*M_PI/180.0;
+
+                const amrex::Real cth = std::cos(theta);
+                const amrex::Real sth = std::sin(theta);
+                const amrex::Real tth = std::tan(theta);
+
+                const amrex::Real Ay = 0.5*(1.0-diam/cth+tth);
+                const amrex::Real By = 0.5*(1.0+diam/cth+tth);
+
+                volume = 0.0;
+                surface = 0.0;
+
+                // We assume theta >= 0
+                if (Ay > 1.0)
+                {
+#if (AMREX_SPACEDIM == 2)
+                    volume = diam/sth;
+                    surface = 2.0/sth;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                    volume = 0.25*M_PI*diam*diam/sth;
+                    surface = M_PI*diam/sth;
+#endif
+                }
+                else if (By < 1.0)
+                {
+#if (AMREX_SPACEDIM == 2)
+                    volume = diam/cth;
+                    surface = 2.0/cth;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                    volume = 0.25*M_PI*diam*diam/cth;
+                    surface = M_PI*diam/cth;
+#endif
+                }
+                else
+                {
+#if (AMREX_SPACEDIM == 2)
+                    const amrex::Real xc = 0.5*(1.0+1.0/tth-diam/sth);
+
+                    volume = 0.25*(2.0+2.0*diam/sth+2.0*diam/cth-(1.0+diam*diam)/(cth*sth));
+                    surface = 2.0*xc/cth;
+#endif
+#if (AMREX_SPACEDIM == 3)
+#endif
+                }
+            }
             else
             {
 amrex::Print() << "main.cpp - CHECK THE COMPUTED QUADRATURE RULES" << std::endl;

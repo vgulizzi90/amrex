@@ -1005,6 +1005,7 @@ exit(-1);
     {
         // PARAMETERS -------------------------------------------------
         // GRID
+        const amrex::Box domain = mesh.geom.Domain();
         const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
         const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
 
@@ -1084,7 +1085,7 @@ exit(-1);
                         const int nbr_k = k+amrex::DG::base_stencil_table_k[n];
                         const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,amrex::DG::ELM_TYPE(dom));
 
-                        if (amrex::DG::ELM_IS_VALID(nbr_etype))
+                        if (amrex::DG::ELM_IS_NOT_EMPTY(nbr_etype) && domain.contains(nbr_i, nbr_j, nbr_k))
                         {
                             nbr_is_valid[n] = true;
 
@@ -1129,12 +1130,22 @@ exit(-1);
                     }
                     else
                     {
-                        for (int u = 0; u < DG_N_SOL*AMREX_SPACEDIM; ++u)
+                        for (int u = 0; u < AMREX_SPACEDIM*DG_N_SOL; ++u)
                         {
                             dP[u] = 0.0;
                         }
                     }
                     // ------------------------------------------------
+/*
+if (i == __i__ && j == __j__)
+{
+amrex::Print() << "xc: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, xc);
+amrex::Print() << "P: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, P);
+amrex::Print() << "nbr_xcs: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, __DG_BASE_STENCIL_N_NBR__, nbr_xcs);
+amrex::Print() << "nbr_Ps: " << std::endl; amrex::DG::IO::PrintRealArray2D(DG_N_SOL, __DG_BASE_STENCIL_N_NBR__, nbr_Ps);
+amrex::Print() << "dP: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, DG_N_SOL, dP);
+}
+*/
 
                     // LIMIT THE COMPUTED SLOPES ----------------------
                     amrex::DG::linalg::transpose(AMREX_SPACEDIM, DG_N_SOL, dP, rhs);
@@ -1152,6 +1163,12 @@ exit(-1);
                         
                         this->F_DP2DC(t, xc, un, P, &dP[dir*DG_N_SOL], &rhs[dir*DG_N_SOL]);
                     }
+/*
+if (i == __i__ && j == __j__)
+{
+amrex::Print() << "dC: " << std::endl; amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, rhs);
+}
+*/
 
                     // X1 DIRECTION
                     {
@@ -1219,6 +1236,14 @@ exit(-1);
 
                                 // LIMIT SLOPES
                                 this->LimitSlopes(&rhs[dir*DG_N_SOL], tmp_dC, theta);
+/*
+if (i == __i__ && j == __j__)
+{
+amrex::Print() << "tmp_dP: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, tmp_dP);
+amrex::Print() << "tmp_dC: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, tmp_dC);
+amrex::Print() << "dC: " << std::endl; amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, rhs);
+}
+*/
                             }
                         }
                     }
@@ -1259,9 +1284,7 @@ exit(-1);
                         }
                     }
 #endif
-                    // ------------------------------------------------
-
-                    // STORE THE SLOPES -------------------------------
+                    // BACK TO PRIMARY VARIABLES
                     for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
                     {
                         amrex::Real un[AMREX_SPACEDIM];
@@ -1270,6 +1293,107 @@ exit(-1);
                         
                         this->F_DC2DP(t, xc, un, P, &rhs[dir*DG_N_SOL], &dP[dir*DG_N_SOL]);
                     }
+                    // ------------------------------------------------
+
+                    // BARTH-JESPERSEN --------------------------------
+                    // We use rhs as a temporary variable
+                    {
+                        amrex::Real nbr_P_max[DG_N_SOL], nbr_P_min[DG_N_SOL];
+                        amrex::Real alphas[DG_N_SOL];
+
+                        // INITIALIZATION
+                        for (int u = 0; u < DG_N_SOL; ++u)
+                        {
+                            nbr_P_max[u] = nbr_P_min[u] = P[u];
+                            alphas[u] = 1.0;
+                        }
+
+                        // FIND MIN AND MAX VALUES
+                        for (int n = 0; n < __DG_BASE_STENCIL_N_NBR__; ++n)
+                        {
+                            if (nbr_is_valid[n])
+                            {
+                                for (int u = 0; u < DG_N_SOL; ++u)
+                                {
+                                    nbr_P_max[u] = std::max(nbr_P_max[u], nbr_Ps[u+n*DG_N_SOL]);
+                                    nbr_P_min[u] = std::min(nbr_P_min[u], nbr_Ps[u+n*DG_N_SOL]);
+                                }
+                            }
+                        }
+/*
+if (std::abs(dP[0]) > 1.0e-9)
+{
+amrex::Print() << "xc: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, xc);
+amrex::Print() << "P: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, P);
+amrex::Print() << "nbr_xcs: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, __DG_BASE_STENCIL_N_NBR__, nbr_xcs);
+amrex::Print() << "nbr_Ps: " << std::endl; amrex::DG::IO::PrintRealArray2D(DG_N_SOL, __DG_BASE_STENCIL_N_NBR__, nbr_Ps);
+
+amrex::Print() << "nbr_P_max: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, nbr_P_max);
+amrex::Print() << "nbr_P_min: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, nbr_P_min);
+
+amrex::Print() << "dP: " << std::endl;
+amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dP);
+}
+*/
+
+                        // EVAL LIMITING COEFFICIENT
+                        for (int n = 0; n < __DG_BASE_STENCIL_N_NBR__; ++n)
+                        {
+                            if (nbr_is_valid[n])
+                            {
+                                for (int u = 0; u < DG_N_SOL; ++u)
+                                {
+                                    rhs[0] = P[u];
+                                    AMREX_D_TERM
+                                    (
+                                        rhs[0] += dP[u+0*DG_N_SOL]*(nbr_xcs[0+n*AMREX_SPACEDIM]-xc[0]);,
+                                        rhs[0] += dP[u+1*DG_N_SOL]*(nbr_xcs[1+n*AMREX_SPACEDIM]-xc[1]);,
+                                        rhs[0] += dP[u+2*DG_N_SOL]*(nbr_xcs[2+n*AMREX_SPACEDIM]-xc[2]);
+                                    )
+
+                                    if (rhs[0] > nbr_P_max[u])
+                                    {
+                                        alphas[u] = std::min(alphas[u], (nbr_P_max[u]-P[u])/(rhs[0]-P[u]));
+                                    }
+                                    else if (rhs[0] < nbr_P_min[u])
+                                    {
+                                        alphas[u] = std::min(alphas[u], (nbr_P_min[u]-P[u])/(rhs[0]-P[u]));
+                                    }
+                                }
+
+                            }
+                        }
+
+                        // LIMIT THE SLOPES
+                        for (int u = 0; u < DG_N_SOL; ++u)
+                        {
+                            AMREX_D_TERM
+                            (
+                                dP[u+0*DG_N_SOL] *= alphas[u];,
+                                dP[u+1*DG_N_SOL] *= alphas[u];,
+                                dP[u+2*DG_N_SOL] *= alphas[u];
+                            )
+                        }
+/*
+if (std::abs(dP[0]) > 1.0e-9)
+{
+amrex::Print() << "dP: " << std::endl;
+amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dP);
+exit(-1);
+}
+*/
+                    }
+                    // ------------------------------------------------
+
+                    // STORE THE SLOPES -------------------------------
+
+/*
+if (i == __i__ && j == __j__)
+{
+amrex::Print() << "dP: " << std::endl; amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dP);
+exit(-1);
+}
+*/
 
                     this->F_DP2DU(t, xc, U, &dP[0*DG_N_SOL], &rhs[0*DG_N_SOL]);
 #if (AMREX_SPACEDIM > 1)

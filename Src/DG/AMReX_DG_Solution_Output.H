@@ -1210,9 +1210,13 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath_root,
                         {
                             VTK_cell_fields_ptr[N_DOM+N_DOM][VTK_cell_field_pos] = __DG_CELL_MASKED__;
                         }
-                        else
+                        else if ((m_mask == __DG_CELL_UNMASKED__) && (p_mask == __DG_CELL_UNMASKED__))
                         {
                             VTK_cell_fields_ptr[N_DOM+N_DOM][VTK_cell_field_pos] = __DG_CELL_UNMASKED__;
+                        }
+                        else
+                        {
+                            VTK_cell_fields_ptr[N_DOM+N_DOM][VTK_cell_field_pos] = __DG_LEVEL_BOUNDARY__;
                         }
                     }
                     // ------------------------------------------------

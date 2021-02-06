@@ -34,9 +34,11 @@ void Interpolate(const int N_SOL,
     // PARAMETERS =====================================================
     const BoxArray & f_ba = f_X.boxarray;
     const DistributionMapping & f_dm = f_X.distributionMap;
-    const IntVect n_grow = f_X.n_grow;
 
-    const int c_n_comp = c_X.n_comp;
+    const int c_eType_n_comp = c_mesh.eType.n_comp;
+    const IntVect c_eType_n_grow = c_mesh.eType.n_grow;
+    const int c_X_n_comp = c_X.n_comp;
+    const IntVect c_X_n_grow = c_X.n_grow;
 
     const BoxArray c_f_ba = coarsen(f_ba, rr);
 
@@ -80,6 +82,9 @@ void Interpolate(const int N_SOL,
     // ================================================================
 
     // VARIABLES ======================================================
+    shortMultiFab safe_c_eType;
+    const shortMultiFab * safe_c_eType_ptr;
+
     MultiFab safe_c_X;
     const MultiFab * safe_c_X_ptr;
     // ================================================================
@@ -91,14 +96,21 @@ void Interpolate(const int N_SOL,
     // NEED PARALLEL COPY =============================================
     if (parallel_copy_is_needed)
     {
-        safe_c_X.define(c_f_ba, f_dm, c_n_comp, n_grow);
+        safe_c_eType.define(c_f_ba, f_dm, c_eType_n_comp, c_eType_n_grow);
+        safe_c_eType = 0;
+        safe_c_eType.ParallelCopy(c_mesh.eType, 0, 0, c_eType_n_comp, c_eType_n_grow, c_eType_n_grow, c_mesh.geom.periodicity());
+
+        safe_c_eType_ptr = &safe_c_eType;
+        
+        safe_c_X.define(c_f_ba, f_dm, c_X_n_comp, c_X_n_grow);
         safe_c_X = 0.0;
-        safe_c_X.ParallelCopy(c_X, 0, 0, c_n_comp, n_grow, n_grow, c_mesh.geom.periodicity());
+        safe_c_X.ParallelCopy(c_X, 0, 0, c_X_n_comp, c_X_n_grow, c_X_n_grow, c_mesh.geom.periodicity());
 
         safe_c_X_ptr = &safe_c_X;
     }
     else
     {
+        safe_c_eType_ptr = &c_mesh.eType;
         safe_c_X_ptr = &c_X;
     }
     // ================================================================
@@ -109,6 +121,7 @@ void Interpolate(const int N_SOL,
         const Box & bx = mfi.validbox();
 
         // COARSE MESH
+        Array4<short const> const & c_eType_fab = safe_c_eType_ptr->array(mfi);
         Array4<Real const> const & c_X_fab = safe_c_X_ptr->array(mfi);
 
         // INTERPOLATION OPERATOR
@@ -133,21 +146,38 @@ void Interpolate(const int N_SOL,
 
                 // LOCAL VARIABLES
                 int c_i, c_j, c_k;
+                short c_etype;
+                int c_BF_i, c_BF_j, c_BF_k;
 
                 // INDICES OF THE COARSE CELL
                 FINE_TO_COARSE(f_i, f_j, f_k, rr, c_i, c_j, c_k);
+                c_etype = c_eType_fab(c_i,c_j,c_k,ELM_TYPE(dom));
+                BF_CELL(c_i, c_j, c_k, c_etype, c_BF_i, c_BF_j, c_BF_k);
 
                 // INTERPOLATE
                 for (int cs = 0; cs < c_sNp; ++cs)
                 for (int rs = 0; rs < f_sNp; ++rs)
                 {
-                    f_X_fab(f_i,f_j,f_k,rs+ru*f_sNp) += I_ptr[rs+cs*f_sNp]*c_X_fab(c_i,c_j,c_k,cs+ru*c_sNp);
+                    f_X_fab(f_i,f_j,f_k,rs+ru*f_sNp) += I_ptr[rs+cs*f_sNp]*c_X_fab(c_BF_i,c_BF_j,c_BF_k,cs+ru*c_sNp);
                 }
             }
         });
         Gpu::synchronize();
     }
     f_X.FillBoundary(f_mesh.geom.periodicity());
+    // ================================================================
+
+    // CHECK ==========================================================
+#ifdef AMREX_DEBUG
+    if (f_X.contains_nan())
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_AMR.cpp - Interpolate\n";
+        msg += "| f_X contains nans (after interpolation).\n";
+        Abort(msg);
+    }
+#endif
     // ================================================================
 
     AddSmallElementsContribution(f_mesh, f_matfactory, N_SOL, Sol2Dom, f_X);
@@ -278,13 +308,16 @@ void Restrict(const int N_SOL,
             const Dim3 lo = {c_i*rr[0], c_j*rr[1], c_k*rr[2]};
             const Dim3 hi = {(c_i+1)*rr[0], (c_j+1)*rr[1], (c_k+1)*rr[2]};
 #endif
-            
+
             // LOOP OVER THE CELLS OF THE SUBGRID
             for (int f_k = lo.z; f_k < hi.z; ++f_k)
             for (int f_j = lo.y; f_j < hi.y; ++f_j)
             for (int f_i = lo.x; f_i < hi.x; ++f_i)
             {
                 const short f_etype = f_eType_fab(f_i,f_j,f_k,ELM_TYPE(dom));
+                int f_BF_i, f_BF_j, f_BF_k;
+
+                BF_CELL(f_i, f_j, f_k, f_etype, f_BF_i, f_BF_j, f_BF_k);
 
                 if (ELM_IS_NOT_EMPTY(f_etype))
                 {
@@ -294,8 +327,16 @@ void Restrict(const int N_SOL,
                     for (int rs = 0; rs < c_sNp; ++rs)
                     for (int cs = 0; cs < f_sNp; ++cs)
                     {
-                        mf2_fab(c_i,c_j,c_k,rs+ru*c_sNp) += I_ptr[cs+rs*f_sNp]*f_X_fab(f_i,f_j,f_k,cs+ru*f_sNp);
+                        mf2_fab(c_i,c_j,c_k,rs+ru*c_sNp) += I_ptr[cs+rs*f_sNp]*f_X_fab(f_BF_i,f_BF_j,f_BF_k,cs+ru*f_sNp);
                     }
+/*
+if (c_i == __i__ && c_j == __j__ && ru == 0)
+{
+Print() << "f_i, f_j: " << f_i << "," << f_j << std::endl;
+Print() << "I_ptr" << std::endl;
+IO::PrintRealArray2D(f_sNp, c_sNp, I_ptr);
+}
+*/
                 }
             }
         });
@@ -367,6 +408,11 @@ void Restrict(const int N_SOL,
         }
 #endif
     }
+
+    /*
+    IO::PrintMultiFabEntry(c_X, __i__, __j__, 0, 0);
+    exit(-1);
+    */
     // ================================================================
 }
 

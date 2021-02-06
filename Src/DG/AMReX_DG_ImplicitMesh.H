@@ -17,8 +17,8 @@
 #include <AMReX_DG_InputReader.H>
 #include <AMReX_DG_BFX.H>
 
-#define __i__ 3
-#define __j__ 5
+#define __i__ 2
+#define __j__ 22
 #define __k__ 0
 
 namespace amrex
@@ -2103,7 +2103,14 @@ else
                             // Neighboring cell id and boundary
                             NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
                             nbr_vf = eInfo_fab(nbr_i,nbr_j,nbr_k,ELM_VOLUME_FRACTION(dom));
-                            printf("| Volume fraction (nbr = %d): %f\n", b, nbr_vf);
+                            if (bx.contains(nbr_i,nbr_j,nbr_k))
+                            {
+                                printf("| Volume fraction (nbr = %d): %f\n", b, nbr_vf);
+                            }
+                            else
+                            {
+                                printf("| Volume fraction (nbr = %d -- in fabbox): %f\n", b, nbr_vf);
+                            }
                         }
                         printf("\n");
                         Abort("");

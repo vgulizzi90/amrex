@@ -82,6 +82,7 @@ namespace DG
 // AMR
 #define __DG_CELL_UNMASKED__ 0
 #define __DG_CELL_MASKED__ 1
+#define __DG_LEVEL_BOUNDARY__ 2
 // ####################################################################
 
 // TYPEDEFS ###########################################################
