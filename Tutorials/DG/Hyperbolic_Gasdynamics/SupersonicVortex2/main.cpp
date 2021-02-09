@@ -130,8 +130,23 @@ void main_main()
             amr.CheckQuadratureRules(volume, surface);
         }
 
+        // EVAL ERROR
+        {
+            const amrex::Real t = 0.0;
+            amrex::Real dom_err;
+            
+            dom_err = amrex::DG::AMR::EvalErrorInfNorm(t, DG_N_SOL, amr, amr.IG);
+                      
+            amrex::Print() << "| dom_err: " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << std::endl;
+
+            if (amrex::ParallelDescriptor::IOProcessor())
+            {
+                fp << "| dom_err(t = 0): " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << "\n";
+            }
+        }
+
         // EXPORT
-        if (amr.inputs.plot_int > 0)
+        if (amr.inputs.Plot())
         {
             const int n = 0;
             const amrex::Real t = 0.0;
@@ -175,7 +190,7 @@ void main_main()
         amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
         {
             int n;
-            amrex::Real t, dt;
+            amrex::Real t, dt, dom_err;
             amrex::Real tps_start, tps_stop, tps, eta;
 
             // INIT CLOCK TIME PER STEP AND ESTIMATED TIME
@@ -198,15 +213,20 @@ void main_main()
 
                 // TIME STEP
                 amrex::DG::Hyperbolic::Explicit::TakeRungeKuttaTimeStep(RK_order, dt, t,
-                                                                        amr.refRatio(), amr.meshes, amr.matfactories, amr.masks,
-                                                                        DG_N_SOL, amr.Xs, amr.IG);
+                                                                        amr.refRatio(), amr.meshes, amr.matfactories,
+                                                                        DG_N_SOL, amr.Xs, amr.masks, amr.IG);
 
                 // UPDATE TIME STEP
                 n += 1;
                 t += dt;
+
+                // EVAL ERROR
+                {
+                    dom_err = amrex::DG::AMR::EvalErrorInfNorm(t, DG_N_SOL, amr, amr.IG);
+                }
                 
                 // WRITE TO OUTPUT
-                if ((amr.inputs.plot_int > 0) && ((n%amr.inputs.plot_int == 0) || (std::abs(t/amr.inputs.time.T-1.0) < 1.0e-12)))
+                if (amr.inputs.Plot(n, t))
                 {
                     amrex::DG::Export_VTK(amr.inputs.plot_filepath, n, amr.inputs.time.n_steps,
                                           t, DG_N_SOL, amr, amr.IG);
@@ -222,13 +242,14 @@ void main_main()
                 // REPORT TO SCREEN
                 amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
                 amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
-                               << dt << ", t = " << t
+                               << dt << ", t = " << t << ", dom_err = " << dom_err
                                << ", tts [s] = " << tps 
                                << ", eta = " << amrex::DG::IO::Seconds2HoursMinutesSeconds(eta) << std::endl;
             }
 
             if (amrex::ParallelDescriptor::IOProcessor())
             {
+                fp << "| dom_err(t = T): " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << "\n";
                 fp << "| clock time per time step: " << std::scientific << std::setprecision(5) << std::setw(12) << tps << " s\n";
             }
         }

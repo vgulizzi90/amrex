@@ -393,6 +393,16 @@ struct DG_space_RX
 
     // CONSTRUCTORS ===================================================
     AMREX_GPU_HOST_DEVICE
+    DG_space_RX(Array4<Real const> const & fab_, Array4<Real const> const & slopes_fab_)
+    :
+    fab{fab_},
+    slopes_fab{slopes_fab_},
+    xc{nullptr},
+    i{-1}, j{-1}, k{-1},
+    u{-1}
+    {}
+    
+    AMREX_GPU_HOST_DEVICE
     DG_space_RX(Array4<Real const> const & fab_, Array4<Real const> const & slopes_fab_,
                 const Real * xc_,
                 const int i_, const int j_, const int k_)
@@ -406,6 +416,19 @@ struct DG_space_RX
     // ================================================================
 
     // MISC ===========================================================
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void set_fab_ptrs(const int i_, const int j_, const int k_)
+    {
+        this->i = i_;
+        this->j = j_;
+        this->k = k_;
+    }
+
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void set_centroid(const Real * xc_)
+    {
+        this->xc = xc_;
+    }
     // ================================================================
 
     // EVAL THE SOLUTION AT LOCATION x ================================

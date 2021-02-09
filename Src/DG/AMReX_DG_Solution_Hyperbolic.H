@@ -3512,6 +3512,131 @@ void TakeRungeKuttaTimeStep(const int RK_order,
         // ------------------------------------------------------------
     }
     // ================================================================
+    // RK3 ============================================================
+    else if (RK_order == 3)
+    {
+        // NEEDED MULTIFABS
+        Vector<MultiFab> dXdt1(n_valid_levels);
+        Vector<MultiFab> dXdt2(n_valid_levels);
+        Vector<MultiFab> dXdt3(n_valid_levels);
+        Vector<MultiFab> X1(n_valid_levels);
+        
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            const MultiFab & X = Xs[lev];
+            
+            dXdt1[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            dXdt2[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            dXdt3[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            X1[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+        }
+
+        // RK3 STEP 1 -------------------------------------------------
+        // dXdt1 := dXdt(t, X_old)
+        Eval_dXdt(t, n_valid_levels, ref_ratios, meshes, matfactories, N_DOM, N_SOL, Sol2Dom, Xs_old, dXdt1, IBVP);
+
+        // X1 := X_old+dt*dXdt1
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            MultiFab::LinComb(X1[lev], 1.0, Xs_old[lev], 0, dt, dXdt1[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+        }
+        // ------------------------------------------------------------
+
+        // RK3 STEP 2 -------------------------------------------------
+        // dXdt2 := dXdt(t+dt, X1)
+        Eval_dXdt(t+dt, n_valid_levels, ref_ratios, meshes, matfactories, N_DOM, N_SOL, Sol2Dom, X1, dXdt2, IBVP);
+
+        // X1 := X_old+(dt/4)*dXdt1+(dt/4)*dXdt2
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            MultiFab::LinComb(X1[lev], 1.0, Xs_old[lev], 0, 0.25*dt, dXdt1[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+            MultiFab::Saxpy(X1[lev],                        0.25*dt, dXdt2[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+        }
+        // ------------------------------------------------------------
+
+        // RK3 STEP 3 -------------------------------------------------
+        // dXdt3 := dXdt(t+dt/2, X1)
+        Eval_dXdt(t+0.5*dt, n_valid_levels, ref_ratios, meshes, matfactories, N_DOM, N_SOL, Sol2Dom, X1, dXdt3, IBVP);
+
+        // X_new := X_old+(dt/6)*dXdt1+(dt/6)*dXdt2+(2*dt/3)*dXdt3
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            MultiFab::LinComb(Xs[lev], 1.0, Xs_old[lev], 0,     dt/6.0, dXdt1[lev], 0, 0, Xs[lev].n_comp, Xs[lev].n_grow);
+            MultiFab::Saxpy(Xs[lev],                            dt/6.0, dXdt2[lev], 0, 0, Xs[lev].n_comp, Xs[lev].n_grow);
+            MultiFab::Saxpy(Xs[lev],                        2.0*dt/3.0, dXdt3[lev], 0, 0, Xs[lev].n_comp, Xs[lev].n_grow);
+        }
+        // ------------------------------------------------------------
+    }
+    // ================================================================
+    // RK4 ============================================================
+    else if (RK_order == 4)
+    {
+        // NEEDED MULTIFABS
+        Vector<MultiFab> dXdt1(n_valid_levels);
+        Vector<MultiFab> dXdt2(n_valid_levels);
+        Vector<MultiFab> dXdt3(n_valid_levels);
+        Vector<MultiFab> dXdt4(n_valid_levels);
+        Vector<MultiFab> X1(n_valid_levels);
+        
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            const MultiFab & X = Xs[lev];
+            
+            dXdt1[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            dXdt2[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            dXdt3[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            dXdt4[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            X1[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+        }
+
+        // RK4 STEP 1 -------------------------------------------------
+        // dXdt1 := dXdt(t, X_old)
+        Eval_dXdt(t, n_valid_levels, ref_ratios, meshes, matfactories, N_DOM, N_SOL, Sol2Dom, Xs_old, dXdt1, IBVP);
+
+        // X1 := X_old+(dt/2)*dXdt1
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            MultiFab::LinComb(X1[lev], 1.0, Xs_old[lev], 0, 0.5*dt, dXdt1[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+        }
+        // ------------------------------------------------------------
+
+        // RK4 STEP 2 -------------------------------------------------
+        // dXdt2 := dXdt(t+dt/2, X1)
+        Eval_dXdt(t+0.5*dt, n_valid_levels, ref_ratios, meshes, matfactories, N_DOM, N_SOL, Sol2Dom, X1, dXdt2, IBVP);
+
+        // X1 := X_old+(dt/2)*dXdt2
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            MultiFab::LinComb(X1[lev], 1.0, Xs_old[lev], 0, 0.5*dt, dXdt2[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+        }
+        // ------------------------------------------------------------
+
+        // RK4 STEP 3 -------------------------------------------------
+        // dXdt3 := dXdt(t+dt/2, X1)
+        Eval_dXdt(t+0.5*dt, n_valid_levels, ref_ratios, meshes, matfactories, N_DOM, N_SOL, Sol2Dom, X1, dXdt3, IBVP);
+        
+        // X1 := X_old+dt*dXdt3
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            MultiFab::LinComb(X1[lev], 1.0, Xs_old[lev], 0, dt, dXdt3[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+        }
+        // ------------------------------------------------------------
+
+        // RK4 STEP 4 -------------------------------------------------
+        // dXdt4 := dXdt(t+dt, X1)
+        Eval_dXdt(t+dt, n_valid_levels, ref_ratios, meshes, matfactories, N_DOM, N_SOL, Sol2Dom, X1, dXdt4, IBVP);
+
+        // X_new := X_old+(dt/6)*dXdt1+(dt/3)*dXdt2+(dt/3)*dXdt3+(dt/6)*dXdt4
+        for (int lev = 0; lev < n_valid_levels; ++lev)
+        {
+            MultiFab::LinComb(Xs[lev], 1.0, Xs_old[lev], 0, dt/6.0, dXdt1[lev], 0, 0, Xs[lev].n_comp, Xs[lev].n_grow);
+            MultiFab::Saxpy(Xs[lev],                        dt/3.0, dXdt2[lev], 0, 0, Xs[lev].n_comp, Xs[lev].n_grow);
+            MultiFab::Saxpy(Xs[lev],                        dt/3.0, dXdt3[lev], 0, 0, Xs[lev].n_comp, Xs[lev].n_grow);
+            MultiFab::Saxpy(Xs[lev],                        dt/6.0, dXdt4[lev], 0, 0, Xs[lev].n_comp, Xs[lev].n_grow);
+        }
+        // ------------------------------------------------------------
+    }
+    // ================================================================
     // ================================================================
     else
     {

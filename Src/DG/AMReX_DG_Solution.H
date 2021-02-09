@@ -46,6 +46,41 @@ void IsProblemManageable(const std::string which_file, const std::string which_f
     }
 }
 
+/**
+ * \brief Make sure the problem can be handled.
+ *
+ * \param[in] which_file: string containing the name of the file where this function is called.
+ * \param[in] which_function: string containing the name of the parent function calling this 
+ *                            function.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] N_FIELDS: Number of output fields.
+ *
+*/
+AMREX_FORCE_INLINE
+void IsProblemManageable(const std::string which_file, const std::string which_function, const int N_SOL, const int N_FIELDS)
+{
+    if (N_SOL > __DG_MAX_N_SOL__)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg +=  "ERROR: "+which_file+" - "+which_function+"\n";
+        msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
+        msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
+        msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
+        Abort(msg);
+    }
+    if (N_FIELDS > __DG_MAX_N_FIELDS__)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg +=  "ERROR: "+which_file+" - "+which_function+"\n";
+        msg += "| The number of output fields exceeds the maximum allowed number.\n";
+        msg += "| N_FIELDS           : "+std::to_string(N_FIELDS)+".\n";
+        msg += "| __DG_MAX_N_FIELDS__: "+std::to_string(__DG_MAX_N_FIELDS__)+".\n";
+        Abort(msg);
+    }
+}
+
 void CopyWithMask(const MultiFab & src, MultiFab & dst, const iMultiFab & mask, const int n_comp, const Periodicity & per);
 
 /**
@@ -97,16 +132,7 @@ void ProjectInitialConditionsOverGrid(const Geometry & geom,
     // ================================================================
 
     // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
-    if (N_SOL > __DG_MAX_N_SOL__)
-    {
-        std::string msg;
-        msg  = "\n";
-        msg +=  "ERROR: AMReX_DG_Solution.H - ProjectInitialConditionsOverGrid\n";
-        msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
-        msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
-        msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
-        Abort(msg);
-    }
+    IsProblemManageable("AMReX_DG_Solution.H", "ProjectInitialConditionsOverGrid", N_SOL);
     // ================================================================
 
     // INITIALIZATION =================================================
@@ -350,16 +376,7 @@ void ProjectInitialConditions(const ImplicitMesh & mesh,
     // ================================================================
 
     // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
-    if (N_SOL > __DG_MAX_N_SOL__)
-    {
-        std::string msg;
-        msg  = "\n";
-        msg +=  "ERROR: AMReX_DG_Solution.H - ProjectInitialConditions\n";
-        msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
-        msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
-        msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
-        Abort(msg);
-    }
+    IsProblemManageable("AMReX_DG_Solution.H", "ProjectInitialConditions", N_SOL);
     // ================================================================
 
     // INITIALIZATION =================================================
@@ -514,16 +531,7 @@ Real EvalError(const Real t,
     // ================================================================
 
     // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
-    if (N_SOL > __DG_MAX_N_SOL__)
-    {
-        std::string msg;
-        msg  = "\n";
-        msg += "ERROR: AMReX_DG_Solution.H - EvalError\n";
-        msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
-        msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
-        msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
-        Abort(msg);
-    }
+    IsProblemManageable("AMReX_DG_Solution.H", "EvalError", N_SOL);
     // ================================================================
 
     // VARIABLES ======================================================
@@ -646,6 +654,149 @@ Real EvalError(const Real t,
 }
 
 /**
+ * \brief Compute the error between the exact solution and the FV solution using infinite norm.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] N_DOM: number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the state vectors for the unknown solution fields.
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  Real F_ERROR(const int dom, const Real t, const Real * x, const Real * SOL, Real & err_x, Real & norm_x) const;
+ *
+ * \return the error.
+*/
+template <typename IBVP_CLASS>
+Real EvalErrorInfNorm_FV(const Real t,
+                         const ImplicitMesh & mesh,
+                         const int N_DOM,
+                         const int N_SOL,
+                         const MultiFab & X,
+                         const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("EvalErrorInfNorm_FV(const Real, const ImplicitMesh &, ....)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS =====================================================
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+    // IMPLICIT MESH
+#ifdef AMREX_USE_CUDA
+    const Real * eDomQuad_mem_ptr = mesh.eDomQuad_device_mem.data();
+#else
+    const Real * eDomQuad_mem_ptr = mesh.eDomQuad_host_mem.data();
+#endif
+    // ================================================================
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    IsProblemManageable("AMReX_DG_Solution.H", "EvalErrorInfNorm_FV", N_SOL);
+    // ================================================================
+
+    // VARIABLES ======================================================
+    MultiFab dX(X.boxarray, X.distributionMap, AMREX_SPACEDIM*N_SOL, 1);
+    MultiFab err(X.boxarray, X.distributionMap, 2*N_DOM, 0);
+    err = 0.0;
+
+    Real max_error = 0.0;
+    // ================================================================
+    
+    // EVAL THE SLOPES ================================================
+    IBVP.F_R_SLOPES(t, mesh, N_DOM, N_SOL, X, dX);
+    // ================================================================
+
+    // EVAL THE MINIMUM TIME STEP =====================================
+    for (MFIter mfi(err); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
+
+        Array4<int const> const & eDomQuad_Nq_fab = mesh.eDomQuad_Nq.array(mfi);
+        Array4<long const> const & eDomQuad_pos_fab = mesh.eDomQuad_pos.array(mfi);
+        
+        Array4<Real const> const & X_fab = X.array(mfi);
+        Array4<Real const> const & dX_fab = dX.array(mfi);
+        Array4<Real> const & err_fab = err.array(mfi);
+
+        ParallelFor(bx, N_DOM,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+
+            if (ELM_IS_NOT_EMPTY(etype))
+            {
+                // LOCAL PARAMETERS
+                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                   prob_lo[1]+j*dx[1],
+                                                                   prob_lo[2]+k*dx[2])};
+                const int dom_Nq = eDomQuad_Nq_fab(i,j,k,ELM_DOM_QUAD_NQ(dom));
+                const long pos = eDomQuad_pos_fab(i,j,k,ELM_DOM_QUAD_POS(dom));
+                const Real * xptr = &eDomQuad_mem_ptr[pos];
+                
+                // LOCAL VARIABLES
+                int BF_i, BF_j, BF_k;
+                Real xc[AMREX_SPACEDIM];
+                Real x[AMREX_SPACEDIM];
+                Real SOL[__DG_MAX_N_SOL__];
+                Real err_x, norm_x;
+
+                // SOLUTION
+                BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+                AMREX_D_TERM
+                (
+                    xc[0] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X1(dom));,
+                    xc[1] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X2(dom));,
+                    xc[2] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X3(dom));
+                )
+                DG_SOL_space_RX sol(X_fab, dX_fab, xc, BF_i, BF_j, BF_k);
+
+                // LOOP OVER THE QUADRATURE POINTS
+                for (int q = 0; q < dom_Nq; ++q)
+                {
+                    // QUADRATURE POINT
+                    const long x_pos = (AMREX_SPACEDIM+1)*q;
+                    AMREX_D_TERM
+                    (
+                        x[0] = xptr[x_pos+0]+cell_lo[0];,
+                        x[1] = xptr[x_pos+1]+cell_lo[1];,
+                        x[2] = xptr[x_pos+2]+cell_lo[2];
+                    )
+
+                    // EVAL SOLUTION
+                    sol.eval(x, 0, N_SOL, SOL);
+
+                    // EVAL ERROR
+                    IBVP.F_ERROR(dom, t, x, SOL, err_x, norm_x);
+
+                    err_fab(i,j,k,2*dom) = std::max(err_fab(i,j,k,2*dom), norm_x);
+                    err_fab(i,j,k,2*dom+1) = std::max(err_fab(i,j,k,2*dom+1), err_x);
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+
+//Print() << "err.max(1): " << err.max(1) << std::endl;
+//Print() << "err.max(0): " << err.max(0) << std::endl;
+
+    max_error = err.max(1)/err.max(0);
+    for (int dom = 1; dom < N_DOM; ++dom)
+    {
+        max_error += err.max(2*dom+1)/err.max(2*dom);
+    }
+    // ================================================================
+
+    return max_error;
+}
+
+/**
  * \brief Compute the error between the exact solution and the dG solution using infinite norm.
  *
  * \param[in] t: time.
@@ -693,23 +844,14 @@ Real EvalErrorInfNorm(const Real t,
     // ================================================================
 
     // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
-    if (N_SOL > __DG_MAX_N_SOL__)
-    {
-        std::string msg;
-        msg  = "\n";
-        msg += "ERROR: AMReX_DG_Solution.H - EvalErrorInfNorm\n";
-        msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
-        msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
-        msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
-        Abort(msg);
-    }
+    IsProblemManageable("AMReX_DG_Solution.H", "EvalErrorInfNorm", N_SOL);
     // ================================================================
 
     // VARIABLES ======================================================
     MultiFab err(X.boxarray, X.distributionMap, 2*N_DOM, 0);
     err = 0.0;
 
-    Real total_error = 0.0;
+    Real max_error = 0.0;
     // ================================================================
 
     // EVAL THE MINIMUM TIME STEP =====================================
@@ -781,17 +923,14 @@ Real EvalErrorInfNorm(const Real t,
         Gpu::synchronize();
     }
 
-//Print() << "err.max(1): " << err.max(1) << std::endl;
-//Print() << "err.max(0): " << err.max(0) << std::endl;
-
-    total_error = err.max(1)/err.max(0);
+    max_error = err.max(1)/err.max(0);
     for (int dom = 1; dom < N_DOM; ++dom)
     {
-        total_error += err.max(2*dom+1)/err.max(2*dom);
+        max_error += err.max(2*dom+1)/err.max(2*dom);
     }
     // ================================================================
 
-    return total_error;
+    return max_error;
 }
 
 /**
@@ -861,16 +1000,7 @@ void FillBoundaryCells(const Real t,
     // ================================================================
 
     // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
-    if (N_SOL > __DG_MAX_N_SOL__)
-    {
-        std::string msg;
-        msg  = "\n";
-        msg += "ERROR: AMReX_DG_Solution.H - FillBoundaryCells\n";
-        msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
-        msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
-        msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
-        Abort(msg);
-    }
+    IsProblemManageable("AMReX_DG_Solution.H", "FillBoundaryCells", N_SOL);
     // ================================================================
 
     // FILL BOUNDARY CELLS ============================================

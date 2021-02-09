@@ -17,24 +17,24 @@ time.n_steps = 50000
 # GRID ================================================================
 grid.n_cells      = 16 16
 grid.max_box_size = 8 8
-grid.CFL = 1.0
+grid.CFL = 0.2
 
 # LEVEL SET FUNCTIONS
-grid.space_p = 2
-grid.space_q = 2
+grid.space_p = 3
+grid.space_q = 3
 # =====================================================================
 
 
 # IMPLICITLY-DEFINED MESH =============================================
-implicit_mesh.space_q = 2
-implicit_mesh.space_q_ie = 2
+implicit_mesh.space_q = 3
+implicit_mesh.space_q_ie = 3
 
 implicit_mesh.volume_fraction_threshold = 0.3
 # =====================================================================
 
 
 # DISCONTINUOUS GALERKIN METHOD =======================================
-dG.space_p = 1
+dG.space_p = 2
 # =====================================================================
 #######################################################################
 

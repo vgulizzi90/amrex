@@ -490,6 +490,92 @@ void Restrict(const int N_SOL,
 // ####################################################################
 // ####################################################################
 
+
+
+// ####################################################################
+// ERROR EVALUATION ###################################################
+// ####################################################################
+/**
+ * \brief Compute the error between the exact solution and the dG solution using infinite norm.
+ *
+ * \param[in] t: time.
+ * \param[in] N_DOM: number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] AMR: an AMR object that contains the solution at the different mesh levels.
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  Real F_ERROR(const int dom, const Real t, const Real * x, const Real * SOL, Real & err_x, Real & norm_x) const;
+ *
+ * \return the error.
+*/
+template <typename AMR_CLASS, typename IBVP_CLASS>
+Real EvalErrorInfNorm(const Real t,
+                      const int N_DOM,
+                      const int N_SOL,
+                      const AMR_CLASS & AMR,
+                      const IBVP_CLASS & IBVP)
+{
+    // PARAMETERS =====================================================
+    const int finest_level = AMR.maxLevel();
+    // ================================================================
+
+    // VARIABLES ======================================================
+    Real max_error = 0.0;
+    // ================================================================
+
+    // CYCLE OVER THE LEVELS ==========================================
+    for (int lev = 0; lev <= finest_level; ++lev)
+    {
+        if (AMR.LevelIsValid(lev))
+        {
+            const ImplicitMesh & mesh = *AMR.meshes[lev];
+            const MatrixFactory & matfactory = *AMR.matfactories[lev];
+            //const iMultiFab & mask = AMR.masks[lev];
+            const MultiFab & X = AMR.Xs[lev];
+
+            Real level_error;
+
+            if (matfactory.std_elem.p == 0)
+            {
+                level_error = EvalErrorInfNorm_FV(t, mesh, N_DOM, N_SOL, X, IBVP);
+            }
+            else
+            {
+                level_error = EvalErrorInfNorm(t, mesh, matfactory, N_DOM, N_SOL, X, IBVP);
+            }
+
+            max_error = std::max(max_error, level_error);
+        }
+    }
+    // ================================================================
+
+    return max_error;
+}
+
+/**
+ * \brief Compute the error between the exact solution and the dG solution using infinite norm.
+ *
+ * \param[in] t: time.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] AMR: an AMR object that contains the solution at the different mesh levels.
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  Real F_ERROR(const int dom, const Real t, const Real * x, const Real * SOL, Real & err_x, Real & norm_x) const;
+ *
+ * \return the error.
+*/
+template <typename AMR_CLASS, typename IBVP_CLASS>
+Real EvalErrorInfNorm(const Real t,
+                      const int N_SOL,
+                      const AMR_CLASS & AMR,
+                      const IBVP_CLASS & IBVP)
+{
+    const int N_DOM = 1;
+    return EvalErrorInfNorm(t, N_DOM, N_SOL, AMR, IBVP);
+}
+// ####################################################################
+// ####################################################################
+
 } // namespace AMR
 } // namespace DG
 } // namespace amrex

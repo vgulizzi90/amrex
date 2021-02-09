@@ -1677,26 +1677,7 @@ void Export_VTK(const std::string & folderpath_root,
     // ================================================================
 
     // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
-    if (N_SOL > __DG_MAX_N_SOL__)
-    {
-        std::string msg;
-        msg  = "\n";
-        msg +=  "ERROR: AMReX_DG_Solution_Output.H - Export_VTK\n";
-        msg += "| The number of unknown fields exceeds the maximum allowed number.\n";
-        msg += "| N_SOL           : "+std::to_string(N_SOL)+".\n";
-        msg += "| __DG_MAX_N_SOL__: "+std::to_string(__DG_MAX_N_SOL__)+".\n";
-        Abort(msg);
-    }
-    if (n_IBVP_fields > __DG_MAX_N_FIELDS__)
-    {
-        std::string msg;
-        msg  = "\n";
-        msg +=  "ERROR: AMReX_DG_Solution_Output.H - Export_VTK\n";
-        msg += "| The number of output fields exceeds the maximum allowed number.\n";
-        msg += "| n_IBVP_fields      : "+std::to_string(n_IBVP_fields)+".\n";
-        msg += "| __DG_MAX_N_FIELDS__: "+std::to_string(__DG_MAX_N_FIELDS__)+".\n";
-        Abort(msg);
-    }
+    IsProblemManageable("AMReX_DG_Solution_Output.H", "Export_VTK", N_SOL, n_IBVP_fields);
     // ================================================================
 
     // EVAL REQUIRED MEMORY ===========================================
@@ -1945,6 +1926,392 @@ void Export_VTK(const std::string & folderpath_root,
 }
 
 /**
+ * \brief Export FV solution contained in a MultiFab and defined over an implicit mesh to VTK format.
+ *
+ * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
+ *                             be suffixed with an index denoting the time step.
+ * \param[in] n: time step index.
+ * \param[in] n_steps: maximum number of time steps.
+ * \param[in] filename_root: root of the output filename.
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] mask: a iMultiFab object that contains a single value for each cell.
+ * \param[in] N_PHI: number of levelsets contained in mesh.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the state vectors for the unknown solution fields.
+ * \param[in] IBVP: a class that must have two methods with the following prototypes:
+ *
+ *                  void F_FIELDS_NAMES(Vector<std::string> & fields_names) const;
+ *                  void F_FIELDS_DOMAINS(amrex::Vector<int> & fields_domains) const;
+ *                  void F_FIELDS(const Real t, const Real * x, const Real * PHI, const Real * SOL, Real * F) const;
+*/
+template <typename IBVP_CLASS>
+void Export_VTK_FV(const std::string & folderpath_root,
+                   const int n, 
+                   const int n_steps,
+                   const std::string & filename_root,
+                   const Real t,
+                   const ImplicitMesh & mesh,
+                   const iMultiFab & mask,
+                   const int N_PHI,
+                   const int N_SOL,
+                   const MultiFab & X,
+                   const IBVP_CLASS & IBVP)
+{
+    // PARAMETERS =====================================================
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+    // STANDARD ELEMENT
+    const int cell_dom_Ng = std::max(mesh.ls_std_elem.dom_Ng, mesh.im_std_elem.dom_Ng);
+    const int cell_e = std::max(mesh.ls_std_elem.g, mesh.im_std_elem.g);
+    const int cell_dom_Ne = AMREX_D_PICK(cell_e, cell_e*cell_e, cell_e*cell_e*cell_e);
+#if (AMREX_SPACEDIM == 1)
+    const Gpu::ManagedVector<int> subgrid_conn = VTK::GriddedLine_Connectivity(cell_e);
+#endif
+#if (AMREX_SPACEDIM == 2)
+    const Gpu::ManagedVector<int> subgrid_conn = VTK::GriddedQuad_Connectivity(cell_e);
+#endif
+#if (AMREX_SPACEDIM == 3)
+    const Gpu::ManagedVector<int> subgrid_conn = VTK::GriddedHexahedron_Connectivity(cell_e);
+#endif
+    const int * subgrid_conn_ptr = subgrid_conn.data();
+
+    AMREX_D_TERM
+    (
+        Real const * dom_XI1g_ptr = (mesh.ls_std_elem.g > mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI1g.data() : mesh.im_std_elem.dom_XI1g.data();,
+        Real const * dom_XI2g_ptr = (mesh.ls_std_elem.g > mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI2g.data() : mesh.im_std_elem.dom_XI2g.data();,
+        Real const * dom_XI3g_ptr = (mesh.ls_std_elem.g > mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI3g.data() : mesh.im_std_elem.dom_XI3g.data();
+    )
+
+    // DG
+    const int phi_sp = mesh.ls_std_elem.p;
+
+    // VTK
+    const int VTK_cell_id = AMREX_D_PICK(VTK_LINE_ID, VTK_QUAD_ID, VTK_HEXAHEDRON_ID);
+    const int VTK_cell_conn_len = AMREX_D_PICK(VTK_LINE_CONN_LEN, VTK_QUAD_CONN_LEN, VTK_HEXAHEDRON_CONN_LEN);
+    // ================================================================
+
+    // VARIABLES ======================================================
+    long VTK_cell_conn_size;
+
+    int n_VTK_nodal_fields, n_VTK_cell_fields;
+    
+    VTK::Cell_conn_t n_VTK_nodes;
+    VTK::Cell_offs_t n_VTK_cells;
+
+    Vector<VTK::Float_t> VTK_nodes;
+    Vector<VTK::Cell_conn_t> VTK_cell_conn;
+    Vector<VTK::Cell_offs_t> VTK_cell_offset;
+    Vector<VTK::Cell_type_t> VTK_cell_type;
+    Vector<Vector<VTK::Float_t>> VTK_nodal_fields;
+    Vector<std::string> VTK_nodal_fields_names;
+    Vector<Vector<VTK::Int_t>> VTK_cell_fields;
+    Vector<std::string> VTK_cell_fields_names;
+
+    long VTK_nodes_pos;
+    long VTK_cell_conn_pos, VTK_cell_offset_pos, VTK_cell_type_pos;
+    long VTK_nodal_field_pos;
+    long VTK_cell_field_pos;
+
+    long VTK_cell_conn_offset;
+
+    std::string filepath, folderpath;
+
+    int n_IBVP_fields;
+    Vector<int> nodal_fields_domains;
+
+    MultiFab dX(X.boxarray, X.distributionMap, AMREX_SPACEDIM*N_SOL, 1);
+    // ================================================================
+    
+    // GET INFO FROM THE IBVP CLASS ===================================
+    // NODAL DATA
+    IBVP.F_FIELDS_NAMES(VTK_nodal_fields_names);
+    n_IBVP_fields = VTK_nodal_fields_names.size();
+
+    for (int ph = 0; ph < N_PHI; ++ph)
+    {
+        VTK_nodal_fields_names.push_back("PHI_"+std::to_string(ph));
+    }
+    
+    n_VTK_nodal_fields = VTK_nodal_fields_names.size();
+
+    // DOMAINS OF DEFINITION FOR THE NODAL FIELDS
+    IBVP.F_FIELDS_DOMAINS(nodal_fields_domains);
+
+    // CELL DATA
+    VTK_cell_fields_names = {"TAG"};
+
+    n_VTK_cell_fields = VTK_cell_fields_names.size();
+    // ================================================================
+
+    // EVAL THE SLOPES ================================================
+    {
+        int N_DOM = std::set<int>(nodal_fields_domains.begin(), nodal_fields_domains.end()).size();
+        IBVP.F_R_SLOPES(t, mesh, N_DOM, N_SOL, X, dX);
+    }
+    // ================================================================
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    IsProblemManageable("AMReX_DG_Solution_Output.H", "Export_VTK_FV", N_SOL, n_IBVP_fields);
+    // ================================================================
+
+    // EVAL REQUIRED MEMORY ===========================================
+    VTK_cell_conn_size = 0L;
+    
+    n_VTK_nodes = 0L;
+    n_VTK_cells = 0L;
+
+    // DOMAIN
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+        const Dim3 lo = lbound(bx);
+        const Dim3 hi = ubound(bx);
+
+        for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i)
+        {
+            VTK_cell_conn_size += cell_dom_Ne*VTK_cell_conn_len;
+
+            n_VTK_nodes += cell_dom_Ng;
+            n_VTK_cells += cell_dom_Ne;
+        }
+    }
+    // ================================================================
+
+    // ALLOCATE MEMORY ================================================
+    VTK_nodes.resize(3*n_VTK_nodes);
+    VTK_cell_conn.resize(VTK_cell_conn_size);
+    VTK_cell_offset.resize(n_VTK_cells+1);
+    VTK_cell_type.resize(n_VTK_cells);
+
+    VTK_nodal_fields.resize(n_VTK_nodal_fields);
+    for (int f = 0; f < n_VTK_nodal_fields; ++f)
+    {
+        VTK_nodal_fields[f].resize(n_VTK_nodes);
+    }
+
+    VTK_cell_fields.resize(n_VTK_cell_fields);
+    for (int f = 0; f < n_VTK_cell_fields; ++f)
+    {
+        VTK_cell_fields[f].resize(n_VTK_cells);
+    }
+    // ================================================================
+    
+    // EVAL OUTPUT FIELDS =============================================
+    VTK::Float_t * VTK_nodes_ptr = VTK_nodes.data();
+    
+    VTK::Cell_conn_t * VTK_cell_conn_ptr = VTK_cell_conn.data();
+    
+    VTK::Cell_offs_t * VTK_cell_offset_ptr = VTK_cell_offset.data();
+    VTK_cell_offset_ptr[0] = 0;
+    
+    VTK::Cell_type_t * VTK_cell_type_ptr = VTK_cell_type.data();
+
+    Vector<VTK::Float_t *> VTK_nodal_fields_ptr;
+    VTK_nodal_fields_ptr.resize(n_VTK_nodal_fields);
+    for (int f = 0; f < n_VTK_nodal_fields; ++f)
+    {
+        VTK_nodal_fields_ptr[f] = VTK_nodal_fields[f].data();
+    }
+
+    const int * nodal_fields_domains_ptr = nodal_fields_domains.data();
+
+    Vector<VTK::Int_t *> VTK_cell_fields_ptr;
+    VTK_cell_fields_ptr.resize(n_VTK_cell_fields);
+    for (int f = 0; f < n_VTK_cell_fields; ++f)
+    {
+        VTK_cell_fields_ptr[f] = VTK_cell_fields[f].data();
+    }
+    
+    VTK_nodes_pos = 0L;
+    VTK_cell_conn_pos = 0L;
+    VTK_cell_offset_pos = 1L;
+    VTK_cell_type_pos = 0L;
+
+    VTK_nodal_field_pos = 0L;
+    VTK_cell_field_pos = 0L;
+
+    VTK_cell_conn_offset = 0L;
+
+    // DOMAIN
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+        const Dim3 lo = lbound(bx);
+        const Dim3 hi = ubound(bx);
+
+        Array4<Real const> const & PHI_fab = mesh.PHI.array(mfi);
+        Array4<Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<Real const> const & X_fab = X.array(mfi);
+        Array4<Real const> const & dX_fab = dX.array(mfi);
+        Array4<int const> const & mask_fab = mask.array(mfi);
+
+        for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i)
+        {
+            // LOCAL PARAMETERS
+            const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                               prob_lo[1]+j*dx[1],
+                                                               prob_lo[2]+k*dx[2])};
+            const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+1)*dx[0],
+                                                               prob_lo[1]+(j+1)*dx[1],
+                                                               prob_lo[2]+(k+1)*dx[2])};
+
+            // LOCAL VARIABLES
+            Real x[AMREX_SPACEDIM];
+            Real PHI[__DG_MAX_N_PHI__];
+            Real SOL[__DG_MAX_N_SOL__];
+            Real FIELDS[__DG_MAX_N_FIELDS__];
+
+            // LEVELSETS
+            DG_PHI_space_BFX phi(phi_sp, cell_lo, cell_hi, PHI_fab, i, j, k);
+            
+            // SOLUTION
+            DG_SOL_space_RX sol(X_fab, dX_fab);
+
+            // LOOP OVER THE GRID POINTS
+            for (int g = 0; g < cell_dom_Ng; ++g)
+            {
+                // GRID POINT
+                AMREX_D_TERM
+                (
+                    x[0] = dom_XI1g_ptr[g]+cell_lo[0];,
+                    x[1] = dom_XI2g_ptr[g]+cell_lo[1];,
+                    x[2] = dom_XI3g_ptr[g]+cell_lo[2];
+                )
+
+                // VTK NODES ------------------------------------------
+#if (AMREX_SPACEDIM == 1)
+                VTK_nodes_ptr[VTK_nodes_pos+0] = x[0];
+                VTK_nodes_ptr[VTK_nodes_pos+1] = 0.0;
+                VTK_nodes_ptr[VTK_nodes_pos+2] = 0.0;
+#endif
+#if (AMREX_SPACEDIM == 2)
+                VTK_nodes_ptr[VTK_nodes_pos+0] = x[0];
+                VTK_nodes_ptr[VTK_nodes_pos+1] = x[1];
+                VTK_nodes_ptr[VTK_nodes_pos+2] = 0.0;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                VTK_nodes_ptr[VTK_nodes_pos+0] = x[0];
+                VTK_nodes_ptr[VTK_nodes_pos+1] = x[1];
+                VTK_nodes_ptr[VTK_nodes_pos+2] = x[2];
+#endif
+                // ----------------------------------------------------
+
+                // EVAL LEVELSETS -------------------------------------
+                phi.eval(x, 0, N_PHI, PHI);
+                // ----------------------------------------------------
+
+                // VTK NODAL FIELDS -----------------------------------
+                for (int f = 0; f < n_IBVP_fields; ++f)
+                {
+                    const int dom = nodal_fields_domains_ptr[f];
+                    const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+
+                    int BF_i, BF_j, BF_k;
+                    Real xc[AMREX_SPACEDIM];
+                    
+                    BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+                    AMREX_D_TERM
+                    (
+                        xc[0] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X1(dom));,
+                        xc[1] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X2(dom));,
+                        xc[2] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X3(dom));
+                    )
+                    sol.set_fab_ptrs(BF_i, BF_j, BF_k);
+                    sol.set_centroid(xc);
+
+                    // EVAL SOLUTION
+                    sol.eval(x, 0, N_SOL, SOL);
+
+                    // EVAL IBVP FIELDS
+                    IBVP.F_FIELDS(t, x, SOL, FIELDS);
+
+                    VTK_nodal_fields_ptr[f][VTK_nodal_field_pos] = FIELDS[f];
+                }
+
+                for (int ph = 0; ph < N_PHI; ++ph)
+                {
+                    VTK_nodal_fields_ptr[n_IBVP_fields+ph][VTK_nodal_field_pos] = PHI[ph];
+                }
+                // ----------------------------------------------------
+
+                VTK_nodes_pos += 3;
+                VTK_nodal_field_pos += 1;
+            }
+
+            // LOOP OVER THE SUB CELLS
+            for (int e = 0; e < cell_dom_Ne; ++e)
+            {
+                // VTK CELL CONNECTIVITY ------------------------------
+                const int offset = e*VTK_cell_conn_len;
+                for (int c = 0; c < VTK_cell_conn_len; ++c)
+                {
+                    VTK_cell_conn_ptr[VTK_cell_conn_pos+c] = subgrid_conn_ptr[offset+c]+VTK_cell_conn_offset;
+                }
+                // ----------------------------------------------------
+
+                // VTK CELL OFFSET ------------------------------------
+                VTK_cell_offset_ptr[VTK_cell_offset_pos] = VTK_cell_offset_ptr[VTK_cell_offset_pos-1]+VTK_cell_conn_len;
+                // ----------------------------------------------------
+
+                // VTK CELL TYPE --------------------------------------
+                VTK_cell_type_ptr[VTK_cell_type_pos] = VTK_cell_id;
+                // ----------------------------------------------------
+
+                // VTK CELL FIELDS ------------------------------------
+                // TAG
+                VTK_cell_fields_ptr[0][VTK_cell_field_pos] = mask_fab(i,j,k);
+                // ----------------------------------------------------
+
+                VTK_cell_conn_pos += VTK_cell_conn_len;
+                VTK_cell_offset_pos += 1;
+                VTK_cell_type_pos += 1;
+                VTK_cell_field_pos += 1;
+            }
+
+            VTK_cell_conn_offset += cell_dom_Ng;
+        }
+    }
+    // ================================================================
+
+    // DUMP HEADER FILE ===============================================
+    IO::MakeStepFolder(folderpath_root, n, n_steps);
+
+    if (ParallelDescriptor::IOProcessor())
+    {
+        VTK::PrintHeaderFile_VTU(folderpath_root, n, n_steps, filename_root,
+                                 VTK_nodal_fields_names, VTK_cell_fields_names);
+    }
+    // ================================================================
+
+    // DUMP DATA FILE =================================================
+    {
+        filepath = IO::MakeLocalOutputFilepath(folderpath_root, n, n_steps, filename_root, "vtu");
+
+        VTK::PrintUnstructuredGridData_VTU(filepath,
+                                           n_VTK_nodes,
+                                           n_VTK_cells,
+                                           VTK_nodes,
+                                           VTK_cell_conn,
+                                           VTK_cell_offset,
+                                           VTK_cell_type,
+                                           VTK_nodal_fields,
+                                           VTK_nodal_fields_names,
+                                           VTK_cell_fields,
+                                           VTK_cell_fields_names);
+    }
+    // ================================================================
+}
+
+/**
  * \brief Export solution contained in a MultiFab and defined over an implicit mesh to VTK format.
  *
  * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will
@@ -1986,9 +2353,10 @@ void Export_VTK(const std::string & folderpath_root,
                t,
                mesh,
                matfactory,
+               mask,
                N_PHI,
                N_SOL,
-               X, mask,
+               X,
                IBVP);
 }
 
@@ -2037,7 +2405,14 @@ void Export_VTK(const std::string & folderpath_root,
             ExportImplicitMesh_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, mask, N_PHI, N_DOM);
             
             filename_root = "Solution_Lv"+std::to_string(lev);
-            Export_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, matfactory, mask, N_PHI, N_SOL, X, IBVP);
+            if (matfactory.std_elem.p == 0)
+            {
+                Export_VTK_FV(folderpath_root, n, n_steps, filename_root, t, mesh, mask, N_PHI, N_SOL, X, IBVP);
+            }
+            else
+            {
+                Export_VTK(folderpath_root, n, n_steps, filename_root, t, mesh, matfactory, mask, N_PHI, N_SOL, X, IBVP);
+            }
         }
     }
 }

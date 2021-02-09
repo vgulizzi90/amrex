@@ -256,6 +256,8 @@ public IDEAL_GAS_BASE
         {
             this->F_NF_OUTFLOW(dom, t, x, un, U, ref_U, NFn);
         }
+
+        //this->F_NF_PRESCRIBED_VELOCITY(dom, t, x, un, U, ref_U, NFn);
     }
 
     /**
@@ -275,6 +277,11 @@ public IDEAL_GAS_BASE
                       amrex::Real * NFn) const
     {
         this->F_NF_WALL(dom, t, x, un, U, NFn);
+
+        // EXACT SOLUTION
+        //amrex::Real ref_U[DG_N_SOL];
+        //this->F_EXACT(t, x, ref_U);
+        //this->F_NF_PRESCRIBED_VELOCITY(dom, t, x, un, U, ref_U, NFn);
     }
     // ================================================================
 
@@ -292,7 +299,8 @@ public IDEAL_GAS_BASE
                         "pressure",
                         "mach",
                         "total_energy",
-                        "internal_energy"};
+                        "internal_energy",
+                        "density_error"};
     }
 
     /**
@@ -303,7 +311,7 @@ public IDEAL_GAS_BASE
     */
     void F_FIELDS_DOMAINS(amrex::Vector<int> & fields_domains) const
     {
-        fields_domains = {0, 0, 0, 0, 0, 0, 0};
+        fields_domains = {0, 0, 0, 0, 0, 0, 0, 0};
     }
 
     /**
@@ -316,7 +324,7 @@ public IDEAL_GAS_BASE
      * \param[out] F: pointer to memory that will be filled with values of the output fields at (t,x).
     */
     AMREX_GPU_HOST_DEVICE
-    void F_FIELDS(const amrex::Real /*t*/, const amrex::Real * /*x*/,
+    void F_FIELDS(const amrex::Real t, const amrex::Real * x,
                   const amrex::Real * U,
                   amrex::Real * F) const
     {
@@ -329,6 +337,10 @@ public IDEAL_GAS_BASE
         // SOUND SPEED AND MACH NUMBER
         const amrex::Real a = std::sqrt(g*p/rho);
         const amrex::Real M = std::sqrt(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3))/a;
+        
+        // EXACT SOLUTION
+        amrex::Real ref_U[DG_N_SOL];
+        this->F_EXACT(t, x, ref_U);
 
         // OUTPUT FIELDS
         F[RHO] = rho;
@@ -338,6 +350,7 @@ public IDEAL_GAS_BASE
         F[TE+1] = M;
         F[TE+2] = U[TE];
         F[TE+3] = p/(rho*(g-1.0));
+        F[TE+4] = rho-ref_U[RHO];
     }
     // ================================================================
 };

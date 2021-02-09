@@ -175,7 +175,7 @@ void main_main()
         // EVAL ERROR
         {
             amrex::Real dom_err;
-            dom_err = EvalErrorInfNorm(0.0, mesh, matfactory, DG_N_SOL, X, IG);
+            dom_err = amrex::DG::EvalErrorInfNorm(0.0, mesh, matfactory, DG_N_SOL, X, IG);
                       
             amrex::Print() << "| dom_err: " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << std::endl;
 
@@ -246,7 +246,7 @@ void main_main()
 
                 // EVAL ERROR
                 {
-                    dom_err = EvalErrorInfNorm(t, mesh, matfactory, DG_N_SOL, X, IG);
+                    dom_err = amrex::DG::EvalErrorInfNorm(t, mesh, matfactory, DG_N_SOL, X, IG);
                 }
 
                 // WRITE TO OUTPUT

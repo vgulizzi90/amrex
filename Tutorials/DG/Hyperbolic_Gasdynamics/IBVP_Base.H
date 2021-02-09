@@ -132,6 +132,70 @@ struct IDEAL_GAS_BASE
     }
 
     /**
+     * \brief Eval decomposition of the state vector using left eigenvalues.
+     * 
+     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[out] L: pointer to memory that will contain the coefficients of the left eigenvectors.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_eigen_decomposition_1(const amrex::Real * U, 
+                                    amrex::Real * L) const
+    {
+        // VARIABLES
+        amrex::Real AMREX_D_DECL(u1, u2, u3), p;
+        amrex::Real a, h, id;
+
+        this->eval_enthalpy_variables(U, AMREX_D_DECL(u1, u2, u3), p, a, h);
+        id = AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3)-2.0*h; id = 1.0/id;
+
+#if (AMREX_SPACEDIM == 1)
+amrex::Print() << "eval_eigen_decomposition_1 - DIM = 1" << std::endl;
+#endif
+#if (AMREX_SPACEDIM == 2)
+        L[RHO]   =  0.5*(u1/a-2.0*h*id-1.0)*U[RHO]+(u1*id-0.5/a)*U[RHOV1]    +u2*id*U[RHOV2]    -id*U[TE];
+        L[RHOV1] =           2.0*(h*id+1.0)*U[RHO]    -2.0*u1*id*U[RHOV1]-2.0*u2*id*U[RHOV2]+2.0*id*U[TE];
+        L[RHOV2] =                      -u2*U[RHO]                                 +U[RHOV2];
+        L[TE]    = -0.5*(u1/a+2.0*h*id+1.0)*U[RHO]+(u1*id+0.5/a)*U[RHOV1]    +u2*id*U[RHOV2]    -id*U[TE];
+#endif
+#if (AMREX_SPACEDIM == 3)
+amrex::Print() << "eval_eigen_decomposition_1 - DIM = 3" << std::endl;
+#endif
+    }
+
+    /**
+     * \brief Eval reconstruction of the state vector using left eigenvalues.
+     * 
+     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[in] L: pointer to memory containing the coefficients of the left eigenvectors.
+     * \param[out] Ur: pointer to memory that will contain the reconstructed conserved variables.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_eigen_reconstruction_1(const amrex::Real * U,
+                                     const amrex::Real * L,
+                                     amrex::Real * Ur) const
+    {
+        // VARIABLES
+        amrex::Real AMREX_D_DECL(u1, u2, u3), p;
+        amrex::Real a, h, k;
+
+        this->eval_enthalpy_variables(U, AMREX_D_DECL(u1, u2, u3), p, a, h);
+        k = 0.5*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3));
+
+#if (AMREX_SPACEDIM == 1)
+amrex::Print() << "eval_eigen_reconstruction_1 - DIM = 1" << std::endl;
+#endif
+#if (AMREX_SPACEDIM == 2)
+        Ur[RHO]   =          L[RHO]   +L[RHOV1]                     +L[TE];
+        Ur[RHOV1] =   (u1-a)*L[RHO]+u1*L[RHOV1]              +(u1+a)*L[TE];
+        Ur[RHOV2] =       u2*L[RHO]+u2*L[RHOV1]   +L[RHOV2]      +u2*L[TE];
+        Ur[TE]    = (h-a*u1)*L[RHO] +k*L[RHOV1]+u2*L[RHOV2]+(h+a*u1)*L[TE];
+#endif
+#if (AMREX_SPACEDIM == 3)
+amrex::Print() << "eval_eigen_reconstruction_1 - DIM = 3" << std::endl;
+#endif
+    }
+
+    /**
      * \brief Transform solution from global reference system to unit normal reference system.
      * 
      * \param[in] un: pointer to memory containing the unit normal.
@@ -908,6 +972,110 @@ exit(-1);
         */
         // ------------------------------------------------------------
     }
+
+    /**
+     * \brief Eval the numerical flux at a boundary to enforce bcs.
+     *
+     * \param[in] dom: index of the domain.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the unit normal of the interface.
+     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[in] bcs_U: pointer to memory containing the conserved variables with desired boundary 
+     *                   conditions.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_PRESCRIBED_VELOCITY_1(const int dom,
+                                    const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                                    const amrex::Real * Un, const amrex::Real * bcs_Un,
+                                    amrex::Real * NFn) const
+    {
+        // VARIABLES
+        amrex::Real AMREX_D_DECL(u1, u2, u3), pl;
+        amrex::Real a, h;
+
+        this->eval_enthalpy_variables(Un, AMREX_D_DECL(u1, u2, u3), pl, a, h);
+
+        // OUTLET
+        if (u1 > 0.0)
+        {
+            // SUPERSONIC OUTLET
+            if ((u1-a) > 0.0)
+            {
+                this->eval_F1(Un, NFn);
+            }
+            // SUBSONIC OUTLET
+            else
+            {
+                amrex::Real L[DG_N_SOL], bcs_L[DG_N_SOL];
+                this->eval_eigen_decomposition_1(Un, L);
+                this->eval_eigen_decomposition_1(bcs_Un, bcs_L);
+
+                L[RHO] = bcs_L[RHO];
+
+                // We use bcs_L as a temporary variable
+                this->eval_eigen_reconstruction_1(Un, L, bcs_L);
+                this->eval_F1(bcs_L, NFn);
+            }
+        }
+        // INLET
+        else if (u1 < 0.0)
+        {
+            // SUPERSONIC INLET
+            if ((u1+a) < 0.0)
+            {
+                this->eval_F1(bcs_Un, NFn);
+            }
+            // SUBSONIC INLET
+            else
+            {
+                amrex::Real L[DG_N_SOL], bcs_L[DG_N_SOL];
+                this->eval_eigen_decomposition_1(Un, L);
+                this->eval_eigen_decomposition_1(bcs_Un, bcs_L);
+
+                bcs_L[TE] = L[TE];
+
+                // We use L as a temporary variable
+                this->eval_eigen_reconstruction_1(Un, bcs_L, L);
+                this->eval_F1(L, NFn);
+            }
+        }
+        // SLIP WALL
+        else
+        {
+amrex::Print() << "F_NF_PRESCRIBED_VELOCITY_1 - SLIP WALL" << std::endl;
+exit(-1);
+        }
+    }
+    
+    /**
+     * \brief Eval the numerical flux at a boundary to enforce bcs.
+     *
+     * \param[in] dom: index of the domain.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the unit normal of the interface.
+     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[in] bcs_U: pointer to memory containing the conserved variables with desired boundary 
+     *                   conditions.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE
+    void F_NF_PRESCRIBED_VELOCITY(const int dom,
+                                  const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+                                  const amrex::Real * U, const amrex::Real * bcs_U,
+                                  amrex::Real * NFn) const
+    {
+        amrex::Real Un[DG_N_SOL], bcs_Un[DG_N_SOL], tmp[DG_N_SOL];
+
+        this->eval_U2Un(un, U, Un);
+        this->eval_U2Un(un, bcs_U, bcs_Un);
+
+        this->F_NF_PRESCRIBED_VELOCITY_1(dom, t, x, un, Un, bcs_Un, tmp);
+
+        this->eval_Un2U(un, tmp, NFn);
+    }
     // ===============================================================
 
 
@@ -1135,25 +1303,16 @@ exit(-1);
                             dP[u] = 0.0;
                         }
                     }
-                    // ------------------------------------------------
-/*
-if (i == __i__ && j == __j__)
-{
-amrex::Print() << "xc: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, xc);
-amrex::Print() << "P: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, P);
-amrex::Print() << "nbr_xcs: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, __DG_BASE_STENCIL_N_NBR__, nbr_xcs);
-amrex::Print() << "nbr_Ps: " << std::endl; amrex::DG::IO::PrintRealArray2D(DG_N_SOL, __DG_BASE_STENCIL_N_NBR__, nbr_Ps);
-amrex::Print() << "dP: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, DG_N_SOL, dP);
-}
-*/
 
-                    // LIMIT THE COMPUTED SLOPES ----------------------
                     amrex::DG::linalg::transpose(AMREX_SPACEDIM, DG_N_SOL, dP, rhs);
                     for (int u = 0; u < DG_N_SOL*AMREX_SPACEDIM; ++u)
                     {
                         dP[u] = rhs[u];
                     }
+                    // ------------------------------------------------
 
+                    // LIMIT THE COMPUTED SLOPES ----------------------
+                    /*
                     // STORE THE CHARACTERISTICS CENTRAL DIFFERENCE IN rhs
                     for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
                     {
@@ -1163,12 +1322,6 @@ amrex::Print() << "dP: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPA
                         
                         this->F_DP2DC(t, xc, un, P, &dP[dir*DG_N_SOL], &rhs[dir*DG_N_SOL]);
                     }
-/*
-if (i == __i__ && j == __j__)
-{
-amrex::Print() << "dC: " << std::endl; amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, rhs);
-}
-*/
 
                     // X1 DIRECTION
                     {
@@ -1236,14 +1389,6 @@ amrex::Print() << "dC: " << std::endl; amrex::DG::IO::PrintRealArray2D(DG_N_SOL,
 
                                 // LIMIT SLOPES
                                 this->LimitSlopes(&rhs[dir*DG_N_SOL], tmp_dC, theta);
-/*
-if (i == __i__ && j == __j__)
-{
-amrex::Print() << "tmp_dP: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, tmp_dP);
-amrex::Print() << "tmp_dC: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, tmp_dC);
-amrex::Print() << "dC: " << std::endl; amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, rhs);
-}
-*/
                             }
                         }
                     }
@@ -1320,21 +1465,6 @@ amrex::Print() << "dC: " << std::endl; amrex::DG::IO::PrintRealArray2D(DG_N_SOL,
                                 }
                             }
                         }
-/*
-if (std::abs(dP[0]) > 1.0e-9)
-{
-amrex::Print() << "xc: "; amrex::DG::IO::PrintRealArray2D(1, AMREX_SPACEDIM, xc);
-amrex::Print() << "P: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, P);
-amrex::Print() << "nbr_xcs: " << std::endl; amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, __DG_BASE_STENCIL_N_NBR__, nbr_xcs);
-amrex::Print() << "nbr_Ps: " << std::endl; amrex::DG::IO::PrintRealArray2D(DG_N_SOL, __DG_BASE_STENCIL_N_NBR__, nbr_Ps);
-
-amrex::Print() << "nbr_P_max: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, nbr_P_max);
-amrex::Print() << "nbr_P_min: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, nbr_P_min);
-
-amrex::Print() << "dP: " << std::endl;
-amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dP);
-}
-*/
 
                         // EVAL LIMITING COEFFICIENT
                         for (int n = 0; n < __DG_BASE_STENCIL_N_NBR__; ++n)
@@ -1374,27 +1504,11 @@ amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dP);
                                 dP[u+2*DG_N_SOL] *= alphas[u];
                             )
                         }
-/*
-if (std::abs(dP[0]) > 1.0e-9)
-{
-amrex::Print() << "dP: " << std::endl;
-amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dP);
-exit(-1);
-}
-*/
                     }
+                    */
                     // ------------------------------------------------
 
                     // STORE THE SLOPES -------------------------------
-
-/*
-if (i == __i__ && j == __j__)
-{
-amrex::Print() << "dP: " << std::endl; amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dP);
-exit(-1);
-}
-*/
-
                     this->F_DP2DU(t, xc, U, &dP[0*DG_N_SOL], &rhs[0*DG_N_SOL]);
 #if (AMREX_SPACEDIM > 1)
                     this->F_DP2DU(t, xc, U, &dP[1*DG_N_SOL], &rhs[1*DG_N_SOL]);
@@ -1413,7 +1527,6 @@ exit(-1);
                         )
                     }
                     // ------------------------------------------------------------
-
                 }
             });
             amrex::Gpu::synchronize();
