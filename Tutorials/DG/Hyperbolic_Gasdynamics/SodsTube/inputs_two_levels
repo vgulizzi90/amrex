@@ -8,7 +8,7 @@ geometry.is_periodic = 0 0 0
 
 # TIME ################################################################
 time.T = 0.2
-time.n_steps = 500
+time.n_steps = 2000
 #######################################################################
 
 
@@ -23,28 +23,39 @@ amr.n_cell        = 64 64 64
 amr.max_grid_size = 4 4 4
 amr.max_level     = 1
 amr.ref_ratio     = 4 4 4
+amr.blocking_factor = 1
+amr.n_error_buf = 0
+amr.grid_eff = 1.0
 # =====================================================================
 
 
 # AMR GRIDS ===========================================================
-grids.CFL = 1.0 0.3
+# 2D
+#grids.CFL = 0.9 0.27
+
+# 3D
+grids.CFL = 0.9 0.05
 
 # LEVEL SET FUNCTIONS
-grids.space_p = 2 2
-grids.space_q = 2 2
+grids.space_p = 3 2
+grids.space_q = 3 2
 # =====================================================================
 
 
 # IMPLICITLY-DEFINED MESH =============================================
-implicit_meshes.space_q = 2 2
-implicit_meshes.space_q_ie = 2 2
+implicit_meshes.space_q = 3 2
+implicit_meshes.space_q_ie = 5 2
 
-implicit_meshes.volume_fraction_threshold = 0.05 0.3
+# 2D
+#implicit_meshes.volume_fraction_threshold = 0.1 0.3
+
+# 3D
+implicit_meshes.volume_fraction_threshold = 0.1 0.1
 # =====================================================================
 
 
 # DISCONTINUOUS GALERKIN METHOD =======================================
-dG.space_p = 1 0
+dG.space_p = 2 0
 # =====================================================================
 #######################################################################
 
@@ -55,7 +66,7 @@ dG.space_p = 1 0
 #problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1
 
 problem.int_params = 1
-problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.2 30.0 0.0
+problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.2 60.0 30.0
 #######################################################################
 # NOTE: params contains the parameters of the problem, which should be
 #       input as follows
@@ -88,9 +99,9 @@ problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.2 30.0 0.0
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 100
-plot_filepath = PROBLEM_TWO_LEVELS
-checkpoint_int = 100
-checkpoint_filepath = PROBLEM_TWO_LEVELS
-regrid_int = 2
+plot_int = 120
+plot_filepath = PROBLEM_3D_TH60_PH30_movie
+checkpoint_int = 120
+checkpoint_filepath = PROBLEM_3D_TH60_PH30_movie
+regrid_int = 20
 #######################################################################

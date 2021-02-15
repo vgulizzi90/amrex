@@ -57,14 +57,14 @@ void MakeStepFolder(const std::string & /*folderpath_root*/, const int /*n*/, co
  * \brief Print (ii,jj,kk,comp) of multifab.
 */
 template <typename MF>
-void PrintMultiFabEntry(const MF & mf, const int ii, const int jj, const int kk, const int comp)
+void PrintMultiFabEntry(const MF & mf, const int ii, const int jj, const int kk, const int comp, const std::string where = "")
 {
     // PARAMETERS
     const int n_comp = mf.n_comp;
 
     for (MFIter mfi(mf); mfi.isValid(); ++mfi)
     {
-        const Box & bx = mfi.validbox();
+        const Box & bx = mfi.fabbox();
         auto fab = mf.array(mfi);
 
         ParallelFor(bx, n_comp,
@@ -72,7 +72,7 @@ void PrintMultiFabEntry(const MF & mf, const int ii, const int jj, const int kk,
         {
             if (i == ii && j == jj && k == kk && u == comp)
             {
-                Print() << "mf(" << i << "," << j << "," << k << "," << u << "): " << fab(i,j,k,u) << std::endl;
+                Print() << where << "mf(" << i << "," << j << "," << k << "," << u << "): " << ((int) fab(i,j,k,u)) << std::endl;
             }
         });
         Gpu::synchronize();

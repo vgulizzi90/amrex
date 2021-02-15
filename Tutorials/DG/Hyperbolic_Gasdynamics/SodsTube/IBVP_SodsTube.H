@@ -257,6 +257,20 @@ exit(-1);
                 Uxi[TE] = pL/(g-1.0)+0.5*rhoL*uL*uL;
             }
 
+            /* Smooth shock
+            const amrex::Real beta = 100.0;
+            const amrex::Real fs = std::atan(beta*(xi-xis))/M_PI+0.5;
+
+            Uxi[RHO] = (rhoR-rhoL)*fs+rhoL;
+            AMREX_D_TERM
+            (
+                Uxi[RHOV1] = (rhoR*uR-rhoL*uL)*fs+rhoL*uL;,
+                Uxi[RHOV2] = 0.0;,
+                Uxi[RHOV3] = 0.0;
+            )
+            Uxi[TE] = (pR/(g-1.0)+0.5*rhoR*uR*uR-(pL/(g-1.0)+0.5*rhoL*uL*uL))*fs+(pL/(g-1.0)+0.5*rhoL*uL*uL);
+            */
+
             this->eval_Un2U(xi_dir, Uxi, U);
         }
         else
@@ -425,6 +439,15 @@ exit(-1);
         F[TE+2] = U[TE];
         F[TE+3] = p/(rho*(g-1.0));
 
+        /*
+        if (std::abs(u1) > 1.0e10)
+        {
+            amrex::Print() << "what?!?" << std::endl;
+            amrex::Print() << "U: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, U);
+            exit(-1);
+        }
+        */
+
         // VELOCITY COMPONENTS ALONG THE TUBE'S CENTERLINE
         if (this->eb_flag == 1)
         {
@@ -443,9 +466,9 @@ exit(-1);
 
             AMREX_D_TERM
             (
-                F[TE+4] = Un[RHOV1]/rho;,
-                F[TE+5] = Un[RHOV2]/rho;,
-                F[TE+6] = Un[RHOV3]/rho;
+                F[TE+4] = Un[RHOV1]/Un[RHO];,
+                F[TE+5] = Un[RHOV2]/Un[RHO];,
+                F[TE+6] = Un[RHOV3]/Un[RHO];
             )
         }
     }
@@ -684,7 +707,8 @@ public amrex::DG::AMR::Base
 {
     // DATA MEMBERS ===================================================
     IDEAL_GAS IG;
-    SUBCELL_SLOPE_LIMITER limiter;
+    //SUBCELL_SLOPE_LIMITER limiter;
+    amrex::DG::MatrixFactory mf;
     // ================================================================
 
 
@@ -723,7 +747,7 @@ public amrex::DG::AMR::Base
         
         // MATRIX FACTORY ---------------------------------------------
         this->matfactories[lev] = new amrex::DG::MatrixFactory();
-        this->matfactories[lev]->define(this->Geom(lev), ba, dm, level_inputs);
+        this->matfactories[lev]->define(this->Geom(lev), this->meshes[lev]->cc_ba, this->meshes[lev]->dm, level_inputs);
         this->matfactories[lev]->EvalMassMatrices(*this->meshes[lev]);
 
         if (lev > 0)
@@ -732,6 +756,16 @@ public amrex::DG::AMR::Base
                                                                this->refRatio(lev-1),
                                                                *this->meshes[lev-1],
                                                                *this->matfactories[lev-1]);
+        }
+
+        if (lev == 0)
+        {
+            this->mf.define(this->Geom(lev), level_inputs.dG.space_p-1, level_inputs.dG.space_p);
+            this->mf.EvalMassMatrices(*this->meshes[lev]);
+            this->mf.EvalInterpolationOperator(*this->meshes[lev],
+                                               amrex::IntVect::TheUnitVector(),
+                                               *this->meshes[lev],
+                                               *this->matfactories[lev]);
         }
         // ------------------------------------------------------------
 
@@ -756,6 +790,11 @@ public amrex::DG::AMR::Base
                                             true);
         // ------------------------------------------------------------
         // The last input denotes that the fabbox will be used.
+        // ------------------------------------------------------------
+
+        // SET BOX ARRAY AND DISTRIBUTION MAP -------------------------
+        this->SetBoxArray(lev, this->meshes[lev]->cc_ba);
+        this->SetDistributionMap(lev, this->meshes[lev]->dm);
         // ------------------------------------------------------------
 
         // SUB CELL LIMITER -------------------------------------------
@@ -794,26 +833,38 @@ public amrex::DG::AMR::Base
     // TAG CELL FOR REFINEMENT ========================================
     virtual void ErrorEst(int lev, amrex::TagBoxArray & tags, amrex::Real time, int /*ngr*/) override
     {
+        // PROFILING ------------------------------------------------------
+        BL_PROFILE("ErrorEst(int, amrex::TagBoxArray &, ....)");
+        // ----------------------------------------------------------------
+
         // QUICK RETURN IF WE REACHED THE MAXIMUM LEVEL ---------------
-        if (lev > this->max_level) return;
+        if (lev >= this->max_level) return;
         // ------------------------------------------------------------
 
         // PARAMETERS -------------------------------------------------
         const int dom = 0;
+        const char untagged = amrex::TagBox::CLEAR;
         const char tagged = amrex::TagBox::SET;
+        // ------------------------------------------------------------
+
+        // SET THE CACHED TAGS ----------------------------------------
+        this->cached_tags[lev].define(this->Xs[lev].boxarray, this->Xs[lev].distributionMap, 1, 1);
+        this->cached_tags[lev].setVal(untagged);
         // ------------------------------------------------------------
 
         // EVAL TROUBLED CELLS ----------------------------------------
         this->IG.F_EVAL_TROUBLED(time,
                                  *this->meshes[lev],
                                  *this->matfactories[lev],
+                                 this->mf,
                                  this->Xs[lev],
-                                 tags,
-                                 amrex::TagBox::SET,
-                                 amrex::TagBox::CLEAR);
+                                 this->cached_tags[lev],
+                                 tagged,
+                                 untagged);
         // ------------------------------------------------------------
 
         // MAKE SURE TO TRACK THE SHOCK AT t = 0 ----------------------
+        /*
         if (time < 1.0e-12)
         {
             const int eb_flag = this->IG.eb_flag;
@@ -835,12 +886,12 @@ public amrex::DG::AMR::Base
             const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = this->meshes[lev]->geom.CellSizeArray();
             const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo = this->meshes[lev]->geom.ProbLoArray();
             
-            for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi)
+            for (amrex::MFIter mfi(this->cached_tags[lev]); mfi.isValid(); ++mfi)
             {
                 const amrex::Box & bx = mfi.validbox();
 
                 amrex::Array4<short const> const & eType_fab = this->meshes[lev]->eType.array(mfi);
-                amrex::Array4<char> const & tags_fab = tags.array(mfi);
+                amrex::Array4<char> const & tags_fab = this->cached_tags[lev].array(mfi);
                 
                 amrex::ParallelFor(bx,
                 [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
@@ -882,37 +933,109 @@ public amrex::DG::AMR::Base
                 });
                 amrex::Gpu::synchronize();
             }
-            tags.FillBoundary(this->meshes[lev]->geom.periodicity());
+            this->cached_tags[lev].FillBoundary(this->meshes[lev]->geom.periodicity());
         }
+        */
         // ------------------------------------------------------------
 
-        // TAG SMALL CELLS --------------------------------------------
-        for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi)
-        {
-            const amrex::Box & bx = mfi.validbox();
-
-            amrex::Array4<short const> const & eType_fab = this->meshes[lev]->eType.array(mfi);
-            amrex::Array4<char> const & tags_fab = tags.array(mfi);
-            
-            amrex::ParallelFor(bx,
-            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-            {
-                const short etype = eType_fab(i,j,k,amrex::DG::ELM_TYPE(dom));
-
-                if (amrex::DG::ELM_IS_SMALL(etype) && (tags_fab(i,j,k) != tagged))
-                {
-                    tags_fab(i,j,k) = tagged;
-                }
-            });
-            amrex::Gpu::synchronize();
-        }
-        tags.FillBoundary(this->meshes[lev]->geom.periodicity());
+        // TAG AN ADDITIONAL LAYER OF CELLS ---------------------------
+        this->GrowTagging(*this->meshes[lev], this->cached_tags[lev], tagged, 1);
         // ------------------------------------------------------------
 
-        // MAKE TAGGING CONSISTENT BY TAGGING
+        // SAVE INFO IN TAGS ------------------------------------------
+        this->CopyTagging(tags, this->cached_tags[lev]);
+        // ------------------------------------------------------------
+    }
+    
+    virtual void ManualTagsPlacement(int lev, amrex::TagBoxArray & tags, const amrex::Vector<amrex::IntVect> & /*bf_lev*/) override
+    {
+        // QUICK RETURN IF WE REACHED THE MAXIMUM LEVEL ---------------
+        if (lev >= this->max_level) return;
+        // ------------------------------------------------------------
+
+        // MAKE TAGGING CONSISTENT BY FURTHER TAGGING
         // i) Small cells merged with tagged extended
         // ii) Extended cells merging with tagged small cells 
-        this->FixTagging(*this->meshes[lev], tags, amrex::TagBox::SET);
+        this->FixTagging(*this->meshes[lev], this->cached_tags[lev], amrex::TagBox::SET);
+
+        // SAVE INFO IN TAGS ------------------------------------------
+        this->CopyTagging(tags, this->cached_tags[lev]);
+        // ------------------------------------------------------------
+    }
+    // ================================================================
+
+    // MAKE NEW LEVEL FROM A COARSE LEVEL =============================
+    virtual void MakeNewLevelFromCoarse(int lev, amrex::Real time, const amrex::BoxArray & ba, const amrex::DistributionMapping & dm) override
+    {
+        // PARAMETERS -------------------------------------------------
+        const int ngr = 1;
+        // ------------------------------------------------------------
+        
+        // VARIABLES --------------------------------------------------
+        amrex::DG::InputReader level_inputs(false);
+        // ------------------------------------------------------------
+        // In the constructor, false means that the input file will not
+        // be read.
+        // ------------------------------------------------------------
+
+        // INPUTS AT CURRENT LEVEL ------------------------------------
+        this->ExtractLevelInputs(lev, level_inputs);
+        // ------------------------------------------------------------
+
+        // LEVEL == 0
+        if (lev == 0)
+        {
+amrex::Print() << "AMR_IDEAL_GAS.MakeNewLevelFromCoarse - lev == 0" << std::endl;
+exit(-1);
+        }
+        // LEVEL > 0
+        else
+        {
+            // IMPLICIT MESH ------------------------------------------
+            this->meshes[lev] = new amrex::DG::ImplicitMesh();
+            this->meshes[lev]->define(this->Geom(lev), ba, dm, level_inputs);
+            this->meshes[lev]->MakeFromCoarse(time, ba, dm, this->refRatio(lev-1), *this->meshes[lev-1], this->IG);
+            // --------------------------------------------------------
+
+            // MATRIX FACTORY -----------------------------------------
+            this->matfactories[lev] = new amrex::DG::MatrixFactory();
+            this->matfactories[lev]->define(this->Geom(lev), this->meshes[lev]->cc_ba, this->meshes[lev]->dm, level_inputs);
+            this->matfactories[lev]->EvalMassMatrices(*this->meshes[lev]);
+
+            if (lev > 0)
+            {
+                this->matfactories[lev]->EvalInterpolationOperator(*this->meshes[lev],
+                                                                    this->refRatio(lev-1),
+                                                                    *this->meshes[lev-1],
+                                                                    *this->matfactories[lev-1]);
+            }
+            // --------------------------------------------------------
+
+            // MASKS --------------------------------------------------
+            this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, ngr);
+            this->masks[lev] = __DG_CELL_UNMASKED__;
+            // --------------------------------------------------------
+
+            // SOLUTION MULTIFAB --------------------------------------
+            const int p = level_inputs.dG.space_p;
+            const int X_n_comp = DG_N_SOL*(AMREX_D_TERM((1+p),*(1+p),*(1+p)));
+
+            this->Xs[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, X_n_comp, ngr);
+            this->Xs[lev] = 0.0;
+
+            const amrex::Gpu::ManagedVector<int> Sol2Dom(DG_N_SOL, 0);
+
+            amrex::DG::AMR::Interpolate(DG_N_SOL, Sol2Dom,
+                                        *this->meshes[lev-1], *this->matfactories[lev-1], this->Xs[lev-1],
+                                        this->refRatio(lev-1),
+                                        *this->meshes[lev], *this->matfactories[lev], this->Xs[lev]);
+            // --------------------------------------------------------
+
+            // SET BOX ARRAY AND DISTRIBUTION MAP ---------------------
+            this->SetBoxArray(lev, this->meshes[lev]->cc_ba);
+            this->SetDistributionMap(lev, this->meshes[lev]->dm);
+            // --------------------------------------------------------
+        }
     }
     // ================================================================
 
@@ -957,25 +1080,33 @@ exit(-1);
             // --------------------------------------------------------
 
             // MASKS --------------------------------------------------
-            this->masks[lev].define(ba, dm, 1, ngr);
-            this->masks[lev] = 0;
+            this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, ngr);
+            this->masks[lev] = __DG_CELL_UNMASKED__;
             // --------------------------------------------------------
 
             // SOLUTION MULTIFAB --------------------------------------
             const int X_n_comp = this->Xs[lev].n_comp;
             const amrex::IntVect X_n_grow = this->Xs[lev].n_grow;
 
-            amrex::MultiFab new_X(ba, dm, X_n_comp, X_n_grow);
+            amrex::MultiFab new_X(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, X_n_comp, X_n_grow);
             new_X = 0.0;
 
             const amrex::Gpu::ManagedVector<int> Sol2Dom(DG_N_SOL, 0);
 
             amrex::DG::AMR::Interpolate(DG_N_SOL, Sol2Dom,
-                                        *meshes[lev-1], *matfactories[lev-1], Xs[lev-1],
+                                        *this->meshes[lev-1], *this->matfactories[lev-1], this->Xs[lev-1],
                                         this->refRatio(lev-1),
-                                        *meshes[lev], *matfactories[lev], new_X);
+                                        *this->meshes[lev], *this->matfactories[lev], new_X);
+                                        
+            new_X.ParallelCopy(this->Xs[lev], 0, 0, X_n_comp, 0, 0, this->Geom(lev).periodicity());
+            new_X.FillBoundary(this->Geom(lev).periodicity());
 
             std::swap(this->Xs[lev], new_X);
+            // --------------------------------------------------------
+
+            // SET BOX ARRAY AND DISTRIBUTION MAP ---------------------
+            this->SetBoxArray(lev, this->meshes[lev]->cc_ba);
+            this->SetDistributionMap(lev, this->meshes[lev]->dm);
             // --------------------------------------------------------
         }
     }

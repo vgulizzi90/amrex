@@ -18,6 +18,7 @@ namespace DG
 
 // CONSTANTS ##########################################################
 #define __DG_BASE_STENCIL_N_NBR__ AMREX_D_PICK(2, 4, 6)
+#define __DG_EXTENDED_STENCIL_N_NBR__ AMREX_D_PICK(2, 8, 26)
 
 #define __DG_STD_ELEM_N_SPACE_BOUNDARIES__ (2*AMREX_SPACEDIM)
 
@@ -130,6 +131,55 @@ const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> base_stencil_table_k =
 #endif
 #if (AMREX_SPACEDIM == 3)
     0, 0, 0, 0, -1, +1
+#endif
+};
+
+const GpuArray<int, __DG_EXTENDED_STENCIL_N_NBR__> extended_stencil_table_i =
+{
+#if (AMREX_SPACEDIM == 1)
+    -1, +1
+#endif
+#if (AMREX_SPACEDIM == 2)
+    -1, 0, +1,
+    -1,    +1,
+    -1, 0, +1
+#endif
+#if (AMREX_SPACEDIM == 3)
+    -1, 0, +1, -1, 0, +1, -1, 0, +1,
+    -1, 0, +1, -1,    +1, -1, 0, +1,
+    -1, 0, +1, -1, 0, +1, -1, 0, +1
+#endif
+};
+const GpuArray<int, __DG_EXTENDED_STENCIL_N_NBR__> extended_stencil_table_j =
+{
+#if (AMREX_SPACEDIM == 1)
+    0, 0
+#endif
+#if (AMREX_SPACEDIM == 2)
+    -1, -1, -1,
+     0,      0,
+    +1, +1, +1
+#endif
+#if (AMREX_SPACEDIM == 3)
+    -1, -1, -1, 0,  0,  0, +1, +1, +1,
+    -1, -1, -1, 0,      0, +1, +1, +1,
+    -1, -1, -1, 0,  0,  0, +1, +1, +1
+#endif
+};
+const GpuArray<int, __DG_EXTENDED_STENCIL_N_NBR__> extended_stencil_table_k = 
+{
+#if (AMREX_SPACEDIM == 1)
+    0, 0
+#endif
+#if (AMREX_SPACEDIM == 2)
+    0, 0, 0,
+    0,    0,
+    0, 0, 0
+#endif
+#if (AMREX_SPACEDIM == 3)
+    -1, -1, -1, -1, -1, -1, -1, -1, -1,
+     0,  0,  0,  0,      0,  0,  0,  0,
+    +1, +1, +1, +1, +1, +1, +1, +1, +1
 #endif
 };
 // ####################################################################

@@ -43,6 +43,8 @@ public AmrCore
     Vector<MatrixFactory *> matfactories;
     Vector<iMultiFab> masks;
     Vector<MultiFab> Xs;
+
+    Vector<charMultiFab> cached_tags;
     // ################################################################
 
     // CONSTRUCTOR ####################################################
@@ -56,6 +58,8 @@ public AmrCore
         this->matfactories.resize(n_levels);
         this->masks.resize(n_levels);
         this->Xs.resize(n_levels);
+
+        this->cached_tags.resize(n_levels);
     }
 
     virtual ~Base()
@@ -110,8 +114,6 @@ exit(-1);
     // ################################################################
 
     // TAG CELL FOR REFINEMENT ########################################
-    
-    
     virtual void ErrorEst(int /*lev*/, TagBoxArray & /*tags*/, Real /*time*/, int /*ngr*/) override
     {
 Print() << "Base.ErrorEst" << std::endl;
@@ -140,59 +142,97 @@ exit(-1);
     }
 
     /**
-     * \brief Tag i) small cells merged with tagged cells and ii) cells that extend onto tagged small cells.
+     * \brief Copy tags from a multifab into a TagBoxArray.
      *
-     * \param[in] mesh: ImplicitMesh data structure containing element type information.
-     * \param[inout] tags: TagBoxArray containing tagging information.
+     * \param[out] dst: the TagBoxArray where information will be copied.
+     * \param[in] src: the input multifab.
      *
     */
-    template <typename TAG_MF, typename TAG_T>
-    void FixTagging(const ImplicitMesh & mesh, TAG_MF & tags, const TAG_T tagval) const
+    template <typename TAG_MF>
+    void CopyTagging(TagBoxArray & dst, const TAG_MF & src) const
     {
-        // PARAMETERS =================================================
-        const int N_DOM = mesh.eType.n_comp/__DG_ELM_TYPE_N_COMP_PER_DOM__;
-        // ============================================================
-
-        // TAG SMALL CELLS THAT ARE MERGED WITH TAGGED CELLS ==========
-        for (MFIter mfi(tags); mfi.isValid(); ++mfi)
+        for (MFIter mfi(dst); mfi.isValid(); ++mfi)
         {
             const Box & bx = mfi.validbox();
 
-            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
-
-            auto tags_fab = tags.array(mfi);
+            auto const & dst_fab = dst.array(mfi);
+            auto const & src_fab = src.array(mfi);
 
             ParallelFor(bx,
             [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
             {
-                for (int dom = 0; dom < N_DOM; ++dom)
-                {
-                    // ELEMENT TYPE
-                    const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
-                    const bool elm_is_not_tagged = (tags_fab(i,j,k) != tagval);
-
-                    if (ELM_IS_SMALL(etype) && elm_is_not_tagged)
-                    {
-                        // LOCAL PARAMETERS
-                        const int merged_b = etype/10;
-
-                        // LOCAL VARIABLES
-                        int nbr_i, nbr_j, nbr_k, nbr_b;
-                        bool nbr_is_tagged;
-
-                        NBR_CELL(i, j, k, merged_b, nbr_i, nbr_j, nbr_k, nbr_b);
-
-                        nbr_is_tagged = (tags_fab(nbr_i,nbr_j,nbr_k) == tagval);
-
-                        if (nbr_is_tagged)
-                        {
-                            tags_fab(i,j,k) = tagval;
-                        }
-                    }
-                }
+                dst_fab(i,j,k) = src_fab(i,j,k);
             });
             Gpu::synchronize();
         }
+    }
+    
+    /**
+     * \brief Tag cells that n_grow cells away from currently tagged cells.
+     *
+     * \param[in] mesh: ImplicitMesh data structure containing element type information.
+     * \param[inout] tags: an object containing tagging information.
+     * \param[in] tagval: the value used to tag the cells.
+     * \param[in] n_grow: width of layer of cells that will be tagged.
+     *
+    */
+    template <typename TAG_MF, typename TAG_T>
+    void GrowTagging(const ImplicitMesh & mesh, TAG_MF & tags, const TAG_T tagval, const int n_grow) const
+    {
+        TAG_MF tags_helper(tags.boxarray, tags.distributionMap, 1, tags.n_grow);
+
+        for (int it = 0; it < n_grow; ++it)
+        {
+            Copy(tags_helper, tags, 0, 0, 1, tags.n_grow);
+
+            for (MFIter mfi(tags); mfi.isValid(); ++mfi)
+            {
+                const Box & bx = mfi.validbox();
+
+                const auto & old_tags_fab = tags_helper.array(mfi);
+                auto const & tags_fab = tags.array(mfi);
+
+                ParallelFor(bx,
+                [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+                {
+                    // ELEMENT TYPE
+                    const bool elm_is_not_tagged = (tags_fab(i,j,k) != tagval);
+
+                    if (elm_is_not_tagged)
+                    {
+                        for (int n = 0; n < __DG_EXTENDED_STENCIL_N_NBR__; ++n)
+                        {
+                            const int nbr_i = i+extended_stencil_table_i[n];
+                            const int nbr_j = j+extended_stencil_table_j[n];
+                            const int nbr_k = k+extended_stencil_table_k[n];
+                            const bool nbr_is_tagged = (old_tags_fab(nbr_i,nbr_j,nbr_k) == tagval);
+
+                            if (nbr_is_tagged)
+                            {
+                                tags_fab(i,j,k) = tagval;
+                            }
+                        }
+                    }
+                });
+                Gpu::synchronize();
+            }
+            tags.FillBoundary(mesh.geom.periodicity());
+        }
+    }
+
+    /**
+     * \brief Tag i) small cells merged with tagged cells and ii) cells that extend onto tagged small cells.
+     *
+     * \param[in] mesh: ImplicitMesh data structure containing element type information.
+     * \param[inout] tags: an object containing tagging information.
+     * \param[in] tagval: the value used to tag the cells.
+     *
+    */
+    template <typename TAG_MF, typename TAG_T>
+    void TagSmallOrExtendedElements(const ImplicitMesh & mesh, TAG_MF & tags, const TAG_T tagval) const
+    {
+        // PARAMETERS =================================================
+        const int N_DOM = mesh.eType.n_comp/__DG_ELM_TYPE_N_COMP_PER_DOM__;
         // ============================================================
 
         // TAG CELLS EXTENDING ONTO TAGGED SMALL CELLS ================
@@ -202,7 +242,7 @@ exit(-1);
 
             Array4<short const> const & eType_fab = mesh.eType.array(mfi);
 
-            auto tags_fab = tags.array(mfi);
+            auto const & tags_fab = tags.array(mfi);
 
             ParallelFor(bx,
             [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
@@ -212,6 +252,14 @@ exit(-1);
                     // ELEMENT TYPE
                     const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
                     const bool elm_is_not_tagged = (tags_fab(i,j,k) != tagval);
+
+/*
+if (i == 11 && j == 11 && k == 11)
+{
+Print() << ELM_TYPE_DESCRIPTION(etype) << std::endl;
+Print() << "elm_is_tagged: " << (elm_is_not_tagged ? "no" : "yes") << std::endl;
+}
+*/
 
                     if (ELM_IS_EXTENDED(etype) && elm_is_not_tagged)
                     {
@@ -239,6 +287,96 @@ exit(-1);
             Gpu::synchronize();
         }
         tags.FillBoundary(mesh.geom.periodicity());
+        // ============================================================
+
+        // TAG SMALL CELLS THAT ARE MERGED WITH TAGGED CELLS ==========
+        for (MFIter mfi(tags); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+            auto const & tags_fab = tags.array(mfi);
+
+            ParallelFor(bx,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+                for (int dom = 0; dom < N_DOM; ++dom)
+                {
+                    // ELEMENT TYPE
+                    const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                    const bool elm_is_not_tagged = (tags_fab(i,j,k) != tagval);
+
+                    if (ELM_IS_SMALL(etype) && elm_is_not_tagged)
+                    {
+                        // LOCAL PARAMETERS
+                        const int merged_b = etype/10;
+
+                        // LOCAL VARIABLES
+                        int nbr_i, nbr_j, nbr_k, nbr_b;
+                        bool nbr_is_tagged;
+
+                        NBR_CELL(i, j, k, merged_b, nbr_i, nbr_j, nbr_k, nbr_b);
+
+                        nbr_is_tagged = (tags_fab(nbr_i,nbr_j,nbr_k) == tagval);
+/*
+if (i == 12 && j == 11 && k == 11)
+{
+Print() << ELM_TYPE_DESCRIPTION(etype) << std::endl;
+Print() << "nbr_is_tagged: " << (nbr_is_tagged ? "yes" : "no") << std::endl;
+}
+*/
+                        if (nbr_is_tagged)
+                        {
+                            tags_fab(i,j,k) = tagval;
+                        }
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+        tags.FillBoundary(mesh.geom.periodicity());
+        // ============================================================
+    }
+
+    /**
+     * \brief Fix the tagging in such a way that merging does not happen across levels.
+     *
+     * \param[in] mesh: ImplicitMesh data structure containing element type information.
+     * \param[inout] tags: an object containing tagging information.
+     * \param[in] tagval: the value used to tag the cells.
+     *
+    */
+    template <typename TAG_MF, typename TAG_T>
+    void FixTagging(const ImplicitMesh & mesh, TAG_MF & tags, const TAG_T tagval) const
+    {
+        this->TagSmallOrExtendedElements(mesh, tags, tagval);
+
+        //IO::PrintMultiFabEntry(tags, 11, 11, 11, 0);
+        //IO::PrintMultiFabEntry(tags, 12, 11, 11, 0);
+
+        // REPORT TAGGED CELLS ========================================
+        /*
+        for (MFIter mfi(tags); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            const auto & tags_fab = tags.array(mfi);
+
+            ParallelFor(bx,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+                // ELEMENT TYPE
+                const bool elm_is_tagged = (tags_fab(i,j,k) == tagval);
+
+                if (elm_is_tagged)
+                {
+                    Print() << "tagged(" << i << "," << j << "," << k << ")" << std::endl;
+                }
+            });
+            Gpu::synchronize();
+        }
+        */
         // ============================================================
     }
     // ################################################################
@@ -496,7 +634,86 @@ void Restrict(const int N_SOL,
 // ERROR EVALUATION ###################################################
 // ####################################################################
 /**
- * \brief Compute the error between the exact solution and the dG solution using infinite norm.
+ * \brief Compute the error between the exact solution and the AMR solution.
+ *
+ * \param[in] t: time.
+ * \param[in] N_DOM: number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] AMR: an AMR object that contains the solution at the different mesh levels.
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  Real F_ERROR(const int dom, const Real t, const Real * x, const Real * SOL, Real & err_x, Real & norm_x) const;
+ *
+ * \return the error.
+*/
+template <typename AMR_CLASS, typename IBVP_CLASS>
+Real EvalError(const Real t,
+               const int N_DOM,
+               const int N_SOL,
+               const AMR_CLASS & AMR,
+               const IBVP_CLASS & IBVP)
+{
+    // PARAMETERS =====================================================
+    const int finest_level = AMR.maxLevel();
+    // ================================================================
+
+    // VARIABLES ======================================================
+    Real max_error = 0.0;
+    // ================================================================
+
+    // CYCLE OVER THE LEVELS ==========================================
+    for (int lev = 0; lev <= finest_level; ++lev)
+    {
+        if (AMR.LevelIsValid(lev))
+        {
+            const ImplicitMesh & mesh = *AMR.meshes[lev];
+            const MatrixFactory & matfactory = *AMR.matfactories[lev];
+            //const iMultiFab & mask = AMR.masks[lev];
+            const MultiFab & X = AMR.Xs[lev];
+
+            Real level_error;
+
+            if (matfactory.std_elem.p == 0)
+            {
+                level_error = EvalError_FV(t, mesh, N_DOM, N_SOL, X, IBVP);
+            }
+            else
+            {
+                level_error = EvalError(t, mesh, matfactory, N_DOM, N_SOL, X, IBVP);
+            }
+
+            max_error += level_error;
+        }
+    }
+    // ================================================================
+
+    return max_error;
+}
+
+/**
+ * \brief Compute the error between the exact solution and the AMR solution.
+ *
+ * \param[in] t: time.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] AMR: an AMR object that contains the solution at the different mesh levels.
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  Real F_ERROR(const int dom, const Real t, const Real * x, const Real * SOL, Real & err_x, Real & norm_x) const;
+ *
+ * \return the error.
+*/
+template <typename AMR_CLASS, typename IBVP_CLASS>
+Real EvalError(const Real t,
+               const int N_SOL,
+               const AMR_CLASS & AMR,
+               const IBVP_CLASS & IBVP)
+{
+    const int N_DOM = 1;
+    return EvalError(t, N_DOM, N_SOL, AMR, IBVP);
+}
+
+/**
+ * \brief Compute the error between the exact solution and the AMR solution using infinite norm.
  *
  * \param[in] t: time.
  * \param[in] N_DOM: number of domains to be considered.
@@ -553,7 +770,7 @@ Real EvalErrorInfNorm(const Real t,
 }
 
 /**
- * \brief Compute the error between the exact solution and the dG solution using infinite norm.
+ * \brief Compute the error between the exact solution and the AMR solution using infinite norm.
  *
  * \param[in] t: time.
  * \param[in] N_SOL: Number of unknown solution fields.
@@ -573,6 +790,14 @@ Real EvalErrorInfNorm(const Real t,
     const int N_DOM = 1;
     return EvalErrorInfNorm(t, N_DOM, N_SOL, AMR, IBVP);
 }
+// ####################################################################
+// ####################################################################
+
+
+// ####################################################################
+// AUXILIARY FUNCTIONS ################################################
+// ####################################################################
+void CheckMergeLeaking(const ImplicitMesh & mesh, const int N_DOM, const iMultiFab & mask);
 // ####################################################################
 // ####################################################################
 

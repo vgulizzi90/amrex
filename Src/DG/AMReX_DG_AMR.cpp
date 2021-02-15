@@ -31,6 +31,10 @@ void Interpolate(const int N_SOL,
                  const MatrixFactory & f_matfactory,
                  MultiFab & f_X)
 {
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("Interpolate(const int, const Gpu::ManagedVector<int> &, ....)");
+    // ----------------------------------------------------------------
+
     // PARAMETERS =====================================================
     const BoxArray & f_ba = f_X.boxarray;
     const DistributionMapping & f_dm = f_X.distributionMap;
@@ -165,7 +169,75 @@ void Interpolate(const int N_SOL,
         Gpu::synchronize();
     }
     f_X.FillBoundary(f_mesh.geom.periodicity());
+
+    // HANDLE GHOST CELLS
+    for (MFIter mfi(f_X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.fabbox();
+
+        // COARSE MESH
+        Array4<short const> const & c_eType_fab = safe_c_eType_ptr->array(mfi);
+        Array4<Real const> const & c_X_fab = safe_c_X_ptr->array(mfi);
+
+        // INTERPOLATION OPERATOR
+        Array4<long const> const & space_Dom_I_pos_fab = f_matfactory.space_Dom_I_pos.array(mfi);
+
+        // FINE MESH
+        Array4<short const> const & f_eType_fab = f_mesh.eType.array(mfi);
+        Array4<Real> const & f_X_fab = f_X.array(mfi);
+
+        ParallelFor(bx, N_SOL,
+        [=] AMREX_GPU_DEVICE (int f_i, int f_j, int f_k, int ru) noexcept
+        {
+            // ELEMENT TYPE
+            const int dom = Sol2Dom_ptr[ru];
+            const short f_etype = f_eType_fab(f_i,f_j,f_k,ELM_TYPE(dom));
+
+            if (ELM_IS_NOT_EMPTY(f_etype) && ELM_IS_GHOST(f_etype))
+            {
+                // LOCAL PARAMETERS
+                const long pos = space_Dom_I_pos_fab(f_i,f_j,f_k,dom);
+                const Real * I_ptr = &space_Dom_I_mem_ptr[pos];
+
+                // LOCAL VARIABLES
+                int c_i, c_j, c_k;
+                short c_etype;
+                int c_BF_i, c_BF_j, c_BF_k;
+
+                // INDICES OF THE COARSE CELL
+                FINE_TO_COARSE(f_i, f_j, f_k, rr, c_i, c_j, c_k);
+                c_etype = c_eType_fab(c_i,c_j,c_k,ELM_TYPE(dom));
+                BF_CELL(c_i, c_j, c_k, c_etype, c_BF_i, c_BF_j, c_BF_k);
+
+                // INTERPOLATE
+                for (int cs = 0; cs < c_sNp; ++cs)
+                for (int rs = 0; rs < f_sNp; ++rs)
+                {
+                    f_X_fab(f_i,f_j,f_k,rs+ru*f_sNp) += I_ptr[rs+cs*f_sNp]*c_X_fab(c_BF_i,c_BF_j,c_BF_k,cs+ru*c_sNp);
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+    f_X.FillBoundary(f_mesh.geom.periodicity());
     // ================================================================
+/*
+if (!c_X_fab.contains(c_BF_i, c_BF_j, c_BF_k))
+{
+
+Print() << "fine_fbx: " << bx << std::endl;
+Print() << "fine_vbx: " << vbx << std::endl;
+Print() << "     fine: " << IntVect(f_i, f_j, f_k) << std::endl;
+Print() << "   coarse: " << IntVect(c_i,c_j,c_k) << std::endl;
+Print() << "BF coarse: " << IntVect(c_BF_i, c_BF_j, c_BF_k) << std::endl;
+
+const bool f_elm_is_ghost = ELM_IS_GHOST(f_etype);
+Print() << "fine elm is ghost? " << (f_elm_is_ghost ? "yes" : "no") << std::endl;
+
+Print() << "We might have a problem!" << std::endl;
+exit(-1);
+}
+*/
 
     // CHECK ==========================================================
 #ifdef AMREX_DEBUG
@@ -181,7 +253,7 @@ void Interpolate(const int N_SOL,
     // ================================================================
 
     AddSmallElementsContribution(f_mesh, f_matfactory, N_SOL, Sol2Dom, f_X);
-    MultiplyByInverseMassMatrix(f_mesh, f_matfactory, N_SOL, Sol2Dom, f_X);
+    MultiplyByInverseMassMatrix(f_mesh, f_matfactory, N_SOL, Sol2Dom, f_X, true);
 }
 
 /**
@@ -198,6 +270,10 @@ void Restrict(const int N_SOL,
               const iMultiFab & c_mask,
               MultiFab & c_X)
 {
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("Restrict(const int, const Gpu::ManagedVector<int> &, ....)");
+    // ----------------------------------------------------------------
+
     // PARAMETERS =====================================================
     const BoxArray & f_ba = f_X.boxarray;
     const DistributionMapping & f_dm = f_X.distributionMap;
@@ -416,6 +492,150 @@ IO::PrintRealArray2D(f_sNp, c_sNp, I_ptr);
     // ================================================================
 }
 
+// ####################################################################
+// ####################################################################
+
+
+
+// ####################################################################
+// AUXILIARY FUNCTIONS ################################################
+// ####################################################################
+/**
+ * \brief Check that merging does not occur between a masked cell and an unmasked cells or viceversa.
+*/
+void CheckMergeLeaking(const ImplicitMesh & mesh, const int N_DOM, const iMultiFab & mask)
+{
+    for (MFIter mfi(mesh.eType); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<int const> const & mask_fab = mask.array(mfi);
+
+        ParallelFor(bx, N_DOM,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+            const bool elm_is_small = ELM_IS_SMALL(etype);
+            const bool elm_is_extended = ELM_IS_EXTENDED(etype);
+            const bool elm_is_ghost = ELM_IS_GHOST(etype);
+            const bool cell_is_masked = CELL_IS_MASKED(mask_fab(i,j,k));
+
+            if (elm_is_small)
+            {
+                const int merged_b = etype/10;
+                int nbr_i, nbr_j, nbr_k, nbr_b;
+
+                NBR_CELL(i, j, k, merged_b, nbr_i, nbr_j, nbr_k, nbr_b);
+
+                const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                const bool nbr_is_ghost = ELM_IS_GHOST(nbr_etype);
+                const bool nbr_cell_is_masked = CELL_IS_MASKED(mask_fab(nbr_i,nbr_j,nbr_k));
+
+                if (elm_is_ghost && !nbr_is_ghost)
+                {
+                    std::string msg;
+                    msg  = "\n";
+                    msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
+                    msg += "| A ghost cell should not be merged with a non-ghost cell.\n";
+                    msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
+                    msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
+                    Abort(msg);
+                }
+                if (!elm_is_ghost && nbr_is_ghost)
+                {
+                    std::string msg;
+                    msg  = "\n";
+                    msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
+                    msg += "| A non-ghost cell should not be merged with a ghost cell.\n";
+                    msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
+                    msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
+                    Abort(msg);
+                }
+                if (cell_is_masked && !nbr_cell_is_masked)
+                {
+                    std::string msg;
+                    msg  = "\n";
+                    msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
+                    msg += "| A masked cell should not be merged with a unmasked cell.\n";
+                    msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
+                    msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
+                    Abort(msg);
+                }
+                if (!cell_is_masked && nbr_cell_is_masked)
+                {
+                    std::string msg;
+                    msg  = "\n";
+                    msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
+                    msg += "| An unmasked cell should not be merged with a masked cell.\n";
+                    msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
+                    msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
+                    Abort(msg);
+                }
+            }
+            else if (elm_is_extended)
+            {
+                int nbr_i, nbr_j, nbr_k, nbr_b;
+
+                for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                {
+                    NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+                    
+                    const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                    const short nbr_merged_b = (ELM_IS_SMALL(nbr_etype)) ? (nbr_etype/10) : -1;
+                    const bool nbr_is_ghost = ELM_IS_GHOST(nbr_etype);
+                    const bool nbr_cell_is_masked = CELL_IS_MASKED(mask_fab(nbr_i,nbr_j,nbr_k));
+
+                    if (nbr_merged_b == nbr_b)
+                    {
+                        if (elm_is_ghost && !nbr_is_ghost)
+                        {
+                            std::string msg;
+                            msg  = "\n";
+                            msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
+                            msg += "| A ghost cell should not be extended onto a non-ghost cell.\n";
+                            msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
+                            msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
+                            Abort(msg);
+                        }
+                        if (!elm_is_ghost && nbr_is_ghost)
+                        {
+                            std::string msg;
+                            msg  = "\n";
+                            msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
+                            msg += "| A non-ghost cell should not be extended onto a ghost cell.\n";
+                            msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
+                            msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
+                            Abort(msg);
+                        }
+                        if (cell_is_masked && !nbr_cell_is_masked)
+                        {
+                            std::string msg;
+                            msg  = "\n";
+                            msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
+                            msg += "| A masked cell should not be extended onto a unmasked cell.\n";
+                            msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
+                            msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
+                            Abort(msg);
+                        }
+                        if (!cell_is_masked && nbr_cell_is_masked)
+                        {
+                            std::string msg;
+                            msg  = "\n";
+                            msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
+                            msg += "| An unmasked cell should not be extended onto a masked cell.\n";
+                            msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
+                            msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
+                            Abort(msg);
+                        }
+                    }
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+}
 // ####################################################################
 // ####################################################################
 

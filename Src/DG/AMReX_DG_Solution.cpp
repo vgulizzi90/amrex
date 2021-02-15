@@ -14,7 +14,7 @@ namespace DG
 {
 
 /**
- * \brief Multiply dG coefficients by the inverse of the mass matrix of the standard element.
+ * \brief Copy values from src to dst.
  *
  * \param[in] src: Source MultiFab.
  * \param[inout] dst: Destination MultiFab.
@@ -212,7 +212,7 @@ void AddSmallElementsContribution(const ImplicitMesh & mesh,
  * \param[inout] X: a MultiFab object that, on exit, will contain the coefficients of the basis
  *                  functions multiplied by the inverse of the implicit-mesh elements' mass
  *                  matrices.
- * \param[in] use_fabbox: if true, the loops will include the ghost cells.
+ * \param[in] include_ghost_cells: if true, the operations will include the ghost cells.
  *
 */
 void MultiplyByMassMatrix(const ImplicitMesh & mesh,
@@ -220,7 +220,7 @@ void MultiplyByMassMatrix(const ImplicitMesh & mesh,
                           const int N_SOL,
                           const Gpu::ManagedVector<int> & Sol2Dom,
                           MultiFab & X,
-                          const bool use_fabbox)
+                          const bool include_ghost_cells)
 {
     // PROFILING ------------------------------------------------------
     BL_PROFILE("MultiplyByMassMatrix(const ImplicitMesh &, const MatrixFactory &, ....)");
@@ -256,7 +256,7 @@ void MultiplyByMassMatrix(const ImplicitMesh & mesh,
     // ================================================================
     for (MFIter mfi(X); mfi.isValid(); ++mfi)
     {
-        const Box & bx = use_fabbox ? mfi.fabbox() : mfi.validbox();
+        const Box & bx = mfi.validbox();
 
         Array4<short const> const & eType_fab = mesh.eType.array(mfi);
 
@@ -304,6 +304,62 @@ void MultiplyByMassMatrix(const ImplicitMesh & mesh,
         Gpu::synchronize();
     }
     X.FillBoundary(mesh.geom.periodicity());
+
+    // HANDLE GHOST CELLS
+    if (include_ghost_cells)
+    {
+        for (MFIter mfi(X); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.fabbox();
+
+            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+            Array4<long const> const & eMMCh_pos_fab = matfactory.eMMCh_pos.array(mfi);
+
+            Array4<Real> const & X_fab = X.array(mfi);
+
+            ParallelFor(bx, N_SOL,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int ru) noexcept
+            {
+                // LOCAL PARAMETERS
+                const int dom = Sol2Dom_ptr[ru];
+                const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
+                const bool elm_is_large = (etype%10 == __DG_ELM_TYPE_LARGE__);
+                const bool elm_is_ghost = ELM_IS_GHOST(etype);
+
+                // MASS MATRIX
+                const long pos = eMMCh_pos_fab(i,j,k,dom);
+                const Real * eMMCh_ptr = &eMMCh_mem_ptr[pos];
+                
+                // LOCAL VARIABLES
+                Real x[__DG_SOL_MAX_SPACE_Np__];
+
+                // MULTIPLY BY THE INVERSE OF THE MASS MATRIX
+                if ((elm_is_entire || elm_is_large) && elm_is_ghost)
+                {
+                    // COPY FROM MEMORY
+                    for (int rs = 0; rs < sNp; ++rs)
+                    {
+                        x[rs] = X_fab(i,j,k,rs+ru*sNp);
+                    }
+                    
+                    // USE CHOLESKY DECOMPOSITION
+                    // x := MMCh^T*MMCh*x
+                    linalg::dtrmv(MM_uplo, 'N', 'N', sNp, eMMCh_ptr, sNp, x, 1);
+                    linalg::dtrmv(MM_uplo, 'T', 'N', sNp, eMMCh_ptr, sNp, x, 1);
+
+                    // COPY BACK TO MEMORY
+                    for (int rs = 0; rs < sNp; ++rs)
+                    {
+                        X_fab(i,j,k,rs+ru*sNp) = x[rs];
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+        X.FillBoundary(mesh.geom.periodicity());
+    }
     // ================================================================
 
 #ifdef AMREX_DEBUG
@@ -358,7 +414,7 @@ Print() << "tmp_y2: "; IO::PrintRealArray2D(1, 3, tmp_y2);
  * \param[inout] X: a MultiFab object that, on exit, will contain the coefficients of the basis
  *                  functions multiplied by the inverse of the implicit-mesh elements' mass
  *                  matrices.
- * \param[in] use_fabbox: if true, the loops will include the ghost cells.
+ * \param[in] include_ghost_cells: if true, the operations will include the ghost cells.
  *
 */
 void MultiplyByInverseMassMatrix(const ImplicitMesh & mesh,
@@ -366,7 +422,7 @@ void MultiplyByInverseMassMatrix(const ImplicitMesh & mesh,
                                  const int N_SOL,
                                  const Gpu::ManagedVector<int> & Sol2Dom,
                                  MultiFab & X,
-                                 const bool use_fabbox)
+                                 const bool include_ghost_cells)
 {
     // PROFILING ------------------------------------------------------
     BL_PROFILE("MultiplyByInverseMassMatrix(const ImplicitMesh &, const MatrixFactory &, ....)");
@@ -391,7 +447,7 @@ void MultiplyByInverseMassMatrix(const ImplicitMesh & mesh,
     // ================================================================
     for (MFIter mfi(X); mfi.isValid(); ++mfi)
     {
-        const Box & bx = use_fabbox ? mfi.fabbox() : mfi.validbox();
+        const Box & bx = mfi.validbox();
 
         Array4<short const> const & eType_fab = mesh.eType.array(mfi);
 
@@ -438,6 +494,61 @@ void MultiplyByInverseMassMatrix(const ImplicitMesh & mesh,
         Gpu::synchronize();
     }
     X.FillBoundary(mesh.geom.periodicity());
+
+    // HANDLE GHOST CELLS
+    if (include_ghost_cells)
+    {
+        for (MFIter mfi(X); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.fabbox();
+
+            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+
+            Array4<long const> const & eMMCh_pos_fab = matfactory.eMMCh_pos.array(mfi);
+
+            Array4<Real> const & X_fab = X.array(mfi);
+
+            ParallelFor(bx, N_SOL,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int ru) noexcept
+            {
+                // LOCAL PARAMETERS
+                const int dom = Sol2Dom_ptr[ru];
+                const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
+                const bool elm_is_large = (etype%10 == __DG_ELM_TYPE_LARGE__);
+                const bool elm_is_ghost = ELM_IS_GHOST(etype);
+
+                // MASS MATRIX
+                const long pos = eMMCh_pos_fab(i,j,k,dom);
+                const Real * eMMCh_ptr = &eMMCh_mem_ptr[pos];
+                
+                // LOCAL VARIABLES
+                int info;
+                Real x[__DG_SOL_MAX_SPACE_Np__];
+
+                // MULTIPLY BY THE INVERSE OF THE MASS MATRIX
+                if ((elm_is_entire || elm_is_large) && elm_is_ghost)
+                {
+                    // COPY FROM MEMORY
+                    for (int rs = 0; rs < sNp; ++rs)
+                    {
+                        x[rs] = X_fab(i,j,k,rs+ru*sNp);
+                    }
+
+                    // USE CHOLESKY DECOMPOSITION
+                    linalg::dpotrs(MM_uplo, sNp, 1, eMMCh_ptr, sNp, x, sNp, info);
+
+                    // COPY BACK TO MEMORY
+                    for (int rs = 0; rs < sNp; ++rs)
+                    {
+                        X_fab(i,j,k,rs+ru*sNp) = x[rs];
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+        X.FillBoundary(mesh.geom.periodicity());
+    }
     // ================================================================
 }
 
@@ -449,9 +560,9 @@ void MultiplyByInverseMassMatrix(const ImplicitMesh & mesh,
  * \param[in] X: a MultiFab object that contains the solution state for the unknown solution fields.
  * \param[out] dX: a MultiFab object that will contain the limited slopes for the states.
 */
-void ApplyBarthJespersenLimiter(const ImplicitMesh & mesh,
-                                const MultiFab & X,
-                                MultiFab & dX)
+void ApplyBarthJespersenLimiter(const ImplicitMesh & /*mesh*/,
+                                const MultiFab & /*X*/,
+                                MultiFab & /*dX*/)
 {
     // PROFILING ------------------------------------------------------
     BL_PROFILE("ApplyBarthJespersenLimiter(const ImplicitMesh &, ....)");

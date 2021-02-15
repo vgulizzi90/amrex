@@ -17,9 +17,9 @@
 #include <AMReX_DG_InputReader.H>
 #include <AMReX_DG_BFX.H>
 
-#define __i__ 12
-#define __j__ 18
-#define __k__ 0
+#define __i__ 11
+#define __j__ 14
+#define __k__ 14
 
 namespace amrex
 {
@@ -537,13 +537,13 @@ std::string ELM_TYPE_DESCRIPTION(const short etype)
     const bool elm_is_extended = elm_is_valid && (etype/10 == 1);
     const int merged_b = (elm_is_small) ? (etype/10) : -1;
 
-    std::string etype_description;
-    if (elm_is_undefined) etype_description = "Undefined";
-    if (elm_is_empty) etype_description = "Empty";
-    if (elm_is_entire) etype_description = "Entire";
-    if (elm_is_large) etype_description = "Large";
-    if (elm_is_small) etype_description = "Small - Merged through boundary: "+std::to_string(merged_b);
-    if (elm_is_partial) etype_description = "Partial";
+    std::string etype_description = std::to_string((int)etype)+": ";
+    if (elm_is_undefined) etype_description += "Undefined";
+    if (elm_is_empty) etype_description += "Empty";
+    if (elm_is_entire) etype_description += "Entire";
+    if (elm_is_large) etype_description += "Large";
+    if (elm_is_small) etype_description += "Small - Merged through boundary: "+std::to_string(merged_b);
+    if (elm_is_partial) etype_description += "Partial";
     if (elm_is_valid) etype_description += " - Valid";
     if (elm_is_extended) etype_description += " - Extended";
     if (elm_is_ghost) etype_description += " (Ghost)";
@@ -565,6 +565,22 @@ bool ELM_IS_ENTIRE(const short etype)
     const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
 
     return elm_is_entire;
+}
+
+/**
+ * \brief Given the etype, return true if the element is partial, false otherwise.
+ *
+ * \param[in] etype: element type.
+ *
+ * \return true if the element is partial, false otherwise.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_PARTIAL(const short etype)
+{
+    const bool elm_is_partial = (etype == __DG_ELM_TYPE_PARTIAL__);
+
+    return elm_is_partial;
 }
 
 /**
@@ -1121,7 +1137,7 @@ struct ImplicitMesh
         // REMOVE ALL BOXES WHOSE ELEMENTS ARE EMPTY
         // (THE ELEMENTS MUST BE EMPTY FOR EACH AND EVERY DOMAIN)
         // ============================================================
-        if (im_flag && false)
+        if (im_flag && true)
         {
             BoxList bl;
             //int n_empty_boxes;
@@ -1963,12 +1979,25 @@ struct ImplicitMesh
             {
                 if (helper_fab(i,j,k,dom) == 0)
                 {
-                    eType_fab(i,j,k,ELM_TYPE(dom)) += 100;
+                    const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                    const bool elm_is_entire = ELM_IS_ENTIRE(etype);
+                    const bool elm_is_partial = ELM_IS_PARTIAL(etype);
+
+                    if (elm_is_entire)
+                    {
+                        eType_fab(i,j,k,ELM_TYPE(dom)) = 100+__DG_ELM_TYPE_ENTIRE__;
+                    }
+                    else if (elm_is_partial)
+                    {
+                        eType_fab(i,j,k,ELM_TYPE(dom)) = 100+__DG_ELM_TYPE_LARGE__;
+                    }
+
                 }
             });
             Gpu::synchronize();
         }
-        
+        this->eType.FillBoundary(this->geom.periodicity());
+
         // SETUP MERGING INFO
         for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
         {
@@ -1988,7 +2017,7 @@ struct ImplicitMesh
             [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
             {
                 // LOCAL PARAMETERS
-                const bool elm_is_partial = (eType_fab(i,j,k,ELM_TYPE(dom)) == __DG_ELM_TYPE_PARTIAL__);
+                const bool elm_is_partial = ELM_IS_PARTIAL(eType_fab(i,j,k,ELM_TYPE(dom)));
                 
                 const Real vf = eInfo_fab(i,j,k,ELM_VOLUME_FRACTION(dom));
 
@@ -2199,7 +2228,8 @@ else
         this->eType.FillBoundary(this->geom.periodicity());
         // ============================================================
 
-        // SET ALL PARTIAL GHOST CELLS AS LARGE =======================
+        // MARK GHOST CELLS AS ENTIRE OR LARGE CELLS ==================
+        /*
         for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
         {
             const Box & bx = mfi.fabbox();
@@ -2211,52 +2241,23 @@ else
             {
                 // LOCAL PARAMETERS
                 const bool elm_is_ghost = ELM_IS_GHOST(eType_fab(i,j,k,ELM_TYPE(dom)));
-                const bool elm_is_entire = ELM_IS_ENTIRE(eType_fab(i,j,k,ELM_TYPE(dom)));
+                const bool elm_is_small = ELM_IS_SMALL(eType_fab(i,j,k,ELM_TYPE(dom)));
 
-                if (elm_is_ghost)
+                if (elm_is_ghost && elm_is_small)
                 {
                     if (elm_is_entire)
                     {
                         eType_fab(i,j,k,ELM_TYPE(dom)) = 100+__DG_ELM_TYPE_ENTIRE__;
                     }
-                    else
+                    else if (elm_is_small_or_large)
                     {
                         eType_fab(i,j,k,ELM_TYPE(dom)) = 100+__DG_ELM_TYPE_LARGE__;
                     }
-                    /*
-                    if ((i == (domain.smallEnd(0)-1)) && (is_periodic[0] == 0))
-                    {
-                         eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
-                    }
-                    if ((i == (domain.bigEnd(0)+1)) && (is_periodic[0] == 0))
-                    {
-                        eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
-                    }
-#if (AMREX_SPACEDIM > 1)
-                    if ((j == (domain.smallEnd(1)-1)) && (is_periodic[1] == 0))
-                    {
-                        eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
-                    }
-                    if ((j == (domain.bigEnd(1)+1)) && (is_periodic[1] == 0))
-                    {
-                        eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
-                    }
-#endif
-#if (AMREX_SPACEDIM > 2)
-                    if ((k == (domain.smallEnd(2)-1)) && (is_periodic[2] == 0))
-                    {
-                        eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
-                    }
-                    if ((k == (domain.bigEnd(2)+1)) && (is_periodic[2] == 0))
-                    {
-                        eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
-                    }
-#endif
-                    */
                 }
             });
             Gpu::synchronize();
         }
+        */
         // ============================================================
 
         // CHECK THE CONSISTENCY OF THE MERGING INFORMATION ===========
@@ -2504,6 +2505,86 @@ else
     }
     // ################################################################
 
+    // MAKE THE IMPLICIT MESH FROM A COARSE ONE #######################
+    /**
+     * \brief Make the implicit mesh for a specified ba and dm and an input coarse one.
+    */
+    template <typename IBVP_CLASS>
+    void MakeFromCoarse(const Real /*t*/,
+                        const BoxArray & input_ba, const DistributionMapping & input_dm,
+                        const IntVect & c_rr, const ImplicitMesh & c_mesh,
+                        const int N_PHI, const int N_DOM, const IBVP_CLASS & IBVP, const bool im_flag = true)
+    {
+        // PARAMETERS =================================================
+        const int PHI_n_comp = (this->ls_std_elem.Np)*N_PHI;
+        const int PHI_ngr = this->dom_data_ngr;
+        // ============================================================
+
+        // VARIABLES ==================================================
+        this->PHI.define(input_ba, input_dm, PHI_n_comp, PHI_ngr);
+        this->PHI = 0.0;
+        // ============================================================
+
+        // BOX ARRAY AND DISTRIBUTION MAPPING =========================
+        this->cc_ba = input_ba;
+
+#if (AMREX_SPACEDIM == 1)
+        this->fc_ba[0] = convert(this->cc_ba, IntVect(1));
+#endif
+#if (AMREX_SPACEDIM == 2)
+        this->fc_ba[0] = convert(this->cc_ba, IntVect(1,0));
+        this->fc_ba[1] = convert(this->cc_ba, IntVect(0,1));
+#endif
+#if (AMREX_SPACEDIM == 3)
+        this->fc_ba[0] = convert(this->cc_ba, IntVect(1,0,0));
+        this->fc_ba[1] = convert(this->cc_ba, IntVect(0,1,0));
+        this->fc_ba[2] = convert(this->cc_ba, IntVect(0,0,1));
+#endif
+
+        this->dm = input_dm;
+        // ============================================================
+
+        // INIT THE INTERPOLATION OPERATOR FOR THE STANDARD ELEMENT ===
+        this->ls_std_elem.InitInterpolation(c_mesh.ls_std_elem, c_rr);
+        // ============================================================
+
+        // LEVEL SET FUNCTIONS ========================================
+        InterpolateLevelsets(N_PHI, c_mesh.geom, c_mesh.ls_std_elem, c_mesh.PHI, c_rr,
+                             this->geom, this->ls_std_elem, this->PHI);
+
+        // SET THE CORRESPONDENCE BETWEEN DOMAINS AND LEVELSETS -------
+        this->Dom2Phi.resize(2*N_DOM);
+        for (int dom = 0; dom < N_DOM; ++dom)
+        {
+            int phi_info[2];
+            IBVP.F_DOM2PHI(dom, phi_info);
+
+            this->Dom2Phi[2*dom] = phi_info[0];
+            this->Dom2Phi[2*dom+1] = phi_info[1];
+        }
+        // ------------------------------------------------------------
+
+        // MAKE THE IMPLICIT MESH USING THE NEW LEVEL SETS
+        this->Make(N_PHI, N_DOM, im_flag);
+        // -----------------------------------------------
+        // ============================================================
+    }
+
+    /**
+     * \brief Make the implicit mesh for a specified ba and dm and an input coarse one.
+    */
+    template <typename IBVP_CLASS>
+    void MakeFromCoarse(const Real t,
+              const BoxArray & input_ba, const DistributionMapping & input_dm,
+              const IntVect & c_rr, const ImplicitMesh & c_mesh,
+              const IBVP_CLASS & IBVP, const bool im_flag = true)
+    {
+        const int N_PHI = 1;
+        const int N_DOM = 1;
+        this->MakeFromCoarse(t, input_ba, input_dm, c_rr, c_mesh, N_PHI, N_DOM, IBVP, im_flag);
+    }
+    // ################################################################
+
     // REMAKE THE IMPLICIT MESH #######################################
     /**
      * \brief Remake the implicit mesh for a specified ba and dm.
@@ -2567,7 +2648,8 @@ else
                                      this->geom, this->ls_std_elem, new_PHI);
             }
 
-            new_PHI.ParallelCopy(this->PHI, 0, 0, n_comp, n_grow, n_grow, this->geom.periodicity());
+            new_PHI.ParallelCopy(this->PHI, 0, 0, n_comp, 0, 0, this->geom.periodicity());
+            new_PHI.FillBoundary(this->geom.periodicity());
 
             std::swap(this->PHI, new_PHI);
 
@@ -2587,7 +2669,9 @@ else
                 const IntVect & c_rr, const ImplicitMesh & c_mesh,
                 const IBVP_CLASS & IBVP, const bool im_flag = true)
     {
-        this->Remake(t, input_ba, input_dm, c_rr, c_mesh, 1, 1, IBVP, im_flag);
+        const int N_PHI = 1;
+        const int N_DOM = 1;
+        this->Remake(t, input_ba, input_dm, c_rr, c_mesh, N_PHI, N_DOM, IBVP, im_flag);
     }
     // ################################################################
 

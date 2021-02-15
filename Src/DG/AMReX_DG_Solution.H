@@ -315,13 +315,13 @@ void MultiplyByMassMatrix(const ImplicitMesh & mesh,
                           const int N_SOL,
                           const Gpu::ManagedVector<int> & Sol2Dom,
                           MultiFab & X,
-                          const bool use_fabbox = false);
+                          const bool include_ghost_cells = false);
 void MultiplyByInverseMassMatrix(const ImplicitMesh & mesh,
                                  const MatrixFactory & matfactory,
                                  const int N_SOL,
                                  const Gpu::ManagedVector<int> & Sol2Dom,
                                  MultiFab & X,
-                                 const bool use_fabbox = false);
+                                 const bool include_ghost_cells = false);
 
 /**
  * \brief Project initial conditions over the implicitly-defined mesh.
@@ -481,6 +481,150 @@ void ProjectInitialConditions(const ImplicitMesh & mesh,
 {
     const Gpu::ManagedVector<int> Sol2Dom(N_SOL, 0);
     ProjectInitialConditions(mesh, matfactory, N_SOL, Sol2Dom, X, IBVP, use_fabbox);
+}
+
+/**
+ * \brief Compute the error between the exact solution and the FV solution.
+ *
+ * \param[in] t: time.
+ * \param[in] mesh: an ImplicitMesh object containing the information about the implicitly-defined
+ *                  mesh.
+ * \param[in] N_DOM: number of domains to be considered.
+ * \param[in] N_SOL: Number of unknown solution fields.
+ * \param[in] X: a MultiFab object that contains the state vector for the unknown solution fields.
+ * \param[in] IBVP: a class that must have a method with the following prototype:
+ *
+ *                  Real F_ERROR(const int dom, const Real t, const Real * x, const Real * SOL, Real & err_x, Real & norm_x) const;
+ *
+ * \return the error.
+*/
+template <typename IBVP_CLASS>
+Real EvalError_FV(const Real t,
+                  const ImplicitMesh & mesh,
+                  const int N_DOM,
+                  const int N_SOL,
+                  const MultiFab & X,
+                  const IBVP_CLASS & IBVP)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("EvalError(const Real, const ImplicitMesh &, ....)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS =====================================================
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+    // IMPLICIT MESH
+#ifdef AMREX_USE_CUDA
+    const Real * eDomQuad_mem_ptr = mesh.eDomQuad_device_mem.data();
+#else
+    const Real * eDomQuad_mem_ptr = mesh.eDomQuad_host_mem.data();
+#endif
+    // ================================================================
+
+    // MAKE SURE THE PROBLEM CAN BE HANDLED ===========================
+    IsProblemManageable("AMReX_DG_Solution.H", "EvalError_FV", N_SOL);
+    // ================================================================
+
+    // VARIABLES ======================================================
+    MultiFab dX(X.boxarray, X.distributionMap, AMREX_SPACEDIM*N_SOL, 1);
+    MultiFab err(X.boxarray, X.distributionMap, 2*N_DOM, 0);
+    err = 0.0;
+
+    Real total_error = 0.0;
+    // ================================================================
+
+    // EVAL THE SLOPES ================================================
+    IBVP.F_R_SLOPES(t, mesh, N_DOM, N_SOL, X, dX);
+    // ================================================================
+
+    // EVAL THE MINIMUM TIME STEP =====================================
+    for (MFIter mfi(err); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
+
+        Array4<int const> const & eDomQuad_Nq_fab = mesh.eDomQuad_Nq.array(mfi);
+        Array4<long const> const & eDomQuad_pos_fab = mesh.eDomQuad_pos.array(mfi);
+        
+        Array4<Real const> const & X_fab = X.array(mfi);
+        Array4<Real const> const & dX_fab = dX.array(mfi);
+        Array4<Real> const & err_fab = err.array(mfi);
+
+        ParallelFor(bx, N_DOM,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+
+            if (ELM_IS_NOT_EMPTY(etype))
+            {
+                // LOCAL PARAMETERS
+                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                   prob_lo[1]+j*dx[1],
+                                                                   prob_lo[2]+k*dx[2])};
+                const int dom_Nq = eDomQuad_Nq_fab(i,j,k,ELM_DOM_QUAD_NQ(dom));
+                const long pos = eDomQuad_pos_fab(i,j,k,ELM_DOM_QUAD_POS(dom));
+                const Real * xptr = &eDomQuad_mem_ptr[pos];
+                
+                // LOCAL VARIABLES
+                int BF_i, BF_j, BF_k;
+                Real xc[AMREX_SPACEDIM];
+                Real x[AMREX_SPACEDIM], w;
+                Real SOL[__DG_MAX_N_SOL__];
+                Real err_x, norm_x;
+
+                // SOLUTION
+                BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+                AMREX_D_TERM
+                (
+                    xc[0] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X1(dom));,
+                    xc[1] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X2(dom));,
+                    xc[2] = eInfo_fab(BF_i,BF_j,BF_k,ELM_CENTROID_X3(dom));
+                )
+                DG_SOL_space_RX sol(X_fab, dX_fab, xc, BF_i, BF_j, BF_k);
+
+                // LOOP OVER THE QUADRATURE POINTS
+                for (int q = 0; q < dom_Nq; ++q)
+                {
+                    // QUADRATURE POINT
+                    const long x_pos = (AMREX_SPACEDIM+1)*q;
+                    AMREX_D_TERM
+                    (
+                        x[0] = xptr[x_pos+0]+cell_lo[0];,
+                        x[1] = xptr[x_pos+1]+cell_lo[1];,
+                        x[2] = xptr[x_pos+2]+cell_lo[2];
+                    )
+                    w = xptr[x_pos+AMREX_SPACEDIM];
+
+                    // EVAL SOLUTION
+                    sol.eval(x, 0, N_SOL, SOL);
+
+                    // EVAL ERROR
+                    IBVP.F_ERROR(dom, t, x, SOL, err_x, norm_x);
+
+                    err_fab(i,j,k,2*dom) += norm_x*w;
+                    err_fab(i,j,k,2*dom+1) += err_x*w;
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+
+//Print() << "err.sum(1): " << err.sum(1) << std::endl;
+//Print() << "err.sum(0): " << err.sum(0) << std::endl;
+
+    total_error = err.sum(1)/err.sum(0);
+    for (int dom = 1; dom < N_DOM; ++dom)
+    {
+        total_error += err.sum(2*dom+1)/err.sum(2*dom);
+    }
+    // ================================================================
+
+    return total_error;
 }
 
 /**

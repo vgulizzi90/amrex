@@ -383,6 +383,34 @@ struct MatrixFactory
             });
             Gpu::synchronize();
         }
+
+        // HANDLE GHOST ELEMENTS
+        for (MFIter mfi(mesh.eType); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.fabbox();
+
+            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+            Array4<long const> const & eMMCh_pos_fab = this->eMMCh_pos.array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // LOCAL PARAMETERS
+                const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_ghost = ELM_IS_GHOST(etype);
+                const bool elm_is_large = ELM_IS_LARGE(etype);
+
+                if (elm_is_ghost && elm_is_large)
+                {
+                    const long pos = eMMCh_pos_fab(i,j,k,dom);
+                    int info;
+
+                    // CHOLESKY DECOMPOSITION
+                    linalg::dpotf2('U', sNp, &eMMCh_mem_ptr[pos], sNp, info);
+                }
+            });
+            Gpu::synchronize();
+        }
         // ================================================================
     }
 
@@ -517,8 +545,13 @@ exit(-1);
                 const int I_pos = (pi+pj*rr[0])*f_sNp*c_sNp;
 #endif
 #if (AMREX_SPACEDIM == 3)
-Print() << "EvalInterpolationOperator: AMREX_SPACEDIM == 3" << std::endl;
-exit(-1);
+                const int pi = (i%rr[0] >= 0) ? i%rr[0] : (i%rr[0]+rr[0]);
+                const int pj = (j%rr[1] >= 0) ? j%rr[1] : (j%rr[1]+rr[1]);
+                const int pk = (k%rr[2] >= 0) ? k%rr[2] : (k%rr[2]+rr[2]);
+                const int c_i = (i-pi)/rr[0];
+                const int c_j = (j-pj)/rr[1];
+                const int c_k = (k-pk)/rr[2];
+                const int I_pos = (pi+pj*rr[0]+pk*rr[0]*rr[1])*f_sNp*c_sNp;
 #endif
 
                 // ELEMENT TYPE

@@ -43,7 +43,7 @@ void InterpolateLevelsets(const int N_PHI,
     // ================================================================
 
     // CHECK CONSISTENCY ==============================================
-    if (f_std_elem.I.size() != (f_sNp*c_sNp*AMREX_D_TERM(rr[0],*rr[1],*irr[2])))
+    if (f_std_elem.I.size() != (f_sNp*c_sNp*AMREX_D_TERM(rr[0],*rr[1],*rr[2])))
     {
         std::string msg;
         msg  = "\n";
@@ -99,8 +99,13 @@ exit(-1);
             const int pos = (pi+pj*rr[0])*f_sNp*c_sNp;
 #endif
 #if (AMREX_SPACEDIM == 3)
-Print() << "InterpolateLevelsets: AMREX_SPACEDIM == 3" << std::endl;
-exit(-1);
+            const int pi = (i%rr[0] >= 0) ? i%rr[0] : (i%rr[0]+rr[0]);
+            const int pj = (j%rr[1] >= 0) ? j%rr[1] : (j%rr[1]+rr[1]);
+            const int pk = (k%rr[2] >= 0) ? k%rr[2] : (k%rr[2]+rr[2]);
+            const int ci = (i-pi)/rr[0];
+            const int cj = (j-pj)/rr[1];
+            const int ck = (k-pk)/rr[2];
+            const int pos = (pi+pj*rr[0]+pk*rr[0]*rr[1])*f_sNp*c_sNp;
 #endif
             // INITIALIZE
             for (int ru = 0; ru < N_PHI; ++ru)

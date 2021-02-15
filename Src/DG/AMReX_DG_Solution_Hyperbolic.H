@@ -2021,6 +2021,17 @@ void Eval_dXdt_BouFluxes_FV(const Real t,
     for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
     {
         const int b = 2*dir;
+#if (AMREX_SPACEDIM == 1)
+        const Real fact = 1.0;
+#endif
+#if (AMREX_SPACEDIM == 2)
+        const Real fact = Real(c_rr[1-dir]);
+#endif
+#if (AMREX_SPACEDIM == 3)
+        const int d1 = (dir*(dir-1))/2;
+        const int d2 = 1+((3-dir)*dir)/2;
+        const Real fact = Real(c_rr[d1]*c_rr[d2]);
+#endif
         
         for (MFIter mfi(FX[dir]); mfi.isValid(); ++mfi)
         {
@@ -2151,7 +2162,7 @@ void Eval_dXdt_BouFluxes_FV(const Real t,
                             for (int ru = 0; ru < N_SOL; ++ru)
                             for (int rs = 0; rs < c_sNp; ++rs)
                             {
-                                FX_fab(fi,fj,fk,rs+ru*c_sNp) *= c_rr[dir];
+                                FX_fab(fi,fj,fk,rs+ru*c_sNp) *= fact;
                             }
                         }
                         // INTRAPHASE BETWEEN LEVEL AND COARSER LEVEL
@@ -2181,7 +2192,7 @@ void Eval_dXdt_BouFluxes_FV(const Real t,
                             for (int ru = 0; ru < N_SOL; ++ru)
                             for (int rs = 0; rs < c_sNp; ++rs)
                             {
-                                FX_fab(fi,fj,fk,offset+rs+ru*c_sNp) *= c_rr[dir];
+                                FX_fab(fi,fj,fk,offset+rs+ru*c_sNp) *= fact;
                             }
                         }
                         // INTRAPHASE WITHIN LEVEL
@@ -2813,6 +2824,17 @@ void Eval_dXdt_BouFluxes(const Real t,
     for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
     {
         const int b = 2*dir;
+#if (AMREX_SPACEDIM == 1)
+        const Real fact = 1.0;
+#endif
+#if (AMREX_SPACEDIM == 2)
+        const Real fact = Real(c_rr[1-dir]);
+#endif
+#if (AMREX_SPACEDIM == 3)
+        const int d1 = (dir*(dir-1))/2;
+        const int d2 = 1+((3-dir)*dir)/2;
+        const Real fact = Real(c_rr[d1]*c_rr[d2]);
+#endif
         
         for (MFIter mfi(FX[dir]); mfi.isValid(); ++mfi)
         {
@@ -2921,7 +2943,7 @@ void Eval_dXdt_BouFluxes(const Real t,
                             for (int ru = 0; ru < N_SOL; ++ru)
                             for (int rs = 0; rs < c_sNp; ++rs)
                             {
-                                FX_fab(fi,fj,fk,rs+ru*c_sNp) *= c_rr[dir];
+                                FX_fab(fi,fj,fk,rs+ru*c_sNp) *= fact;
                             }
                         }
                         // INTRAPHASE BETWEEN LEVEL AND COARSER LEVEL
@@ -2945,7 +2967,7 @@ void Eval_dXdt_BouFluxes(const Real t,
                             for (int ru = 0; ru < N_SOL; ++ru)
                             for (int rs = 0; rs < c_sNp; ++rs)
                             {
-                                FX_fab(fi,fj,fk,offset+rs+ru*c_sNp) *= c_rr[dir];
+                                FX_fab(fi,fj,fk,offset+rs+ru*c_sNp) *= fact;
                             }
                         }
                         // INTRAPHASE WITHIN LEVEL
@@ -3684,6 +3706,13 @@ void TakeRungeKuttaTimeStep(const int RK_order,
             Abort(msg);
         }
 #endif
+    }
+    // ================================================================
+
+    // CHECK ==========================================================
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        AMR::CheckMergeLeaking(*meshes[lev], N_DOM, masks[lev]);
     }
     // ================================================================
 }

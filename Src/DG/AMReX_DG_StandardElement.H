@@ -969,6 +969,61 @@ exit(-1);
 */
             }
         }
+        else if (DIM == 3)
+        {
+            const int c_size_1d = Nq*(1+coarse.p);
+
+            Real c_lo[DIM];
+            Real c_hi[DIM];
+            Vector<Real> c_P1(c_size_1d), c_P2(c_size_1d), c_P3(c_size_1d);
+
+            // OPERATOR
+            Vector<Real> I_tmp(this->Np*coarse.Np);
+
+            for (int f_k = 0; f_k < input_rr[2]; ++f_k)
+            for (int f_j = 0; f_j < input_rr[1]; ++f_j)
+            for (int f_i = 0; f_i < input_rr[0]; ++f_i)
+            {
+                // EVAL THE BASIS FUNCTIONS (COARSE ELEMENT)
+                c_lo[0] =             -f_i *aux_dx[0]; c_lo[1] =             -f_j *aux_dx[1]; c_lo[2] =             -f_k *aux_dx[2];
+                c_hi[0] = (input_rr[0]-f_i)*aux_dx[0]; c_hi[1] = (input_rr[1]-f_j)*aux_dx[1]; c_hi[2] = (input_rr[2]-f_k)*aux_dx[2];
+
+                DG_space_3d_BF_Table_NxL(Nq, coarse.p,
+                                         XI1q, XI2q, XI3q, c_lo, c_hi,
+                                         c_P1.data(), c_P2.data(), c_P3.data(),
+                                         c_BF.data());
+
+                // EVAL THE INTERPOLATION OPERATOR
+                std::fill(I_tmp.begin(), I_tmp.end(), 0.0);
+
+                for (int c = 0; c < (coarse.Np); ++c)
+                for (int r = 0; r < (this->Np); ++r)
+                for (int k = 0; k < (Nq); ++k)
+                {
+                    const int pos = r+c*(this->Np);
+                    const int pos_r = k+r*Nq;
+                    const int pos_c = k+c*Nq;
+
+                    I_tmp[pos] += f_BF[pos_r]*c_BF[pos_c]*Wq[k]*w;
+                }
+
+                const int pos = (f_i+f_j*input_rr[0]+f_k*input_rr[0]*input_rr[1])*this->Np*coarse.Np;
+                
+                std::copy(I_tmp.begin(), I_tmp.end(), &this->IBfTBc[pos]);
+                
+                linalg::matmul(this->Np, this->Np, coarse.Np, this->iMM.data(), I_tmp.data(), &this->I[pos]);
+
+/*
+Print() << std::endl << "c_lo: "; IO::PrintRealArray2D(1, DIM, c_lo);
+Print() << "c_hi: "; IO::PrintRealArray2D(1, DIM, c_hi);
+Print() << "I_ptr(" << f_i << "," << f_j << "): " << std::endl;
+IO::PrintRealArray2D(this->Np, coarse.Np, &this->I[pos]);
+Print() << "IBfTBc_ptr(" << f_i << "," << f_j << "): " << std::endl;
+IO::PrintRealArray2D(this->Np, coarse.Np, &this->IBfTBc[pos]);
+exit(-1);
+*/
+            }
+        }
         else
         {
             std::string msg;

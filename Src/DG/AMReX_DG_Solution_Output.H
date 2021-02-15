@@ -1493,8 +1493,8 @@ void ExportImplicitMesh_VTK(const std::string & folderpath_root,
                                    t, mesh, mask, N_PHI, N_DOM);
     ExportImplicitMesh_BouData_VTK(folderpath_root, n, n_steps, filename_root+"Bou",
                                    t, mesh, mask, N_PHI, N_DOM);
-    ExportImplicitMesh_Centroids_VTK(folderpath_root, n, n_steps, filename_root+"Centroids",
-                                     t, mesh, N_DOM);
+    //ExportImplicitMesh_Centroids_VTK(folderpath_root, n, n_steps, filename_root+"Centroids",
+    //                                 t, mesh, N_DOM);
 }
 
 /**
