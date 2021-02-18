@@ -597,6 +597,7 @@ void ExportImplicitMesh_DomData_VTK(const std::string & folderpath_root,
     {
         VTK_cell_fields_names.push_back("ELM_TYPE_DOM_"+std::to_string(dom));
     }
+    VTK_cell_fields_names.push_back("Nq");
     VTK_cell_fields_names.push_back("TAG");
 
     n_VTK_cell_fields = VTK_cell_fields_names.size();
@@ -692,6 +693,7 @@ void ExportImplicitMesh_DomData_VTK(const std::string & folderpath_root,
 
         Array4<Real const> const & PHI_fab = mesh.PHI.array(mfi);
         Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+        Array4<int const> const & eDomQuad_Nq_fab = mesh.eDomQuad_Nq.array(mfi);
         Array4<int const> const & mask_fab = mask.array(mfi);
 
         for (int k = lo.z; k <= hi.z; ++k)
@@ -796,8 +798,14 @@ void ExportImplicitMesh_DomData_VTK(const std::string & folderpath_root,
                     VTK_cell_fields_ptr[5+dom][VTK_cell_field_pos] = eType_fab(i,j,k,ELM_TYPE(dom))%10;
                 }
 
+                // NUMBER OF QUADRATURE POINTS
+                for (int dom = 0; dom < N_DOM; ++dom)
+                {
+                    VTK_cell_fields_ptr[5+N_DOM+dom][VTK_cell_field_pos] = eDomQuad_Nq_fab(i,j,k,ELM_DOM_QUAD_NQ(dom));
+                }
+
                 // TAG
-                VTK_cell_fields_ptr[5+N_DOM][VTK_cell_field_pos] = mask_fab(i,j,k);
+                VTK_cell_fields_ptr[5+N_DOM+N_DOM][VTK_cell_field_pos] = mask_fab(i,j,k);
                 // ----------------------------------------------------
 
                 VTK_cell_conn_pos += VTK_cell_conn_len;

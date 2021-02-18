@@ -408,7 +408,7 @@ void Restrict(const int N_SOL,
 /*
 if (c_i == __i__ && c_j == __j__ && ru == 0)
 {
-Print() << "f_i, f_j: " << f_i << "," << f_j << std::endl;
+Print() << "f_i, f_j: " << f_i << "," << f_j << " -> f_BF_i, f_BF_j: " << f_BF_i << "," << f_BF_j << std::endl;
 Print() << "I_ptr" << std::endl;
 IO::PrintRealArray2D(f_sNp, c_sNp, I_ptr);
 }

@@ -26,7 +26,7 @@ amr.max_level     = 0
 
 
 # AMR GRIDS ===========================================================
-grids.CFL = 0.3
+grids.CFL = 0.2
 
 # LEVEL SET FUNCTIONS
 grids.space_p = 2
@@ -35,8 +35,8 @@ grids.space_q = 2
 
 
 # IMPLICITLY-DEFINED MESH =============================================
-implicit_meshes.space_q = 2
-implicit_meshes.space_q_ie = 2
+implicit_meshes.space_q = 3
+implicit_meshes.space_q_ie = 3
 
 implicit_meshes.volume_fraction_threshold = 0.2
 # =====================================================================
@@ -44,11 +44,6 @@ implicit_meshes.volume_fraction_threshold = 0.2
 
 # DISCONTINUOUS GALERKIN METHOD =======================================
 dG.space_p = 0
-# =====================================================================
-
-
-# SUB-CELL LIMITING ===================================================
-use_sub_cell_limiter = true
 # =====================================================================
 #######################################################################
 
@@ -59,7 +54,7 @@ use_sub_cell_limiter = true
 #problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1
 
 problem.int_params = 1
-problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.2 60.0 30.0
+problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.25 60.0 30.0
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
 #       which should be input as follows

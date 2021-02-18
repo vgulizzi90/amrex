@@ -64,7 +64,7 @@ void PrintMultiFabEntry(const MF & mf, const int ii, const int jj, const int kk,
 
     for (MFIter mfi(mf); mfi.isValid(); ++mfi)
     {
-        const Box & bx = mfi.fabbox();
+        const Box & bx = mfi.validbox();
         auto fab = mf.array(mfi);
 
         ParallelFor(bx, n_comp,
@@ -72,7 +72,7 @@ void PrintMultiFabEntry(const MF & mf, const int ii, const int jj, const int kk,
         {
             if (i == ii && j == jj && k == kk && u == comp)
             {
-                Print() << where << "mf(" << i << "," << j << "," << k << "," << u << "): " << ((int) fab(i,j,k,u)) << std::endl;
+                Print() << where << "mf(" << i << "," << j << "," << k << "," << u << "): " << (fab(i,j,k,u)) << std::endl;
             }
         });
         Gpu::synchronize();

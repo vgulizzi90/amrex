@@ -279,7 +279,7 @@ amrex::Print() << "IDEAL_GAS.F_SOL0" << std::endl;
 exit(-1);
         }
 
-        /* Constant state 
+        /* Constant state
         U[RHO] = rhoL;
         AMREX_D_TERM
         (
@@ -310,18 +310,7 @@ exit(-1);
                   const amrex::Real * U,
                   amrex::Real * NFn) const
     {
-        amrex::Real ghost_U[DG_N_SOL];
-
-        ghost_U[RHO] = U[RHO];
-        AMREX_D_TERM
-        (
-            ghost_U[RHOV1] = U[RHOV1];,
-            ghost_U[RHOV2] = U[RHOV2];,
-            ghost_U[RHOV3] = U[RHOV3];
-        )
-        ghost_U[TE] = U[TE];
-
-        this->F_NF_ICS(dom, t, x, un, U, ghost_U, NFn);
+        this->F_NF_WALL(dom, t, x, un, U, NFn);
     }
 
     /**
@@ -758,7 +747,7 @@ public amrex::DG::AMR::Base
                                                                *this->matfactories[lev-1]);
         }
 
-        if (lev == 0)
+        if ((lev == 0) && (lev != this->max_level))
         {
             this->mf.define(this->Geom(lev), level_inputs.dG.space_p-1, level_inputs.dG.space_p);
             this->mf.EvalMassMatrices(*this->meshes[lev]);

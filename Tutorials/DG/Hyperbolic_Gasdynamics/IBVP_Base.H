@@ -1536,75 +1536,6 @@ amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dP);
                     /**/
                     // ------------------------------------------------
 
-                    // BARTH-JESPERSEN --------------------------------
-                    /*
-                    // We use rhs as a temporary variable
-                    {
-                        amrex::Real nbr_P_max[DG_N_SOL], nbr_P_min[DG_N_SOL];
-                        amrex::Real alphas[DG_N_SOL];
-
-                        // INITIALIZATION
-                        for (int u = 0; u < DG_N_SOL; ++u)
-                        {
-                            nbr_P_max[u] = nbr_P_min[u] = P[u];
-                            alphas[u] = 1.0;
-                        }
-
-                        // FIND MIN AND MAX VALUES
-                        for (int n = 0; n < __DG_BASE_STENCIL_N_NBR__; ++n)
-                        {
-                            if (nbr_is_valid[n])
-                            {
-                                for (int u = 0; u < DG_N_SOL; ++u)
-                                {
-                                    nbr_P_max[u] = std::max(nbr_P_max[u], nbr_Ps[u+n*DG_N_SOL]);
-                                    nbr_P_min[u] = std::min(nbr_P_min[u], nbr_Ps[u+n*DG_N_SOL]);
-                                }
-                            }
-                        }
-
-                        // EVAL LIMITING COEFFICIENT
-                        for (int n = 0; n < __DG_BASE_STENCIL_N_NBR__; ++n)
-                        {
-                            if (nbr_is_valid[n])
-                            {
-                                for (int u = 0; u < DG_N_SOL; ++u)
-                                {
-                                    rhs[0] = P[u];
-                                    AMREX_D_TERM
-                                    (
-                                        rhs[0] += dP[u+0*DG_N_SOL]*(nbr_xcs[0+n*AMREX_SPACEDIM]-xc[0]);,
-                                        rhs[0] += dP[u+1*DG_N_SOL]*(nbr_xcs[1+n*AMREX_SPACEDIM]-xc[1]);,
-                                        rhs[0] += dP[u+2*DG_N_SOL]*(nbr_xcs[2+n*AMREX_SPACEDIM]-xc[2]);
-                                    )
-
-                                    if (rhs[0] > nbr_P_max[u])
-                                    {
-                                        alphas[u] = std::min(alphas[u], (nbr_P_max[u]-P[u])/(rhs[0]-P[u]));
-                                    }
-                                    else if (rhs[0] < nbr_P_min[u])
-                                    {
-                                        alphas[u] = std::min(alphas[u], (nbr_P_min[u]-P[u])/(rhs[0]-P[u]));
-                                    }
-                                }
-
-                            }
-                        }
-
-                        // LIMIT THE SLOPES
-                        for (int u = 0; u < DG_N_SOL; ++u)
-                        {
-                            AMREX_D_TERM
-                            (
-                                dP[u+0*DG_N_SOL] *= alphas[u];,
-                                dP[u+1*DG_N_SOL] *= alphas[u];,
-                                dP[u+2*DG_N_SOL] *= alphas[u];
-                            )
-                        }
-                    }
-                    */
-                    // ------------------------------------------------
-
                     // STORE THE SLOPES -------------------------------
                     /*
                     this->F_DP2DU(t, xc, U, &dP[0*DG_N_SOL], &rhs[0*DG_N_SOL]);
@@ -1614,7 +1545,7 @@ amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dP);
 #if (AMREX_SPACEDIM > 2)
                     this->F_DP2DU(t, xc, U, &dP[2*DG_N_SOL], &rhs[2*DG_N_SOL]);
 #endif
-*//*
+
                     for (int u = 0; u < DG_N_SOL; ++u)
                     {
                         AMREX_D_TERM
@@ -1624,7 +1555,6 @@ amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dP);
                             dX_fab(i,j,k,2+AMREX_SPACEDIM*u) = rhs[u+2*DG_N_SOL];
                         )
                     }
-
                     */
 
 /*
@@ -1635,6 +1565,7 @@ amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, rhs);
 amrex::Print() << std::endl;
 }
 */
+                    /**/
                     for (int u = 0; u < DG_N_SOL; ++u)
                     {
                         AMREX_D_TERM
@@ -1644,6 +1575,7 @@ amrex::Print() << std::endl;
                             dX_fab(i,j,k,2+AMREX_SPACEDIM*u) = dP[u+2*DG_N_SOL];
                         )
                     }
+                    /**/
                     // ------------------------------------------------------------
                 }
             });
@@ -1653,6 +1585,7 @@ amrex::Print() << std::endl;
 
 
         // APPLY THE BARTH JESPERSEN LIMITER
+        /**/
 #ifdef AMREX_USE_CUDA
         amrex::Real const * eBouQuad_mem_ptr = mesh.eBouQuad_device_mem.data();
         amrex::Real const * eIntBouQuad_mem_ptr = mesh.eIntBouQuad_device_mem.data();
@@ -2073,310 +2006,11 @@ amrex::Print() << std::endl;
             amrex::Gpu::synchronize();
         }
         dX.FillBoundary(mesh.geom.periodicity());
+        /**/
     }
     // ================================================================
 
     // TAG THE TROUBLED CELLS =========================================
-    template <typename MASK_MF, typename MASK_T>
-    void F_UPDATE_TROUBLED_OLD(const amrex::Real /*t*/,
-                               const amrex::DG::ImplicitMesh & mesh,
-                               const amrex::DG::MatrixFactory & matfactory,
-                               const amrex::MultiFab & X,
-                               MASK_MF & mask,
-                               const MASK_T masked) const
-    {
-        // PARAMETERS -------------------------------------------------
-        // GRID
-        const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
-        const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
-
-        // IMPLICIT MESH
-#ifdef AMREX_USE_CUDA
-        const amrex::Real * eDomQuad_mem_ptr = mesh.eDomQuad_device_mem.data();
-#else
-        const amrex::Real * eDomQuad_mem_ptr = mesh.eDomQuad_host_mem.data();
-#endif
-
-        // DG
-        const int sp = matfactory.std_elem.p;
-
-        // DOMAIN
-        const int dom = 0;
-        // ------------------------------------------------------------
-
-        // UPDATE THE MASK
-        for (amrex::MFIter mfi(X); mfi.isValid(); ++mfi)
-        {
-            const amrex::Box & bx = mfi.validbox();
-
-            amrex::Array4<short const> const & eType_fab = mesh.eType.array(mfi);
-            amrex::Array4<int const> const & eDomQuad_Nq_fab = mesh.eDomQuad_Nq.array(mfi);
-            amrex::Array4<long const> const & eDomQuad_pos_fab = mesh.eDomQuad_pos.array(mfi);
-
-            amrex::Array4<amrex::Real const> const & X_fab = X.array(mfi);
-
-            auto mask_fab = mask.array(mfi);
-
-            amrex::ParallelFor(bx,
-            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-            {
-                // ELEMENT TYPE
-                const short etype = eType_fab(i,j,k,amrex::DG::ELM_TYPE(dom));
-
-                if (amrex::DG::ELM_IS_VALID(etype) && (mask_fab(i,j,k) != masked))
-                {
-                    // LOCAL PARAMETERS
-                    const amrex::Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
-                                                                              prob_lo[1]+j*dx[1],
-                                                                              prob_lo[2]+k*dx[2])};
-                    const int dom_Nq = eDomQuad_Nq_fab(i,j,k,amrex::DG::ELM_DOM_QUAD_NQ(dom));
-                    const long pos = eDomQuad_pos_fab(i,j,k,amrex::DG::ELM_DOM_QUAD_POS(dom));
-                    const amrex::Real * xptr = &eDomQuad_mem_ptr[pos];
-
-                    // LOCAL VARIABLES
-                    int BF_i, BF_j, BF_k;
-                    amrex::Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
-                    amrex::Real x[AMREX_SPACEDIM], w;
-                    amrex::Real U[DG_N_SOL], U_trunc[DG_N_SOL];
-                    amrex::Real P[DG_N_SOL], P_trunc[DG_N_SOL];
-                    amrex::Real err, norm;
-                    amrex::Real int_err, int_norm;
-
-                    // SUPPORT OF THE BASIS FUNCTIONS
-                    amrex::DG::BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
-
-                    // SOLUTION
-                    amrex::DG::DG_SOL_space_BFX sol(sp, BF_lo, BF_hi, X_fab, BF_i, BF_j, BF_k);
-
-                    // EVAL THE INTEGRAL
-                    err = norm = 0.0;
-                    for (int q = 0; q < dom_Nq; ++q)
-                    {
-                        // QUADRATURE POINT AND WEIGHT
-                        const long x_pos = (AMREX_SPACEDIM+1)*q;
-                        AMREX_D_TERM
-                        (
-                            x[0] = xptr[x_pos+0]+cell_lo[0];,
-                            x[1] = xptr[x_pos+1]+cell_lo[1];,
-                            x[2] = xptr[x_pos+2]+cell_lo[2];
-                        )
-                        w = xptr[x_pos+AMREX_SPACEDIM];
-
-                        // EVAL SOLUTION
-                        sol.eval_BF_only_table(x);
-                        sol.eval_unsafe(0, DG_N_SOL, U);
-                        sol.eval_unsafe_trunc(sp-1, 0, DG_N_SOL, U_trunc);
-
-                        // ADD INTEGRAL CONTRIBUTIONS
-                        int_err = int_norm = 0.0;
-                        /*
-                        for (int cu = 0; cu < DG_N_SOL; ++cu)
-                        {
-                            int_err += (U[cu]-U_trunc[cu])*(U[cu]-U_trunc[cu]);
-                            int_norm += U[cu]*U[cu];
-                        }
-                        */
-
-                        /**/
-                        this->F_U2P(U, P);
-                        this->F_U2P(U_trunc, P_trunc);
-                        int_err += (P[TE]-P_trunc[TE])*(P[TE]-P_trunc[TE]);
-                        int_norm += P[TE]*P[TE];
-                        /**/
-
-                        err += int_err*w;
-                        norm += int_norm*w;
-                    }
-                    err = err/norm;
-
-                    if (err > 0.0)
-                    {
-                        const amrex::Real s = std::log10(err);
-                        const amrex::Real s0 = -4.0*std::log10(sp);
-                        const amrex::Real ds = -1.5;
-                        
-                        if (s > (s0+ds))
-                        {
-                            mask_fab(i,j,k) = masked;
-                        }
-                    }
-                }
-            });
-            amrex::Gpu::synchronize();
-        }
-        mask.FillBoundary(mesh.geom.periodicity());
-    }
-
-    template <typename MASK_MF, typename MASK_T>
-    void F_UPDATE_TROUBLED(const amrex::Real /*t*/,
-                           const amrex::DG::ImplicitMesh & mesh,
-                           const amrex::DG::MatrixFactory & matfactory,
-                           const amrex::MultiFab & X,
-                           MASK_MF & mask,
-                           const MASK_T masked) const
-    {
-        // PARAMETERS -------------------------------------------------
-        // GRID
-        const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
-        const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
-
-        // IMPLICIT MESH
-#ifdef AMREX_USE_CUDA
-        const amrex::Real * eDomQuad_mem_ptr = mesh.eDomQuad_device_mem.data();
-#else
-        const amrex::Real * eDomQuad_mem_ptr = mesh.eDomQuad_host_mem.data();
-#endif
-
-        // DG
-        const int sp = matfactory.std_elem.p;
-        const int sNp = matfactory.std_elem.Np;
-        const int sp_trunc = sp-1;
-
-        // DOMAIN
-        const int dom = 0;
-        // ------------------------------------------------------------
-
-        // UPDATE THE MASK
-        for (amrex::MFIter mfi(X); mfi.isValid(); ++mfi)
-        {
-            const amrex::Box & bx = mfi.validbox();
-
-            amrex::Array4<short const> const & eType_fab = mesh.eType.array(mfi);
-            amrex::Array4<int const> const & eDomQuad_Nq_fab = mesh.eDomQuad_Nq.array(mfi);
-            amrex::Array4<long const> const & eDomQuad_pos_fab = mesh.eDomQuad_pos.array(mfi);
-
-            amrex::Array4<amrex::Real const> const & X_fab = X.array(mfi);
-
-            auto mask_fab = mask.array(mfi);
-
-            amrex::ParallelFor(bx,
-            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-            {
-                // ELEMENT TYPE
-                const short etype = eType_fab(i,j,k,amrex::DG::ELM_TYPE(dom));
-
-                if (amrex::DG::ELM_IS_VALID(etype) && (mask_fab(i,j,k) != masked))
-                {
-                    // LOCAL PARAMETERS
-                    const amrex::Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
-                                                                              prob_lo[1]+j*dx[1],
-                                                                              prob_lo[2]+k*dx[2])};
-                    const int dom_Nq = eDomQuad_Nq_fab(i,j,k,amrex::DG::ELM_DOM_QUAD_NQ(dom));
-                    const long pos = eDomQuad_pos_fab(i,j,k,amrex::DG::ELM_DOM_QUAD_POS(dom));
-                    const amrex::Real * xptr = &eDomQuad_mem_ptr[pos];
-
-                    // LOCAL VARIABLES
-                    int BF_i, BF_j, BF_k;
-                    amrex::Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
-                    amrex::Real rhoX[__DG_SOL_MAX_SPACE_Np__];
-                    amrex::Real x[AMREX_SPACEDIM], w;
-                    amrex::Real err, norm;
-                    amrex::Real int_err, int_norm;
-                    int AMREX_D_DECL(l1, l2, l3);
-                    bool cond;
-
-                    // SUPPORT OF THE BASIS FUNCTIONS
-                    amrex::DG::BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
-
-                    // BASIS FUNCTIONS
-                    amrex::DG::DG_SOL_space_BF bf(sp, BF_lo, BF_hi);
-
-                    // SOLUTION COEFFICIENTS (DENSITY)
-                    for (int rs = 0; rs < sNp; ++rs)
-                    {
-                        rhoX[rs] = X_fab(BF_i,BF_j,BF_k,rs+RHO*sNp);
-                    }
-
-                    // EVAL THE INTEGRAL
-                    err = norm = 0.0;
-                    for (int q = 0; q < dom_Nq; ++q)
-                    {
-                        // QUADRATURE POINT AND WEIGHT
-                        const long x_pos = (AMREX_SPACEDIM+1)*q;
-                        AMREX_D_TERM
-                        (
-                            x[0] = xptr[x_pos+0]+cell_lo[0];,
-                            x[1] = xptr[x_pos+1]+cell_lo[1];,
-                            x[2] = xptr[x_pos+2]+cell_lo[2];
-                        )
-                        w = xptr[x_pos+AMREX_SPACEDIM];
-
-                        // EVAL SOLUTION
-                        bf.eval_BF_only_table(x);
-                        
-                        int_norm = 0.0;
-                        int_err = 0.0;
-                        for (int rs = 0; rs < sNp; ++rs)
-                        for (int cs = 0; cs < sNp; ++cs)
-                        {
-                            int_norm += rhoX[rs]*rhoX[cs]*bf.BF[rs]*bf.BF[cs];
-#if (AMREX_SPACEDIM == 1)
-                            l1 = rs;
-                            cond = (l1 > sp_trunc);
-                            l1 = cs;
-                            cond = cond && (l1 > sp_trunc);
-#endif
-#if (AMREX_SPACEDIM == 2)
-                            l2 = rs/(1+sp);
-                            l1 = (rs-l2*(1+sp));
-                            cond = (l2 > sp_trunc) || (l1 > sp_trunc);
-                            l2 = cs/(1+sp);
-                            l1 = (cs-l2*(1+sp));
-                            cond = cond && ((l2 > sp_trunc) || (l1 > sp_trunc));
-#endif
-#if (AMREX_SPACEDIM == 3)
-                            l3 = rs/((1+sp)*(1+sp));
-                            l2 = (rs-l3*(1+sp)*(1+sp))/(1+sp);
-                            l1 = (rs-l3*(1+sp)*(1+sp)-l2*(1+sp));
-                            cond = (l3 > sp_trunc) || (l2 > sp_trunc) || (l1 > sp_trunc);
-                            l3 = cs/((1+sp)*(1+sp));
-                            l2 = (cs-l3*(1+sp)*(1+sp))/(1+sp);
-                            l1 = (cs-l3*(1+sp)*(1+sp)-l2*(1+sp));
-                            cond = cond && ((l3 > sp_trunc) || (l2 > sp_trunc) || (l1 > sp_trunc));
-#endif
-                            if (cond)
-                            {
-                                int_err += rhoX[rs]*rhoX[cs]*bf.BF[rs]*bf.BF[cs];
-                            }
-                        }
-
-                        err += int_err*w;
-                        norm += int_norm*w;
-                    }
-
-                    err = err/norm;
-
-                    if (err > 0.0)
-                    {
-                        const amrex::Real s = std::log10(err);
-                        const amrex::Real s0 = -4.0*std::log10(sp);
-                        const amrex::Real ds = +1.5;
-
-                        if (s > (s0-ds))
-                        {
-                            mask_fab(i,j,k) = masked;
-                        }
-                    }
-                }
-            });
-            amrex::Gpu::synchronize();
-        }
-        mask.FillBoundary(mesh.geom.periodicity());
-    }
-
-    template <typename MASK_MF, typename MASK_T>
-    void F_EVAL_TROUBLED(const amrex::Real t,
-                         const amrex::DG::ImplicitMesh & mesh,
-                         const amrex::DG::MatrixFactory & matfactory,
-                         const amrex::MultiFab & X,
-                         MASK_MF & mask,
-                         const MASK_T masked,
-                         const MASK_T unmasked) const
-    {
-        mask.setVal(unmasked);
-        this->F_UPDATE_TROUBLED(t, mesh, matfactory, X, mask, masked);
-    }
-
     template <typename MASK_MF, typename MASK_T>
     void F_UPDATE_TROUBLED(const amrex::Real /*t*/,
                            const amrex::DG::ImplicitMesh & mesh,
@@ -2412,6 +2046,7 @@ amrex::Print() << std::endl;
 
         // VARIABLES --------------------------------------------------
         amrex::MultiFab X_low(X.boxarray, X.distributionMap, n_comp_low, 1);
+        amrex::MultiFab sensor(X.boxarray, X.distributionMap, 2, 1);
         // ------------------------------------------------------------
 
         // INTERPOLATE THE SOLUTION USING A LOWER ORDER BASIS ---------
@@ -2423,6 +2058,8 @@ amrex::Print() << std::endl;
         // ------------------------------------------------------------
 
         // UPDATE THE MASK
+        sensor = 0.0;
+
         for (amrex::MFIter mfi(X); mfi.isValid(); ++mfi)
         {
             const amrex::Box & bx = mfi.validbox();
@@ -2436,21 +2073,20 @@ amrex::Print() << std::endl;
 
             auto mask_fab = mask.array(mfi);
 
+            amrex::Array4<amrex::Real> const & sensor_fab = sensor.array(mfi);
+
             amrex::ParallelFor(bx,
             [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
             {
                 // ELEMENT TYPE
                 const short etype = eType_fab(i,j,k,amrex::DG::ELM_TYPE(dom));
 
-                if (amrex::DG::ELM_IS_VALID(etype) && (mask_fab(i,j,k) != masked))
+                if (amrex::DG::ELM_IS_NOT_EMPTY(etype) && (mask_fab(i,j,k) != masked))
                 {
                     // LOCAL PARAMETERS
                     const amrex::Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
                                                                               prob_lo[1]+j*dx[1],
                                                                               prob_lo[2]+k*dx[2])};
-                    const int dom_Nq = eDomQuad_Nq_fab(i,j,k,amrex::DG::ELM_DOM_QUAD_NQ(dom));
-                    const long pos = eDomQuad_pos_fab(i,j,k,amrex::DG::ELM_DOM_QUAD_POS(dom));
-                    const amrex::Real * xptr = &eDomQuad_mem_ptr[pos];
 
                     // LOCAL VARIABLES
                     int BF_i, BF_j, BF_k;
@@ -2470,53 +2106,109 @@ amrex::Print() << std::endl;
 
                     // EVAL THE INTEGRAL
                     err = norm = 0.0;
-                    for (int q = 0; q < dom_Nq; ++q)
+
+                    // SELF CONTRIBUTION
                     {
-                        // QUADRATURE POINT AND WEIGHT
-                        const long x_pos = (AMREX_SPACEDIM+1)*q;
-                        AMREX_D_TERM
-                        (
-                            x[0] = xptr[x_pos+0]+cell_lo[0];,
-                            x[1] = xptr[x_pos+1]+cell_lo[1];,
-                            x[2] = xptr[x_pos+2]+cell_lo[2];
-                        )
-                        w = xptr[x_pos+AMREX_SPACEDIM];
+                        const int dom_Nq = eDomQuad_Nq_fab(i,j,k,amrex::DG::ELM_DOM_QUAD_NQ(dom));
+                        const long pos = eDomQuad_pos_fab(i,j,k,amrex::DG::ELM_DOM_QUAD_POS(dom));
+                        const amrex::Real * xptr = &eDomQuad_mem_ptr[pos];
 
-                        // EVAL SOLUTION
-                        sol.eval_BF_only_table(x);
-                        sol.eval_unsafe(0, DG_N_SOL, U);
-                        sol_low.eval_BF_only_table(x);
-                        sol_low.eval_unsafe(0, DG_N_SOL, U_trunc);
-                        //sol.eval_unsafe_trunc(sp-1, 0, DG_N_SOL, U_trunc);
-
-                        // ADD INTEGRAL CONTRIBUTIONS
-                        int_err = int_norm = 0.0;
-                        /*
-                        for (int cu = 0; cu < DG_N_SOL; ++cu)
+                        for (int q = 0; q < dom_Nq; ++q)
                         {
-                            int_err += (U[cu]-U_trunc[cu])*(U[cu]-U_trunc[cu]);
-                            int_norm += U[cu]*U[cu];
+                            // QUADRATURE POINT AND WEIGHT
+                            const long x_pos = (AMREX_SPACEDIM+1)*q;
+                            AMREX_D_TERM
+                            (
+                                x[0] = xptr[x_pos+0]+cell_lo[0];,
+                                x[1] = xptr[x_pos+1]+cell_lo[1];,
+                                x[2] = xptr[x_pos+2]+cell_lo[2];
+                            )
+                            w = xptr[x_pos+AMREX_SPACEDIM];
+
+                            // EVAL SOLUTION
+                            sol.eval_BF_only_table(x);
+                            sol.eval_unsafe(0, DG_N_SOL, U);
+                            sol_low.eval_BF_only_table(x);
+                            sol_low.eval_unsafe(0, DG_N_SOL, U_trunc);
+                            //sol.eval_unsafe_trunc(sp-1, 0, DG_N_SOL, U_trunc);
+
+                            // ADD INTEGRAL CONTRIBUTIONS
+                            int_err = int_norm = 0.0;
+                            /*
+                            for (int cu = 0; cu < DG_N_SOL; ++cu)
+                            {
+                                int_err += (U[cu]-U_trunc[cu])*(U[cu]-U_trunc[cu]);
+                                int_norm += U[cu]*U[cu];
+                            }
+                            */
+
+                            /**/
+                            //this->F_U2P(U, P);
+                            //this->F_U2P(U_trunc, P_trunc);
+                            int_err += (U[RHO]-U_trunc[RHO])*(U[RHO]-U_trunc[RHO]);
+                            int_norm += U[RHO]*U[RHO];
+                            /**/
+
+                            err += int_err*w;
+                            norm += int_norm*w;
                         }
-                        */
-
-                        /**/
-                        //this->F_U2P(U, P);
-                        //this->F_U2P(U_trunc, P_trunc);
-                        int_err += (U[RHO]-U_trunc[RHO])*(U[RHO]-U_trunc[RHO]);
-                        int_norm += U[RHO]*U[RHO];
-                        /**/
-
-                        err += int_err*w;
-                        norm += int_norm*w;
                     }
-                    err = err/norm;
 
+                    sensor_fab(i,j,k,0) = norm;
+                    sensor_fab(i,j,k,1) = err;
+                }
+            });
+            amrex::Gpu::synchronize();
+        }
+        sensor.FillBoundary(mesh.geom.periodicity());
+
+        for (amrex::MFIter mfi(X); mfi.isValid(); ++mfi)
+        {
+            const amrex::Box & bx = mfi.validbox();
+
+            amrex::Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+            amrex::Array4<amrex::Real const> const & sensor_fab = sensor.array(mfi);
+
+            auto mask_fab = mask.array(mfi);
+
+            amrex::ParallelFor(bx,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+                // ELEMENT TYPE
+                const short etype = eType_fab(i,j,k,amrex::DG::ELM_TYPE(dom));
+
+                if (amrex::DG::ELM_IS_VALID(etype) && (mask_fab(i,j,k) != masked))
+                {
+                    // LOCAL VARIABLES
+                    amrex::Real err, norm;
+
+                    norm = sensor_fab(i,j,k,0);
+                    err = sensor_fab(i,j,k,1);
+
+                    // ADD CONTRIBUTION FROM SMALL ELEMENTS
+                    for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                    {
+                        int nbr_i, nbr_j, nbr_k, nbr_b;
+                        amrex::DG::NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+
+                        const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,amrex::DG::ELM_TYPE(dom));
+                        const bool nbr_is_small = amrex::DG::ELM_IS_SMALL(nbr_etype);
+                        const int nbr_merged_b = (nbr_is_small) ? (nbr_etype/10) : -1;
+
+                        if (nbr_merged_b == nbr_b)
+                        {
+                            norm += sensor_fab(nbr_i,nbr_j,nbr_k,0);
+                            err += sensor_fab(nbr_i,nbr_j,nbr_k,1);
+                        }
+                    }
+
+                    err = err/norm;
                     if (err > 0.0)
                     {
                         const amrex::Real s = std::log10(err);
                         const amrex::Real s0 = -4.0*std::log10(sp);
                         //const amrex::Real ds = -2.0; // 2D
-                        const amrex::Real ds = -1.0; // 3D
+                        const amrex::Real ds = -3.0; // 3D
                         
                         if (s > (s0+ds))
                         {

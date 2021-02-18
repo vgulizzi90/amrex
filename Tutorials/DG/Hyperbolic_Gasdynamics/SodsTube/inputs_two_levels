@@ -8,7 +8,7 @@ geometry.is_periodic = 0 0 0
 
 # TIME ################################################################
 time.T = 0.2
-time.n_steps = 2000
+time.n_steps = 50000
 #######################################################################
 
 
@@ -31,26 +31,27 @@ amr.grid_eff = 1.0
 
 # AMR GRIDS ===========================================================
 # 2D
-#grids.CFL = 0.9 0.27
+#grids.CFL = 0.27 0.27
 
 # 3D
-grids.CFL = 0.9 0.05
+grids.CFL = 0.2 0.2
 
 # LEVEL SET FUNCTIONS
-grids.space_p = 3 2
-grids.space_q = 3 2
+grids.space_p = 2 2
+grids.space_q = 2 2
 # =====================================================================
 
 
 # IMPLICITLY-DEFINED MESH =============================================
-implicit_meshes.space_q = 3 2
-implicit_meshes.space_q_ie = 5 2
-
 # 2D
-#implicit_meshes.volume_fraction_threshold = 0.1 0.3
+#implicit_meshes.space_q = 3 3
+#implicit_meshes.space_q_ie = 5 3
+#implicit_meshes.volume_fraction_threshold = 0.3 0.3
 
 # 3D
-implicit_meshes.volume_fraction_threshold = 0.1 0.1
+implicit_meshes.space_q = 3 3
+implicit_meshes.space_q_ie = 8 3
+implicit_meshes.volume_fraction_threshold = 0.2 0.2
 # =====================================================================
 
 
@@ -66,7 +67,12 @@ dG.space_p = 2 0
 #problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1
 
 problem.int_params = 1
-problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.2 60.0 30.0
+
+# 2D
+#problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.25 30.0 0.0
+
+# 3D
+problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.25 60.0 30.0
 #######################################################################
 # NOTE: params contains the parameters of the problem, which should be
 #       input as follows
@@ -100,8 +106,13 @@ problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.2 60.0 30.0
 
 # POST-PROCESSING INFO ################################################
 plot_int = 120
-plot_filepath = PROBLEM_3D_TH60_PH30_movie
+plot_filepath = PROBLEM_TWO_LEVELS
 checkpoint_int = 120
-checkpoint_filepath = PROBLEM_3D_TH60_PH30_movie
-regrid_int = 20
+checkpoint_filepath = PROBLEM_TWO_LEVELS
+
+# 2D
+#regrid_int = 5
+
+# 3D
+regrid_int = 8
 #######################################################################

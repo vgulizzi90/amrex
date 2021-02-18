@@ -218,9 +218,9 @@ public IDEAL_GAS_BASE
         // EXACT SOLUTION
         this->F_EXACT(t, x, ref_U);
 
-        norm_x = 1.0;
+        norm_x = ref_U[RHO]*ref_U[RHO];
 
-        err_x = std::abs(ref_U[RHO]-U[RHO]);
+        err_x = (ref_U[RHO]-U[RHO])*(ref_U[RHO]-U[RHO]);
     }
     // ================================================================
 

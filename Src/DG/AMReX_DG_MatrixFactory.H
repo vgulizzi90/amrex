@@ -574,7 +574,7 @@ exit(-1);
                 }
                 // ----------------------------------------------------
                 // ENTIRE ELEMENTS ------------------------------------
-                else if (ELM_IS_ENTIRE(etype))
+                else if (ELM_IS_ENTIRE(etype) && !ELM_IS_SMALL(c_etype))
                 {
                     // NOTE: If the element is extended, we must 
                     //       provide the contribution of the small
@@ -600,7 +600,7 @@ exit(-1);
                 }
                 // ----------------------------------------------------
                 // PARTIAL ELEMENTS -----------------------------------
-                else if (ELM_IS_LARGE(etype) || ELM_IS_SMALL(etype))
+                else if (ELM_IS_LARGE(etype) || ELM_IS_SMALL(etype) || (ELM_IS_ENTIRE(etype) && ELM_IS_SMALL(c_etype)))
                 {
                     // QUADRATURE INFO
                     const int dom_Nq = eDomQuad_Nq_fab(i,j,k,ELM_DOM_QUAD_NQ(dom));

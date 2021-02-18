@@ -17,8 +17,8 @@
 #include <AMReX_DG_InputReader.H>
 #include <AMReX_DG_BFX.H>
 
-#define __i__ 11
-#define __j__ 14
+#define __i__ 28
+#define __j__ 38
 #define __k__ 14
 
 namespace amrex

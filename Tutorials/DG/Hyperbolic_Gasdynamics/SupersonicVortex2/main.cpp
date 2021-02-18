@@ -136,6 +136,7 @@ void main_main()
             amrex::Real dom_err;
             
             dom_err = amrex::DG::AMR::EvalError(t, DG_N_SOL, amr, amr.IG);
+            dom_err = std::sqrt(dom_err);
                       
             amrex::Print() << "| dom_err: " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << std::endl;
 
@@ -223,6 +224,7 @@ void main_main()
                 // EVAL ERROR
                 {
                     dom_err = amrex::DG::AMR::EvalError(t, DG_N_SOL, amr, amr.IG);
+                    dom_err = std::sqrt(dom_err);
                 }
                 
                 // WRITE TO OUTPUT
