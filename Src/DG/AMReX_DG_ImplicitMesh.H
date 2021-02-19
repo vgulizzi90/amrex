@@ -17,8 +17,8 @@
 #include <AMReX_DG_InputReader.H>
 #include <AMReX_DG_BFX.H>
 
-#define __i__ 28
-#define __j__ 38
+#define __i__ 221
+#define __j__ 101
 #define __k__ 14
 
 namespace amrex
@@ -2376,7 +2376,7 @@ else
             });
             Gpu::synchronize();
         }
-        this->eInfo.FillBoundary(this->geom.periodicity());
+        this->eInfo.FillBoundary();
         // ============================================================
 
         // COUNT THE NUMBER OF ENTIRE EXTENDED ELEMENTS ===============

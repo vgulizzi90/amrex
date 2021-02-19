@@ -8,7 +8,7 @@
 
 #include "../IBVP_Base.H"
 
-#define N_PARAMS 10
+#define N_PARAMS 9
 
 // ####################################################################
 // IDEAL GAS: SOD'S TUBE PROBLEM ######################################
@@ -24,24 +24,19 @@ public IDEAL_GAS_BASE
     amrex::Real params[N_PARAMS];
     // ================================================================
     // NOTE: params must store:
-    //       - params[0]: rhoL, i.e. density at the left of the shock;
-    //       - params[1]: uL, i.e. velocity at the left of the shock;
-    //       - params[2]: pL, i.e. pressure at the left of the shock;
-    //       - params[3]: shock location;
-    //       - params[4]: rhoR, i.e. density at the right of the shock;
-    //       - params[5]: uR, i.e. velocity at the right of the shock;
-    //       - params[6]: pR, i.e. pressure at the right of the shock;
+    //       - params[0]: x1s, the shock location;
+    //       - params[1]: Ms, the Mach number of the shock;
+    //       - params[2]: rho0, density ahead of the shock;
+    //       - params[3]: u0, velocity ahead of the shock;
+    //       - params[4]: p0, pressure ahead of the shock;
     //
     //       if (this->eb_flag == -1)
-    //       - params[7-9]: not used;
-    //       if (this->eb_flag == 1 and AMREX_SPACEDIM == 2)
-    //       - params[7]: diameter of the embedded Sod's tube;
-    //       - params[8]: inclination of the tube;
-    //       - params[9]: not used;
-    //       if (this->eb_flag == 1 and AMREX_SPACEDIM == 3)
-    //       - params[7]: diameter of the embedded Sod's tube;
-    //       - params[8]: azimuth of the tube;
-    //       - params[9]: elevation of the tube;
+    //       - params[5-8]: not used;
+    //       if (this->eb_flag == 0 and AMREX_SPACEDIM == 2)
+    //       - params[5]: radius of the embedded circle;
+    //       - params[6-7]: coordinates of the center of the embedded
+    //                      circle;
+    //       - params[8]: not used;
     // ================================================================
 
 
@@ -79,28 +74,12 @@ public IDEAL_GAS_BASE
         {
             PHI[0] = -1.0;
         }
-        else if (this->eb_flag == 1)
+        else if (this->eb_flag == 0)
         {
-            const amrex::Real diam = this->params[7];
+            const amrex::Real r = this->params[5];
+            const amrex::Real * xc = &this->params[6];
 
-#if (AMREX_SPACEDIM == 2)
-            const amrex::Real theta = (this->params[8])*M_PI/180.0;
-            const amrex::Real xi[2] = {std::cos(theta), std::sin(theta)};
-            const amrex::Real s = (x[0]-0.5)*xi[0]+(x[1]-0.5)*xi[1];
-            const amrex::Real y[2] = {0.5+s*xi[0], 0.5+s*xi[1]};
-            const amrex::Real d2 = (x[0]-y[0])*(x[0]-y[0])+(x[1]-y[1])*(x[1]-y[1]);
-#endif
-#if (AMREX_SPACEDIM == 3)
-            const amrex::Real theta = (this->params[8])*M_PI/180.0;
-            const amrex::Real phi = (this->params[9])*M_PI/180.0;
-            const amrex::Real xi[3] = {std::cos(theta)*std::cos(phi), std::sin(theta)*std::cos(phi), std::sin(phi)};
-            const amrex::Real s = (x[0]-0.5)*xi[0]+(x[1]-0.5)*xi[1]+(x[2]-0.5)*xi[2];
-            const amrex::Real y[3] = {0.5+s*xi[0], 0.5+s*xi[1], 0.5+s*xi[2]};
-            const amrex::Real d2 = (x[0]-y[0])*(x[0]-y[0])+(x[1]-y[1])*(x[1]-y[1])+(x[2]-y[2])*(x[2]-y[2]);
-#endif
-            const amrex::Real res = d2-0.25*diam*diam;
-        
-            PHI[0] = res;
+            PHI[0] = r*r-(AMREX_D_TERM((x[0]-xc[0])*(x[0]-xc[0]),+(x[1]-xc[1])*(x[1]-xc[1]),+(x[2]-xc[2])*(x[2]-xc[2])));
         }
         else
         {
@@ -166,26 +145,31 @@ exit(-1);
     void F_SOL0(const amrex::Real * x, amrex::Real * U) const
     {
         const amrex::Real g = this->gamma;
-        const amrex::Real rhoL = this->params[0];
-        const amrex::Real uL = this->params[1];
-        const amrex::Real pL = this->params[2];
-        const amrex::Real xis = this->params[3];
-        const amrex::Real rhoR = this->params[4];
-        const amrex::Real uR = this->params[5];
-        const amrex::Real pR = this->params[6];
+        const amrex::Real g2 = 2.0*g/(g+1.0);
+        const amrex::Real gr = (g-1.0)/(g+1.0);
+        const amrex::Real x1s = this->params[0];
+        const amrex::Real Ms = this->params[1];
+        const amrex::Real rho0 = this->params[2];
+        const amrex::Real u0 = this->params[3];
+        const amrex::Real p0 = this->params[4];
+        const amrex::Real a0 = std::sqrt(g*p0/rho0);
 
-        if (this->eb_flag == -1)
+        const amrex::Real rhoL = rho0*(g+1.0)*(Ms*Ms/(2.0+(g-1.0)*Ms*Ms));
+        const amrex::Real pL = p0*(1.0+g2*(Ms*Ms-1.0));
+        const amrex::Real uL = (a0/g)*(pL/p0-1.0)*std::sqrt(g2/(pL/p0+gr));
+        //const amrex::Real aL = std::sqrt(g*pL/rhoL);
+
         {
-            if (x[0] > xis)
+            if (x[0] > x1s)
             {
-                U[RHO] = rhoR;
+                U[RHO] = rho0;
                 AMREX_D_TERM
                 (
-                    U[RHOV1] = rhoR*uR;,
+                    U[RHOV1] = rho0*u0;,
                     U[RHOV2] = 0.0;,
                     U[RHOV3] = 0.0;
                 )
-                U[TE] = pR/(g-1.0)+0.5*rhoR*uR*uR;
+                U[TE] = p0/(g-1.0)+0.5*rho0*u0*u0;
             }
             else
             {
@@ -198,85 +182,6 @@ exit(-1);
                 )
                 U[TE] = pL/(g-1.0)+0.5*rhoL*uL*uL;
             }
-
-            /* Smooth shock
-            const amrex::Real beta = 10.0;
-            const amrex::Real fs = std::atan(beta*(x[0]-xis))/M_PI+0.5;
-
-            U[RHO] = (rhoR-rhoL)*fs+rhoL;
-            AMREX_D_TERM
-            (
-                U[RHOV1] = (rhoR*uR-rhoL*uL)*fs+rhoL*uL;,
-                U[RHOV2] = 0.0;,
-                U[RHOV3] = 0.0;
-            )
-            U[TE] = (pR/(g-1.0)+0.5*rhoR*uR*uR-(pL/(g-1.0)+0.5*rhoL*uL*uL))*fs+(pL/(g-1.0)+0.5*rhoL*uL*uL);
-            */
-        }
-        else if (this->eb_flag == 1)
-        {
-            const amrex::Real theta = (this->params[8])*M_PI/180.0;
-            const amrex::Real cth = std::cos(theta);
-            const amrex::Real sth = std::sin(theta);
-#if (AMREX_SPACEDIM == 3)
-            const amrex::Real phi = (this->params[9])*M_PI/180.0;
-            const amrex::Real cph = std::cos(phi);
-            const amrex::Real sph = std::sin(phi);
-#endif
-#if (AMREX_SPACEDIM == 2)
-            const amrex::Real xi_dir[AMREX_SPACEDIM] = {AMREX_D_DECL(cth, sth, 0.0)};
-#endif
-#if (AMREX_SPACEDIM == 3)
-            const amrex::Real xi_dir[AMREX_SPACEDIM] = {AMREX_D_DECL(cth*cph, sth*cph, sph)};
-#endif
-            const amrex::Real y[AMREX_SPACEDIM] = {AMREX_D_DECL(x[0]-0.5, x[1]-0.5, x[2]-0.5)};
-            const amrex::Real xi = AMREX_D_TERM(xi_dir[0]*y[0],+xi_dir[1]*y[1],+xi_dir[2]*y[2]);
-
-            amrex::Real Uxi[DG_N_SOL];
-
-            if (xi > xis)
-            {
-                Uxi[RHO] = rhoR;
-                AMREX_D_TERM
-                (
-                    Uxi[RHOV1] = rhoR*uR;,
-                    Uxi[RHOV2] = 0.0;,
-                    Uxi[RHOV3] = 0.0;
-                )
-                Uxi[TE] = pR/(g-1.0)+0.5*rhoR*uR*uR;
-            }
-            else
-            {
-                Uxi[RHO] = rhoL;
-                AMREX_D_TERM
-                (
-                    Uxi[RHOV1] = rhoL*uL;,
-                    Uxi[RHOV2] = 0.0;,
-                    Uxi[RHOV3] = 0.0;
-                )
-                Uxi[TE] = pL/(g-1.0)+0.5*rhoL*uL*uL;
-            }
-
-            /* Smooth shock
-            const amrex::Real beta = 100.0;
-            const amrex::Real fs = std::atan(beta*(xi-xis))/M_PI+0.5;
-
-            Uxi[RHO] = (rhoR-rhoL)*fs+rhoL;
-            AMREX_D_TERM
-            (
-                Uxi[RHOV1] = (rhoR*uR-rhoL*uL)*fs+rhoL*uL;,
-                Uxi[RHOV2] = 0.0;,
-                Uxi[RHOV3] = 0.0;
-            )
-            Uxi[TE] = (pR/(g-1.0)+0.5*rhoR*uR*uR-(pL/(g-1.0)+0.5*rhoL*uL*uL))*fs+(pL/(g-1.0)+0.5*rhoL*uL*uL);
-            */
-
-            this->eval_Un2U(xi_dir, Uxi, U);
-        }
-        else
-        {
-amrex::Print() << "IDEAL_GAS.F_SOL0" << std::endl;
-exit(-1);
         }
 
         /* Constant state
@@ -310,7 +215,14 @@ exit(-1);
                   const amrex::Real * U,
                   amrex::Real * NFn) const
     {
-        this->F_NF_WALL(dom, t, x, un, U, NFn);
+        if (un[0] < -0.5)
+        {
+            this->F_NF_INFLOW(dom, t, x, un, U, U, NFn);
+        }
+        else
+        {
+            this->F_NF_WALL(dom, t, x, un, U, NFn);
+        }
     }
 
     /**
@@ -342,7 +254,7 @@ exit(-1);
     */
     void F_FIELDS_NAMES(amrex::Vector<std::string> & fields_names) const
     {
-        if (this->eb_flag == -1)
+        if ((this->eb_flag == -1) || (this->eb_flag == 0))
         {
             fields_names = {"density",
                             AMREX_D_DECL("velocity_x", "velocity_y", "velocity_z"),
@@ -350,16 +262,6 @@ exit(-1);
                             "mach",
                             "total_energy",
                             "internal_energy"};
-        }
-        else if (this->eb_flag == 1)
-        {
-            fields_names = {"density",
-                            AMREX_D_DECL("velocity_x", "velocity_y", "velocity_z"),
-                            "pressure",
-                            "mach",
-                            "total_energy",
-                            "internal_energy",
-                             AMREX_D_DECL("velocity_xi", "velocity_eta", "velocity_zeta")};
         }
         else
         {
@@ -376,13 +278,9 @@ exit(-1);
     */
     void F_FIELDS_DOMAINS(amrex::Vector<int> & fields_domains) const
     {
-        if (this->eb_flag == -1)
+        if ((this->eb_flag == -1) || (this->eb_flag == 0))
         {
             fields_domains = {0, AMREX_D_DECL(0, 0, 0), 0, 0, 0, 0};
-        }
-        else if (this->eb_flag == 1)
-        {
-            fields_domains = {0, AMREX_D_DECL(0, 0, 0), 0, 0, 0, 0, AMREX_D_DECL(0, 0, 0)};
         }
         else
         {
@@ -427,39 +325,6 @@ exit(-1);
         F[TE+1] = M;
         F[TE+2] = U[TE];
         F[TE+3] = p/(rho*(g-1.0));
-
-        /*
-        if (std::abs(u1) > 1.0e10)
-        {
-            amrex::Print() << "what?!?" << std::endl;
-            amrex::Print() << "U: "; amrex::DG::IO::PrintRealArray2D(1, DG_N_SOL, U);
-            exit(-1);
-        }
-        */
-
-        // VELOCITY COMPONENTS ALONG THE TUBE'S CENTERLINE
-        if (this->eb_flag == 1)
-        {
-            const amrex::Real theta = (this->params[8])*M_PI/180.0;
-#if (AMREX_SPACEDIM == 3)
-            const amrex::Real phi = (this->params[9])*M_PI/180.0;
-#endif
-#if (AMREX_SPACEDIM == 2)
-            const amrex::Real xi[2] = {std::cos(theta), std::sin(theta)};
-#endif
-#if (AMREX_SPACEDIM == 3)
-            const amrex::Real xi[3] = {std::cos(theta)*std::cos(phi), std::sin(theta)*std::cos(phi), std::sin(phi)};
-#endif
-            amrex::Real Un[DG_N_SOL];
-            this->eval_U2Un(xi, U, Un);
-
-            AMREX_D_TERM
-            (
-                F[TE+4] = Un[RHOV1]/Un[RHO];,
-                F[TE+5] = Un[RHOV2]/Un[RHO];,
-                F[TE+6] = Un[RHOV3]/Un[RHO];
-            )
-        }
     }
     // ================================================================
 };
@@ -696,8 +561,7 @@ public amrex::DG::AMR::Base
 {
     // DATA MEMBERS ===================================================
     IDEAL_GAS IG;
-    //SUBCELL_SLOPE_LIMITER limiter;
-    amrex::DG::MatrixFactory mf;
+    amrex::Vector<amrex::DG::MatrixFactory *> mfs;
     // ================================================================
 
 
@@ -706,7 +570,22 @@ public amrex::DG::AMR::Base
     :
     Base(),
     IG(this->inputs.problem.int_params, this->inputs.problem.params)
-    {}
+    {
+        const int n_levels = this->max_level+1;
+
+        this->mfs.resize(n_levels);
+    }
+
+    virtual ~AMR_IDEAL_GAS()
+    {
+        for (int lev = 0; lev <= this->max_level; ++lev)
+        {
+            if (this->mfs[lev] != nullptr)
+            {
+                delete this->mfs[lev];
+            }
+        }
+    }
     // ================================================================
 
 
@@ -747,14 +626,15 @@ public amrex::DG::AMR::Base
                                                                *this->matfactories[lev-1]);
         }
 
-        if ((lev == 0) && (lev != this->max_level))
+        if (lev != this->max_level)
         {
-            this->mf.define(this->Geom(lev), level_inputs.dG.space_p-1, level_inputs.dG.space_p);
-            this->mf.EvalMassMatrices(*this->meshes[lev]);
-            this->mf.EvalInterpolationOperator(*this->meshes[lev],
-                                               amrex::IntVect::TheUnitVector(),
-                                               *this->meshes[lev],
-                                               *this->matfactories[lev]);
+            this->mfs[lev] = new amrex::DG::MatrixFactory();
+            this->mfs[lev]->define(this->Geom(lev), level_inputs.dG.space_p-1, level_inputs.dG.space_p);
+            this->mfs[lev]->EvalMassMatrices(*this->meshes[lev]);
+            this->mfs[lev]->EvalInterpolationOperator(*this->meshes[lev],
+                                                      amrex::IntVect::TheUnitVector(),
+                                                      *this->meshes[lev],
+                                                      *this->matfactories[lev]);
         }
         // ------------------------------------------------------------
 
@@ -784,36 +664,6 @@ public amrex::DG::AMR::Base
         // SET BOX ARRAY AND DISTRIBUTION MAP -------------------------
         this->SetBoxArray(lev, this->meshes[lev]->cc_ba);
         this->SetDistributionMap(lev, this->meshes[lev]->dm);
-        // ------------------------------------------------------------
-
-        // SUB CELL LIMITER -------------------------------------------
-        /*
-        if (this->inputs.use_sub_cell_limiter && (lev == this->max_level))
-        {
-            // TAG CELLS THAT ARE CONSIDERED TROUBLED
-            this->IG.F_UPDATE_TROUBLED(0.0,
-                                       *this->meshes[lev],
-                                       *this->matfactories[lev],
-                                       this->Xs[lev],
-                                       this->masks[lev]);
-            // MAKE TAGGING CONSISTENT
-            // i) Small cells merged with tagged extended
-            // ii) Extended cells merging with tagged small cells 
-            this->FixTagging(*this->meshes[lev], this->masks[lev], __DG_CELL_MASKED__);
-
-            // MAKE A SUBGRID
-            if (this->masks[lev].max(0) == 1)
-            {
-                const amrex::IntVect rr = {AMREX_D_DECL(2*p+1, 2*p+1, 2*p+1)};
-                this->limiter.MakeFromScratch(rr,
-                                              *this->meshes[lev],
-                                              *this->matfactories[lev],
-                                              this->Xs[lev],
-                                              this->masks[lev],
-                                              this->IG);
-            }
-        }
-        */
         // ------------------------------------------------------------
     }
     // ================================================================
@@ -845,11 +695,22 @@ public amrex::DG::AMR::Base
         this->IG.F_EVAL_TROUBLED(time,
                                  *this->meshes[lev],
                                  *this->matfactories[lev],
-                                 this->mf,
+                                 *this->mfs[lev],
                                  this->Xs[lev],
                                  this->cached_tags[lev],
                                  tagged,
                                  untagged);
+        
+        if ((lev+1) != this->max_level)
+        {
+            this->IG.F_UPDATE_TAGS(time,
+                                   *this->meshes[lev],
+                                   *this->matfactories[lev],
+                                   *this->mfs[lev],
+                                   this->Xs[lev],
+                                   this->cached_tags[lev],
+                                   tagged);
+        }
         // ------------------------------------------------------------
 
         // MAKE SURE TO TRACK THE SHOCK AT t = 0 ----------------------
@@ -998,6 +859,17 @@ exit(-1);
                                                                     *this->meshes[lev-1],
                                                                     *this->matfactories[lev-1]);
             }
+
+            if (lev != this->max_level)
+            {
+                this->mfs[lev] = new amrex::DG::MatrixFactory();
+                this->mfs[lev]->define(this->Geom(lev), level_inputs.dG.space_p-1, level_inputs.dG.space_p);
+                this->mfs[lev]->EvalMassMatrices(*this->meshes[lev]);
+                this->mfs[lev]->EvalInterpolationOperator(*this->meshes[lev],
+                                                          amrex::IntVect::TheUnitVector(),
+                                                          *this->meshes[lev],
+                                                          *this->matfactories[lev]);
+            }
             // --------------------------------------------------------
 
             // MASKS --------------------------------------------------
@@ -1066,6 +938,15 @@ exit(-1);
                                                                this->refRatio(lev-1),
                                                                *this->meshes[lev-1],
                                                                *this->matfactories[lev-1]);
+
+            if (lev != this->max_level)
+            {
+                this->mfs[lev]->EvalMassMatrices(*this->meshes[lev]);
+                this->mfs[lev]->EvalInterpolationOperator(*this->meshes[lev],
+                                                          amrex::IntVect::TheUnitVector(),
+                                                          *this->meshes[lev],
+                                                          *this->matfactories[lev]);
+            }
             // --------------------------------------------------------
 
             // MASKS --------------------------------------------------
@@ -1098,6 +979,25 @@ exit(-1);
             this->SetDistributionMap(lev, this->meshes[lev]->dm);
             // --------------------------------------------------------
         }
+    }
+    // ================================================================
+
+
+    // DELETE LEVEL DATA ==============================================
+    virtual void ClearLevel(int lev) override
+    {
+        // IMPLICIT MESH ----------------------------------------------
+        delete this->meshes[lev];
+        this->meshes[lev] = nullptr;
+        // ------------------------------------------------------------
+        
+        // MATRIX FACTORY ---------------------------------------------
+        delete this->matfactories[lev];
+        this->matfactories[lev] = nullptr;
+
+        delete this->mfs[lev];
+        this->mfs[lev] = nullptr;
+        // ------------------------------------------------------------
     }
     // ================================================================
 
