@@ -447,11 +447,43 @@ void ProjectInitialConditions(const ImplicitMesh & mesh,
         Gpu::synchronize();
     }
     X.FillBoundary(mesh.geom.periodicity());
+
+#if AMREX_DEBUG
+    if (X.contains_nan())
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution.H - ProjectInitialConditions\n";
+        msg += "| X contains nans after integrating.\n";
+        amrex::Abort(msg);
+    }
+#endif
     // ================================================================
 
     // EXTENDED ELEMENTS AND MULTIPLICATION BY INVERSE MASS MATRIX ====
     AddSmallElementsContribution(mesh, matfactory, N_SOL, Sol2Dom, X);
+#if AMREX_DEBUG
+    if (X.contains_nan())
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution.H - ProjectInitialConditions\n";
+        msg += "| X contains nans after adding small elements' contribution.\n";
+        amrex::Abort(msg);
+    }
+#endif
+
     MultiplyByInverseMassMatrix(mesh, matfactory, N_SOL, Sol2Dom, X, use_fabbox);
+#if AMREX_DEBUG
+    if (X.contains_nan())
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution.H - ProjectInitialConditions\n";
+        msg += "| X contains nans after multiplying by inverse mass matrices.\n";
+        amrex::Abort(msg);
+    }
+#endif
     // ================================================================
 }
 

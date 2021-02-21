@@ -29,7 +29,8 @@ void Interpolate(const int N_SOL,
                  const IntVect rr,
                  const ImplicitMesh & f_mesh,
                  const MatrixFactory & f_matfactory,
-                 MultiFab & f_X)
+                 MultiFab & f_X,
+                 const bool include_ghost_cells)
 {
     // PROFILING ------------------------------------------------------
     BL_PROFILE("Interpolate(const int, const Gpu::ManagedVector<int> &, ....)");
@@ -253,7 +254,7 @@ exit(-1);
     // ================================================================
 
     AddSmallElementsContribution(f_mesh, f_matfactory, N_SOL, Sol2Dom, f_X);
-    MultiplyByInverseMassMatrix(f_mesh, f_matfactory, N_SOL, Sol2Dom, f_X, true);
+    MultiplyByInverseMassMatrix(f_mesh, f_matfactory, N_SOL, Sol2Dom, f_X, include_ghost_cells);
 }
 
 /**

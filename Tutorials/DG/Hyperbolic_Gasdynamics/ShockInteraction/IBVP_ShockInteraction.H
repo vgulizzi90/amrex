@@ -337,221 +337,6 @@ exit(-1);
 // IDEAL GAS: AMR #####################################################
 // ####################################################################
 /**
- * \brief Data structure used for subcell slope limiting. 
- *
-*/
-struct SUBCELL_SLOPE_LIMITER
-{
-    // DATA MEMBERS ===================================================
-    amrex::IntVect rr;
-    amrex::DG::ImplicitMesh mesh;
-    amrex::DG::MatrixFactory matfactory;
-    amrex::MultiFab X;
-    amrex::iMultiFab mask;
-    // ================================================================
-
-    // UPDATE MASK FROM PARENT MESH MASK ==============================
-    void UpdateMask(const amrex::iMultiFab & parent_mask)
-    {
-        // PARAMETERS ------------------------------------------------
-        const amrex::IntVect rr_ = this->rr;
-
-        // PARALLEL COPY?
-        const bool parallel_copy_is_needed = (!amrex::isMFIterSafe(this->mask, parent_mask));
-        // -----------------------------------------------------------
-
-        // VARIABLES -------------------------------------------------
-        amrex::iMultiFab safe_parent_mask;
-        const amrex::iMultiFab * safe_parent_mask_ptr;
-        // -----------------------------------------------------------
-
-        // SAFE COARSE DATA ------------------------------------------
-        if (parallel_copy_is_needed)
-        {
-            const amrex::BoxArray safe_ba = amrex::coarsen(this->mesh.cc_ba, rr_);
-            const amrex::DistributionMapping & f_dm = this->mesh.dm;
-            const int n_comp = parent_mask.n_comp;
-            const amrex::IntVect n_grow = parent_mask.n_grow;
-
-            safe_parent_mask.define(safe_ba, f_dm, n_comp, n_grow);
-            safe_parent_mask.ParallelCopy(parent_mask, 0, 0, n_comp, n_grow, n_grow, this->mesh.geom.periodicity());
-
-            safe_parent_mask_ptr = &safe_parent_mask;
-        }
-        else
-        {
-            safe_parent_mask_ptr = &parent_mask;
-        }
-        // -----------------------------------------------------------
-        
-        // UPDATE THE MASK -------------------------------------------
-        for (amrex::MFIter mfi(this->mask); mfi.isValid(); ++mfi)
-        {
-            const amrex::Box & bx = mfi.validbox();
-            
-            amrex::Array4<int const> const & parent_mask_fab = safe_parent_mask_ptr->array(mfi);
-            
-            amrex::Array4<int> const & mask_fab = this->mask.array(mfi);
-
-            amrex::ParallelFor(bx,
-            [=] AMREX_GPU_DEVICE (int f_i, int f_j, int f_k) noexcept
-            {
-                int c_i, c_j, c_k;
-                amrex::DG::FINE_TO_COARSE(f_i, f_j, f_k, rr_, c_i, c_j, c_k);
-                
-                if (amrex::DG::CELL_IS_MASKED(parent_mask_fab(c_i,c_j,c_k)))
-                {
-                    mask_fab(f_i,f_j,f_k) = __DG_CELL_UNMASKED__;
-                }
-            });
-            amrex::Gpu::synchronize();
-        }
-        this->mask.FillBoundary(this->mesh.geom.periodicity());
-        // -----------------------------------------------------------
-    }
-
-    void EvalMask(const amrex::iMultiFab & parent_mask)
-    {
-        this->mask = __DG_CELL_MASKED__;
-        this->UpdateMask(parent_mask);
-    }
-    // ================================================================
-
-    // MAKE GRID ======================================================
-    void Remake(const amrex::DG::ImplicitMesh & parent_mesh,
-                const amrex::DG::MatrixFactory & parent_matfactory,
-                const amrex::MultiFab & parent_X,
-                const amrex::iMultiFab & parent_mask)
-    {
-        // PARAMETERS -------------------------------------------------
-        const int N_PHI = 1;
-        const int N_DOM = 1;
-        const int PHI_n_comp = parent_mesh.PHI.n_comp;
-        const amrex::IntVect PHI_n_grow = parent_mesh.PHI.n_grow;
-        const int X_n_comp = DG_N_SOL;
-        const amrex::IntVect X_n_grow = parent_X.n_grow;
-        const int mask_n_comp = 1;
-        const amrex::IntVect mask_n_grow = amrex::IntVect::TheUnitVector();
-        // ------------------------------------------------------------
-
-        // VARIABLES --------------------------------------------------
-        amrex::Geometry sub_geom;
-        amrex::BoxArray sub_ba;
-        amrex::DistributionMapping sub_dm;
-        // ------------------------------------------------------------
-
-        // GEOMETRY, BOXARRAY AND DISTRIBUTION MAPPING ----------------
-        sub_geom = parent_mesh.geom;
-        sub_geom.refine(this->rr);
-        
-        amrex::BoxList bl;
-        bl.clear();
-        for (amrex::MFIter mfi(parent_mask); mfi.isValid(); ++mfi)
-        {
-            const amrex::Box & bx = mfi.validbox();
-            const amrex::Dim3 lo = lbound(bx);
-            const amrex::Dim3 hi = ubound(bx);
-            
-            bool bx_has_been_added;
-            bx_has_been_added = false;
-
-            amrex::Array4<int const> const & parent_mask_fab = parent_mask.array(mfi);
-
-            for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i)
-            {
-                if (amrex::DG::CELL_IS_MASKED(parent_mask_fab(i,j,k)))
-                {
-                    if (!bx_has_been_added)
-                    {
-                        bl.push_back(bx);
-                        bx_has_been_added = true;
-                    }
-                }
-            }
-        }
-
-        //sub_ba = parent_mesh.cc_ba;
-        sub_ba = amrex::BoxArray(bl);
-        sub_ba.refine(this->rr);
-        
-        sub_dm.define(sub_ba);
-        // ------------------------------------------------------------
-
-        // INIT MESH DATA STRUCTURE -----------------------------------
-        this->mesh.define(sub_geom, sub_ba, sub_dm,
-                          parent_mesh.ls_std_elem.p, parent_mesh.ls_std_elem.q,
-                          parent_mesh.im_std_elem.q, parent_mesh.space_q_ie,
-                          parent_mesh.volume_fraction_threshold);
-
-        this->mesh.ls_std_elem.InitInterpolation(parent_mesh.ls_std_elem, this->rr);
-        // ------------------------------------------------------------
-
-        // LEVEL SET FUNCTIONS ----------------------------------------
-        this->mesh.PHI.define(sub_ba, sub_dm, PHI_n_comp, PHI_n_grow);
-        this->mesh.PHI = 0.0;
-
-        amrex::DG::InterpolateLevelsets(N_PHI, parent_mesh.geom, parent_mesh.ls_std_elem, parent_mesh.PHI, this->rr,
-                                        this->mesh.geom, this->mesh.ls_std_elem, this->mesh.PHI);
-
-        this->mesh.Dom2Phi.resize(parent_mesh.Dom2Phi.size());
-        std::copy(parent_mesh.Dom2Phi.begin(), parent_mesh.Dom2Phi.end(), this->mesh.Dom2Phi.begin());
-        // ------------------------------------------------------------
-
-        // MAKE THE IMPLICIT MESH -------------------------------------
-        this->mesh.Make(N_PHI, N_DOM);
-        // ------------------------------------------------------------
-
-        // MATRIX FACTORY ---------------------------------------------
-        this->matfactory.define(sub_geom, 0, 1);
-        this->matfactory.EvalMassMatrices(this->mesh);
-        this->matfactory.EvalInterpolationOperator(this->mesh,
-                                                   this->rr,
-                                                   parent_mesh,
-                                                   parent_matfactory);
-        // ------------------------------------------------------------
-
-        // MASKS ------------------------------------------------------
-        this->mask.define(sub_ba, sub_dm, mask_n_comp, mask_n_grow);
-        this->mask = __DG_CELL_MASKED__;
-        this->UpdateMask(parent_mask);
-        // ------------------------------------------------------------
-
-        // SOLUTION MULTIFAB ------------------------------------------
-        this->X.define(sub_ba, sub_dm, X_n_comp, X_n_grow);
-        this->X = 0.0;
-        // ------------------------------------------------------------
-    }
-    
-    template <typename IBVP_CLASS>
-    void MakeFromScratch(const amrex::IntVect parent_rr,
-                         const amrex::DG::ImplicitMesh & parent_mesh,
-                         const amrex::DG::MatrixFactory & parent_matfactory,
-                         const amrex::MultiFab & parent_X,
-                         const amrex::iMultiFab & parent_mask,
-                         const IBVP_CLASS & IBVP)
-    {
-        // REFINEMENT RATIO -------------------------------------------
-        this->rr = parent_rr;
-        // ------------------------------------------------------------
-
-        this->Remake(parent_mesh, parent_matfactory, parent_X, parent_mask);
-
-        // SOLUTION INITIAL CONDITIONS --------------------------------
-        amrex::DG::ProjectInitialConditions(this->mesh,
-                                            this->matfactory,
-                                            DG_N_SOL, this->X,
-                                            IBVP,
-                                            true);
-        // ------------------------------------------------------------
-        // The last input denotes that the fabbox will be used.
-        // ------------------------------------------------------------
-    }
-    // ================================================================
-};
-
-/**
  * \brief This struct contains constants and methods for adaptive mesh refinement. 
  *
 */
@@ -652,13 +437,22 @@ public amrex::DG::AMR::Base
         // ------------------------------------------------------------
 
         // SOLUTION INITIAL CONDITIONS --------------------------------
+        const bool include_ghost_cells = ((lev == this->max_level) && (level_inputs.dG.space_p == 0));
+
         amrex::DG::ProjectInitialConditions(*this->meshes[lev],
                                             *this->matfactories[lev],
                                             DG_N_SOL, this->Xs[lev],
                                             this->IG,
-                                            true);
-        // ------------------------------------------------------------
-        // The last input denotes that the fabbox will be used.
+                                            include_ghost_cells);
+
+        if (this->Xs[lev].contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: IBVP_ShockInteraction.H - MakeNewLevelFromScratch\n";
+            msg += "| Xs["+std::to_string(lev)+"] contains nans.\n";
+            amrex::Abort(msg);
+        }
         // ------------------------------------------------------------
 
         // SET BOX ARRAY AND DISTRIBUTION MAP -------------------------
@@ -686,21 +480,17 @@ public amrex::DG::AMR::Base
         const char tagged = amrex::TagBox::SET;
         // ------------------------------------------------------------
 
-        // SET THE CACHED TAGS ----------------------------------------
-        this->cached_tags[lev].define(this->Xs[lev].boxarray, this->Xs[lev].distributionMap, 1, 1);
-        this->cached_tags[lev].setVal(untagged);
-        // ------------------------------------------------------------
-
         // EVAL TROUBLED CELLS ----------------------------------------
         this->IG.F_EVAL_TROUBLED(time,
                                  *this->meshes[lev],
                                  *this->matfactories[lev],
                                  *this->mfs[lev],
                                  this->Xs[lev],
-                                 this->cached_tags[lev],
+                                 tags,
                                  tagged,
                                  untagged);
         
+        /**/
         if ((lev+1) != this->max_level)
         {
             this->IG.F_UPDATE_TAGS(time,
@@ -708,9 +498,10 @@ public amrex::DG::AMR::Base
                                    *this->matfactories[lev],
                                    *this->mfs[lev],
                                    this->Xs[lev],
-                                   this->cached_tags[lev],
+                                   tags,
                                    tagged);
         }
+        /**/
         // ------------------------------------------------------------
 
         // MAKE SURE TO TRACK THE SHOCK AT t = 0 ----------------------
@@ -787,17 +578,9 @@ public amrex::DG::AMR::Base
         }
         */
         // ------------------------------------------------------------
-
-        // TAG AN ADDITIONAL LAYER OF CELLS ---------------------------
-        this->GrowTagging(*this->meshes[lev], this->cached_tags[lev], tagged, 1);
-        // ------------------------------------------------------------
-
-        // SAVE INFO IN TAGS ------------------------------------------
-        this->CopyTagging(tags, this->cached_tags[lev]);
-        // ------------------------------------------------------------
     }
     
-    virtual void ManualTagsPlacement(int lev, amrex::TagBoxArray & tags, const amrex::Vector<amrex::IntVect> & /*bf_lev*/) override
+    virtual void ManualTagsPlacement(int lev, amrex::TagBoxArray & tags, const amrex::Vector<amrex::IntVect> & bf_lev) override
     {
         // QUICK RETURN IF WE REACHED THE MAXIMUM LEVEL ---------------
         if (lev >= this->max_level) return;
@@ -806,11 +589,7 @@ public amrex::DG::AMR::Base
         // MAKE TAGGING CONSISTENT BY FURTHER TAGGING
         // i) Small cells merged with tagged extended
         // ii) Extended cells merging with tagged small cells 
-        this->FixTagging(*this->meshes[lev], this->cached_tags[lev], amrex::TagBox::SET);
-
-        // SAVE INFO IN TAGS ------------------------------------------
-        this->CopyTagging(tags, this->cached_tags[lev]);
-        // ------------------------------------------------------------
+        this->FixTagging(*this->meshes[lev], tags, amrex::TagBox::BUF);
     }
     // ================================================================
 
@@ -842,13 +621,19 @@ exit(-1);
         else
         {
             // IMPLICIT MESH ------------------------------------------
-            this->meshes[lev] = new amrex::DG::ImplicitMesh();
+            if (this->meshes[lev] == nullptr)
+            {
+                this->meshes[lev] = new amrex::DG::ImplicitMesh();
+            }
             this->meshes[lev]->define(this->Geom(lev), ba, dm, level_inputs);
             this->meshes[lev]->MakeFromCoarse(time, ba, dm, this->refRatio(lev-1), *this->meshes[lev-1], this->IG);
             // --------------------------------------------------------
 
             // MATRIX FACTORY -----------------------------------------
-            this->matfactories[lev] = new amrex::DG::MatrixFactory();
+            if (this->matfactories[lev] == nullptr)
+            {
+                this->matfactories[lev] = new amrex::DG::MatrixFactory();
+            }
             this->matfactories[lev]->define(this->Geom(lev), this->meshes[lev]->cc_ba, this->meshes[lev]->dm, level_inputs);
             this->matfactories[lev]->EvalMassMatrices(*this->meshes[lev]);
 
@@ -862,7 +647,10 @@ exit(-1);
 
             if (lev != this->max_level)
             {
-                this->mfs[lev] = new amrex::DG::MatrixFactory();
+                if (this->mfs[lev] == nullptr)
+                {
+                    this->mfs[lev] = new amrex::DG::MatrixFactory();
+                }
                 this->mfs[lev]->define(this->Geom(lev), level_inputs.dG.space_p-1, level_inputs.dG.space_p);
                 this->mfs[lev]->EvalMassMatrices(*this->meshes[lev]);
                 this->mfs[lev]->EvalInterpolationOperator(*this->meshes[lev],
@@ -886,10 +674,13 @@ exit(-1);
 
             const amrex::Gpu::ManagedVector<int> Sol2Dom(DG_N_SOL, 0);
 
+            const bool include_ghost_cells = ((lev == this->max_level) && (level_inputs.dG.space_p == 0));
+            
             amrex::DG::AMR::Interpolate(DG_N_SOL, Sol2Dom,
                                         *this->meshes[lev-1], *this->matfactories[lev-1], this->Xs[lev-1],
                                         this->refRatio(lev-1),
-                                        *this->meshes[lev], *this->matfactories[lev], this->Xs[lev]);
+                                        *this->meshes[lev], *this->matfactories[lev], this->Xs[lev],
+                                        include_ghost_cells);
             // --------------------------------------------------------
 
             // SET BOX ARRAY AND DISTRIBUTION MAP ---------------------
@@ -963,11 +754,14 @@ exit(-1);
 
             const amrex::Gpu::ManagedVector<int> Sol2Dom(DG_N_SOL, 0);
 
+            const bool include_ghost_cells = ((lev == this->max_level) && (level_inputs.dG.space_p == 0));
+
             amrex::DG::AMR::Interpolate(DG_N_SOL, Sol2Dom,
                                         *this->meshes[lev-1], *this->matfactories[lev-1], this->Xs[lev-1],
                                         this->refRatio(lev-1),
-                                        *this->meshes[lev], *this->matfactories[lev], new_X);
-                                        
+                                        *this->meshes[lev], *this->matfactories[lev], new_X,
+                                        include_ghost_cells);
+                        
             new_X.ParallelCopy(this->Xs[lev], 0, 0, X_n_comp, 0, 0, this->Geom(lev).periodicity());
             new_X.FillBoundary(this->Geom(lev).periodicity());
 
@@ -984,19 +778,19 @@ exit(-1);
 
 
     // DELETE LEVEL DATA ==============================================
-    virtual void ClearLevel(int lev) override
+    virtual void ClearLevel(int /*lev*/) override
     {
         // IMPLICIT MESH ----------------------------------------------
-        delete this->meshes[lev];
-        this->meshes[lev] = nullptr;
+        //delete this->meshes[lev];
+        //this->meshes[lev] = nullptr;
         // ------------------------------------------------------------
         
         // MATRIX FACTORY ---------------------------------------------
-        delete this->matfactories[lev];
-        this->matfactories[lev] = nullptr;
+        //delete this->matfactories[lev];
+        //this->matfactories[lev] = nullptr;
 
-        delete this->mfs[lev];
-        this->mfs[lev] = nullptr;
+        //delete this->mfs[lev];
+        //this->mfs[lev] = nullptr;
         // ------------------------------------------------------------
     }
     // ================================================================

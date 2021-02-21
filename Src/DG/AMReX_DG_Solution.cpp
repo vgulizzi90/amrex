@@ -495,6 +495,17 @@ void MultiplyByInverseMassMatrix(const ImplicitMesh & mesh,
     }
     X.FillBoundary(mesh.geom.periodicity());
 
+#if AMREX_DEBUG
+    if (X.contains_nan())
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution.cpp - MultiplyByInverseMassMatrix\n";
+        msg += "| X contains nans prior to including the ghost cells.\n";
+        amrex::Abort(msg);
+    }
+#endif
+
     // HANDLE GHOST CELLS
     if (include_ghost_cells)
     {
@@ -548,6 +559,17 @@ void MultiplyByInverseMassMatrix(const ImplicitMesh & mesh,
             Gpu::synchronize();
         }
         X.FillBoundary(mesh.geom.periodicity());
+        
+#if AMREX_DEBUG
+        if (X.contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_Solution.cpp - MultiplyByInverseMassMatrix\n";
+            msg += "| X contains nans after including the ghost cells.\n";
+            amrex::Abort(msg);
+        }
+#endif
     }
     // ================================================================
 }

@@ -79,6 +79,32 @@ void PrintMultiFabEntry(const MF & mf, const int ii, const int jj, const int kk,
     }
 }
 
+/**
+ * \brief Report nan components of a multifab.
+*/
+template <typename MF>
+void PrintNaNs(const MF & mf)
+{
+    // PARAMETERS
+    const int n_comp = mf.n_comp;
+
+    for (MFIter mfi(mf); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+        auto fab = mf.array(mfi);
+
+        ParallelFor(bx, n_comp,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int u) noexcept
+        {
+            if (std::isnan(fab(i,j,k,u)))
+            {
+                Print() << "mf(" << i << "," << j << "," << k << "," << u << ") is nan." << std::endl;
+            }
+        });
+        Gpu::synchronize();
+    }
+}
+
 
 } // namespace IO
 } // namespace DG

@@ -87,7 +87,18 @@ public AmrCore
         {
             if (this->LevelIsValid(lev))
             {
-                res = res || this->Xs[lev].contains_nan();
+                const bool level_contains_nan = this->Xs[lev].contains_nan();
+
+                res = res || level_contains_nan;
+
+                if (level_contains_nan)
+                {
+                    std::string msg;
+                    msg  = "\n";
+                    msg += "WARNING: AMReX_DG_AMR.H\n";
+                    msg += "| Level "+std::to_string(lev)+" contains nans.\n";
+                    Warning(msg);
+                }
             }
         }
 
@@ -229,7 +240,7 @@ exit(-1);
      *
     */
     template <typename TAG_MF, typename TAG_T>
-    void TagSmallOrExtendedElements(const ImplicitMesh & mesh, TAG_MF & tags, const TAG_T tagval) const
+    void TagMergedElements(const ImplicitMesh & mesh, TAG_MF & tags, const TAG_T tagval) const
     {
         // PARAMETERS =================================================
         const int N_DOM = mesh.eType.n_comp/__DG_ELM_TYPE_N_COMP_PER_DOM__;
@@ -350,7 +361,7 @@ Print() << "nbr_is_tagged: " << (nbr_is_tagged ? "yes" : "no") << std::endl;
     template <typename TAG_MF, typename TAG_T>
     void FixTagging(const ImplicitMesh & mesh, TAG_MF & tags, const TAG_T tagval) const
     {
-        this->TagSmallOrExtendedElements(mesh, tags, tagval);
+        this->TagMergedElements(mesh, tags, tagval);
 
         //IO::PrintMultiFabEntry(tags, 11, 11, 11, 0);
         //IO::PrintMultiFabEntry(tags, 12, 11, 11, 0);
@@ -612,7 +623,8 @@ void Interpolate(const int N_SOL,
                  const IntVect rr,
                  const ImplicitMesh & f_mesh,
                  const MatrixFactory & f_matfactory,
-                 MultiFab & f_X);
+                 MultiFab & f_X,
+                 const bool include_ghost_cells = false);
 
 void Restrict(const int N_SOL,
               const Gpu::ManagedVector<int> & Sol2Dom,

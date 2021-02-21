@@ -1137,7 +1137,7 @@ struct ImplicitMesh
         // REMOVE ALL BOXES WHOSE ELEMENTS ARE EMPTY
         // (THE ELEMENTS MUST BE EMPTY FOR EACH AND EVERY DOMAIN)
         // ============================================================
-        if (im_flag && true)
+        if (im_flag && false)
         {
             BoxList bl;
             //int n_empty_boxes;
@@ -2598,8 +2598,6 @@ else
         // PARAMETERS =================================================
         const int n_comp = this->PHI.n_comp;
         const IntVect n_grow = this->PHI.n_grow;
-
-        EB2::IndexSpace const * index_space = nullptr;
         // ============================================================
 
         // VARIABLES ==================================================
@@ -2633,20 +2631,8 @@ else
         // LEVEL SET FUNCTIONS ========================================
         if (new_PHI.getBDKey() != this->PHI.getBDKey())
         {
-            Interpolater * mapper = &cell_cons_interp;
-            const InterpolaterBoxCoarsener & coarsener = mapper->BoxCoarsener(c_rr);
-            const FabArrayBase::FPinfo & fpc = FabArrayBase::TheFPinfo(this->PHI, new_PHI,
-                                                                       n_grow,
-                                                                       coarsener,
-                                                                       this->geom,
-                                                                       c_mesh.geom,
-                                                                       index_space);
-            
-            if (!fpc.ba_crse_patch.empty())
-            {
-                InterpolateLevelsets(N_PHI, c_mesh.geom, c_mesh.ls_std_elem, c_mesh.PHI, c_rr,
-                                     this->geom, this->ls_std_elem, new_PHI);
-            }
+            InterpolateLevelsets(N_PHI, c_mesh.geom, c_mesh.ls_std_elem, c_mesh.PHI, c_rr,
+                                 this->geom, this->ls_std_elem, new_PHI);
 
             new_PHI.ParallelCopy(this->PHI, 0, 0, n_comp, 0, 0, this->geom.periodicity());
             new_PHI.FillBoundary(this->geom.periodicity());

@@ -1639,7 +1639,7 @@ void eye(const int m, Real * a)
  *
 */
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-bool contains_nan(const int m, Real * a)
+bool contains_nan(const int m, const Real * a)
 {
     for (int i = 0; i < m; ++i)
     {

@@ -2175,6 +2175,20 @@ amrex::Print() << std::endl;
         }
         sensor.FillBoundary(mesh.geom.periodicity());
 
+        amrex::Real ds;
+        if (sp == 1)
+        {
+            ds = AMREX_D_PICK(-1.5, -2.0, -2.25);
+        }
+        else if (sp == 2)
+        {
+            ds = AMREX_D_PICK(-1.5, -2.0, -2.25);
+        }
+        else if (sp == 3)
+        {
+            ds = AMREX_D_PICK(-2.5, -3.0, -3.25);
+        }
+        
         for (amrex::MFIter mfi(X); mfi.isValid(); ++mfi)
         {
             const amrex::Box & bx = mfi.validbox();
@@ -2220,8 +2234,6 @@ amrex::Print() << std::endl;
                     {
                         const amrex::Real s = std::log10(err);
                         const amrex::Real s0 = -4.0*std::log10(sp);
-                        const amrex::Real ds = -2.0; // 2D
-                        //const amrex::Real ds = -2.25; // 3D
                         
                         if (s > (s0+ds))
                         {
@@ -2253,7 +2265,7 @@ amrex::Print() << std::endl;
     void F_UPDATE_TAGS(const amrex::Real /*t*/,
                        const amrex::DG::ImplicitMesh & mesh,
                        const amrex::DG::MatrixFactory & matfactory,
-                       const amrex::DG::MatrixFactory & mf,
+                       const amrex::DG::MatrixFactory & /*mf*/,
                        const amrex::MultiFab & X,
                        MASK_MF & mask,
                        const MASK_T masked) const
@@ -2272,11 +2284,6 @@ amrex::Print() << std::endl;
 
         // DG
         const int sp = matfactory.std_elem.p;
-
-        const int sp_low = matfactory.std_elem.p-1;
-        const int sNp_low = AMREX_D_TERM((1+sp_low),*(1+sp_low),*(1+sp_low));
-        const int n_comp_low = DG_N_SOL*sNp_low;
-        const amrex::Gpu::ManagedVector<int> Sol2Dom(DG_N_SOL, 0);
 
         // DOMAIN
         const int dom = 0;
@@ -2417,7 +2424,7 @@ amrex::Print() << std::endl;
                     }
 
                     err = err/norm;
-                    if (err > 0.01)
+                    if (err > 100.0)
                     {
                         mask_fab(i,j,k) = masked;
                     }

@@ -2932,7 +2932,7 @@ void Eval_dXdt_BouFluxes(const Real t,
 
                             // SOLUTION
                             BF_CELL(&prob_lo[0], &c_dx[0], c_i, c_j, c_k, c_etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
-                            DG_SOL_space_BFX sol(sp, BF_lo, BF_hi, c_X_fab, BF_i, BF_j, BF_k);
+                            DG_SOL_space_BFX sol(c_sp, BF_lo, BF_hi, c_X_fab, BF_i, BF_j, BF_k);
                             BF_CELL(&prob_lo[0], &dx[0], nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_BF_lo, nbr_BF_hi);
                             DG_SOL_space_BFX nbr_sol(sp, nbr_BF_lo, nbr_BF_hi, X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k);
 
@@ -2958,7 +2958,7 @@ void Eval_dXdt_BouFluxes(const Real t,
                             BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
                             DG_SOL_space_BFX sol(sp, BF_lo, BF_hi, X_fab, BF_i, BF_j, BF_k);
                             BF_CELL(&prob_lo[0], &c_dx[0], c_nbr_i, c_nbr_j, c_nbr_k, c_nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k, nbr_BF_lo, nbr_BF_hi);
-                            DG_SOL_space_BFX nbr_sol(sp, nbr_BF_lo, nbr_BF_hi, c_X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+                            DG_SOL_space_BFX nbr_sol(c_sp, nbr_BF_lo, nbr_BF_hi, c_X_fab, nbr_BF_i, nbr_BF_j, nbr_BF_k);
 
                             // COMPUTE THE INTEGRAL
                             BOU_FX_ICS(t, dom, cell_lo, un, bou_Nq, xptr, sol, nbr_sol, N_SOL, sNp, c_sNp, fi, fj, fk, FX_fab, offset, IBVP);
@@ -3696,7 +3696,6 @@ void TakeRungeKuttaTimeStep(const int RK_order,
                      ref_ratios[lev-1],
                      *meshes[lev-1], *matfactories[lev-1], masks[lev-1], Xs[lev-1]);
 
-#ifdef AMREX_DEBUG
         if (Xs[lev-1].contains_nan())
         {
             std::string msg;
@@ -3705,7 +3704,6 @@ void TakeRungeKuttaTimeStep(const int RK_order,
             msg += "| Solution contains nans at level "+std::to_string(lev-1)+" after restriction.\n";
             Abort(msg);
         }
-#endif
     }
     // ================================================================
 

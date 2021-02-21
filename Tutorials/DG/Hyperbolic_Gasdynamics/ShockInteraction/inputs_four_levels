@@ -7,8 +7,7 @@ geometry.is_periodic = 0 0 0
 
 
 # TIME ################################################################
-#time.T = 0.2
-time.T = 0.138359
+time.T = 0.2
 time.n_steps = 100000
 #######################################################################
 
@@ -21,33 +20,33 @@ amr.v = 1
 #amr.restart = 
 
 amr.n_cell        = 16 16 16
-amr.max_grid_size = 4 4 4
-amr.max_level     = 1
-amr.ref_ratio     = 4 4 4
-amr.blocking_factor = 1
-amr.n_error_buf = 2
+amr.max_grid_size = 4 4 4 4
+amr.max_level     = 3
+amr.ref_ratio     = 4 4 4 4
+amr.blocking_factor = 4
+amr.n_error_buf = 2 2 2
 amr.grid_eff = 1.0
 # =====================================================================
 
 
 # AMR GRIDS ===========================================================
 # 2D
-grids.CFL = 0.27 0.27
+grids.CFL = 0.27 0.27 0.27 0.27
 
 # 3D
 #grids.CFL = 0.2 0.2
 
 # LEVEL SET FUNCTIONS
-grids.space_p = 2 2
-grids.space_q = 2 2
+grids.space_p = 2 2 2 2
+grids.space_q = 2 2 2 2
 # =====================================================================
 
 
 # IMPLICITLY-DEFINED MESH =============================================
 # 2D
-implicit_meshes.space_q = 3 3
-implicit_meshes.space_q_ie = 5 3
-implicit_meshes.volume_fraction_threshold = 0.3 0.3
+implicit_meshes.space_q = 3 3 3 3
+implicit_meshes.space_q_ie = 5 5 5 3
+implicit_meshes.volume_fraction_threshold = 0.3 0.3 0.3 0.3
 
 # 3D
 #implicit_meshes.space_q = 3 3
@@ -57,7 +56,7 @@ implicit_meshes.volume_fraction_threshold = 0.3 0.3
 
 
 # DISCONTINUOUS GALERKIN METHOD =======================================
-dG.space_p = 3 0
+dG.space_p = 2 2 2 0
 # =====================================================================
 #######################################################################
 
@@ -103,10 +102,10 @@ problem.params = 1.4 0.2 2.81 1.0 0.0 1.0 0.10 0.5 0.5
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 120
-plot_filepath = PROBLEM_TWO_LEVELS
-checkpoint_int = 120
-checkpoint_filepath = PROBLEM_TWO_LEVELS
+plot_int = 1200
+plot_filepath = PROBLEM_FOUR_LEVELS
+checkpoint_int = 1200
+checkpoint_filepath = PROBLEM_FOUR_LEVELS
 
 # 2D
 regrid_int = 5

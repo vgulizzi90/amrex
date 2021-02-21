@@ -680,7 +680,8 @@ struct SUBCELL_SLOPE_LIMITER
                                             IBVP,
                                             true);
         // ------------------------------------------------------------
-        // The last input denotes that the fabbox will be used.
+        // The last input denotes that the ghost cells will be filled
+        // too.
         // ------------------------------------------------------------
     }
     // ================================================================
@@ -772,13 +773,13 @@ public amrex::DG::AMR::Base
         // ------------------------------------------------------------
 
         // SOLUTION INITIAL CONDITIONS --------------------------------
+        const bool include_ghost_cells = ((lev == this->max_level) && (level_inputs.dG.space_p == 0));
+
         amrex::DG::ProjectInitialConditions(*this->meshes[lev],
                                             *this->matfactories[lev],
                                             DG_N_SOL, this->Xs[lev],
                                             this->IG,
-                                            true);
-        // ------------------------------------------------------------
-        // The last input denotes that the fabbox will be used.
+                                            include_ghost_cells);
         // ------------------------------------------------------------
 
         // SET BOX ARRAY AND DISTRIBUTION MAP -------------------------
@@ -1014,10 +1015,13 @@ exit(-1);
 
             const amrex::Gpu::ManagedVector<int> Sol2Dom(DG_N_SOL, 0);
 
+            const bool include_ghost_cells = ((lev == this->max_level) && (level_inputs.dG.space_p == 0));
+
             amrex::DG::AMR::Interpolate(DG_N_SOL, Sol2Dom,
                                         *this->meshes[lev-1], *this->matfactories[lev-1], this->Xs[lev-1],
                                         this->refRatio(lev-1),
-                                        *this->meshes[lev], *this->matfactories[lev], this->Xs[lev]);
+                                        *this->meshes[lev], *this->matfactories[lev], this->Xs[lev],
+                                        include_ghost_cells);
             // --------------------------------------------------------
 
             // SET BOX ARRAY AND DISTRIBUTION MAP ---------------------
@@ -1082,10 +1086,13 @@ exit(-1);
 
             const amrex::Gpu::ManagedVector<int> Sol2Dom(DG_N_SOL, 0);
 
+            const bool include_ghost_cells = ((lev == this->max_level) && (level_inputs.dG.space_p == 0));
+
             amrex::DG::AMR::Interpolate(DG_N_SOL, Sol2Dom,
                                         *this->meshes[lev-1], *this->matfactories[lev-1], this->Xs[lev-1],
                                         this->refRatio(lev-1),
-                                        *this->meshes[lev], *this->matfactories[lev], new_X);
+                                        *this->meshes[lev], *this->matfactories[lev], new_X,
+                                        include_ghost_cells);
                                         
             new_X.ParallelCopy(this->Xs[lev], 0, 0, X_n_comp, 0, 0, this->Geom(lev).periodicity());
             new_X.FillBoundary(this->Geom(lev).periodicity());
