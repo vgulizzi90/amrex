@@ -854,78 +854,111 @@ public amrex::DG::AMR::Base
         // ------------------------------------------------------------
 
         // MAKE SURE TO TRACK THE SHOCK AT t = 0 ----------------------
-        /*
-        if (time < 1.0e-12)
+        /**/
         {
             const int eb_flag = this->IG.eb_flag;
-            const amrex::Real xis = this->IG.params[3];
-            const amrex::Real theta = (this->IG.params[8])*M_PI/180.0;
-            const amrex::Real cth = std::cos(theta);
-            const amrex::Real sth = std::sin(theta);
-#if (AMREX_SPACEDIM == 3)
-            const amrex::Real phi = (this->IG.params[9])*M_PI/180.0;
-            const amrex::Real cph = std::cos(phi);
-            const amrex::Real sph = std::sin(phi);
-#endif
-#if (AMREX_SPACEDIM == 2)
-            const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> xi_dir = {AMREX_D_DECL(cth, sth, 0.0)};
-#endif
-#if (AMREX_SPACEDIM == 3)
-            const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> xi_dir = {AMREX_D_DECL(cth*cph, sth*cph, sph)};
-#endif
-            const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = this->meshes[lev]->geom.CellSizeArray();
-            const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo = this->meshes[lev]->geom.ProbLoArray();
-            
-            for (amrex::MFIter mfi(this->cached_tags[lev]); mfi.isValid(); ++mfi)
+            bool cond;
+            int dir;
+            amrex::Real xs;
+
+            if (eb_flag == -1)
             {
-                const amrex::Box & bx = mfi.validbox();
-
-                amrex::Array4<short const> const & eType_fab = this->meshes[lev]->eType.array(mfi);
-                amrex::Array4<char> const & tags_fab = this->cached_tags[lev].array(mfi);
-                
-                amrex::ParallelFor(bx,
-                [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-                {
-                    const short etype = eType_fab(i,j,k,amrex::DG::ELM_TYPE(dom));
-
-                    if (amrex::DG::ELM_IS_NOT_EMPTY(etype) && (tags_fab(i,j,k) != tagged))
-                    {
-                        // LOCAL PARAMETERS
-                        const amrex::Real xc[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0],
-                                                                             prob_lo[1]+(j+0.5)*dx[1],
-                                                                             prob_lo[2]+(k+0.5)*dx[2])};
-
-                        // LOCAL VARIABLES
-                        bool cond;
-
-                        if (eb_flag == -1)
-                        {
-                            cond = (std::abs(xc[0]-xis) < 2.0*dx[0]);
-                        }
-                        else if (eb_flag == 1)
-                        {
-                            const amrex::Real y[AMREX_SPACEDIM] = {AMREX_D_DECL(xc[0]-0.5,
-                                                                                xc[1]-0.5,
-                                                                                xc[2]-0.5)};
-                            const amrex::Real xi = AMREX_D_TERM(xi_dir[0]*y[0],+xi_dir[1]*y[1],+xi_dir[2]*y[2]);
-                            cond = (std::abs(xi-xis) < 2.0*dx[0]);
-                        }
-                        else
-                        {
-                            cond = false;
-                        }
-
-                        if (cond)
-                        {
-                            tags_fab(i,j,k) = tagged;
-                        }
-                    }
-                });
-                amrex::Gpu::synchronize();
+                cond = true;
+                xs = this->IG.params[3];
             }
-            this->cached_tags[lev].FillBoundary(this->meshes[lev]->geom.periodicity());
+            else if (eb_flag == 1)
+            {
+                const amrex::Real theta = (this->IG.params[8])*M_PI/180.0;
+                const amrex::Real cth = std::cos(theta);
+                const amrex::Real sth = std::sin(theta);
+
+#if (AMREX_SPACEDIM == 2)
+                if (std::abs(std::abs(cth)-1.0) < 1.0e-3)
+                {
+                    cond = true;
+                    dir = 0;
+                }
+                else if (std::abs(std::abs(sth)-1.0) < 1.0e-3)
+                {
+                    cond = true;
+                    dir = 1;
+                }
+                else
+                {
+                    cond = false;
+                    dir = -1;
+                }
+#endif
+
+#if (AMREX_SPACEDIM == 3)
+                const amrex::Real phi = (this->IG.params[9])*M_PI/180.0;
+                const amrex::Real cph = std::cos(phi);
+                const amrex::Real sph = std::sin(phi);
+
+                if ((std::abs(std::abs(cth)-1.0) < 1.0e-3) && (std::abs(std::abs(cph)-1.0) < 1.0e-3))
+                {
+                    cond = true;
+                    dir = 0;
+                }
+                else if ((std::abs(std::abs(sth)-1.0) < 1.0e-3) && (std::abs(std::abs(cph)-1.0) < 1.0e-3))
+                {
+                    cond = true;
+                    dir = 1;
+                }
+                else if (std::abs(std::abs(sph)-1.0) < 1.0e-3)
+                {
+                    cond = true;
+                    dir = 2;
+                }
+                else
+                {
+                    cond = false;
+                    dir = -1;
+                }
+#endif
+                xs = this->IG.params[3]+0.5;
+            }
+            else
+            {
+                cond = false;
+            }
+
+            if ((time < 1.0e-12) && cond)
+            {
+                const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = this->meshes[lev]->geom.CellSizeArray();
+                const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo = this->meshes[lev]->geom.ProbLoArray();
+                
+                for (amrex::MFIter mfi(this->cached_tags[lev]); mfi.isValid(); ++mfi)
+                {
+                    const amrex::Box & bx = mfi.validbox();
+
+                    amrex::Array4<short const> const & eType_fab = this->meshes[lev]->eType.array(mfi);
+                    amrex::Array4<char> const & tags_fab = this->cached_tags[lev].array(mfi);
+                    
+                    amrex::ParallelFor(bx,
+                    [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+                    {
+                        const short etype = eType_fab(i,j,k,amrex::DG::ELM_TYPE(dom));
+
+                        if (amrex::DG::ELM_IS_NOT_EMPTY(etype) && (tags_fab(i,j,k) != tagged))
+                        {
+                            // LOCAL PARAMETERS
+                            const amrex::Real xc[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0],
+                                                                                 prob_lo[1]+(j+0.5)*dx[1],
+                                                                                 prob_lo[2]+(k+0.5)*dx[2])};
+
+                            if (std::abs(xc[dir]-xs) < dx[dir])
+                            {
+                                tags_fab(i,j,k) = tagged;
+                            }
+                        }
+                    });
+                    amrex::Gpu::synchronize();
+                }
+                this->cached_tags[lev].FillBoundary(this->meshes[lev]->geom.periodicity());
+            }
         }
-        */
+        /**/
         // ------------------------------------------------------------
 
         // TAG AN ADDITIONAL LAYER OF CELLS ---------------------------
@@ -1105,6 +1138,25 @@ exit(-1);
             this->SetDistributionMap(lev, this->meshes[lev]->dm);
             // --------------------------------------------------------
         }
+    }
+    // ================================================================
+
+
+    // DELETE LEVEL DATA ==============================================
+    virtual void ClearLevel(int /*lev*/) override
+    {
+        // IMPLICIT MESH ----------------------------------------------
+        //delete this->meshes[lev];
+        //this->meshes[lev] = nullptr;
+        // ------------------------------------------------------------
+        
+        // MATRIX FACTORY ---------------------------------------------
+        //delete this->matfactories[lev];
+        //this->matfactories[lev] = nullptr;
+
+        //delete this->mfs[lev];
+        //this->mfs[lev] = nullptr;
+        // ------------------------------------------------------------
     }
     // ================================================================
 

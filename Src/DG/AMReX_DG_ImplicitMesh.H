@@ -1137,7 +1137,7 @@ struct ImplicitMesh
         // REMOVE ALL BOXES WHOSE ELEMENTS ARE EMPTY
         // (THE ELEMENTS MUST BE EMPTY FOR EACH AND EVERY DOMAIN)
         // ============================================================
-        if (im_flag && false)
+        if (im_flag && true)
         {
             BoxList bl;
             //int n_empty_boxes;

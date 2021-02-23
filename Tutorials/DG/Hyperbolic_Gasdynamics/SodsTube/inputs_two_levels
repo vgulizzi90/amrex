@@ -34,7 +34,7 @@ amr.grid_eff = 1.0
 #grids.CFL = 0.27 0.27
 
 # 3D
-grids.CFL = 0.2 0.15
+grids.CFL = 0.2 0.1
 
 # LEVEL SET FUNCTIONS
 grids.space_p = 2 2
@@ -51,7 +51,7 @@ grids.space_q = 2 2
 # 3D
 implicit_meshes.space_q = 3 3
 implicit_meshes.space_q_ie = 8 3
-implicit_meshes.volume_fraction_threshold = 0.2 0.15
+implicit_meshes.volume_fraction_threshold = 0.2 0.1
 # =====================================================================
 
 
@@ -72,10 +72,10 @@ dG.space_p = 2 0
 problem.int_params = 1
 
 # 2D
-#problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.25 30.0 0.0
+#problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.25 0.0 0.0
 
 # 3D
-problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.25 60.0 30.0
+problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.25 0.0 0.0
 # =====================================================================
 #######################################################################
 # NOTE: params contains the parameters of the problem, which should be
@@ -110,9 +110,9 @@ problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.25 60.0 30.0
 
 # POST-PROCESSING INFO ################################################
 plot_int = 120
-plot_filepath = PROBLEM_TWO_LEVELS
+plot_filepath = PROBLEM_TWO_LEVELS_3D
 checkpoint_int = 120
-checkpoint_filepath = PROBLEM_TWO_LEVELS
+checkpoint_filepath = PROBLEM_TWO_LEVELS_3D
 
 # 2D
 #regrid_int = 5
