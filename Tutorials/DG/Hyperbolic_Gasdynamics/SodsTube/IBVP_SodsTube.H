@@ -104,8 +104,7 @@ public IDEAL_GAS_BASE
         }
         else
         {
-amrex::Print() << "IDEAL_GAS.F_PHI" << std::endl;
-exit(-1);
+amrex::Abort("IDEAL_GAS.F_PHI");
         }
     }
 
@@ -275,8 +274,7 @@ exit(-1);
         }
         else
         {
-amrex::Print() << "IDEAL_GAS.F_SOL0" << std::endl;
-exit(-1);
+amrex::Abort("IDEAL_GAS.F_SOL0");
         }
 
         /* Constant state
@@ -363,8 +361,7 @@ exit(-1);
         }
         else
         {
-amrex::Print() << "IDEAL_GAS.F_FIELDS_NAMES" << std::endl;
-exit(-1);
+amrex::Abort("IDEAL_GAS.F_FIELDS_NAMES");
         }
     }
 
@@ -386,8 +383,7 @@ exit(-1);
         }
         else
         {
-amrex::Print() << "IDEAL_GAS.F_FIELDS_DOMAINS" << std::endl;
-exit(-1);
+amrex::Abort("IDEAL_GAS.F_FIELDS_DOMAINS");
         }
     }
 
@@ -1008,8 +1004,7 @@ public amrex::DG::AMR::Base
         // LEVEL == 0
         if (lev == 0)
         {
-amrex::Print() << "AMR_IDEAL_GAS.MakeNewLevelFromCoarse - lev == 0" << std::endl;
-exit(-1);
+amrex::Abort("AMR_IDEAL_GAS.MakeNewLevelFromCoarse - lev == 0");
         }
         // LEVEL > 0
         else
@@ -1086,8 +1081,7 @@ exit(-1);
         // LEVEL == 0
         if (lev == 0)
         {
-amrex::Print() << "AMR_IDEAL_GAS.RemakeLevel - lev == 0" << std::endl;
-exit(-1);
+amrex::Abort("AMR_IDEAL_GAS.RemakeLevel - lev == 0");
         }
         // LEVEL > 0
         else
