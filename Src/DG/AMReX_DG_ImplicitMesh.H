@@ -1178,7 +1178,11 @@ struct ImplicitMesh
                     iQuadRule quad = iQuadGen(phi, cell_lo, cell_hi, -1, -1, qo);
 
                     // Compute the volume fraction
+#if __cplusplus < 201402L
+                    cell_volume = quad([](const Algoim::TinyVector<Real, AMREX_SPACEDIM> & /*x*/) {return 1.0;});
+#else
                     cell_volume = quad([](const auto & /*x*/) {return 1.0;});
+#endif
                     volume_fraction = cell_volume/entire_cell_volume;
 
                     if (volume_fraction > atol)

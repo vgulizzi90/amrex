@@ -564,22 +564,10 @@ namespace Algoim
         };
         std::vector<Node> nodes;
 
-        TinyVector<Real,512> x1;
-        TinyVector<Real,512> x2;
-        TinyVector<Real,512> x3;
-        TinyVector<Real,512> w;
-        int n_nodes = 0;
-
         // evalIntegrand records quadrature nodes when it is invoked by ImplicitIntegral
         void evalIntegrand(const TinyVector<Real,N>& x, Real w_)
         {
             nodes.push_back({x, w_});
-            
-            this->x1[this->n_nodes] = x[0];
-            this->x2[this->n_nodes] = x[1];
-            this->x3[this->n_nodes] = x[2];
-            this->w[this->n_nodes] = w_;
-            //this->n_nodes++;
         }
 
         // Evaluate an integral applied to a given functional
