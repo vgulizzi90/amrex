@@ -545,8 +545,8 @@ exit(-1);
 // ####################################################################
 // AUXILIARY ROUTINES #################################################
 // ####################################################################
-AMREX_GPU_HOST_DEVICE
 template <typename L>
+AMREX_GPU_HOST_DEVICE
 void CoarseFineFaceLoop(const IntVect & rr, const int dir,
                         const int c_i, const int c_j, const int c_k,
                         L && f)
