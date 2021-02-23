@@ -86,7 +86,7 @@ struct IDEAL_GAS_BASE
         const amrex::Real g = this->gamma;
 
         rho = U[RHO];
-        if (avoid_negative_values) rho = std::max(rho, SMALL_rho);
+        if (avoid_negative_values) rho = amrex::max(rho, SMALL_rho);
         AMREX_D_TERM
         (
             u1 = U[RHOV1]/rho;,
@@ -95,7 +95,7 @@ struct IDEAL_GAS_BASE
         )
         const amrex::Real e = U[TE];
         p = (g-1.0)*(e-0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3)));
-        if (avoid_negative_values) p = std::max(p, SMALL_p);
+        if (avoid_negative_values) p = amrex::max(p, SMALL_p);
     }
 
     /**
@@ -116,7 +116,7 @@ struct IDEAL_GAS_BASE
                                  const bool avoid_negative_values = true) const
     {
         const amrex::Real g = this->gamma;
-        const amrex::Real rho = avoid_negative_values ? std::max(U[RHO], SMALL_rho) : U[RHO];
+        const amrex::Real rho = avoid_negative_values ? amrex::max(U[RHO], SMALL_rho) : U[RHO];
 
         AMREX_D_TERM
         (
@@ -126,7 +126,7 @@ struct IDEAL_GAS_BASE
         )
         const amrex::Real e = U[TE];
         p = (g-1.0)*(e-0.5*rho*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3)));
-        if (avoid_negative_values) p = std::max(p, SMALL_p);
+        if (avoid_negative_values) p = amrex::max(p, SMALL_p);
         a = std::sqrt(g*p/rho);
         h = 0.5*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3))+a*a/(g-1.0);
     }
@@ -313,14 +313,14 @@ amrex::Abort("eval_eigen_reconstruction_1 - DIM = 3");
     void F_P2U(const amrex::Real * P, amrex::Real * U) const
     {
         const amrex::Real g = this->gamma;
-        const amrex::Real rho = std::max(P[RHO], SMALL_rho);
+        const amrex::Real rho = amrex::max(P[RHO], SMALL_rho);
         AMREX_D_TERM
         (
             const amrex::Real u1 = P[RHOV1];,
             const amrex::Real u2 = P[RHOV2];,
             const amrex::Real u3 = P[RHOV3];
         )
-        const amrex::Real p = std::max(P[TE], SMALL_p);
+        const amrex::Real p = amrex::max(P[TE], SMALL_p);
         
         U[RHO] = rho;
         AMREX_D_TERM
@@ -392,8 +392,8 @@ amrex::Abort("eval_eigen_reconstruction_1 - DIM = 3");
         // PARAMETERS
         const amrex::Real g = this->gamma;
 
-        const amrex::Real rho = std::max(P[RHO], SMALL_rho);
-        const amrex::Real p = std::max(P[TE], SMALL_p);
+        const amrex::Real rho = amrex::max(P[RHO], SMALL_rho);
+        const amrex::Real p = amrex::max(P[TE], SMALL_p);
         const amrex::Real a = std::sqrt(g*p/rho);
         const amrex::Real inv_a = 1.0/a;
 
@@ -460,8 +460,8 @@ amrex::Abort("eval_eigen_reconstruction_1 - DIM = 3");
         // PARAMETERS
         const amrex::Real g = this->gamma;
 
-        const amrex::Real rho = std::max(P[RHO], SMALL_rho);
-        const amrex::Real p = std::max(P[TE], SMALL_p);
+        const amrex::Real rho = amrex::max(P[RHO], SMALL_rho);
+        const amrex::Real p = amrex::max(P[TE], SMALL_p);
         const amrex::Real a = std::sqrt(g*p/rho);
         const amrex::Real inv_rho = 1.0/rho;
         
@@ -549,10 +549,10 @@ amrex::Abort("eval_eigen_reconstruction_1 - DIM = 3");
         const amrex::Real h = dx[0];
 #endif
 #if (AMREX_SPACEDIM == 2)
-        const amrex::Real h = std::min(dx[0], dx[1]);
+        const amrex::Real h = amrex::min(dx[0], dx[1]);
 #endif
 #if (AMREX_SPACEDIM == 3)
-        const amrex::Real h = std::min(dx[0], std::min(dx[1], dx[2]));
+        const amrex::Real h = amrex::min(dx[0], amrex::min(dx[1], dx[2]));
 #endif
         dt = h/lam;
 
@@ -668,7 +668,7 @@ amrex::Abort("eval_eigen_reconstruction_1 - DIM = 3");
         amrex::Real rgdnv, ugdnv, pgdnv;
 
         pstar = (wl*pr + wr*pl - wr*wl*(ur-ul))/(wl+wr);
-        pstar = std::max(pstar, SMALL_p);
+        pstar = amrex::max(pstar, SMALL_p);
         pstnm1 = pstar;
 
         wlsq = (0.5*(gamma-1.0)*(pstar+pl)+pstar)*rl;
@@ -681,7 +681,7 @@ amrex::Abort("eval_eigen_reconstruction_1 - DIM = 3");
         ustarm = ur+(pstar-pr)/wr;
 
         pstar = (wl*pr + wr*pl - wr*wl*(ur-ul))/(wl+wr);
-        pstar = std::max(pstar, SMALL_p);
+        pstar = amrex::max(pstar, SMALL_p);
 
         for (int it = 0; it < itno; ++it)
         {
@@ -709,10 +709,10 @@ amrex::Abort("eval_eigen_reconstruction_1 - DIM = 3");
                 zm = dpditer*wr;
             }
 
-            denom = dpditer/std::max(zp+zm,small*(cleft+cright));
+            denom = dpditer/amrex::max(zp+zm,small*(cleft+cright));
             pstnm1 = pstar;
             pstar = pstar - denom*(ustarm-ustarp);
-            pstar = std::max(pstar,SMALL_p);
+            pstar = amrex::max(pstar,SMALL_p);
             ustar = 0.5*(ustarm+ustarp);
         }
 
@@ -770,7 +770,7 @@ amrex::Abort("eval_eigen_reconstruction_1 - DIM = 3");
             spin = wo/ro-sgnm*uo;
             spout = spin;
         }
-        frac = 0.50*(1.0+(spin+spout)/std::max(spout-spin,std::max(spin+spout,small*(cleft+cright))));
+        frac = 0.50*(1.0+(spin+spout)/amrex::max(spout-spin,amrex::max(spin+spout,small*(cleft+cright))));
 
         if (spout < 0.0)
         {
@@ -850,8 +850,8 @@ amrex::Abort("IDEAL_GAS_BASE.OsherSolver");
         al = std::sqrt(g*pl/rl);
         ar = std::sqrt(g*pr/rr);
         
-        K = std::max(std::abs(al+ul), std::abs(al-ul));
-        K = std::max(K, std::max(std::abs(ar+ur), std::abs(ar-ur)));
+        K = amrex::max(std::abs(al+ul), std::abs(al-ul));
+        K = amrex::max(K, amrex::max(std::abs(ar+ur), std::abs(ar-ur)));
         K *= 0.1;
 
         dr = Un_right[RHO]-Un_left[RHO];
@@ -1208,7 +1208,7 @@ amrex::Abort("F_NF_PRESCRIBED_VELOCITY_1 - SLIP WALL");
 
             if (tmp_slp*slp > 0.0)
             {
-                slopes[u] = sgn*std::min(std::abs(slp), theta*std::abs(tmp_slp));
+                slopes[u] = sgn*amrex::min(std::abs(slp), theta*std::abs(tmp_slp));
             }
             else
             {
@@ -1659,8 +1659,8 @@ exit(-1);
 
                                 for (int u = 0; u < DG_N_SOL; ++u)
                                 {
-                                    min_P[u] = std::min(min_P[u], tmp_P[u]);
-                                    max_P[u] = std::max(max_P[u], tmp_P[u]);
+                                    min_P[u] = amrex::min(min_P[u], tmp_P[u]);
+                                    max_P[u] = amrex::max(max_P[u], tmp_P[u]);
                                 }
                             }
                         }
@@ -1762,11 +1762,11 @@ exit(-1);
                                     {
                                         if (Pr[u] > max_P[u])
                                         {
-                                            alphas[u] = std::min(alphas[u], (max_P[u]-P[u])/(Pr[u]-P[u]));
+                                            alphas[u] = amrex::min(alphas[u], (max_P[u]-P[u])/(Pr[u]-P[u]));
                                         }
                                         else if (Pr[u] < min_P[u])
                                         {
-                                            alphas[u] = std::min(alphas[u], (min_P[u]-P[u])/(Pr[u]-P[u]));
+                                            alphas[u] = amrex::min(alphas[u], (min_P[u]-P[u])/(Pr[u]-P[u]));
                                         }
                                     }
                                 }
@@ -1852,11 +1852,11 @@ exit(-1);
                             {
                                 if (Pr[u] > max_P[u])
                                 {
-                                    alphas[u] = std::min(alphas[u], (max_P[u]-P[u])/(Pr[u]-P[u]));
+                                    alphas[u] = amrex::min(alphas[u], (max_P[u]-P[u])/(Pr[u]-P[u]));
                                 }
                                 else if (Pr[u] < min_P[u])
                                 {
-                                    alphas[u] = std::min(alphas[u], (min_P[u]-P[u])/(Pr[u]-P[u]));
+                                    alphas[u] = amrex::min(alphas[u], (min_P[u]-P[u])/(Pr[u]-P[u]));
                                 }
                             }
                         }
@@ -1913,7 +1913,7 @@ exit(-1);
                         {
                             for (int u = 0; u < DG_N_SOL; ++u)
                             {
-                                alphas[u] = std::min(alphas[u], alpha_fab(nbr_i,nbr_j,nbr_k,u));
+                                alphas[u] = amrex::min(alphas[u], alpha_fab(nbr_i,nbr_j,nbr_k,u));
                             }
                         }
                     }
