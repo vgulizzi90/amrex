@@ -1515,8 +1515,8 @@ void Eval_dXdt_DomContrib(const Real t,
  * \brief Auxiliary function used for evaluating the boundary flux at a wall.
  *
  */
-AMREX_GPU_HOST_DEVICE
 template <typename IBVP_CLASS>
+AMREX_GPU_HOST_DEVICE
 AMREX_FORCE_INLINE
 void BOU_FX_WALL(const Real t,
                  const int dom,
@@ -1561,8 +1561,8 @@ void BOU_FX_WALL(const Real t,
  * \brief Auxiliary function used for evaluating the boundary flux at a wall.
  *
  */
-AMREX_GPU_HOST_DEVICE
 template <typename IBVP_CLASS>
+AMREX_GPU_HOST_DEVICE
 AMREX_FORCE_INLINE
 void BOU_FX_ICS(const Real t,
                 const int dom,
@@ -1610,8 +1610,8 @@ void BOU_FX_ICS(const Real t,
  * \brief Auxiliary function used for evaluating the boundary flux at a wall.
  *
  */
-AMREX_GPU_HOST_DEVICE
 template <typename IBVP_CLASS>
+AMREX_GPU_HOST_DEVICE
 AMREX_FORCE_INLINE
 void BOU_FX_ICS(const Real t,
                 const int dom,
@@ -1662,8 +1662,8 @@ void BOU_FX_ICS(const Real t,
  * \brief Auxiliary function used for evaluating the boundary flux at a wall.
  *
  */
-AMREX_GPU_HOST_DEVICE
 template <typename IBVP_CLASS>
+AMREX_GPU_HOST_DEVICE
 AMREX_FORCE_INLINE
 void BOU_FX_ICS(const Real t,
                 const int dom,
@@ -2431,8 +2431,8 @@ exit(-1);
  * \brief Auxiliary function used for evaluating the boundary flux at a wall.
  *
  */
-AMREX_GPU_HOST_DEVICE
 template <typename IBVP_CLASS>
+AMREX_GPU_HOST_DEVICE
 AMREX_FORCE_INLINE
 void BOU_FX_WALL(const Real t,
                  const int dom,
@@ -2478,8 +2478,8 @@ void BOU_FX_WALL(const Real t,
  * \brief Auxiliary function used for evaluating the boundary flux at a wall.
  *
  */
-AMREX_GPU_HOST_DEVICE
 template <typename IBVP_CLASS>
+AMREX_GPU_HOST_DEVICE
 AMREX_FORCE_INLINE
 void BOU_FX_ICS(const Real t,
                 const int dom,
