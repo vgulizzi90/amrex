@@ -248,7 +248,7 @@ void dger(const int m, const int n,
     else if (n < 0) info = 2;
     else if (incx == 0) info = 5;
     else if (incy == 0) info = 7;
-    else if (lda < std::max(1,m)) info = 9;
+    else if (lda < amrex::max(1,m)) info = 9;
     if (info != 0)
     {
         xerbla("dger ", info);
@@ -412,7 +412,7 @@ void dtrmv(const char uplo, const char trans, const char diag, const int n,
     else if ((trans != 'N') && (trans != 'T')) info = 2;
     else if ((diag != 'U') && (diag != 'N')) info = 3;
     else if (n < 0) info = 4;
-    else if (lda < std::max(1,n)) info = 6;
+    else if (lda < amrex::max(1,n)) info = 6;
     else if (incx == 0) info = 8;
     if (info != 0)
     {
@@ -641,7 +641,7 @@ void dgemv(const char trans, const int m, const int n,
     if ((trans != 'N') && (trans != 'T')) info = 1;
     else if (m < 0) info = 2;
     else if (n < 0)  info = 3;
-    else if (lda < std::max(1,m)) info = 6;
+    else if (lda < amrex::max(1,m)) info = 6;
     else if (incx == 0) info = 8;
     else if (incy == 0) info = 11;
     if (info != 0)
@@ -867,9 +867,9 @@ void dgemm(const char transa, const char transb, const int m, const int n, const
     else if (m < 0) info = 3;
     else if (n < 0) info = 4;
     else if (k < 0) info = 5;
-    else if (lda < std::max(1,nrowa)) info = 8;
-    else if (ldb < std::max(1,nrowb)) info = 10;
-    else if (ldc < std::max(1,m)) info = 13;
+    else if (lda < amrex::max(1,nrowa)) info = 8;
+    else if (ldb < amrex::max(1,nrowb)) info = 10;
+    else if (ldc < amrex::max(1,m)) info = 13;
     if (info != 0)
     {
         xerbla("dgemm ", info);
@@ -1043,7 +1043,7 @@ void dtrti2(const char uplo, const char diag, const int n, Real * a, const int l
     if (!upper && (uplo != 'L')) info = -1;
     else if (!nounit && (diag != 'U')) info = -2;
     else if (n < 0) info = -3;
-    else if (lda < std::max(1, n)) info = -5;
+    else if (lda < amrex::max(1, n)) info = -5;
     if (info != 0)
     {
         xerbla("dtrti2 ", info);
@@ -1187,8 +1187,8 @@ void dtrsm(const char side, const char uplo, const char trans, const char diag,
     else if ((diag != 'N') && (diag != 'U')) info = 4;
     else if (m < 0) info = 5;
     else if (n < 0) info = 6;
-    else if (lda < std::max(1,nrowa)) info = 9;
-    else if (ldb < std::max(1,m)) info = 11;
+    else if (lda < amrex::max(1,nrowa)) info = 9;
+    else if (ldb < amrex::max(1,m)) info = 11;
     if (info != 0)
     {
         xerbla("dtrsm ", info);
@@ -2002,7 +2002,7 @@ void dsy3ev(const Real * a, Real * lam, Real * ev)
 
         if (std::abs(b[0+2*3]) >= std::abs(b[2+2*3]))
         {
-            tmp = std::max(std::abs(b[0+2*3]), std::abs(b[1+2*3]));
+            tmp = amrex::max(std::abs(b[0+2*3]), std::abs(b[1+2*3]));
 
             if (tmp > 0.0)
             {
@@ -2030,7 +2030,7 @@ void dsy3ev(const Real * a, Real * lam, Real * ev)
         }
         else
         {
-            tmp = std::max(std::abs(b[2+2*3]), std::abs(b[1+2*3]));
+            tmp = amrex::max(std::abs(b[2+2*3]), std::abs(b[1+2*3]));
 
             if (tmp > 0.0)
             {
@@ -2121,7 +2121,7 @@ void dsy3ev_other(const Real * a, Real * lam, Real * ev)
             tmp = std::sqrt(THIRD*std::abs(p));
             ph = tmp*tmp*tmp;
             ph = -0.5*q/ph;
-            ph = std::min(1.0, std::max(-1.0, ph));
+            ph = amrex::min(1.0, amrex::max(-1.0, ph));
             ph = std::acos(ph);
 
             // Eigenvalues
