@@ -821,9 +821,7 @@ amrex::Print() << "eval_eigen_reconstruction_1 - DIM = 3" << std::endl;
         //const amrex::Real wG[3] = {5.0/18.0, 4.0/9.0, 5.0/18.0};
         // -----------------------------------------------------------
 
-
-amrex::Print() << "IDEAL_GAS_BASE.OsherSolver" << std::endl;
-exit(-1);
+amrex::Abort("IDEAL_GAS_BASE.OsherSolver");
     }
     // ===============================================================
 
