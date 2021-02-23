@@ -1406,7 +1406,11 @@ struct ImplicitMesh
                         quad = iQuadGen(phi, cell_lo, cell_hi, -1, -1, qo);
 
                         // Compute the volume fraction
+#if __cplusplus < 201402L
+                        cell_volume = quad([](const Algoim::TinyVector<Real, AMREX_SPACEDIM> & /*x*/) {return 1.0;});
+#else
                         cell_volume = quad([](const auto & /*x*/) {return 1.0;});
+#endif
                         volume_fraction = cell_volume/entire_cell_volume;
                     }
                     else
@@ -1749,7 +1753,11 @@ struct ImplicitMesh
                             quad = iQuadGen(phi, cell_lo, cell_hi, b/2, b%2, qo);
 
                             // Compute the surface fraction
+#if __cplusplus < 201402L
+                            boundary_surface = quad([](const Algoim::TinyVector<Real, AMREX_SPACEDIM> & /*x*/) {return 1.0;});
+#else
                             boundary_surface = quad([](const auto & /*x*/) {return 1.0;});
+#endif
                             surface_fraction = boundary_surface/entire_boundary_surface;
                         }
                         else
