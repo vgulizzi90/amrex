@@ -149,7 +149,7 @@ struct IDEAL_GAS_BASE
         id = AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3)-2.0*h; id = 1.0/id;
 
 #if (AMREX_SPACEDIM == 1)
-amrex::Print() << "eval_eigen_decomposition_1 - DIM = 1" << std::endl;
+amrex::Abort("eval_eigen_decomposition_1 - DIM = 1");
 #endif
 #if (AMREX_SPACEDIM == 2)
         L[RHO]   =  0.5*(u1/a-2.0*h*id-1.0)*U[RHO]+(u1*id-0.5/a)*U[RHOV1]    +u2*id*U[RHOV2]    -id*U[TE];
@@ -158,7 +158,7 @@ amrex::Print() << "eval_eigen_decomposition_1 - DIM = 1" << std::endl;
         L[TE]    = -0.5*(u1/a+2.0*h*id+1.0)*U[RHO]+(u1*id+0.5/a)*U[RHOV1]    +u2*id*U[RHOV2]    -id*U[TE];
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "eval_eigen_decomposition_1 - DIM = 3" << std::endl;
+amrex::Abort("eval_eigen_decomposition_1 - DIM = 3");
 #endif
     }
 
@@ -182,7 +182,7 @@ amrex::Print() << "eval_eigen_decomposition_1 - DIM = 3" << std::endl;
         k = 0.5*(AMREX_D_TERM(u1*u1,+u2*u2,+u3*u3));
 
 #if (AMREX_SPACEDIM == 1)
-amrex::Print() << "eval_eigen_reconstruction_1 - DIM = 1" << std::endl;
+amrex::Abort("eval_eigen_reconstruction_1 - DIM = 1");
 #endif
 #if (AMREX_SPACEDIM == 2)
         Ur[RHO]   =          L[RHO]   +L[RHOV1]                     +L[TE];
@@ -191,7 +191,7 @@ amrex::Print() << "eval_eigen_reconstruction_1 - DIM = 1" << std::endl;
         Ur[TE]    = (h-a*u1)*L[RHO] +k*L[RHOV1]+u2*L[RHOV2]+(h+a*u1)*L[TE];
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "eval_eigen_reconstruction_1 - DIM = 3" << std::endl;
+amrex::Abort("eval_eigen_reconstruction_1 - DIM = 3");
 #endif
     }
 
@@ -1015,8 +1015,7 @@ amrex::Abort("IDEAL_GAS_BASE.OsherSolver");
         }
         else
         {
-amrex::Print() << "IDEAL_GAS_BASE.F_NF_OUTFLOW" << std::endl;
-exit(-1);
+amrex::Abort("IDEAL_GAS_BASE.F_NF_OUTFLOW");
         }
 
         // PRINT TO SCREEN --------------------------------------------
@@ -1099,8 +1098,7 @@ exit(-1);
         // SLIP WALL
         else
         {
-amrex::Print() << "F_NF_PRESCRIBED_VELOCITY_1 - SLIP WALL" << std::endl;
-exit(-1);
+amrex::Abort("F_NF_PRESCRIBED_VELOCITY_1 - SLIP WALL");
         }
     }
     
