@@ -9,6 +9,7 @@
 #ifndef AMREX_DG_AMR_H_
 #define AMREX_DG_AMR_H_
 
+#include <AMReX_VisMF.H>
 #include <AMReX_MultiFabUtil.H>
 #include <AMReX_AmrCore.H>
 
@@ -121,6 +122,85 @@ public AmrCore
     {
 Print() << "Base.MakeNewLevelFromScratch" << std::endl;
 exit(-1);
+    }
+
+    void InitMultiFabsFromCheckpointFile()
+    {
+        // PARAMETERS
+        const std::string folderpath_root = this->inputs.checkpoint_filepath;
+        const int n = this->inputs.restart;
+        const int n_steps = this->inputs.time.n_steps;
+
+        // HEADER FILE
+        {
+            const std::string header_filepath = IO::MakeGlobalOutputFilepath(folderpath_root, n, n_steps, "Checkpoint_Header", "txt");
+            std::string line;
+            std::ifstream fp;
+            fp.open(header_filepath);
+            while (std::getline(fp, line))
+            {
+                if (line.find("time") != std::string::npos)
+                {
+                    std::istringstream is(line.substr(line.find(":")+1));
+                    is >> this->inputs.restart_time;
+                }
+            }
+            fp.close();
+        }
+
+        // HEADER FILE FOR THE MULTIFABS
+        {
+            const std::string header_filepath = IO::MakeGlobalOutputFilepath(folderpath_root, n, n_steps, "Checkpoint_Header_MF", "txt");
+            VisMF::IO_Buffer io_buffer(VisMF::GetIOBufferSize());
+
+            Vector<char> file_char_ptr;
+            ParallelDescriptor::ReadAndBcastFile(header_filepath, file_char_ptr);
+            std::string file_char_ptr_str(file_char_ptr.dataPtr());
+            std::istringstream is(file_char_ptr_str, std::istringstream::in);
+
+            std::string line;
+            int n_comp;
+            IntVect n_grow;
+
+            std::getline(is, line);
+            is >> this->finest_level;
+            IO::GotoNextLine(is);
+            for (int lev = 0; lev <= this->max_level; ++lev)
+            {
+                BoxArray ba;
+                ba.readFrom(is);
+                IO::GotoNextLine(is);
+                DistributionMapping dm(ba, ParallelDescriptor::NProcs());
+
+                this->SetBoxArray(lev, ba);
+                this->SetDistributionMap(lev, dm);
+
+                is >> n_comp;
+                is >> n_grow;
+                
+                this->meshes[lev]->PHI.define(this->grids[lev], this->dmap[lev], n_comp, n_grow);
+                
+                is >> n_comp;
+                is >> n_grow;
+                
+                this->Xs[lev].define(this->grids[lev], this->dmap[lev], n_comp, n_grow);
+            }
+        }
+
+        // LEVELSET FUNCTIONS AND SOLUTIONS MULTIFABS
+        for (int lev = 0; lev <= this->max_level; ++lev)
+        {
+            std::string filename_root;
+            
+            if (this->LevelIsValid(lev))
+            {
+                const std::string PHI_filepath = IO::MakeGlobalOutputFilepath(folderpath_root, n, n_steps, "Checkpoint_Lv"+std::to_string(lev)+"_PHI", "");
+                const std::string X_filepath = IO::MakeGlobalOutputFilepath(folderpath_root, n, n_steps, "Checkpoint_Lv"+std::to_string(lev)+"_X", "");
+
+                VisMF::Read(this->meshes[lev]->PHI, PHI_filepath);
+                VisMF::Read(this->Xs[lev], X_filepath);
+            }
+        }
     }
     // ################################################################
 

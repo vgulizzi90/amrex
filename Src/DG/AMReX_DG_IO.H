@@ -105,6 +105,8 @@ void PrintNaNs(const MF & mf)
     }
 }
 
+void GotoNextLine(std::istream & is);
+
 
 } // namespace IO
 } // namespace DG

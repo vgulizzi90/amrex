@@ -361,6 +361,12 @@ void MakeStepFolder(const std::string & folderpath_root, const int n, const int 
     ParallelDescriptor::Barrier();
 }
 
+void GotoNextLine(std::istream & is)
+{
+    constexpr std::streamsize bl_ignore_max{100000};
+    is.ignore(bl_ignore_max, '\n');
+}
+
 } // namespace IO
 } // namespace DG
 } // namespace amrex

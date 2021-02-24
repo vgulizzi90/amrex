@@ -1,5 +1,5 @@
 # SPACE ###############################################################
-geometry.prob_lo     = 0.0 0.0 0.0
+geometry.prob_lo     = 0.0 0.5 0.5
 geometry.prob_hi     = 1.0 1.0 1.0
 geometry.is_periodic = 0 0 0
 #######################################################################
@@ -18,9 +18,7 @@ time.n_steps = 10000
 # AMR =================================================================
 amr.v = 1
 
-#amr.restart = 
-
-amr.n_cell        = 16 16 16
+amr.n_cell        = 16 8 8
 amr.max_grid_size = 4 4 4
 amr.max_level     = 2
 amr.ref_ratio     = 4 4 4
@@ -103,9 +101,9 @@ problem.params = 1.4 0.2 2.81 1.0 0.0 1.0 0.10 0.5 0.5
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 5
+plot_int = 120
 plot_filepath = PROBLEM_THREE_LEVELS
-checkpoint_int = 5
+checkpoint_int = 120
 checkpoint_filepath = PROBLEM_THREE_LEVELS
 
 # 2D
@@ -113,4 +111,6 @@ regrid_int = 5
 
 # 3D
 #regrid_int = 8
+
+amr.restart = 120
 #######################################################################

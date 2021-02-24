@@ -150,6 +150,9 @@ struct InputReaderBase
     int checkpoint_int;
 
     int regrid_int;
+
+    int restart;
+    Real restart_time;
     // ################################################################
 
     // CONSTRUCTOR ####################################################
@@ -158,7 +161,9 @@ struct InputReaderBase
     use_sub_cell_limiter{false},
     plot_int{-1},
     checkpoint_int{-1},
-    regrid_int{-1}
+    regrid_int{-1},
+    restart{-1},
+    restart_time{0.0}
     {
         if (read_from_file)
         {
@@ -198,6 +203,10 @@ struct InputReaderBase
 
         // REGRIDDING =================================================
         pp.query("regrid_int", this->regrid_int);
+        // ============================================================
+
+        // RESTART ====================================================
+        pp.query("restart", this->restart);
         // ============================================================
     }
     // ################################################################
@@ -245,6 +254,17 @@ public InputReaderBase
         res = res || (n == this->time.n_steps);
         res = res || (std::abs(t/this->time.T-1.0) < 1.0e-12);
         res = res && (this->plot_int > 0);
+
+        return res;
+    }
+
+    bool Checkpoint(const int n, const Real t) const
+    {
+        bool res;
+        res = (n%(this->checkpoint_int) == 0);
+        res = res || (n == this->time.n_steps);
+        res = res || (std::abs(t/this->time.T-1.0) < 1.0e-12);
+        res = res && (this->checkpoint_int > 0);
 
         return res;
     }
@@ -397,6 +417,17 @@ public InputReaderBase
         res = res || (n == this->time.n_steps);
         res = res || (std::abs(t/this->time.T-1.0) < 1.0e-12);
         res = res && (this->plot_int > 0);
+
+        return res;
+    }
+
+    bool Checkpoint(const int n, const Real t) const
+    {
+        bool res;
+        res = (n%(this->checkpoint_int) == 0);
+        res = res || (n == this->time.n_steps);
+        res = res || (std::abs(t/this->time.T-1.0) < 1.0e-12);
+        res = res && (this->checkpoint_int > 0);
 
         return res;
     }

@@ -54,6 +54,11 @@ void main_main()
     // DO THE ANALYSIS
     {
         // MAKE OUTPUT FOLDER =========================================
+        if (amr.inputs.restart > 0)
+        {
+            // Do nothing
+        }
+        else
         {
             amrex::DG::IO::MakeFolder(amr.inputs.plot_filepath);
         }
@@ -64,10 +69,18 @@ void main_main()
         std::ofstream fp;
         if (amrex::ParallelDescriptor::IOProcessor())
         {
-            const std::string stats_filepath = amrex::DG::IO::MakePath({amr.inputs.plot_filepath, "Stats.txt"});
-
             time_t date_and_time = time(0);
             char * date_and_time_ = ctime(&date_and_time);
+            
+            std::string stats_filepath;
+            if (amr.inputs.restart > 0)
+            {
+                stats_filepath = amrex::DG::IO::MakePath({amr.inputs.plot_filepath, "Stats_"+std::to_string(amr.inputs.restart)+".txt"});
+            }
+            else
+            {
+                stats_filepath = amrex::DG::IO::MakePath({amr.inputs.plot_filepath, "Stats.txt"});
+            }
             
             fp.open(stats_filepath, std::ofstream::app);
             fp << std::endl << "ANALYSIS STATISTICS - " << date_and_time_ << "\n";
@@ -122,8 +135,8 @@ void main_main()
             {
                 const amrex::Real r = amr.IG.params[5];
 
-                volume = AMREX_D_TERM(len[0],*len[1],*len[2])-AMREX_D_PICK(2.0*r, M_PI*r*r, (4.0/3.0)*M_PI*r*r*r);
-                surface = AMREX_D_PICK(0.0, 2.0*M_PI*r, 4.0*M_PI*r*r);
+                volume = AMREX_D_TERM(len[0],*len[1],*len[2])-AMREX_D_PICK(2.0*r, 0.5*M_PI*r*r, 0.25*(4.0/3.0)*M_PI*r*r*r);
+                surface = AMREX_D_PICK(0.0, M_PI*r, M_PI*r*r);
             }
             else
             {
@@ -137,8 +150,8 @@ exit(-1);
         // EXPORT
         if (amr.inputs.Plot())
         {
-            const int n = 0;
-            const amrex::Real t = 0.0;
+            const int n = ((amr.inputs.restart > 0) ? amr.inputs.restart : 0);
+            const amrex::Real t = ((amr.inputs.restart > 0) ? amr.inputs.restart_time : 0.0);
             amrex::DG::Export_VTK(amr.inputs.plot_filepath, n, amr.inputs.time.n_steps,
                                   t, DG_N_SOL, amr, amr.IG);
         }
@@ -189,8 +202,8 @@ exit(-1);
             eta = 0.0;
 
             // ADVANCE IN TIME
-            n = 0;
-            t = 0.0;
+            n = ((amr.inputs.restart > 0) ? amr.inputs.restart : 0);
+            t = ((amr.inputs.restart > 0) ? amr.inputs.restart_time : 0.0);
             dt = 0.0;
             while ((t < amr.inputs.time.T*(1.0-1.0e-12)) && (n < amr.inputs.time.n_steps))
             {
@@ -217,12 +230,20 @@ exit(-1);
                     amrex::DG::Export_VTK(amr.inputs.plot_filepath, n, amr.inputs.time.n_steps,
                                           t, DG_N_SOL, amr, amr.IG);
                 }
+                // WRITE CHECKPOINT
+                if (amr.inputs.Checkpoint(n, t))
+                {
+                    amrex::DG::WriteCheckpoint(n, t, amr);
+                }
 
                 // CLOCK TIME PER TIME STEP TOC
                 tps_stop = amrex::second();
                 amrex::ParallelDescriptor::ReduceRealMax(tps_stop, IOProc);
 
-                tps = (tps*n+(tps_stop-tps_start))/(n+1);
+                {
+                    const int m = n-((amr.inputs.restart > 0) ? amr.inputs.restart : 0);
+                    tps = (tps*m+(tps_stop-tps_start))/(m+1);
+                }
                 eta = (amr.inputs.time.T-t)/dt*tps;
 
                 // REPORT TO SCREEN

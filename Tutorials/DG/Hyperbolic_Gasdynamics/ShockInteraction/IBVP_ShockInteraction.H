@@ -729,13 +729,66 @@ exit(-1);
     */
     void Init()
     {
-        // PARAMETERS -------------------------------------------------
-        const amrex::Real t = 0.0;
-        // ------------------------------------------------------------
+        if (this->inputs.restart > 0)
+        {
+            // INIT THE LEVELS
+            for (int lev = 0; lev <= this->max_level; ++lev)
+            {
+                this->meshes[lev] = new amrex::DG::ImplicitMesh();
+                this->matfactories[lev] = new amrex::DG::MatrixFactory();
+                if (lev != this->max_level)
+                {
+                    this->mfs[lev] = new amrex::DG::MatrixFactory();
+                }
+            }
 
-        // CALL PARENT CLASS METHOD -----------------------------------
-        this->InitFromScratch(t);
-        // -----------------------------------------------------------
+            // LOAD THE LEVELSET FUNCTIONS AND SOLUTION MULTIFABS
+            this->InitMultiFabsFromCheckpointFile();
+
+            // MAKE THE LEVELS
+            const int N_PHI = 1;
+            const int N_DOM = 1;
+            const int ngr = 1;
+            int phi_info[2];
+
+            for (int lev = 0; lev <= this->max_level; ++lev)
+            {
+                amrex::DG::InputReader level_inputs(false);
+                this->ExtractLevelInputs(lev, level_inputs);
+
+                this->meshes[lev]->define(this->Geom(lev), this->grids[lev], this->dmap[lev], level_inputs);
+                this->IG.F_DOM2PHI(0, phi_info);
+                this->meshes[lev]->Dom2Phi = {phi_info[0], phi_info[1]};
+                this->meshes[lev]->Make(N_PHI, N_DOM);
+
+                this->matfactories[lev]->define(this->Geom(lev), this->meshes[lev]->cc_ba, this->meshes[lev]->dm, level_inputs);
+                this->matfactories[lev]->EvalMassMatrices(*this->meshes[lev]);
+                if (lev > 0)
+                {
+                    this->matfactories[lev]->EvalInterpolationOperator(*this->meshes[lev],
+                                                                       this->refRatio(lev-1),
+                                                                       *this->meshes[lev-1],
+                                                                       *this->matfactories[lev-1]);
+                }
+                if (lev != this->max_level)
+                {
+                    this->mfs[lev]->define(this->Geom(lev), level_inputs.dG.space_p-1, level_inputs.dG.space_p);
+                    this->mfs[lev]->EvalMassMatrices(*this->meshes[lev]);
+                    this->mfs[lev]->EvalInterpolationOperator(*this->meshes[lev],
+                                                              amrex::IntVect::TheUnitVector(),
+                                                              *this->meshes[lev],
+                                                              *this->matfactories[lev]);
+                }
+
+                this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, ngr);
+                this->masks[lev] = __DG_CELL_UNMASKED__;
+            }
+        }
+        else
+        {
+            const amrex::Real t = 0.0;
+            this->InitFromScratch(t);
+        }
 
         // UPDATE MASKS ----
         this->UpdateMasks();

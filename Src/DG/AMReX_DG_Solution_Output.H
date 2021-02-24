@@ -2462,6 +2462,89 @@ void Export_VTK(const std::string & folderpath_root,
 }
 
 /**
+ * \brief Save solution contained in an AMR data structure.
+ *
+ * \param[in] n: time step index.
+ * \param[in] t: time.
+ * \param[in] AMR: the input AMR class.
+*/
+template <typename AMR_CLASS>
+void WriteCheckpoint(const int n, const Real t, const AMR_CLASS & AMR)
+{
+    const std::string folderpath_root = AMR.inputs.checkpoint_filepath;
+    const int n_steps = AMR.inputs.time.n_steps;
+    const int finest_level = AMR.maxLevel();
+
+    // HEADER FILE
+    {
+        if (ParallelDescriptor::IOProcessor())
+        {   
+            const std::string header_filepath = IO::MakeGlobalOutputFilepath(folderpath_root, n, n_steps, "Checkpoint_Header", "txt");
+            time_t date_and_time = time(0);
+            char * date_and_time_ = ctime(&date_and_time);
+            
+            std::ofstream fp;
+            fp.precision(17);
+
+            fp.open(header_filepath, std::ofstream::app);
+            fp << std::endl << "CHECKPOINT HEADER FILE - " << date_and_time_ << "\n";
+            fp << "| Number of levels: " << finest_level+1 << std::endl;
+            fp << "| time: " << t << std::endl;
+            fp.close();
+        }
+
+        // HEADER FILE FOR THE MULTIFABS
+        if (ParallelDescriptor::IOProcessor())
+        {
+            const std::string header_filepath = IO::MakeGlobalOutputFilepath(folderpath_root, n, n_steps, "Checkpoint_Header_MF", "txt");
+            VisMF::IO_Buffer io_buffer(VisMF::IO_Buffer_Size);
+
+            std::ofstream fp;
+            fp.precision(17);
+            fp.rdbuf()->pubsetbuf(io_buffer.dataPtr(), io_buffer.size());
+            fp.open(header_filepath.c_str(), std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
+            if(!fp.good())
+            {
+                FileOpenFailed(header_filepath);
+            }
+
+            fp << "Checkpoint file\n";
+            fp << finest_level << "\n";
+            for (int lev = 0; lev <= finest_level; ++lev)
+            {
+                AMR.boxArray(lev).writeOn(fp);
+                fp << '\n';
+                fp << AMR.meshes[lev]->PHI.n_comp << "\n";
+                fp << AMR.meshes[lev]->PHI.n_grow << "\n";
+                fp << AMR.Xs[lev].n_comp << "\n";
+                fp << AMR.Xs[lev].n_grow << "\n";
+            }
+            
+            fp.close();
+        }
+    }
+    
+    // LEVELSET FUNCTIONS AND SOLUTIONS MULTIFABS
+    for (int lev = 0; lev <= finest_level; ++lev)
+    {
+        std::string filename_root;
+        
+        if (AMR.LevelIsValid(lev))
+        {
+            const ImplicitMesh & mesh = *AMR.meshes[lev];
+            const MultiFab & PHI = mesh.PHI;
+            const MultiFab & X = AMR.Xs[lev];
+
+            const std::string PHI_filepath = IO::MakeGlobalOutputFilepath(folderpath_root, n, n_steps, "Checkpoint_Lv"+std::to_string(lev)+"_PHI", "");
+            const std::string X_filepath = IO::MakeGlobalOutputFilepath(folderpath_root, n, n_steps, "Checkpoint_Lv"+std::to_string(lev)+"_X", "");
+
+            VisMF::Write(PHI, PHI_filepath);
+            VisMF::Write(X, X_filepath);
+        }
+    }
+}
+
+/**
  * \brief Export solution contained in an AMR data structure to VTK format.
  *
  * \param[in] folderpath_root: root of the output folder path where the file will be dumped; it will

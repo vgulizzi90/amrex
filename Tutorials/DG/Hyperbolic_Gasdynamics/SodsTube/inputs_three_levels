@@ -17,8 +17,6 @@ time.n_steps = 50000
 # AMR =================================================================
 amr.v = 1
 
-#amr.restart = 
-
 amr.n_cell        = 64 64 64
 amr.max_grid_size = 4 4 4 4
 amr.max_level     = 2
@@ -111,8 +109,6 @@ problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.25 30.0 0.0
 # POST-PROCESSING INFO ################################################
 plot_int = 120
 plot_filepath = PROBLEM_THREE_LEVELS
-checkpoint_int = 120
-checkpoint_filepath = PROBLEM_THREE_LEVELS
 
 # 2D
 regrid_int = 5
