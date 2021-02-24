@@ -1,0 +1,122 @@
+# SPACE ###############################################################
+geometry.prob_lo     = 0.0 0.0 0.0
+geometry.prob_hi     = 1.0 1.0 1.0
+geometry.is_periodic = 0 0 0
+#######################################################################
+
+
+
+# TIME ################################################################
+time.T = 0.2
+time.n_steps = 50000
+#######################################################################
+
+
+
+# DISCRETIZATION ######################################################
+# AMR =================================================================
+amr.v = 1
+
+#amr.restart = 
+
+amr.n_cell        = 64 64 64
+amr.max_grid_size = 4 4 4 4
+amr.max_level     = 2
+amr.ref_ratio     = 4 4 4 4
+amr.blocking_factor = 4
+amr.n_error_buf = 2 2
+amr.grid_eff = 1.0
+# =====================================================================
+
+
+# AMR GRIDS ===========================================================
+# 2D
+grids.CFL = 0.27 0.27 0.27
+
+# 3D
+#grids.CFL = 0.2 0.1
+
+# LEVEL SET FUNCTIONS
+grids.space_p = 2 2 2
+grids.space_q = 2 2 2
+# =====================================================================
+
+
+# IMPLICITLY-DEFINED MESH =============================================
+# 2D
+implicit_meshes.space_q = 3 3 3
+implicit_meshes.space_q_ie = 5 5 5
+implicit_meshes.volume_fraction_threshold = 0.3 0.3 0.3
+
+# 3D
+#implicit_meshes.space_q = 3 3
+#implicit_meshes.space_q_ie = 8 8
+#implicit_meshes.volume_fraction_threshold = 0.2 0.1
+# =====================================================================
+
+
+# DISCONTINUOUS GALERKIN METHOD =======================================
+dG.space_p = 1 2 0
+# =====================================================================
+#######################################################################
+
+
+
+# PROBLEM #############################################################
+# RIEMANN PROBLEM =====================================================
+#problem.int_params = -1
+#problem.params = 1.4 1.0 0.0 1.0 0.5 0.125 0.0 0.1
+# =====================================================================
+
+# TILTED SOD'S TUBE ===================================================
+problem.int_params = 1
+
+# 2D
+problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.25 30.0 0.0
+
+# 3D
+#problem.params = 1.4 1.0 0.0 1.0 0.0 0.125 0.0 0.1 0.25 0.0 0.0
+# =====================================================================
+#######################################################################
+# NOTE: params contains the parameters of the problem, which should be
+#       input as follows
+#
+#       params: gamma rhoL uL pL s rhoR uR pR geo_parameters
+#
+#       where:
+#       - eb_flag: flag to activate the embedded boundary
+#                  -1: no embedded boundary
+#
+#       - gamma: specific heats ratio
+#       - (rhoL uL pL): left state
+#       - s: the shock location
+#       - (rhoR uR pR): right state
+#
+#       if (problem.int_params == -1):
+#        geo_parameters: None
+#       if (problem.int_params == 1 and AMREX_SPACEDIM == 2):
+#        geo_parameters: diam theta
+#        - diam: diameter of the embedded Sod's tube
+#        - theta: inclination of the embedded Sod's tube
+#       if (problem.int_params == 1 and AMREX_SPACEDIM == 3):
+#        geo_parameters: diam theta phi
+#        - diam: diameter of the embedded Sod's tube
+#        - theta: azimuth of the embedded Sod's tube
+#        - phi: elevation of the embedded Sod's tube
+#
+#######################################################################
+
+
+
+# POST-PROCESSING INFO ################################################
+plot_int = 120
+plot_filepath = PROBLEM_THREE_LEVELS
+checkpoint_int = 120
+checkpoint_filepath = PROBLEM_THREE_LEVELS
+
+# 2D
+regrid_int = 5
+
+# 3D
+#regrid_int = 8
+#######################################################################

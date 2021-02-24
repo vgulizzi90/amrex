@@ -694,7 +694,7 @@ public amrex::DG::AMR::Base
     // DATA MEMBERS ===================================================
     IDEAL_GAS IG;
     //SUBCELL_SLOPE_LIMITER limiter;
-    amrex::DG::MatrixFactory mf;
+    amrex::Vector<amrex::DG::MatrixFactory *> mfs;
     // ================================================================
 
 
@@ -703,7 +703,22 @@ public amrex::DG::AMR::Base
     :
     Base(),
     IG(this->inputs.problem.int_params, this->inputs.problem.params)
-    {}
+    {
+        const int n_levels = this->max_level+1;
+
+        this->mfs.resize(n_levels);
+    }
+
+    virtual ~AMR_IDEAL_GAS()
+    {
+        for (int lev = 0; lev <= this->max_level; ++lev)
+        {
+            if (this->mfs[lev] != nullptr)
+            {
+                delete this->mfs[lev];
+            }
+        }
+    }
     // ================================================================
 
 
@@ -744,14 +759,15 @@ public amrex::DG::AMR::Base
                                                                *this->matfactories[lev-1]);
         }
 
-        if ((lev == 0) && (lev != this->max_level))
+        if (lev != this->max_level)
         {
-            this->mf.define(this->Geom(lev), level_inputs.dG.space_p-1, level_inputs.dG.space_p);
-            this->mf.EvalMassMatrices(*this->meshes[lev]);
-            this->mf.EvalInterpolationOperator(*this->meshes[lev],
-                                               amrex::IntVect::TheUnitVector(),
-                                               *this->meshes[lev],
-                                               *this->matfactories[lev]);
+            this->mfs[lev] = new amrex::DG::MatrixFactory();
+            this->mfs[lev]->define(this->Geom(lev), level_inputs.dG.space_p-1, level_inputs.dG.space_p);
+            this->mfs[lev]->EvalMassMatrices(*this->meshes[lev]);
+            this->mfs[lev]->EvalInterpolationOperator(*this->meshes[lev],
+                                                      amrex::IntVect::TheUnitVector(),
+                                                      *this->meshes[lev],
+                                                      *this->matfactories[lev]);
         }
         // ------------------------------------------------------------
 
@@ -833,20 +849,29 @@ public amrex::DG::AMR::Base
         const char tagged = amrex::TagBox::SET;
         // ------------------------------------------------------------
 
-        // SET THE CACHED TAGS ----------------------------------------
-        this->cached_tags[lev].define(this->Xs[lev].boxarray, this->Xs[lev].distributionMap, 1, 1);
-        this->cached_tags[lev].setVal(untagged);
-        // ------------------------------------------------------------
-
         // EVAL TROUBLED CELLS ----------------------------------------
         this->IG.F_EVAL_TROUBLED(time,
                                  *this->meshes[lev],
                                  *this->matfactories[lev],
-                                 this->mf,
+                                 *this->mfs[lev],
                                  this->Xs[lev],
-                                 this->cached_tags[lev],
+                                 tags,
                                  tagged,
                                  untagged);
+
+        /**/
+        if ((lev+1) != this->max_level)
+        {
+            this->IG.F_UPDATE_TAGS(lev,
+                                   time,
+                                   *this->meshes[lev],
+                                   *this->matfactories[lev],
+                                   *this->mfs[lev],
+                                   this->Xs[lev],
+                                   tags,
+                                   tagged);
+        }
+        /**/
         // ------------------------------------------------------------
 
         // MAKE SURE TO TRACK THE SHOCK AT t = 0 ----------------------
@@ -924,12 +949,12 @@ public amrex::DG::AMR::Base
                 const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = this->meshes[lev]->geom.CellSizeArray();
                 const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo = this->meshes[lev]->geom.ProbLoArray();
                 
-                for (amrex::MFIter mfi(this->cached_tags[lev]); mfi.isValid(); ++mfi)
+                for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi)
                 {
                     const amrex::Box & bx = mfi.validbox();
 
                     amrex::Array4<short const> const & eType_fab = this->meshes[lev]->eType.array(mfi);
-                    amrex::Array4<char> const & tags_fab = this->cached_tags[lev].array(mfi);
+                    amrex::Array4<char> const & tags_fab = tags.array(mfi);
                     
                     amrex::ParallelFor(bx,
                     [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
@@ -951,18 +976,14 @@ public amrex::DG::AMR::Base
                     });
                     amrex::Gpu::synchronize();
                 }
-                this->cached_tags[lev].FillBoundary(this->meshes[lev]->geom.periodicity());
+                tags.FillBoundary(this->meshes[lev]->geom.periodicity());
             }
         }
         /**/
         // ------------------------------------------------------------
 
         // TAG AN ADDITIONAL LAYER OF CELLS ---------------------------
-        this->GrowTagging(*this->meshes[lev], this->cached_tags[lev], tagged, 1);
-        // ------------------------------------------------------------
-
-        // SAVE INFO IN TAGS ------------------------------------------
-        this->CopyTagging(tags, this->cached_tags[lev]);
+        //this->GrowTagging(*this->meshes[lev], tags, tagged, 1);
         // ------------------------------------------------------------
     }
     
@@ -975,10 +996,10 @@ public amrex::DG::AMR::Base
         // MAKE TAGGING CONSISTENT BY FURTHER TAGGING
         // i) Small cells merged with tagged extended
         // ii) Extended cells merging with tagged small cells 
-        this->FixTagging(*this->meshes[lev], this->cached_tags[lev], amrex::TagBox::SET);
+        this->FixTagging(*this->meshes[lev], tags, amrex::TagBox::BUF);
 
         // SAVE INFO IN TAGS ------------------------------------------
-        this->CopyTagging(tags, this->cached_tags[lev]);
+        //this->CopyTagging(tags, this->cached_tags[lev]);
         // ------------------------------------------------------------
     }
     // ================================================================
@@ -1010,13 +1031,19 @@ amrex::Abort("AMR_IDEAL_GAS.MakeNewLevelFromCoarse - lev == 0");
         else
         {
             // IMPLICIT MESH ------------------------------------------
-            this->meshes[lev] = new amrex::DG::ImplicitMesh();
+            if (this->meshes[lev] == nullptr)
+            {
+                this->meshes[lev] = new amrex::DG::ImplicitMesh();
+            }
             this->meshes[lev]->define(this->Geom(lev), ba, dm, level_inputs);
             this->meshes[lev]->MakeFromCoarse(time, ba, dm, this->refRatio(lev-1), *this->meshes[lev-1], this->IG);
             // --------------------------------------------------------
 
             // MATRIX FACTORY -----------------------------------------
-            this->matfactories[lev] = new amrex::DG::MatrixFactory();
+            if (this->matfactories[lev] == nullptr)
+            {
+                this->matfactories[lev] = new amrex::DG::MatrixFactory();
+            }
             this->matfactories[lev]->define(this->Geom(lev), this->meshes[lev]->cc_ba, this->meshes[lev]->dm, level_inputs);
             this->matfactories[lev]->EvalMassMatrices(*this->meshes[lev]);
 
@@ -1026,6 +1053,20 @@ amrex::Abort("AMR_IDEAL_GAS.MakeNewLevelFromCoarse - lev == 0");
                                                                     this->refRatio(lev-1),
                                                                     *this->meshes[lev-1],
                                                                     *this->matfactories[lev-1]);
+            }
+
+            if (lev != this->max_level)
+            {
+                if (this->mfs[lev] == nullptr)
+                {
+                    this->mfs[lev] = new amrex::DG::MatrixFactory();
+                }
+                this->mfs[lev]->define(this->Geom(lev), level_inputs.dG.space_p-1, level_inputs.dG.space_p);
+                this->mfs[lev]->EvalMassMatrices(*this->meshes[lev]);
+                this->mfs[lev]->EvalInterpolationOperator(*this->meshes[lev],
+                                                          amrex::IntVect::TheUnitVector(),
+                                                          *this->meshes[lev],
+                                                          *this->matfactories[lev]);
             }
             // --------------------------------------------------------
 
@@ -1097,6 +1138,15 @@ amrex::Abort("AMR_IDEAL_GAS.RemakeLevel - lev == 0");
                                                                this->refRatio(lev-1),
                                                                *this->meshes[lev-1],
                                                                *this->matfactories[lev-1]);
+
+            if (lev != this->max_level)
+            {
+                this->mfs[lev]->EvalMassMatrices(*this->meshes[lev]);
+                this->mfs[lev]->EvalInterpolationOperator(*this->meshes[lev],
+                                                          amrex::IntVect::TheUnitVector(),
+                                                          *this->meshes[lev],
+                                                          *this->matfactories[lev]);
+            }
             // --------------------------------------------------------
 
             // MASKS --------------------------------------------------

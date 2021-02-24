@@ -2258,7 +2258,8 @@ amrex::Print() << std::endl;
     }
 
     template <typename MASK_MF, typename MASK_T>
-    void F_UPDATE_TAGS(const amrex::Real /*t*/,
+    void F_UPDATE_TAGS(const int lev,
+                       const amrex::Real /*t*/,
                        const amrex::DG::ImplicitMesh & mesh,
                        const amrex::DG::MatrixFactory & matfactory,
                        const amrex::DG::MatrixFactory & /*mf*/,
@@ -2287,6 +2288,23 @@ amrex::Print() << std::endl;
 
         // VARIABLES --------------------------------------------------
         amrex::MultiFab sensor(X.boxarray, X.distributionMap, 2, 1);
+
+        amrex::Real threshold;
+        // ------------------------------------------------------------
+
+        // DENSITY GRADIENT THRESHOLD ---------------------------------
+        if (lev == 0)
+        {
+            threshold = 0.5;
+        }
+        else if (lev == 1)
+        {
+            threshold = 2.0;
+        }
+        else
+        {
+            amrex::Abort("F_UPDATE_TAGS - Unexpected level");
+        }
         // ------------------------------------------------------------
 
         // UPDATE THE MASK
@@ -2324,8 +2342,8 @@ amrex::Print() << std::endl;
                     amrex::Real BF_lo[AMREX_SPACEDIM], BF_hi[AMREX_SPACEDIM];
                     amrex::Real x[AMREX_SPACEDIM], w;
                     amrex::Real grad_rho[AMREX_SPACEDIM], grad_rho_mag;
-                    amrex::Real err, norm;
-                    amrex::Real int_err, int_norm;
+                    amrex::Real val, norm;
+                    amrex::Real int_val, int_norm;
 
                     // SUPPORT OF THE BASIS FUNCTIONS
                     amrex::DG::BF_CELL(&prob_lo[0], &dx[0], i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
@@ -2334,7 +2352,7 @@ amrex::Print() << std::endl;
                     amrex::DG::DG_SOL_space_BFX sol(sp, BF_lo, BF_hi, X_fab, BF_i, BF_j, BF_k);
 
                     // EVAL THE INTEGRAL
-                    err = norm = 0.0;
+                    val = norm = 0.0;
 
                     // SELF CONTRIBUTION
                     {
@@ -2361,18 +2379,18 @@ amrex::Print() << std::endl;
                             grad_rho_mag = std::sqrt(AMREX_D_PICK(grad_rho[0]*grad_rho[0],+grad_rho[1]*grad_rho[1],+grad_rho[2]*grad_rho[2]));
 
                             // ADD INTEGRAL CONTRIBUTIONS
-                            int_err = int_norm = 0.0;
+                            int_val = int_norm = 0.0;
                             
-                            int_err = grad_rho_mag;
+                            int_val = grad_rho_mag;
                             int_norm = 1.0;
 
-                            err += int_err*w;
+                            val += int_val*w;
                             norm += int_norm*w;
                         }
                     }
 
                     sensor_fab(i,j,k,0) = norm;
-                    sensor_fab(i,j,k,1) = err;
+                    sensor_fab(i,j,k,1) = val;
                 }
             });
             amrex::Gpu::synchronize();
@@ -2397,10 +2415,10 @@ amrex::Print() << std::endl;
                 if (amrex::DG::ELM_IS_VALID(etype) && (mask_fab(i,j,k) != masked))
                 {
                     // LOCAL VARIABLES
-                    amrex::Real err, norm;
+                    amrex::Real val, norm;
 
                     norm = sensor_fab(i,j,k,0);
-                    err = sensor_fab(i,j,k,1);
+                    val = sensor_fab(i,j,k,1);
 
                     // ADD CONTRIBUTION FROM SMALL ELEMENTS
                     for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
@@ -2415,12 +2433,12 @@ amrex::Print() << std::endl;
                         if (nbr_merged_b == nbr_b)
                         {
                             norm += sensor_fab(nbr_i,nbr_j,nbr_k,0);
-                            err += sensor_fab(nbr_i,nbr_j,nbr_k,1);
+                            val += sensor_fab(nbr_i,nbr_j,nbr_k,1);
                         }
                     }
 
-                    err = err/norm;
-                    if (err > 100.0)
+                    val = val/norm;
+                    if (val > threshold)
                     {
                         mask_fab(i,j,k) = masked;
                     }
@@ -2429,20 +2447,6 @@ amrex::Print() << std::endl;
             amrex::Gpu::synchronize();
         }
         mask.FillBoundary(mesh.geom.periodicity());
-    }
-
-    template <typename MASK_MF, typename MASK_T>
-    void F_EVAL_TAGS(const amrex::Real t,
-                     const amrex::DG::ImplicitMesh & mesh,
-                     const amrex::DG::MatrixFactory & matfactory,
-                     const amrex::DG::MatrixFactory & mf,
-                     const amrex::MultiFab & X,
-                     MASK_MF & mask,
-                     const MASK_T masked,
-                     const MASK_T unmasked) const
-    {
-        mask.setVal(unmasked);
-        this->F_UPDATE_TAGS(t, mesh, matfactory, mf, X, mask, masked);
     }
     // ================================================================
 };
