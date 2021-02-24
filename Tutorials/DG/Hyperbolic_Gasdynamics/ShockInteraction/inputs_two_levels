@@ -25,7 +25,7 @@ amr.max_grid_size = 4 4 4
 amr.max_level     = 1
 amr.ref_ratio     = 4 4 4
 amr.blocking_factor = 1
-amr.n_error_buf = 2
+amr.n_error_buf = 4
 amr.grid_eff = 1.0
 # =====================================================================
 

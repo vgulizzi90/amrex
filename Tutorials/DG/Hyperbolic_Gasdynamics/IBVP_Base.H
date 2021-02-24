@@ -2182,7 +2182,7 @@ amrex::Print() << std::endl;
         }
         else if (sp == 3)
         {
-            ds = AMREX_D_PICK(-2.5, -3.0, -3.425);
+            ds = AMREX_D_PICK(-2.5, -4.0, -3.425);
         }
         
         for (amrex::MFIter mfi(X); mfi.isValid(); ++mfi)

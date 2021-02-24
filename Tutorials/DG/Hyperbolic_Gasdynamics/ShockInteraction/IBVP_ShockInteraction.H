@@ -493,7 +493,8 @@ public amrex::DG::AMR::Base
         /**/
         if ((lev+1) != this->max_level)
         {
-            this->IG.F_UPDATE_TAGS(time,
+            this->IG.F_UPDATE_TAGS(lev,
+                                   time,
                                    *this->meshes[lev],
                                    *this->matfactories[lev],
                                    *this->mfs[lev],
