@@ -441,6 +441,8 @@ Print() << "nbr_is_tagged: " << (nbr_is_tagged ? "yes" : "no") << std::endl;
     template <typename TAG_MF, typename TAG_T>
     void FixTagging(const ImplicitMesh & mesh, TAG_MF & tags, const TAG_T tagval) const
     {
+        tags.FillBoundary(mesh.geom.periodicity());
+
         this->TagMergedElements(mesh, tags, tagval);
 
         //IO::PrintMultiFabEntry(tags, 11, 11, 11, 0);
