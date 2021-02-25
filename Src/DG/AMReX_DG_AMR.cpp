@@ -536,6 +536,9 @@ void CheckMergeLeaking(const ImplicitMesh & mesh, const int N_DOM, const iMultiF
 
                 if (elm_is_ghost && !nbr_is_ghost)
                 {
+#ifdef AMREX_USE_GPU
+                    Abort("ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking: ghost cell merged with a non-ghost cell");
+#else
                     std::string msg;
                     msg  = "\n";
                     msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
@@ -543,9 +546,13 @@ void CheckMergeLeaking(const ImplicitMesh & mesh, const int N_DOM, const iMultiF
                     msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
                     msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
                     Abort(msg);
+#endif
                 }
                 if (!elm_is_ghost && nbr_is_ghost)
                 {
+#ifdef AMREX_USE_GPU
+                    Abort("ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking: non-ghost cell merged with a ghost cell");
+#else
                     std::string msg;
                     msg  = "\n";
                     msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
@@ -553,9 +560,13 @@ void CheckMergeLeaking(const ImplicitMesh & mesh, const int N_DOM, const iMultiF
                     msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
                     msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
                     Abort(msg);
+#endif
                 }
                 if (cell_is_masked && !nbr_cell_is_masked)
                 {
+#ifdef AMREX_USE_GPU
+                    Abort("ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking: masked cell merged with a unmasked cell");
+#else
                     std::string msg;
                     msg  = "\n";
                     msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
@@ -563,9 +574,13 @@ void CheckMergeLeaking(const ImplicitMesh & mesh, const int N_DOM, const iMultiF
                     msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
                     msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
                     Abort(msg);
+#endif
                 }
                 if (!cell_is_masked && nbr_cell_is_masked)
                 {
+#ifdef AMREX_USE_GPU
+                    Abort("ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking: unmasked cell merged with a masked cell");
+#else
                     std::string msg;
                     msg  = "\n";
                     msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
@@ -573,6 +588,7 @@ void CheckMergeLeaking(const ImplicitMesh & mesh, const int N_DOM, const iMultiF
                     msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
                     msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
                     Abort(msg);
+#endif
                 }
             }
             else if (elm_is_extended)
@@ -592,6 +608,9 @@ void CheckMergeLeaking(const ImplicitMesh & mesh, const int N_DOM, const iMultiF
                     {
                         if (elm_is_ghost && !nbr_is_ghost)
                         {
+#ifdef AMREX_USE_GPU
+                            Abort("ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking: ghost cell extended onto a non-ghost cell");
+#else
                             std::string msg;
                             msg  = "\n";
                             msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
@@ -599,9 +618,13 @@ void CheckMergeLeaking(const ImplicitMesh & mesh, const int N_DOM, const iMultiF
                             msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
                             msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
                             Abort(msg);
+#endif
                         }
                         if (!elm_is_ghost && nbr_is_ghost)
                         {
+#ifdef AMREX_USE_GPU
+                            Abort("ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking: non-ghost cell extended onto a ghost cell");
+#else
                             std::string msg;
                             msg  = "\n";
                             msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
@@ -609,9 +632,13 @@ void CheckMergeLeaking(const ImplicitMesh & mesh, const int N_DOM, const iMultiF
                             msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
                             msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
                             Abort(msg);
+#endif
                         }
                         if (cell_is_masked && !nbr_cell_is_masked)
                         {
+#ifdef AMREX_USE_GPU
+                            Abort("ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking: masked cell extended onto a unmasked cell");
+#else
                             std::string msg;
                             msg  = "\n";
                             msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
@@ -619,9 +646,13 @@ void CheckMergeLeaking(const ImplicitMesh & mesh, const int N_DOM, const iMultiF
                             msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
                             msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
                             Abort(msg);
+#endif
                         }
                         if (!cell_is_masked && nbr_cell_is_masked)
                         {
+#ifdef AMREX_USE_GPU
+                            Abort("ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking: unmasked cell extended onto a masked cell");
+#else
                             std::string msg;
                             msg  = "\n";
                             msg += "ERROR: AMReX_DG_AMR.cpp - CheckMergeLeaking\n";
@@ -629,6 +660,7 @@ void CheckMergeLeaking(const ImplicitMesh & mesh, const int N_DOM, const iMultiF
                             msg += "|     elm("+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"): "+ELM_TYPE_DESCRIPTION(etype)+"\n";
                             msg += "| nbr_elm("+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"): "+ELM_TYPE_DESCRIPTION(nbr_etype)+"\n";
                             Abort(msg);
+#endif
                         }
                     }
                 }
