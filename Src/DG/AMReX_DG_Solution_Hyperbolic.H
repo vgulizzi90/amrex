@@ -854,8 +854,7 @@ void Eval_dXdt_BouContrib(const Real t,
                     }
                     else
                     {
-Print() << "HELLO - Eval_dXdt_BouContrib - NUMERICAL FLUX - nbr_dom != -1" << std::endl;
-exit(-1);
+Abort("HELLO - Eval_dXdt_BouContrib - NUMERICAL FLUX - nbr_dom != -1");
                     }
                 }
 
@@ -2382,8 +2381,7 @@ void Eval_dXdt_BouContrib_FV(const Real t,
                 }
                 else
                 {
-Print() << "Eval_dXdt_BouContrib_FV - NUMERICAL FLUX - nbr_dom != -1" << std::endl;
-exit(-1);
+Abort("Eval_dXdt_BouContrib_FV - NUMERICAL FLUX - nbr_dom != -1");
                 }
             }
         });
@@ -3141,8 +3139,7 @@ void Eval_dXdt_BouContrib(const Real t,
                 }
                 else
                 {
-Print() << "Eval_dXdt_BouContrib - NUMERICAL FLUX - nbr_dom != -1" << std::endl;
-exit(-1);
+Abort("Eval_dXdt_BouContrib - NUMERICAL FLUX - nbr_dom != -1");
                 }
             }
         });
