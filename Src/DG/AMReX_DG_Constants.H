@@ -97,6 +97,7 @@ typedef Algoim::QuadratureRule<AMREX_SPACEDIM> iQuadRule;
 
 // AUXILIARY CONSTANTS ################################################
 // NEIGHBORS INFO IN STENCIL
+AMREX_GPU_DEVICE
 const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> base_stencil_table_i =
 {
 #if (AMREX_SPACEDIM == 1)
@@ -109,6 +110,7 @@ const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> base_stencil_table_i =
     -1, +1, 0, 0, 0, 0
 #endif
 };
+AMREX_GPU_DEVICE
 const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> base_stencil_table_j =
 {
 #if (AMREX_SPACEDIM == 1)
@@ -121,6 +123,7 @@ const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> base_stencil_table_j =
     0, 0, -1, +1, 0, 0
 #endif
 };
+AMREX_GPU_DEVICE
 const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> base_stencil_table_k = 
 {
 #if (AMREX_SPACEDIM == 1)
@@ -134,6 +137,7 @@ const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> base_stencil_table_k =
 #endif
 };
 
+AMREX_GPU_DEVICE
 const GpuArray<int, __DG_EXTENDED_STENCIL_N_NBR__> extended_stencil_table_i =
 {
 #if (AMREX_SPACEDIM == 1)
@@ -150,6 +154,7 @@ const GpuArray<int, __DG_EXTENDED_STENCIL_N_NBR__> extended_stencil_table_i =
     -1, 0, +1, -1, 0, +1, -1, 0, +1
 #endif
 };
+AMREX_GPU_DEVICE
 const GpuArray<int, __DG_EXTENDED_STENCIL_N_NBR__> extended_stencil_table_j =
 {
 #if (AMREX_SPACEDIM == 1)
@@ -166,6 +171,7 @@ const GpuArray<int, __DG_EXTENDED_STENCIL_N_NBR__> extended_stencil_table_j =
     -1, -1, -1, 0,  0,  0, +1, +1, +1
 #endif
 };
+AMREX_GPU_DEVICE
 const GpuArray<int, __DG_EXTENDED_STENCIL_N_NBR__> extended_stencil_table_k = 
 {
 #if (AMREX_SPACEDIM == 1)
