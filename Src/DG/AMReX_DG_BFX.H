@@ -508,6 +508,9 @@ struct algoim_DG_space_BFX
     {
         if (p > DG_MAX_p)
         {
+#ifdef AMREX_USE_GPU
+            Abort("ERROR: AMReX_DG_BFX.H - The order of the basis functions exceeds the maximum allowed number");
+#else
             std::string msg;
             msg  = "\n";
             msg +=  "ERROR: AMReX_DG_BFX.H - algoim_DG_space_BFX.self_check()\n";
@@ -515,6 +518,7 @@ struct algoim_DG_space_BFX
             msg += "| p       : "+std::to_string(p)+".\n";
             msg += "| DG_MAX_p: "+std::to_string(DG_MAX_p)+".\n";
             Abort(msg);
+#endif
         }
     }
 
