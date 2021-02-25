@@ -440,6 +440,9 @@ void Eval_dXdt_DomContrib(const Real t,
 #ifdef AMREX_DEBUG
                 if (std::abs(elm_v/cell_v-vf)*100.0 > 1.0e-2)
                 {
+#ifdef AMREX_USE_GPU
+                    Abort("ERROR: AMReX_DG_Solution_Hyperbolic.H - The number of quadrature points might not be enough");
+#else
                     std::string msg;
                     msg  = "\n";
                     msg +=  "ERROR: AMReX_DG_Solution_Hyperbolic.H - Eval_dXdt_DomContrib\n";
@@ -451,6 +454,7 @@ void Eval_dXdt_DomContrib(const Real t,
                     msg += "| elm_v-vf*cell_v: "+std::to_string(elm_v-vf*cell_v)+".\n";
                     msg += "| err (%)        : "+std::to_string(std::abs(elm_v/cell_v-vf)*100.0)+".\n";
                     Abort(msg);
+#endif
                 }
 #endif
             }
@@ -1491,6 +1495,9 @@ void Eval_dXdt_DomContrib(const Real t,
 #ifdef AMREX_DEBUG
                 if (std::abs(elm_v/cell_v-vf)*100.0 > 1.0e-2)
                 {
+#ifdef AMREX_USE_GPU
+                    Abort("ERROR: AMReX_DG_Solution_Hyperbolic.H - The number of quadrature points might not be enough");
+#else
                     std::string msg;
                     msg  = "\n";
                     msg +=  "ERROR: AMReX_DG_Solution_Hyperbolic.H - Eval_dXdt_DomContrib\n";
@@ -1502,6 +1509,7 @@ void Eval_dXdt_DomContrib(const Real t,
                     msg += "| elm_v-vf*cell_v: "+std::to_string(elm_v-vf*cell_v)+".\n";
                     msg += "| err (%)        : "+std::to_string(std::abs(elm_v/cell_v-vf)*100.0)+".\n";
                     Abort(msg);
+#endif
                 }
 #endif
             }
