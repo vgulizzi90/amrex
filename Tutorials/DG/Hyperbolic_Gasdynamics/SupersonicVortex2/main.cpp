@@ -238,7 +238,7 @@ void main_main()
                 tps_stop = amrex::second();
                 amrex::ParallelDescriptor::ReduceRealMax(tps_stop, IOProc);
 
-                tps = (tps*n+(tps_stop-tps_start))/(n+1);
+                tps = (tps*(n-1)+(tps_stop-tps_start))/(1.0*n);
                 eta = (amr.inputs.time.T-t)/dt*tps;
 
                 // REPORT TO SCREEN

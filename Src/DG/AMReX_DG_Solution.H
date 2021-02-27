@@ -539,7 +539,7 @@ Real EvalError_FV(const Real t,
                   const IBVP_CLASS & IBVP)
 {
     // PROFILING ------------------------------------------------------
-    BL_PROFILE("EvalError(const Real, const ImplicitMesh &, ....)");
+    BL_PROFILE("EvalError_FV(const Real, const ImplicitMesh &, ....)");
     // ----------------------------------------------------------------
 
     // PARAMETERS =====================================================

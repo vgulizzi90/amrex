@@ -261,20 +261,6 @@ exit(-1);
                                           t, DG_N_SOL, amr, amr.IG);
                 }
 
-                // CLOCK TIME PER TIME STEP TOC
-                tps_stop = amrex::second();
-                amrex::ParallelDescriptor::ReduceRealMax(tps_stop, IOProc);
-
-                tps = (tps*n+(tps_stop-tps_start))/(n+1);
-                eta = (amr.inputs.time.T-t)/dt*tps;
-
-                // REPORT TO SCREEN
-                amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
-                amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
-                               << dt << ", t = " << t
-                               << ", tts [s] = " << tps 
-                               << ", eta = " << amrex::DG::IO::Seconds2HoursMinutesSeconds(eta) << std::endl;
-
                 // REGRID
                 if ((max_level > 0) && (amr.inputs.regrid_int > 0))
                 {
@@ -284,6 +270,20 @@ exit(-1);
                         amr.UpdateMasks();
                     }
                 }
+
+                // CLOCK TIME PER TIME STEP TOC
+                tps_stop = amrex::second();
+                amrex::ParallelDescriptor::ReduceRealMax(tps_stop, IOProc);
+
+                tps = (tps*(n-1)+(tps_stop-tps_start))/(1.0*n);
+                eta = (amr.inputs.time.T-t)/dt*tps;
+
+                // REPORT TO SCREEN
+                amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
+                amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
+                               << dt << ", t = " << t
+                               << ", tts [s] = " << tps 
+                               << ", eta = " << amrex::DG::IO::Seconds2HoursMinutesSeconds(eta) << std::endl;
             }
 
             if (amrex::ParallelDescriptor::IOProcessor())

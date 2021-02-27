@@ -9,6 +9,10 @@
 #ifndef AMREX_DG_SOLUTION_OUTPUT_H_
 #define AMREX_DG_SOLUTION_OUTPUT_H_
 
+//#define __DG_EXPORT_IMPLICIT_MESH_DOMDATA__
+#define __DG_EXPORT_IMPLICIT_MESH_BOUDATA__
+//#define __DG_EXPORT_IMPLICIT_MESH_CENTROIDS__
+
 #include <AMReX_DG_IO.H>
 
 namespace amrex
@@ -1497,12 +1501,18 @@ void ExportImplicitMesh_VTK(const std::string & folderpath_root,
                             const int N_PHI,
                             const int N_DOM)
 {
+#ifdef __DG_EXPORT_IMPLICIT_MESH_DOMDATA__
     ExportImplicitMesh_DomData_VTK(folderpath_root, n, n_steps, filename_root+"Dom",
                                    t, mesh, mask, N_PHI, N_DOM);
+#endif
+#ifdef __DG_EXPORT_IMPLICIT_MESH_BOUDATA__
     ExportImplicitMesh_BouData_VTK(folderpath_root, n, n_steps, filename_root+"Bou",
                                    t, mesh, mask, N_PHI, N_DOM);
-    //ExportImplicitMesh_Centroids_VTK(folderpath_root, n, n_steps, filename_root+"Centroids",
-    //                                 t, mesh, N_DOM);
+#endif
+#ifdef __DG_EXPORT_IMPLICIT_MESH_CENTROIDS__
+    ExportImplicitMesh_Centroids_VTK(folderpath_root, n, n_steps, filename_root+"Centroids",
+                                     t, mesh, N_DOM);
+#endif
 }
 
 /**
