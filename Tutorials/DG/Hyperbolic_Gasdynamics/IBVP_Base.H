@@ -56,7 +56,6 @@ struct IDEAL_GAS_BASE
     /**
      * \brief This method initializes the IBVP.
     */
-    AMREX_GPU_HOST_DEVICE
     IDEAL_GAS_BASE(const amrex::Vector<int> & input_int_params, const amrex::Vector<amrex::Real> & input_params)
     :
     eb_flag(input_int_params[0]),
@@ -2182,7 +2181,7 @@ amrex::Print() << std::endl;
         }
         else if (sp == 3)
         {
-            ds = AMREX_D_PICK(-2.5, -4.0, -3.425);
+            ds = AMREX_D_PICK(-2.5, -4.0, -4.00);
         }
         
         for (amrex::MFIter mfi(X); mfi.isValid(); ++mfi)

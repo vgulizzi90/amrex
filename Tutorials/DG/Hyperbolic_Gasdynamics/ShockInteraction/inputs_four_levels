@@ -7,8 +7,8 @@ geometry.is_periodic = 0 0 0
 
 
 # TIME ################################################################
-#time.T = 0.2
-time.T = 0.138359
+time.T = 0.2
+#time.T = 0.138359
 time.n_steps = 100000
 #######################################################################
 
@@ -30,10 +30,10 @@ amr.grid_eff = 1.0
 
 # AMR GRIDS ===========================================================
 # 2D
-grids.CFL = 0.27 0.27 0.27 0.27
+#grids.CFL = 0.27 0.27 0.27 0.27
 
 # 3D
-#grids.CFL = 0.2 0.2
+grids.CFL = 0.27 0.27 0.27 0.27
 
 # LEVEL SET FUNCTIONS
 grids.space_p = 2 2 2 2
@@ -43,14 +43,14 @@ grids.space_q = 2 2 2 2
 
 # IMPLICITLY-DEFINED MESH =============================================
 # 2D
-implicit_meshes.space_q = 3 4 4 4
-implicit_meshes.space_q_ie = 5 6 6 6
-implicit_meshes.volume_fraction_threshold = 0.3 0.3 0.3 0.3
+#implicit_meshes.space_q = 3 4 4 4
+#implicit_meshes.space_q_ie = 5 6 6 6
+#implicit_meshes.volume_fraction_threshold = 0.3 0.3 0.3 0.3
 
 # 3D
-#implicit_meshes.space_q = 3 3
-#implicit_meshes.space_q_ie = 8 3
-#implicit_meshes.volume_fraction_threshold = 0.2 0.2
+implicit_meshes.space_q = 3 4 4 4
+implicit_meshes.space_q_ie = 6 8 8 8
+implicit_meshes.volume_fraction_threshold = 0.3 0.3 0.3 0.3
 # =====================================================================
 
 
@@ -71,7 +71,10 @@ dG.space_p = 1 3 3 0
 problem.int_params = 0
 
 # 2D
-problem.params = 1.4 0.2 2.81 1.0 0.0 1.0 0.10 0.5 0.5
+#problem.params = 1.4 0.2 2.81 1.0 0.0 1.0 0.10 0.5 0.5
+
+# 3D
+problem.params = 1.4 0.2 2.89 1.0 0.0 1.0 0.10 0.5 0.5 0.5
 # =====================================================================
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
@@ -95,6 +98,11 @@ problem.params = 1.4 0.2 2.81 1.0 0.0 1.0 0.10 0.5 0.5
 #        geo_parameters: r x1c x2c
 #        - r: radius of the embedded circle
 #        - (x1c x2c): coordinates of the center of the embedded circle
+#        if (problem.int_params == 0 and AMREX_SPACEDIM == 3):
+#        geo_parameters: r x1c x2c x3c
+#        - r: radius of the embedded circle
+#        - (x1c x2c x3c): coordinates of the center of the embedded
+#                         sphere
 #
 #######################################################################
 
@@ -107,10 +115,10 @@ checkpoint_int = 120
 checkpoint_filepath = PROBLEM_FOUR_LEVELS
 
 # 2D
-regrid_int = 5
+#regrid_int = 5
 
 # 3D
-#regrid_int = 8
+regrid_int = 5
 
-restart = 120
+restart = -1
 #######################################################################

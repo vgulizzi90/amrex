@@ -986,22 +986,6 @@ public amrex::DG::AMR::Base
         //this->GrowTagging(*this->meshes[lev], tags, tagged, 1);
         // ------------------------------------------------------------
     }
-    
-    virtual void ManualTagsPlacement(int lev, amrex::TagBoxArray & tags, const amrex::Vector<amrex::IntVect> & /*bf_lev*/) override
-    {
-        // QUICK RETURN IF WE REACHED THE MAXIMUM LEVEL ---------------
-        if (lev >= this->max_level) return;
-        // ------------------------------------------------------------
-
-        // MAKE TAGGING CONSISTENT BY FURTHER TAGGING
-        // i) Small cells merged with tagged extended
-        // ii) Extended cells merging with tagged small cells 
-        this->FixTagging(*this->meshes[lev], tags, amrex::TagBox::BUF);
-
-        // SAVE INFO IN TAGS ------------------------------------------
-        //this->CopyTagging(tags, this->cached_tags[lev]);
-        // ------------------------------------------------------------
-    }
     // ================================================================
 
     // MAKE NEW LEVEL FROM A COARSE LEVEL =============================

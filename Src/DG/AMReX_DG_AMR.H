@@ -320,7 +320,7 @@ exit(-1);
      *
     */
     template <typename TAG_MF, typename TAG_T>
-    void TagMergedElements(const ImplicitMesh & mesh, TAG_MF & tags, const TAG_T tagval) const
+    void TagMergedElements(const ImplicitMesh & mesh, TAG_MF & tags, const TAG_T tagval, const IntVect & bf) const
     {
         // PARAMETERS =================================================
         const int N_DOM = mesh.eType.n_comp/__DG_ELM_TYPE_N_COMP_PER_DOM__;
@@ -433,17 +433,19 @@ Print() << "nbr_is_tagged: " << (nbr_is_tagged ? "yes" : "no") << std::endl;
     /**
      * \brief Fix the tagging in such a way that merging does not happen across levels.
      *
-     * \param[in] mesh: ImplicitMesh data structure containing element type information.
+     * \param[in] lev: level that is being considered.
      * \param[inout] tags: an object containing tagging information.
      * \param[in] tagval: the value used to tag the cells.
-     *
+     * \param[in] bf_lev: vector containing the coarsening ratio of tags.
     */
     template <typename TAG_MF, typename TAG_T>
-    void FixTagging(const ImplicitMesh & mesh, TAG_MF & tags, const TAG_T tagval) const
+    void FixTagging(const int lev, TAG_MF & tags, const TAG_T tagval, const Vector<IntVect> & bf_lev) const
     {
+        const ImplicitMesh & mesh = *this->meshes[lev];
+
         tags.FillBoundary(mesh.geom.periodicity());
 
-        this->TagMergedElements(mesh, tags, tagval);
+        this->TagMergedElements(mesh, tags, tagval, bf_lev[lev]);
 
         //IO::PrintMultiFabEntry(tags, 11, 11, 11, 0);
         //IO::PrintMultiFabEntry(tags, 12, 11, 11, 0);
@@ -471,6 +473,18 @@ Print() << "nbr_is_tagged: " << (nbr_is_tagged ? "yes" : "no") << std::endl;
         }
         */
         // ============================================================
+    }
+
+    virtual void ManualTagsPlacement(int lev, TagBoxArray & tags, const Vector<IntVect> & bf_lev) override
+    {
+        // QUICK RETURN IF WE REACHED THE MAXIMUM LEVEL ---------------
+        if (lev >= this->max_level) return;
+        // ------------------------------------------------------------
+
+        // MAKE TAGGING CONSISTENT BY FURTHER TAGGING
+        // i) Small cells merged with tagged extended
+        // ii) Extended cells merging with tagged small cells 
+        this->FixTagging(lev, tags, TagBox::BUF, bf_lev);
     }
     // ################################################################
 

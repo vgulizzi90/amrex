@@ -37,6 +37,10 @@ public IDEAL_GAS_BASE
     //       - params[6-7]: coordinates of the center of the embedded
     //                      circle;
     //       - params[8]: not used;
+    //       if (this->eb_flag == 0 and AMREX_SPACEDIM == 3)
+    //       - params[5]: radius of the embedded circle;
+    //       - params[6-8]: coordinates of the center of the embedded
+    //                      sphere;
     // ================================================================
 
 
@@ -504,18 +508,6 @@ public amrex::DG::AMR::Base
         }
         /**/
         // ------------------------------------------------------------
-    }
-    
-    virtual void ManualTagsPlacement(int lev, amrex::TagBoxArray & tags, const amrex::Vector<amrex::IntVect> & bf_lev) override
-    {
-        // QUICK RETURN IF WE REACHED THE MAXIMUM LEVEL ---------------
-        if (lev >= this->max_level) return;
-        // ------------------------------------------------------------
-
-        // MAKE TAGGING CONSISTENT BY FURTHER TAGGING
-        // i) Small cells merged with tagged extended
-        // ii) Extended cells merging with tagged small cells 
-        this->FixTagging(*this->meshes[lev], tags, amrex::TagBox::BUF);
     }
     // ================================================================
 

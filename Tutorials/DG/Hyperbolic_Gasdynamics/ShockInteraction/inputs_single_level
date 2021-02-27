@@ -7,9 +7,8 @@ geometry.is_periodic = 0 0 0
 
 
 # TIME ################################################################
-#time.T = 0.2
-time.T = 0.138359
-time.n_steps = 5000
+time.T = 0.2
+time.n_steps = 100000
 #######################################################################
 
 
@@ -60,7 +59,10 @@ dG.space_p = 0
 problem.int_params = 0
 
 # 2D
-problem.params = 1.4 0.2 2.81 1.0 0.0 1.0 0.10 0.5 0.5
+#problem.params = 1.4 0.2 2.81 1.0 0.0 1.0 0.10 0.5 0.5
+
+# 3D
+problem.params = 1.4 0.2 2.89 1.0 0.0 1.0 0.10 0.5 0.5 0.5
 # =====================================================================
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
@@ -84,6 +86,11 @@ problem.params = 1.4 0.2 2.81 1.0 0.0 1.0 0.10 0.5 0.5
 #        geo_parameters: r x1c x2c
 #        - r: radius of the embedded circle
 #        - (x1c x2c): coordinates of the center of the embedded circle
+#        if (problem.int_params == 0 and AMREX_SPACEDIM == 3):
+#        geo_parameters: r x1c x2c x3c
+#        - r: radius of the embedded circle
+#        - (x1c x2c x3c): coordinates of the center of the embedded
+#                         sphere
 #
 #######################################################################
 
