@@ -2181,7 +2181,7 @@ amrex::Print() << std::endl;
         }
         else if (sp == 3)
         {
-            ds = AMREX_D_PICK(-2.5, -4.0, -4.00);
+            ds = AMREX_D_PICK(-2.5, -3.25, -4.25);
         }
         
         for (amrex::MFIter mfi(X); mfi.isValid(); ++mfi)
@@ -2375,7 +2375,7 @@ amrex::Print() << std::endl;
                             sol.eval_BF_table(x);
                             sol.set_u(RHO);
                             sol.eval_grad_unsafe(grad_rho);
-                            grad_rho_mag = std::sqrt(AMREX_D_PICK(grad_rho[0]*grad_rho[0],+grad_rho[1]*grad_rho[1],+grad_rho[2]*grad_rho[2]));
+                            grad_rho_mag = std::sqrt(AMREX_D_TERM(grad_rho[0]*grad_rho[0],+grad_rho[1]*grad_rho[1],+grad_rho[2]*grad_rho[2]));
 
                             // ADD INTEGRAL CONTRIBUTIONS
                             int_val = int_norm = 0.0;
