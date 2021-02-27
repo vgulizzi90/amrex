@@ -32,6 +32,7 @@ struct MatrixFactory
 
     // GRID
     StandardRectangle<AMREX_SPACEDIM> std_elem;
+    StandardRectangle<AMREX_SPACEDIM> pp_std_elem;
 
     // CHOLESKY DECOMPOSITION OF THE ELEMENTS' MASS MATRICES
     longMultiFab eMMCh_pos;
@@ -66,7 +67,8 @@ struct MatrixFactory
     {
         // STANDARD ELEMENT ===========================================
         this->std_elem.define(input_geom.CellSize(), input_dG_space_p, input_dG_space_q);
-        // ============================================================   
+        this->pp_std_elem.define(input_geom.CellSize(), input_dG_space_p, input_dG_space_p);
+        // ============================================================
     }
 
     void define(const amrex::Geometry & input_geom, const amrex::BoxArray & /*input_ba*/, const amrex::DistributionMapping & /*input_dm*/, const InputReader & inputs)

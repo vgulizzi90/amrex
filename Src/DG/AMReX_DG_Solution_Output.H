@@ -597,7 +597,7 @@ void ExportImplicitMesh_DomData_VTK(const std::string & folderpath_root,
     {
         VTK_cell_fields_names.push_back("ELM_TYPE_DOM_"+std::to_string(dom));
     }
-    VTK_cell_fields_names.push_back("Nq");
+    VTK_cell_fields_names.push_back("NQ");
     VTK_cell_fields_names.push_back("TAG");
 
     n_VTK_cell_fields = VTK_cell_fields_names.size();
@@ -1603,8 +1603,8 @@ void Export_VTK(const std::string & folderpath_root,
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
 
     // STANDARD ELEMENT
-    const int cell_dom_Ng = std::max(mesh.ls_std_elem.dom_Ng, mesh.im_std_elem.dom_Ng);
-    const int cell_e = std::max(mesh.ls_std_elem.g, mesh.im_std_elem.g);
+    const int cell_dom_Ng = matfactory.pp_std_elem.dom_Ng;
+    const int cell_e = matfactory.pp_std_elem.g;
     const int cell_dom_Ne = AMREX_D_PICK(cell_e, cell_e*cell_e, cell_e*cell_e*cell_e);
 #if (AMREX_SPACEDIM == 1)
     const Gpu::ManagedVector<int> subgrid_conn = VTK::GriddedLine_Connectivity(cell_e);
@@ -1619,9 +1619,9 @@ void Export_VTK(const std::string & folderpath_root,
 
     AMREX_D_TERM
     (
-        Real const * dom_XI1g_ptr = (mesh.ls_std_elem.g > mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI1g.data() : mesh.im_std_elem.dom_XI1g.data();,
-        Real const * dom_XI2g_ptr = (mesh.ls_std_elem.g > mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI2g.data() : mesh.im_std_elem.dom_XI2g.data();,
-        Real const * dom_XI3g_ptr = (mesh.ls_std_elem.g > mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI3g.data() : mesh.im_std_elem.dom_XI3g.data();
+        Real const * dom_XI1g_ptr = matfactory.pp_std_elem.dom_XI1g.data();,
+        Real const * dom_XI2g_ptr = matfactory.pp_std_elem.dom_XI2g.data();,
+        Real const * dom_XI3g_ptr = matfactory.pp_std_elem.dom_XI3g.data();
     )
 
     // DG
@@ -1973,8 +1973,8 @@ void Export_VTK_FV(const std::string & folderpath_root,
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
 
     // STANDARD ELEMENT
-    const int cell_dom_Ng = std::max(mesh.ls_std_elem.dom_Ng, mesh.im_std_elem.dom_Ng);
-    const int cell_e = std::max(mesh.ls_std_elem.g, mesh.im_std_elem.g);
+    const int cell_dom_Ng = std::min(mesh.ls_std_elem.dom_Ng, mesh.im_std_elem.dom_Ng);
+    const int cell_e = std::min(mesh.ls_std_elem.g, mesh.im_std_elem.g);
     const int cell_dom_Ne = AMREX_D_PICK(cell_e, cell_e*cell_e, cell_e*cell_e*cell_e);
 #if (AMREX_SPACEDIM == 1)
     const Gpu::ManagedVector<int> subgrid_conn = VTK::GriddedLine_Connectivity(cell_e);
@@ -1989,9 +1989,9 @@ void Export_VTK_FV(const std::string & folderpath_root,
 
     AMREX_D_TERM
     (
-        Real const * dom_XI1g_ptr = (mesh.ls_std_elem.g > mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI1g.data() : mesh.im_std_elem.dom_XI1g.data();,
-        Real const * dom_XI2g_ptr = (mesh.ls_std_elem.g > mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI2g.data() : mesh.im_std_elem.dom_XI2g.data();,
-        Real const * dom_XI3g_ptr = (mesh.ls_std_elem.g > mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI3g.data() : mesh.im_std_elem.dom_XI3g.data();
+        Real const * dom_XI1g_ptr = (mesh.ls_std_elem.g < mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI1g.data() : mesh.im_std_elem.dom_XI1g.data();,
+        Real const * dom_XI2g_ptr = (mesh.ls_std_elem.g < mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI2g.data() : mesh.im_std_elem.dom_XI2g.data();,
+        Real const * dom_XI3g_ptr = (mesh.ls_std_elem.g < mesh.im_std_elem.g) ? mesh.ls_std_elem.dom_XI3g.data() : mesh.im_std_elem.dom_XI3g.data();
     )
 
     // DG

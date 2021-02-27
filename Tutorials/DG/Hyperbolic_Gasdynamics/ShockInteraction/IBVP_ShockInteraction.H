@@ -262,10 +262,7 @@ exit(-1);
         {
             fields_names = {"density",
                             AMREX_D_DECL("velocity_x", "velocity_y", "velocity_z"),
-                            "pressure",
-                            "mach",
-                            "total_energy",
-                            "internal_energy"};
+                            "pressure"};
         }
         else
         {
@@ -284,7 +281,7 @@ exit(-1);
     {
         if ((this->eb_flag == -1) || (this->eb_flag == 0))
         {
-            fields_domains = {0, AMREX_D_DECL(0, 0, 0), 0, 0, 0, 0};
+            fields_domains = {0, AMREX_D_DECL(0, 0, 0), 0};
         }
         else
         {
@@ -326,9 +323,9 @@ exit(-1);
             F[RHOV3] = u3;
         )
         F[TE] = p;
-        F[TE+1] = M;
-        F[TE+2] = U[TE];
-        F[TE+3] = p/(rho*(g-1.0));
+        //F[TE+1] = M;
+        //F[TE+2] = U[TE];
+        //F[TE+3] = p/(rho*(g-1.0));
     }
     // ================================================================
 };
