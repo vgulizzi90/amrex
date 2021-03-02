@@ -2485,6 +2485,9 @@ void WriteCheckpoint(const int n, const Real t, const AMR_CLASS & AMR)
     const int n_steps = AMR.inputs.time.n_steps;
     const int finest_level = AMR.maxLevel();
 
+    // STEP FOLDER
+    IO::MakeStepFolder(folderpath_root, n, n_steps);
+
     // HEADER FILE
     {
         if (ParallelDescriptor::IOProcessor())
@@ -2492,11 +2495,18 @@ void WriteCheckpoint(const int n, const Real t, const AMR_CLASS & AMR)
             const std::string header_filepath = IO::MakeGlobalOutputFilepath(folderpath_root, n, n_steps, "Checkpoint_Header", "txt");
             time_t date_and_time = time(0);
             char * date_and_time_ = ctime(&date_and_time);
+            VisMF::IO_Buffer io_buffer(VisMF::IO_Buffer_Size);
             
             std::ofstream fp;
             fp.precision(17);
+            fp.rdbuf()->pubsetbuf(io_buffer.dataPtr(), io_buffer.size());
 
-            fp.open(header_filepath, std::ofstream::app);
+            fp.open(header_filepath.c_str(), std::ofstream::app);
+            if(!fp.good())
+            {
+                FileOpenFailed(header_filepath);
+            }
+            
             fp << std::endl << "CHECKPOINT HEADER FILE - " << date_and_time_ << "\n";
             fp << "| Number of levels: " << finest_level+1 << std::endl;
             fp << "| time: " << t << std::endl;
@@ -2512,6 +2522,7 @@ void WriteCheckpoint(const int n, const Real t, const AMR_CLASS & AMR)
             std::ofstream fp;
             fp.precision(17);
             fp.rdbuf()->pubsetbuf(io_buffer.dataPtr(), io_buffer.size());
+            
             fp.open(header_filepath.c_str(), std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
             if(!fp.good())
             {

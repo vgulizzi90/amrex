@@ -148,12 +148,15 @@ exit(-1);
         }
 
         // EXPORT
-        if (amr.inputs.Plot())
         {
             const int n = ((amr.inputs.restart > 0) ? amr.inputs.restart : 0);
             const amrex::Real t = ((amr.inputs.restart > 0) ? amr.inputs.restart_time : 0.0);
-            amrex::DG::Export_VTK(amr.inputs.plot_filepath, n, amr.inputs.time.n_steps,
-                                  t, DG_N_SOL, amr, amr.IG);
+
+            if (amr.inputs.Plot(n, t))
+            {
+                amrex::DG::Export_VTK(amr.inputs.plot_filepath, n, amr.inputs.time.n_steps,
+                                      t, DG_N_SOL, amr, amr.IG);
+            }
         }
 
         if (amr.contains_nan())

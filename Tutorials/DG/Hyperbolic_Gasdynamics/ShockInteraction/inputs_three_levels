@@ -109,9 +109,9 @@ problem.params = 1.4 0.2 2.89 1.0 0.0 1.0 0.10 0.5 0.5 0.5
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 120
+plot_int = -1
 plot_filepath = PROBLEM_THREE_LEVELS
-checkpoint_int = 120
+checkpoint_int = 1
 checkpoint_filepath = PROBLEM_THREE_LEVELS
 
 # 2D
@@ -120,5 +120,5 @@ checkpoint_filepath = PROBLEM_THREE_LEVELS
 # 3D
 regrid_int = 5
 
-amr.restart = -1
+amr.restart = 1
 #######################################################################

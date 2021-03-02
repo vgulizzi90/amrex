@@ -279,7 +279,7 @@ std::string MakeLocalOutputFilepath(const std::string & folderpath_root,
     std::string folderpath;
 
     ndigits = 1;
-    while (std::pow(10, ndigits) < n_steps) ndigits += 1;
+    while (std::pow(10, ndigits) <= n_steps) ndigits += 1;
 
     folderpath = Concatenate(folderpath_root+"/", n, ndigits);
 
@@ -308,7 +308,7 @@ std::string MakeGlobalOutputFilepath(const std::string & folderpath_root,
     std::string folderpath;
 
     ndigits = 1;
-    while (std::pow(10, ndigits) < n_steps) ndigits += 1;
+    while (std::pow(10, ndigits) <= n_steps) ndigits += 1;
 
     folderpath = Concatenate(folderpath_root+"/", n, ndigits);
 
@@ -347,7 +347,7 @@ void MakeStepFolder(const std::string & folderpath_root, const int n, const int 
     std::string folderpath;
 
     ndigits = 1;
-    while (std::pow(10, ndigits) < n_steps) ndigits += 1;
+    while (std::pow(10, ndigits) <= n_steps) ndigits += 1;
 
     folderpath = Concatenate(folderpath_root+"/", n, ndigits);
 
