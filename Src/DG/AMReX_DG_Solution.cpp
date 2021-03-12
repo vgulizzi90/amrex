@@ -444,6 +444,17 @@ void MultiplyByInverseMassMatrix(const ImplicitMesh & mesh,
     const int * Sol2Dom_ptr = Sol2Dom.data();
     // ================================================================
 
+#ifdef AMREX_DEBUG
+    if (X.contains_nan())
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution.cpp - MultiplyByInverseMassMatrix\n";
+        msg += "| X contains nans on entry.\n";
+        amrex::Abort(msg);
+    }
+#endif
+
     // ================================================================
     for (MFIter mfi(X); mfi.isValid(); ++mfi)
     {
@@ -495,7 +506,7 @@ void MultiplyByInverseMassMatrix(const ImplicitMesh & mesh,
     }
     X.FillBoundary(mesh.geom.periodicity());
 
-#if AMREX_DEBUG
+#ifdef AMREX_DEBUG
     if (X.contains_nan())
     {
         std::string msg;
@@ -560,7 +571,7 @@ void MultiplyByInverseMassMatrix(const ImplicitMesh & mesh,
         }
         X.FillBoundary(mesh.geom.periodicity());
         
-#if AMREX_DEBUG
+#ifdef AMREX_DEBUG
         if (X.contains_nan())
         {
             std::string msg;

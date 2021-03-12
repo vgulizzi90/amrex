@@ -192,7 +192,7 @@ exit(-1);
 
 
         // ADVANCE IN TIME ============================================
-        amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
+        amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
         {
             const int max_level = amr.maxLevel();
 
@@ -272,7 +272,7 @@ exit(-1);
                 fp << "| clock time per time step: " << std::scientific << std::setprecision(5) << std::setw(12) << tps << " s\n";
             }
         }
-        amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
+        amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
         // ============================================================
 
         // TOC ========================================================

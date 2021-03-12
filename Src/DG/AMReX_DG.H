@@ -15,6 +15,7 @@
 #include <AMReX_DG_StandardElement.H>
 #include <AMReX_DG_InputReader.H>
 #include <AMReX_DG_BFX.H>
+#include <AMReX_DG_NURBS.H>
 #include <AMReX_DG_IBVP.H>
 #include <AMReX_DG_ImplicitMesh.H>
 #include <AMReX_DG_MatrixFactory.H>

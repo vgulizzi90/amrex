@@ -2273,6 +2273,75 @@ else
         // ============================================================
 
         // CHECK THE CONSISTENCY OF THE MERGING INFORMATION ===========
+        for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+        {
+            for (MFIter mfi(this->eBouType[dir]); mfi.isValid(); ++mfi)
+            {
+                const Box & bx = mfi.validbox();
+                const Box fbx = convert(bx, IntVect::TheCellVector()).grow(1);
+
+                Array4<short const> const & eBouType_fab = this->eBouType[dir].array(mfi);
+                Array4<short const> const & eType_fab = this->eType.array(mfi);
+
+                ParallelFor(bx, N_DOM,
+                [=] AMREX_GPU_DEVICE (int fi, int fj, int fk, int dom) noexcept
+                {
+                    // ELEMENT BOUNDARY TYPE
+                    const short bou_type = eBouType_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
+
+                    if (ELM_BOU_IS_VALID(bou_type))
+                    {
+                        int i, j, k, nbr_i, nbr_j, nbr_k;
+                        short etype, nbr_etype;
+                        int BF_i, BF_j, BF_k, nbr_BF_i, nbr_BF_j, nbr_BF_k;
+
+                        FACE2NBRS(fi, fj, fk, dir, i, j, k, nbr_i, nbr_j, nbr_k);
+
+                        etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                        nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+
+                        BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+                        BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                        if (!fbx.contains(BF_i, BF_j, BF_k))
+                        {
+#ifdef AMREX_USE_GPU
+                            Abort("ERROR: IBVP_ImplicitMesh.H - ImplicitMesh::Make: Bad merging!");
+#else
+                            std::string msg;
+                            msg  = "\n";
+                            msg += "ERROR: AMREX_DG_ImplicitMesh.H - ImplicitMesh::Make\n";
+                            msg += "| The merging connects cells in diffent fab boxes.\n";
+                            msg += "| dir: "+std::to_string(dir)+"\n";
+                            msg += "| face: "+std::to_string(fi)+","+std::to_string(fj)+","+std::to_string(fk)+"\n";
+                            msg += "| cell   : "+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"\n";
+                            msg += "| BF_cell: "+std::to_string(BF_i)+","+std::to_string(BF_j)+","+std::to_string(BF_k)+"\n";
+                            Warning(msg);
+#endif
+                        }
+                        if (!fbx.contains(nbr_BF_i, nbr_BF_j, nbr_BF_k))
+                        {
+#ifdef AMREX_USE_GPU
+                            Abort("ERROR: IBVP_ImplicitMesh.H - ImplicitMesh::Make: Bad merging!");
+#else
+                            std::string msg;
+                            msg  = "\n";
+                            msg += "ERROR: AMREX_DG_ImplicitMesh.H - ImplicitMesh::Make\n";
+                            msg += "| The merging connects cells in diffent fab boxes.\n";
+                            msg += "| dir: "+std::to_string(dir)+"\n";
+                            msg += "| face: "+std::to_string(fi)+","+std::to_string(fj)+","+std::to_string(fk)+"\n";
+                            msg += "| nbr_cell   : "+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"\n";
+                            msg += "| nbr_BF_cell: "+std::to_string(nbr_BF_i)+","+std::to_string(nbr_BF_j)+","+std::to_string(nbr_BF_k)+"\n";
+                            Warning(msg);
+#endif
+                        }
+                    }
+                });
+                Gpu::synchronize();
+            }
+        }
+        
+        /*
         for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
         {
             const Box & bx = mfi.validbox();
@@ -2302,18 +2371,18 @@ else
 
                         if (!fbx.contains(nbr_BF_i, nbr_BF_j, nbr_BF_k))
                         {
-#if (AMREX_USE_CUDA)
+#ifdef AMREX_USE_GPU
                             Abort("ERROR: IBVP_ImplicitMesh.H - ImplicitMesh::Make: Bad merging!");
 #else
                             std::string msg;
                             msg  = "\n";
-                            msg += "ERROR: IBVP_utils.H - ImplicitMesh::Make\n";
+                            msg += "ERROR: AMREX_DG_ImplicitMesh.H - ImplicitMesh::Make\n";
                             msg += "| The merging connects cells in diffent fab boxes.\n";
                             msg += "| cell: "+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"\n";
                             msg += "| b: "+std::to_string(b)+"\n";
                             msg += "| nbr_cell   : "+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"\n";
                             msg += "| nbr_BF_cell: "+std::to_string(nbr_BF_i)+","+std::to_string(nbr_BF_j)+","+std::to_string(nbr_BF_k)+"\n";
-                            Abort(msg);
+                            Warning(msg);
 #endif
                         }
                     }
@@ -2321,6 +2390,7 @@ else
             });
             Gpu::synchronize();
         }
+        */
         // ============================================================
 
         // UPDATE THE CENTROIDS OF THE EXTENDED ELEMENTS ==============

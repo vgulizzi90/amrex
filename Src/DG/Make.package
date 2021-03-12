@@ -7,6 +7,7 @@ CEXE_headers += AMREX_DG_Constants.H \
     AMReX_DG_StandardElement.H \
     AMReX_DG_InputReader.H \
     AMReX_DG_BFX.H \
+    AMReX_DG_NURBS.H \
     AMReX_DG_IBVP.H \
     AMReX_DG_ImplicitMesh.H \
     AMReX_DG_MatrixFactory.H \

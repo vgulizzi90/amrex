@@ -2793,6 +2793,27 @@ void Eval_dXdt_BouFluxes(const Real t,
     const MultiFab * safe_c_X_ptr;
     // ================================================================
 
+#ifdef AMREX_DEBUG
+    // CHECK SOLUTION =================================================
+    if (c_X.contains_nan())
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - Eval_dXdt_BouFluxes\n";
+        msg += "| c_X contains nans.\n";
+        Abort(msg);
+    }
+    if (X.contains_nan())
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - Eval_dXdt_BouFluxes\n";
+        msg += "| X contains nans.\n";
+        Abort(msg);
+    }
+    // ================================================================
+#endif
+
     // SAFE COARSE DATA ===============================================
     if (parallel_copy_is_needed)
     {
@@ -2818,6 +2839,19 @@ void Eval_dXdt_BouFluxes(const Real t,
         safe_c_X_ptr = &c_X;
     }
     // ================================================================
+
+#ifdef AMREX_DEBUG
+    // CHECK SOLUTION =================================================
+    if (safe_c_X_ptr->contains_nan())
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - Eval_dXdt_BouFluxes\n";
+        msg += "| safe_c_X contains nans.\n";
+        Abort(msg);
+    }
+    // ================================================================
+#endif
 
     // INITIALIZATION =================================================
     for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
@@ -2995,6 +3029,20 @@ void Eval_dXdt_BouFluxes(const Real t,
         }
     }
     // ================================================================
+
+#ifdef AMREX_DEBUG
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+        if (FX[dir].contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - Eval_dXdt_BouFluxes\n";
+            msg += "| FX["+std::to_string(dir)+"] contains nans.\n";
+            Abort(msg);
+        }
+    }
+#endif
 }
 
 /**
@@ -3279,6 +3327,22 @@ void Eval_dXdt(const Real t,
     }
     // ================================================================
 
+#ifdef AMREX_DEBUG
+    // CHECK SOLUTION =================================================
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        if (Xs[lev].contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - Eval_dXdt\n";
+            msg += "| Xs contains nans at level "+std::to_string(lev)+" on entry.\n";
+            Abort(msg);
+        }
+    }
+    // ================================================================
+#endif
+
     // DOMAIN CONTRIBUTION TO THE TIME DERIVATIVES ====================
     for (int lev = 0; lev < n_valid_levels; ++lev)
     {
@@ -3357,11 +3421,11 @@ void Eval_dXdt(const Real t,
         if (matfactories[lev]->std_elem.p == 0)
         {
             Eval_dXdt_BouFluxes_FV(t,
-                                    c_rr, c_eType, c_sp, c_X,
-                                    *meshes[lev],
-                                    N_DOM, N_SOL,
-                                    Xs[lev], dXs[lev], FX[lev], offset,
-                                    IBVP);
+                                   c_rr, c_eType, c_sp, c_X,
+                                   *meshes[lev],
+                                   N_DOM, N_SOL,
+                                   Xs[lev], dXs[lev], FX[lev], offset,
+                                   IBVP);
         }
         // DISCONTINUOUS GALERKIN APPROACH
         else
@@ -3373,6 +3437,20 @@ void Eval_dXdt(const Real t,
                                 Xs[lev], FX[lev], offset,
                                 IBVP);
         }
+
+#ifdef AMREX_DEBUG
+        for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
+        {
+            if (FX[lev][dim].contains_nan())
+            {
+                std::string msg;
+                msg  = "\n";
+                msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - Eval_dXdt\n";
+                msg += "| FX["+std::to_string(dim)+"] contains nans at level "+std::to_string(lev)+".\n";
+                Abort(msg);
+            }
+        }
+#endif
     }
     // ----------------------------------------------------------------
     // ================================================================
@@ -3481,6 +3559,24 @@ void TakeRungeKuttaTimeStep(const int RK_order,
         }
     }
     // ================================================================
+
+#ifdef AMREX_DEBUG
+    // CHECK SOLUTION =================================================
+    for (int lev = 0; lev < n_valid_levels; ++lev)
+    {
+        const MultiFab & X = Xs[lev];
+
+        if (X.contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_Solution_Hyperbolic.H - TakeRungeKuttaTimeStep\n";
+            msg += "| Solution contains nans at level "+std::to_string(lev)+" on entry.\n";
+            Abort(msg);
+        }
+    }
+    // ================================================================
+#endif
 
     // SWAP NEW AND OLD ===============================================
     for (int lev = 0; lev < n_valid_levels; ++lev)
@@ -3701,6 +3797,7 @@ void TakeRungeKuttaTimeStep(const int RK_order,
                      ref_ratios[lev-1],
                      *meshes[lev-1], *matfactories[lev-1], masks[lev-1], Xs[lev-1]);
 
+#ifdef AMREX_DEBUG
         if (Xs[lev-1].contains_nan())
         {
             std::string msg;
@@ -3709,6 +3806,7 @@ void TakeRungeKuttaTimeStep(const int RK_order,
             msg += "| Solution contains nans at level "+std::to_string(lev-1)+" after restriction.\n";
             Abort(msg);
         }
+#endif
     }
     // ================================================================
 

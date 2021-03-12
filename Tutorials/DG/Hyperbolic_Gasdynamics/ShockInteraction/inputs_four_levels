@@ -94,11 +94,11 @@ problem.params = 1.4 0.2 2.89 1.0 0.0 1.0 0.10 0.5 0.5 0.5
 #
 #       if (problem.int_params == -1):
 #        geo_parameters: None
-#        if (problem.int_params == 0 and AMREX_SPACEDIM == 2):
+#       if (problem.int_params == 0 and AMREX_SPACEDIM == 2):
 #        geo_parameters: r x1c x2c
 #        - r: radius of the embedded circle
 #        - (x1c x2c): coordinates of the center of the embedded circle
-#        if (problem.int_params == 0 and AMREX_SPACEDIM == 3):
+#       if (problem.int_params == 0 and AMREX_SPACEDIM == 3):
 #        geo_parameters: r x1c x2c x3c
 #        - r: radius of the embedded circle
 #        - (x1c x2c x3c): coordinates of the center of the embedded

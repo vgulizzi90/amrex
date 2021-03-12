@@ -1,14 +1,14 @@
 # SPACE ###############################################################
 geometry.prob_lo     = 0.0 0.0 0.0
-geometry.prob_hi     = 1.0 1.0 1.0
+geometry.prob_hi     = 64.0 64.0 64.0
 geometry.is_periodic = 0 0 0
 #######################################################################
 
 
 
 # TIME ################################################################
-time.T = 1.0
-time.n_steps = 1
+time.T = 2.0
+time.n_steps = 100000
 #######################################################################
 
 
@@ -17,70 +17,72 @@ time.n_steps = 1
 # AMR =================================================================
 amr.v = 1
 
-amr.n_cell        = 64 64
-amr.max_grid_size = 4 4 4
-amr.max_level     = 0
+amr.n_cell        = 64 64 64
+amr.max_grid_size = 16 16 16
+amr.max_level     = 4
+amr.ref_ratio     = 4
+amr.blocking_factor = 4
+amr.n_error_buf = 4 4 4 2
+amr.grid_eff = 1.0
 # =====================================================================
 
 
 # AMR GRIDS ===========================================================
-grids.CFL = 1.0
+grids.CFL = 0.27 0.27 0.27 0.27 0.27
 
 # LEVEL SET FUNCTIONS
-grids.space_p = 2
-grids.space_q = 2
+grids.space_p = 3 3 3 4 4
+grids.space_q = 3 3 3 4 4
 # =====================================================================
 
 
 # IMPLICITLY-DEFINED MESH =============================================
-implicit_meshes.space_q = 3
-implicit_meshes.space_q_ie = 3
+implicit_meshes.space_q = 1 2 3 3 3
+implicit_meshes.space_q_ie = 1 5 6 6 6
 
-implicit_meshes.volume_fraction_threshold = 0.3
+implicit_meshes.volume_fraction_threshold = 0.3 0.3 0.3 0.3 0.3
 # =====================================================================
 
 
 # DISCONTINUOUS GALERKIN METHOD =======================================
-dG.space_p = 0
+dG.space_p = 1 1 2 3 3
 # =====================================================================
 #######################################################################
 
 
 
 # PROBLEM #############################################################
-#problem.int_params = -1
-#problem.params = 0
-
-#problem.int_params = 102
-#problem.params = 1.0 0.0 0.0 -8.85714 6.87143 -1.91429 6.85714 -5.27143 1.11429
-
 problem.int_params = 40012
-problem.params = 0.5 0.5 0.2 1.0
+problem.params = 1.4 0.5 2.0 32.01 32.0 1.0
 #######################################################################
-# NOTE: int_params and params contains the parameters of the problem,
-#       which should be input as follows
+# NOTE: params contains the parameters of the problem, which should be
+#       input as follows
 #
-#       int_params: eb_flag
-#       params: geo_properties
+#       params: gamma Mach_inf flow_direction geo_parameters
 #
 #       where:
 #       - eb_flag: flag to activate the embedded boundary
-#                  -1: no embedded boundary
-#                  102: biquadratic polynomial
 #                  40012: NACA 0012 airfoil
 #
-#       if (problem.int_params == -1):
-#        geo_parameters: None
-#       if (problem.int_params == 102):
-#        geo_parameters: a00 a10 a20 a01 a11 a21 a02 a12 a22
-#        - aij: coefficients multiplying x^i*y^j
+#       - gamma: specific heats ratio
+#       - Mach_inf: free-stream Mach number
+#       - flow_direction (in 2D):
+#         - alpha: angle of attack (in degrees)
+#       - flow_direction (in 3D):
+#         - alpha, beta: angle attack, angle of sideslip (in degrees)
+#
 #       if (problem.int_params == 40012):
-#        geo_parameters: xLE yLE chord alpha
+#        geo_parameters: xLE yLE chord
+#        - xLE yLE: coordinates of the leading edge
+#        - chord: length of the airfoil chord
+#
 #######################################################################
 
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = 100
-plot_filepath = PROBLEM_NACA0012_2D_LV1_m64x64
+plot_int = 50
+plot_filepath = PROBLEM_NACA0012
+checkpoint_int = -5
+checkpoint_filepath = PROBLEM_NACA0012
 #######################################################################

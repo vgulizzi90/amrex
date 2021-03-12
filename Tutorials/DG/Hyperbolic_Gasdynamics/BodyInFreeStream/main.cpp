@@ -55,6 +55,11 @@ void main_main()
     // DO THE ANALYSIS
     {
         // MAKE OUTPUT FOLDER =========================================
+        if (amr.inputs.restart > 0)
+        {
+            // Do nothing
+        }
+        else
         {
             amrex::DG::IO::MakeFolder(amr.inputs.plot_filepath);
         }
@@ -65,10 +70,18 @@ void main_main()
         std::ofstream fp;
         if (amrex::ParallelDescriptor::IOProcessor())
         {
-            const std::string stats_filepath = amrex::DG::IO::MakePath({amr.inputs.plot_filepath, "Stats.txt"});
-
             time_t date_and_time = time(0);
             char * date_and_time_ = ctime(&date_and_time);
+            
+            std::string stats_filepath;
+            if (amr.inputs.restart > 0)
+            {
+                stats_filepath = amrex::DG::IO::MakePath({amr.inputs.plot_filepath, "Stats_"+std::to_string(amr.inputs.restart)+".txt"});
+            }
+            else
+            {
+                stats_filepath = amrex::DG::IO::MakePath({amr.inputs.plot_filepath, "Stats.txt"});
+            }
             
             fp.open(stats_filepath, std::ofstream::app);
             fp << std::endl << "ANALYSIS STATISTICS - " << date_and_time_ << "\n";
@@ -137,27 +150,36 @@ void main_main()
                 const amrex::Real k = (a[0]/a[1])*std::sqrt((a[1]*a[1]-a[2]*a[2])/(a[0]*a[0]-a[2]*a[2]));
                 const amrex::Real E = std::tr1::ellint_1(std::acos(cph), k);
                 const amrex::Real F = std::tr1::ellint_2(std::acos(cph), k);
-                volume = len[0]*len[1]*len[1]-(4.0/3.0)*M_PI*a[0]*a[1]*a[2];
+                volume = len[0]*len[1]*len[2]-(4.0/3.0)*M_PI*a[0]*a[1]*a[2];
                 surface = a[2]*a[2]+a[0]*a[1]/sph*(E*sph*sph+F*cph*cph);
                 surface *= 2.0*M_PI;
 #endif
             }
             else
             {
-amrex::Print() << "main.cpp - CHECK THE COMPUTED QUADRATURE RULES" << std::endl;
-exit(-1);
+                const amrex::Real c = amr.IG.params[4];
+#ifdef NACA_ZERO_TE_THICKNESS
+                volume = len[0]*len[1]-2.0*0.2078398*c*c;
+                surface = 2.0*1.1892179*c;
+#else
+                volume = len[0]*len[1]-2.0*0.2078409*c*c;
+                surface = 2.0*1.1892391*c;
+#endif
             }
 
             amr.CheckQuadratureRules(volume, surface);
         }
 
         // EXPORT
-        if (amr.inputs.plot_int > 0)
         {
-            const int n = 0;
-            const amrex::Real t = 0.0;
-            amrex::DG::Export_VTK(amr.inputs.plot_filepath, n, amr.inputs.time.n_steps,
-                                  t, DG_N_SOL, amr, amr.IG);
+            const int n = ((amr.inputs.restart > 0) ? amr.inputs.restart : 0);
+            const amrex::Real t = ((amr.inputs.restart > 0) ? amr.inputs.restart_time : 0.0);
+
+            if (amr.inputs.Plot(n, t))
+            {
+                amrex::DG::Export_VTK(amr.inputs.plot_filepath, n, amr.inputs.time.n_steps,
+                                      t, DG_N_SOL, amr, amr.IG);
+            }
         }
 
         if (amr.contains_nan())
@@ -177,7 +199,7 @@ exit(-1);
 
             // LEVEL 0
             p = amr.inputs.dG[0].space_p;
-            RK_order = p+1;
+            RK_order = (p == 0) ? p+2 : p+1;
 
             // FINER LEVELS 
             for (int lev = 1; lev <= amr.maxLevel(); ++lev)
@@ -185,7 +207,7 @@ exit(-1);
                 if (amr.LevelIsValid(lev))
                 {
                     p = amr.inputs.dG[lev].space_p;
-                    RK_order = std::max(RK_order, p+1);
+                    RK_order = std::max(RK_order, (p == 0) ? p+2 : p+1);
                 }
             }
         }
@@ -193,8 +215,10 @@ exit(-1);
 
 
         // ADVANCE IN TIME ============================================
-        amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
+        amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
         {
+            const int max_level = amr.maxLevel();
+
             int n;
             amrex::Real t, dt, dom_err;
             amrex::Real tps_start, tps_stop, tps, eta;
@@ -204,8 +228,8 @@ exit(-1);
             eta = 0.0;
 
             // ADVANCE IN TIME
-            n = 0;
-            t = 0.0;
+            n = ((amr.inputs.restart > 0) ? amr.inputs.restart : 0);
+            t = ((amr.inputs.restart > 0) ? amr.inputs.restart_time : 0.0);
             dt = 0.0;
             while ((t < amr.inputs.time.T*(1.0-1.0e-12)) && (n < amr.inputs.time.n_steps))
             {
@@ -219,27 +243,43 @@ exit(-1);
 
                 // TIME STEP
                 amrex::DG::Hyperbolic::Explicit::TakeRungeKuttaTimeStep(RK_order, dt, t,
-                                                                        amr.meshes, amr.matfactories, amr.masks,
-                                                                        DG_N_SOL, amr.Xs, amr.IG);
-amrex::Print() << "main.cpp - TIME STEP" << std::endl;
-exit(-1);
+                                                                        amr.refRatio(), amr.meshes, amr.matfactories,
+                                                                        DG_N_SOL, amr.Xs, amr.masks, amr.IG);
 
                 // UPDATE TIME STEP
                 n += 1;
                 t += dt;
-                
+
                 // WRITE TO OUTPUT
-                if ((amr.inputs.plot_int > 0) && ((n%amr.inputs.plot_int == 0) || (std::abs(t/amr.inputs.time.T-1.0) < 1.0e-12)))
+                if (amr.inputs.Plot(n, t))
                 {
                     amrex::DG::Export_VTK(amr.inputs.plot_filepath, n, amr.inputs.time.n_steps,
                                           t, DG_N_SOL, amr, amr.IG);
                 }
+                // WRITE CHECKPOINT
+                if (amr.inputs.Checkpoint(n, t))
+                {
+                    amrex::DG::WriteCheckpoint(n, t, amr);
+                }
 
+                // REGRID
+                if ((max_level > 0) && (amr.inputs.regrid_int > 0))
+                {
+                    if (n%amr.inputs.regrid_int == 0)
+                    {
+                        amr.regrid(0, t);
+                        amr.UpdateMasks();
+                    }
+                }
+                
                 // CLOCK TIME PER TIME STEP TOC
                 tps_stop = amrex::second();
                 amrex::ParallelDescriptor::ReduceRealMax(tps_stop, IOProc);
 
-                tps = (tps*n+(tps_stop-tps_start))/(n+1);
+                {
+                    const int m = n-((amr.inputs.restart > 0) ? amr.inputs.restart : 0);
+                    tps = (tps*(m-1)+(tps_stop-tps_start))/(1.0*m);
+                }
                 eta = (amr.inputs.time.T-t)/dt*tps;
 
                 // REPORT TO SCREEN
@@ -255,7 +295,7 @@ exit(-1);
                 fp << "| clock time per time step: " << std::scientific << std::setprecision(5) << std::setw(12) << tps << " s\n";
             }
         }
-        amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
+        amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
         // ============================================================
 
         // TOC ========================================================

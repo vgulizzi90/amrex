@@ -448,7 +448,7 @@ void ProjectInitialConditions(const ImplicitMesh & mesh,
     }
     X.FillBoundary(mesh.geom.periodicity());
 
-#if AMREX_DEBUG
+#ifdef AMREX_DEBUG
     if (X.contains_nan())
     {
         std::string msg;
@@ -462,7 +462,7 @@ void ProjectInitialConditions(const ImplicitMesh & mesh,
 
     // EXTENDED ELEMENTS AND MULTIPLICATION BY INVERSE MASS MATRIX ====
     AddSmallElementsContribution(mesh, matfactory, N_SOL, Sol2Dom, X);
-#if AMREX_DEBUG
+#ifdef AMREX_DEBUG
     if (X.contains_nan())
     {
         std::string msg;
@@ -474,7 +474,7 @@ void ProjectInitialConditions(const ImplicitMesh & mesh,
 #endif
 
     MultiplyByInverseMassMatrix(mesh, matfactory, N_SOL, Sol2Dom, X, use_fabbox);
-#if AMREX_DEBUG
+#ifdef AMREX_DEBUG
     if (X.contains_nan())
     {
         std::string msg;
@@ -1348,6 +1348,7 @@ void FillBoundaryCells(const Real t,
     X.FillBoundary(mesh.geom.periodicity());
     // ================================================================
 
+#ifdef AMREX_DEBUG
     // CHECK ==========================================================
     if (X.contains_nan())
     {
@@ -1358,6 +1359,7 @@ void FillBoundaryCells(const Real t,
         Abort(msg);
     }
     // ================================================================
+#endif
 }
 
 /**
@@ -1596,6 +1598,7 @@ void FillInvalidCells(const Real t,
     X.FillBoundary(mesh.geom.periodicity());
     // ================================================================
 
+#ifdef AMREX_DEBUG
     // CHECK ==========================================================
     if (X.contains_nan())
     {
@@ -1606,6 +1609,7 @@ void FillInvalidCells(const Real t,
         Abort(msg);
     }
     // ================================================================
+#endif
 }
 
 /**

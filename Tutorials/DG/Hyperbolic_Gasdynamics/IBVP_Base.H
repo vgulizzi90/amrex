@@ -2292,6 +2292,7 @@ amrex::Print() << std::endl;
         // ------------------------------------------------------------
 
         // DENSITY GRADIENT THRESHOLD ---------------------------------
+        /*
         if (lev == 0)
         {
             threshold = 0.5;
@@ -2303,6 +2304,16 @@ amrex::Print() << std::endl;
         else
         {
             amrex::Abort("F_UPDATE_TAGS - Unexpected level");
+        }
+        */
+
+        if (lev == 2)
+        {
+            threshold = 2.0;
+        }
+        else
+        {
+            threshold = 1.0e4;
         }
         // ------------------------------------------------------------
 

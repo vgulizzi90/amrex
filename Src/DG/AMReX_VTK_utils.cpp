@@ -138,7 +138,7 @@ std::string MakeHeaderFilepath(const std::string & folderpath_root,
     int ndigits;
 
     ndigits = 1;
-    while (std::pow(10, ndigits) < n_steps) ndigits += 1;
+    while (std::pow(10, ndigits) <= n_steps) ndigits += 1;
 
     return Concatenate(folderpath_root+"/"+filename_root+"_", n, ndigits)+".pvtu";
 }
@@ -162,7 +162,7 @@ std::string MakeLocalFilepath(const int n,
     int ndigits;
 
     ndigits = 1;
-    while (std::pow(10, ndigits) < n_steps) ndigits += 1;
+    while (std::pow(10, ndigits) <= n_steps) ndigits += 1;
 
     return Concatenate("", n, ndigits)+"/"+filename_root+"_proc_"+std::to_string(proc)+".vtu";
 }
