@@ -69,8 +69,7 @@ Real curve_curvature(const Real * dkx)
 #endif
 #if (AMREX_SPACEDIM == 3)
     Real k;
-    Print() << "ERROR: AMReX_DG_NURBS.H - curve_curvature " << std::endl;
-    exit(-1);
+    Abort("ERROR: AMReX_DG_NURBS.H - curve_curvature ");
 #endif
 
     return k;
