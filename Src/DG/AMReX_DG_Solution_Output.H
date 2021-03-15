@@ -2533,12 +2533,15 @@ void WriteCheckpoint(const int n, const Real t, const AMR_CLASS & AMR)
             fp << finest_level << "\n";
             for (int lev = 0; lev <= finest_level; ++lev)
             {
-                AMR.boxArray(lev).writeOn(fp);
-                fp << '\n';
-                fp << AMR.meshes[lev]->PHI.n_comp << "\n";
-                fp << AMR.meshes[lev]->PHI.n_grow << "\n";
-                fp << AMR.Xs[lev].n_comp << "\n";
-                fp << AMR.Xs[lev].n_grow << "\n";
+                if (AMR.LevelIsValid(lev))
+                {
+                    AMR.boxArray(lev).writeOn(fp);
+                    fp << '\n';
+                    fp << AMR.meshes[lev]->PHI.n_comp << "\n";
+                    fp << AMR.meshes[lev]->PHI.n_grow << "\n";
+                    fp << AMR.Xs[lev].n_comp << "\n";
+                    fp << AMR.Xs[lev].n_grow << "\n";
+                }
             }
             
             fp.close();

@@ -233,6 +233,126 @@ exit(-1);
     }
 
     /**
+     * \brief  Tags all cells that are cut by the level set functions.
+     *
+     * \param[in] mesh: ImplicitMesh data structure containing element type information.
+     * \param[inout] tags: an object containing tagging information.
+     * \param[in] tagval: the value used to tag the cells.
+     *
+    */
+    template <typename TAG_MF, typename TAG_T>
+    void TrackLevelsets(const ImplicitMesh & mesh, TAG_MF & tags, const TAG_T tagval) const
+    {
+        // PARAMETERS =================================================
+        const int N_PHI = mesh.PHI.n_comp/mesh.ls_std_elem.Np;
+
+        // GRID
+        const GpuArray<Real, AMREX_SPACEDIM> dx = mesh.geom.CellSizeArray();
+        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = mesh.geom.ProbLoArray();
+
+        // STANDARD ELEMENT
+        const int cell_dom_Ng = mesh.ls_std_elem.dom_Ng;
+        AMREX_D_TERM
+        (
+            Real const * dom_XI1g_ptr = mesh.ls_std_elem.dom_XI1g.data();,
+            Real const * dom_XI2g_ptr = mesh.ls_std_elem.dom_XI2g.data();,
+            Real const * dom_XI3g_ptr = mesh.ls_std_elem.dom_XI3g.data();
+        )
+
+        // DG
+        const int sp = mesh.ls_std_elem.p;
+        // ============================================================
+
+        for (MFIter mfi(tags); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<Real const> const & PHI_fab = mesh.PHI.array(mfi);
+
+            auto const & tags_fab = tags.array(mfi);
+
+            ParallelFor(bx,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+                // LOCAL PARAMETERS
+                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                   prob_lo[1]+j*dx[1],
+                                                                   prob_lo[2]+k*dx[2])};
+                const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+1)*dx[0],
+                                                                   prob_lo[1]+(j+1)*dx[1],
+                                                                   prob_lo[2]+(k+1)*dx[2])};
+
+                // LOCAL VARIABLES
+                Real x[AMREX_SPACEDIM], PHI[__DG_MAX_N_PHI__];
+                int sgn[__DG_MAX_N_PHI__];
+                int g;
+                bool sign_changed;
+
+                // LEVELSETS
+                DG_PHI_space_BFX phi(sp, cell_lo, cell_hi, PHI_fab, i, j, k);
+
+                // LOOP OVER THE GRID POINTS
+                {
+                    g = 0;
+                    
+                    // GRID POINT
+                    AMREX_D_TERM
+                    (
+                        x[0] = dom_XI1g_ptr[g]+cell_lo[0];,
+                        x[1] = dom_XI2g_ptr[g]+cell_lo[1];,
+                        x[2] = dom_XI3g_ptr[g]+cell_lo[2];
+                    )
+
+                    // EVAL LEVELSETS
+                    phi.eval(x, 0, N_PHI, PHI);
+
+                    for (int ph = 0; ph < N_PHI; ++ph)
+                    {
+                        sgn[ph] = ((PHI[ph] > 0.0) ? +1 : -1);
+                    }
+
+                    g += 1;
+                }
+                sign_changed = false;
+                while (!sign_changed && (g < cell_dom_Ng))
+                {
+                    // GRID POINT
+                    AMREX_D_TERM
+                    (
+                        x[0] = dom_XI1g_ptr[g]+cell_lo[0];,
+                        x[1] = dom_XI2g_ptr[g]+cell_lo[1];,
+                        x[2] = dom_XI3g_ptr[g]+cell_lo[2];
+                    )
+
+                    // EVAL LEVELSETS
+                    phi.eval(x, 0, N_PHI, PHI);
+
+                    int ph;
+                    ph = 0;
+                    while (!sign_changed && (ph < N_PHI))
+                    {
+                        if (sgn[ph]*PHI[ph] < 0.0)
+                        {
+                            sign_changed = true;
+                        }
+                        
+                        ph += 1;
+                    }
+
+                    g += 1;
+                }
+
+                if (sign_changed)
+                {
+                    tags_fab(i,j,k) = tagval;
+                }
+            });
+            Gpu::synchronize();
+        }
+        tags.FillBoundary(mesh.geom.periodicity());
+    }
+
+    /**
      * \brief Copy tags from a multifab into a TagBoxArray.
      *
      * \param[out] dst: the TagBoxArray where information will be copied.

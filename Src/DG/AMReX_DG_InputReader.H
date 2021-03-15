@@ -96,13 +96,15 @@ struct ImplicitMeshInput
 {
     int space_q, space_q_ie, time_q;
     Real VFT;
+    bool active;
 
     ImplicitMeshInput()
     :
     space_q{-1},
     space_q_ie{-1},
     time_q{-1},
-    VFT{0.33}
+    VFT{0.33},
+    active{true}
     {}
 };
 
@@ -528,6 +530,22 @@ public InputReaderBase
                 for (int l = 0; l < n_levels; ++l)
                 {
                     this->implicit_meshes[l].VFT = aux[l];
+                }
+            }
+
+            if (pp.contains("active"))
+            {
+                pp.queryarr("active", int_aux);
+                for (int l = 0; l < n_levels; ++l)
+                {
+                    if (int_aux[l] == 0)
+                    {
+                        this->implicit_meshes[l].active = false;
+                    }
+                    else
+                    {
+                        this->implicit_meshes[l].active = true;
+                    }
                 }
             }
         }

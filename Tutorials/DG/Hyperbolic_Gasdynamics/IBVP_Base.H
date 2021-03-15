@@ -2181,7 +2181,7 @@ amrex::Print() << std::endl;
         }
         else if (sp == 3)
         {
-            ds = AMREX_D_PICK(-2.5, -3.25, -4.25);
+            ds = AMREX_D_PICK(-2.5, -3.25, -5.00);
         }
         
         for (amrex::MFIter mfi(X); mfi.isValid(); ++mfi)
@@ -2292,7 +2292,7 @@ amrex::Print() << std::endl;
         // ------------------------------------------------------------
 
         // DENSITY GRADIENT THRESHOLD ---------------------------------
-        /*
+        /**/
         if (lev == 0)
         {
             threshold = 0.5;
@@ -2305,8 +2305,9 @@ amrex::Print() << std::endl;
         {
             amrex::Abort("F_UPDATE_TAGS - Unexpected level");
         }
-        */
+        /**/
 
+        /*
         if (lev == 2)
         {
             threshold = 2.0;
@@ -2315,6 +2316,7 @@ amrex::Print() << std::endl;
         {
             threshold = 1.0e4;
         }
+        */
         // ------------------------------------------------------------
 
         // UPDATE THE MASK

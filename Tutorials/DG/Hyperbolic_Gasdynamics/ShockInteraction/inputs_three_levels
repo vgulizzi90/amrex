@@ -18,12 +18,12 @@ time.n_steps = 100000
 # AMR =================================================================
 amr.v = 1
 
-amr.n_cell        = 16 8 8
-amr.max_grid_size = 4 4 4
+amr.n_cell        = 64 32 32
+amr.max_grid_size = 4 8 8
 amr.max_level     = 2
 amr.ref_ratio     = 4 4 4
-amr.blocking_factor = 4
-amr.n_error_buf = 2 4
+amr.blocking_factor = 4 2
+amr.n_error_buf = 2 2
 amr.grid_eff = 1.0
 # =====================================================================
 
@@ -33,7 +33,7 @@ amr.grid_eff = 1.0
 #grids.CFL = 0.27 0.27 0.27
 
 # 3D
-grids.CFL = 0.25 0.25 0.25
+grids.CFL = 0.15 0.15 0.15
 
 # LEVEL SET FUNCTIONS
 grids.space_p = 2 2 2
@@ -50,7 +50,8 @@ grids.space_q = 2 2 2
 # 3D
 implicit_meshes.space_q = 4 4 4
 implicit_meshes.space_q_ie = 7 7 7
-implicit_meshes.volume_fraction_threshold = 0.25 0.25 0.25
+implicit_meshes.volume_fraction_threshold = 0.15 0.15 0.15
+implicit_meshes.active = 0 1 1
 # =====================================================================
 
 
@@ -109,9 +110,9 @@ problem.params = 1.4 0.2 2.89 1.0 0.0 1.0 0.10 0.5 0.5 0.5
 
 
 # POST-PROCESSING INFO ################################################
-plot_int = -1
+plot_int = 120
 plot_filepath = PROBLEM_THREE_LEVELS
-checkpoint_int = 1
+checkpoint_int = 120
 checkpoint_filepath = PROBLEM_THREE_LEVELS
 
 # 2D
@@ -120,5 +121,5 @@ checkpoint_filepath = PROBLEM_THREE_LEVELS
 # 3D
 regrid_int = 5
 
-restart = 1
+restart = -1
 #######################################################################

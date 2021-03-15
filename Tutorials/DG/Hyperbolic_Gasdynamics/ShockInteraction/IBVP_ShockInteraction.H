@@ -396,7 +396,7 @@ public amrex::DG::AMR::Base
         // IMPLICIT MESH ----------------------------------------------
         this->meshes[lev] = new amrex::DG::ImplicitMesh();
         this->meshes[lev]->define(this->Geom(lev), ba, dm, level_inputs);
-        this->meshes[lev]->MakeFromScratch(this->IG);
+        this->meshes[lev]->MakeFromScratch(this->IG, level_inputs.implicit_mesh.active);
         // ------------------------------------------------------------
         
         // MATRIX FACTORY ---------------------------------------------
@@ -481,15 +481,32 @@ public amrex::DG::AMR::Base
         const char tagged = amrex::TagBox::SET;
         // ------------------------------------------------------------
 
+        // REFINE ACROSS THE EMBEDDED GEOMETRY ------------------------
+        tags.setVal(untagged);
+
+        if (this->max_level == 2)
+        {
+            if (lev == 0)
+            {
+                this->TrackLevelsets(*this->meshes[lev], tags, tagged);
+            }
+        }
+        else
+        {
+amrex::Print() << "ErrorEst" << std::endl;
+amrex::Print() << "this->max_level: " << this->max_level << std::endl;
+exit(-1);
+        }
+        // ------------------------------------------------------------
+
         // EVAL TROUBLED CELLS ----------------------------------------
-        this->IG.F_EVAL_TROUBLED(time,
-                                 *this->meshes[lev],
-                                 *this->matfactories[lev],
-                                 *this->mfs[lev],
-                                 this->Xs[lev],
-                                 tags,
-                                 tagged,
-                                 untagged);
+        this->IG.F_UPDATE_TROUBLED(time,
+                                   *this->meshes[lev],
+                                   *this->matfactories[lev],
+                                   *this->mfs[lev],
+                                   this->Xs[lev],
+                                   tags,
+                                   tagged);
         
         /**/
         if ((lev+1) != this->max_level)
@@ -541,7 +558,7 @@ exit(-1);
                 this->meshes[lev] = new amrex::DG::ImplicitMesh();
             }
             this->meshes[lev]->define(this->Geom(lev), ba, dm, level_inputs);
-            this->meshes[lev]->MakeFromCoarse(time, ba, dm, this->refRatio(lev-1), *this->meshes[lev-1], this->IG);
+            this->meshes[lev]->MakeFromCoarse(time, ba, dm, this->refRatio(lev-1), *this->meshes[lev-1], this->IG, level_inputs.implicit_mesh.active);
             // --------------------------------------------------------
 
             // MATRIX FACTORY -----------------------------------------
@@ -634,7 +651,7 @@ exit(-1);
         else
         {
             // IMPLICIT MESH ------------------------------------------
-            this->meshes[lev]->Remake(time, ba, dm, this->refRatio(lev-1), *this->meshes[lev-1], this->IG);
+            this->meshes[lev]->Remake(time, ba, dm, this->refRatio(lev-1), *this->meshes[lev-1], this->IG, level_inputs.implicit_mesh.active);
             // --------------------------------------------------------
 
             // MATRIX FACTORY -----------------------------------------
@@ -748,7 +765,7 @@ exit(-1);
                 this->meshes[lev]->define(this->Geom(lev), this->grids[lev], this->dmap[lev], level_inputs);
                 this->IG.F_DOM2PHI(0, phi_info);
                 this->meshes[lev]->Dom2Phi = {phi_info[0], phi_info[1]};
-                this->meshes[lev]->Make(N_PHI, N_DOM);
+                this->meshes[lev]->Make(N_PHI, N_DOM, level_inputs.implicit_mesh.active);
 
                 this->matfactories[lev]->define(this->Geom(lev), this->meshes[lev]->cc_ba, this->meshes[lev]->dm, level_inputs);
                 this->matfactories[lev]->EvalMassMatrices(*this->meshes[lev]);

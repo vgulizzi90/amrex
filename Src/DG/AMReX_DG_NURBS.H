@@ -67,6 +67,11 @@ Real curve_curvature(const Real * dkx)
     k = std::sqrt(k*k*k);
     k = std::abs(dx[0]*d2x[1]-dx[1]*d2x[0])/k;
 #endif
+#if (AMREX_SPACEDIM == 3)
+    Real k;
+    Print() << "ERROR: AMReX_DG_NURBS.H - curve_curvature " << std::endl;
+    exit(-1);
+#endif
 
     return k;
 }

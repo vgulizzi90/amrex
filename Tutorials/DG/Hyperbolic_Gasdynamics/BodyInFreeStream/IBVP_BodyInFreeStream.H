@@ -525,7 +525,6 @@ public amrex::DG::AMR::Base
         
         // VARIABLES --------------------------------------------------
         amrex::DG::InputReader level_inputs(false);
-        bool im_flag;
         // ------------------------------------------------------------
         // In the constructor, false means that the input file will not
         // be read.
@@ -535,22 +534,10 @@ public amrex::DG::AMR::Base
         this->ExtractLevelInputs(lev, level_inputs);
         // ------------------------------------------------------------
 
-        // SET THE IMPLICIT-MESH FLAG ---------------------------------
-        im_flag = true;
-        if (this->IG.eb_flag == 40012)
-        {
-            im_flag = false;
-            if (lev > 2)
-            {
-                im_flag = true;
-            }
-        }
-        // ------------------------------------------------------------
-
         // IMPLICIT MESH ----------------------------------------------
         this->meshes[lev] = new amrex::DG::ImplicitMesh();
         this->meshes[lev]->define(this->Geom(lev), ba, dm, level_inputs);
-        this->meshes[lev]->MakeFromScratch(this->IG, im_flag);
+        this->meshes[lev]->MakeFromScratch(this->IG, level_inputs.implicit_mesh.active);
         // ------------------------------------------------------------
         
         // MATRIX FACTORY ---------------------------------------------
@@ -800,7 +787,6 @@ public amrex::DG::AMR::Base
         
         // VARIABLES --------------------------------------------------
         amrex::DG::InputReader level_inputs(false);
-        bool im_flag;
         // ------------------------------------------------------------
         // In the constructor, false means that the input file will not
         // be read.
@@ -808,18 +794,6 @@ public amrex::DG::AMR::Base
 
         // INPUTS AT CURRENT LEVEL ------------------------------------
         this->ExtractLevelInputs(lev, level_inputs);
-        // ------------------------------------------------------------
-
-        // SET THE IMPLICIT-MESH FLAG ---------------------------------
-        im_flag = true;
-        if (this->IG.eb_flag == 40012)
-        {
-            im_flag = false;
-            if (lev > 2)
-            {
-                im_flag = true;
-            }
-        }
         // ------------------------------------------------------------
 
         // LEVEL == 0
@@ -837,7 +811,7 @@ exit(-1);
                 this->meshes[lev] = new amrex::DG::ImplicitMesh();
             }
             this->meshes[lev]->define(this->Geom(lev), ba, dm, level_inputs);
-            this->meshes[lev]->MakeFromCoarse(time, ba, dm, this->refRatio(lev-1), *this->meshes[lev-1], this->IG, im_flag);
+            this->meshes[lev]->MakeFromCoarse(time, ba, dm, this->refRatio(lev-1), *this->meshes[lev-1], this->IG, level_inputs.implicit_mesh.active);
             // --------------------------------------------------------
 
             // MATRIX FACTORY -----------------------------------------
@@ -911,7 +885,6 @@ exit(-1);
         
         // VARIABLES --------------------------------------------------
         amrex::DG::InputReader level_inputs(false);
-        bool im_flag;
         // ------------------------------------------------------------
         // In the constructor, false means that the input file will not
         // be read.
@@ -919,18 +892,6 @@ exit(-1);
 
         // INPUTS AT CURRENT LEVEL ------------------------------------
         this->ExtractLevelInputs(lev, level_inputs);
-        // ------------------------------------------------------------
-
-        // SET THE IMPLICIT-MESH FLAG ---------------------------------
-        im_flag = true;
-        if (this->IG.eb_flag == 40012)
-        {
-            im_flag = false;
-            if (lev > 2)
-            {
-                im_flag = true;
-            }
-        }
         // ------------------------------------------------------------
 
         // LEVEL == 0
@@ -943,7 +904,7 @@ exit(-1);
         else
         {
             // IMPLICIT MESH ------------------------------------------
-            this->meshes[lev]->Remake(time, ba, dm, this->refRatio(lev-1), *this->meshes[lev-1], this->IG, im_flag);
+            this->meshes[lev]->Remake(time, ba, dm, this->refRatio(lev-1), *this->meshes[lev-1], this->IG, level_inputs.implicit_mesh.active);
             // --------------------------------------------------------
 
             // MATRIX FACTORY -----------------------------------------
@@ -1034,27 +995,16 @@ exit(-1);
             const int N_DOM = 1;
             const int ngr = 1;
             int phi_info[2];
-            bool im_flag;
 
             for (int lev = 0; lev <= this->max_level; ++lev)
             {
                 amrex::DG::InputReader level_inputs(false);
                 this->ExtractLevelInputs(lev, level_inputs);
 
-                im_flag = true;
-                if (this->IG.eb_flag == 40012)
-                {
-                    im_flag = false;
-                    if (lev > 2)
-                    {
-                        im_flag = true;
-                    }
-                }
-
                 this->meshes[lev]->define(this->Geom(lev), this->grids[lev], this->dmap[lev], level_inputs);
                 this->IG.F_DOM2PHI(0, phi_info);
                 this->meshes[lev]->Dom2Phi = {phi_info[0], phi_info[1]};
-                this->meshes[lev]->Make(N_PHI, N_DOM, im_flag);
+                this->meshes[lev]->Make(N_PHI, N_DOM, level_inputs.implicit_mesh.active);
 
                 this->matfactories[lev]->define(this->Geom(lev), this->meshes[lev]->cc_ba, this->meshes[lev]->dm, level_inputs);
                 this->matfactories[lev]->EvalMassMatrices(*this->meshes[lev]);

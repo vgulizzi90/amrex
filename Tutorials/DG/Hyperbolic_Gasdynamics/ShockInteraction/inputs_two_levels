@@ -9,7 +9,7 @@ geometry.is_periodic = 0 0 0
 # TIME ################################################################
 time.T = 0.2
 #time.T = 0.138359
-time.n_steps = 80
+time.n_steps = 100000
 #######################################################################
 
 
@@ -33,7 +33,7 @@ amr.grid_eff = 1.0
 #grids.CFL = 0.27 0.27
 
 # 3D
-grids.CFL = 0.27 0.27
+grids.CFL = 0.27 0.15
 
 # LEVEL SET FUNCTIONS
 grids.space_p = 2 2
@@ -50,7 +50,7 @@ grids.space_q = 2 2
 # 3D
 implicit_meshes.space_q = 3 3
 implicit_meshes.space_q_ie = 7 7
-implicit_meshes.volume_fraction_threshold = 0.3 0.3
+implicit_meshes.volume_fraction_threshold = 0.3 0.15
 # =====================================================================
 
 
