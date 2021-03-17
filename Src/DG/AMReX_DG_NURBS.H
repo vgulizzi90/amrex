@@ -832,6 +832,180 @@ struct surface
     Real U1[1+M1], U2[1+M2], P[AMREX_SPACEDIM*(1+N1)*(1+N2)];
     // ================================================================
 
+    // CONSTRUCTORS ===================================================
+    AMREX_GPU_HOST_DEVICE
+    surface()
+    {
+        assert(N1 == M1-D1-1);
+        assert(N2 == M2-D2-1);
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    surface(const Real * U1_, const Real * U2_, const Real * P_)
+    {
+        assert(N1 == M1-D1-1);
+        assert(N2 == M2-D2-1);
+
+        this->set(U1_, U2_, P_);
+    }
+    // ================================================================
+
+    // AUXILIARY ======================================================
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void set(const Real * U1_, const Real * U2_, const Real * P_)
+    {
+        for (int k = 0; k <= M1; ++k)
+        {
+            this->U1[k] = U1_[k];
+        }
+        for (int k = 0; k <= M2; ++k)
+        {
+            this->U2[k] = U2_[k];
+        }
+
+        for (int k = 0; k < (1+N1)*(1+N2); ++k)
+        {
+            AMREX_D_TERM
+            (
+                this->P[0+k*AMREX_SPACEDIM] = P_[0+k*AMREX_SPACEDIM];,
+                this->P[1+k*AMREX_SPACEDIM] = P_[1+k*AMREX_SPACEDIM];,
+                this->P[2+k*AMREX_SPACEDIM] = P_[2+k*AMREX_SPACEDIM];
+            )
+        }
+    }
+    // ================================================================
+
+    // EVALUATION =====================================================
+    AMREX_GPU_HOST_DEVICE
+    void eval(const Real u1, const Real u2, Real * x) const
+    {
+        const int span1 = find_span(N1, D1, u1, this->U1);
+        const int span2 = find_span(N2, D2, u2, this->U2);
+
+        Real BF1[1+D1], BF2[1+D2], tmp[AMREX_SPACEDIM];
+        int iu1, iu2;
+        
+        basis_functions_table(span1, u1, D1, this->U1, BF1);
+        basis_functions_table(span2, u2, D2, this->U2, BF2);
+
+        iu1 = span1-D1;
+        iu2 = span2-D2;
+
+        AMREX_D_TERM
+        (
+            x[0] = 0.0;,
+            x[1] = 0.0;,
+            x[2] = 0.0;
+        )
+        for (int k2 = 0; k2 <= D2; ++k2)
+        {
+            AMREX_D_TERM
+            (
+                tmp[0] = 0.0;,
+                tmp[1] = 0.0;,
+                tmp[2] = 0.0;
+            )
+            for (int k1 = 0; k1 <= D1; ++k1)
+            {
+                AMREX_D_TERM
+                (
+                    tmp[0] += BF1[k1]*this->P[0+(k1+iu1+(1+N1)*(k2+iu2))*AMREX_SPACEDIM];,
+                    tmp[1] += BF1[k1]*this->P[1+(k1+iu1+(1+N1)*(k2+iu2))*AMREX_SPACEDIM];,
+                    tmp[2] += BF1[k1]*this->P[2+(k1+iu1+(1+N1)*(k2+iu2))*AMREX_SPACEDIM];
+                )
+            }
+            AMREX_D_TERM
+            (
+                x[0] += BF2[k2]*tmp[0];,
+                x[1] += BF2[k2]*tmp[1];,
+                x[2] += BF2[k2]*tmp[2];
+            )
+        }
+    }
+
+    AMREX_GPU_HOST_DEVICE
+    void eval_der(const Real u1, const Real u2, const int d, Real * dkx) const
+    {
+        const int du1 = amrex::min(d, D1);
+        const int du2 = amrex::min(d, D2);
+        const int span1 = find_span(N1, D1, u1, this->U1);
+        const int span2 = find_span(N2, D2, u2, this->U2);
+
+        Real dBF1[(1+D1)*(1+D1)], dBF2[(1+D2)*(1+D2)], tmp[(1+D2)*AMREX_SPACEDIM];
+        int iu1, iu2, dd;
+
+        for (int k1 = D1+1; k1 <= d; ++k1)
+        for (int k2 = 0; k2 <= d-k1; ++k2)
+        {
+            AMREX_D_TERM
+            (
+                dkx[0+(k1+(1+d)*k2)*AMREX_SPACEDIM] = 0.0;,
+                dkx[1+(k1+(1+d)*k2)*AMREX_SPACEDIM] = 0.0;,
+                dkx[2+(k1+(1+d)*k2)*AMREX_SPACEDIM] = 0.0;
+            )
+        }
+        for (int k2 = D2+1; k2 <= d; ++k2)
+        for (int k1 = 0; k1 <= d-k2; ++k1)
+        {
+            AMREX_D_TERM
+            (
+                dkx[0+(k1+(1+d)*k2)*AMREX_SPACEDIM] = 0.0;,
+                dkx[1+(k1+(1+d)*k2)*AMREX_SPACEDIM] = 0.0;,
+                dkx[2+(k1+(1+d)*k2)*AMREX_SPACEDIM] = 0.0;
+            )
+        }
+
+        basis_functions_der_table(span1, u1, D1, du1, this->U1, dBF1);
+        basis_functions_der_table(span2, u2, D2, du2, this->U2, dBF2);
+
+        iu1 = span1-D1;
+        iu2 = span2-D2;
+
+        for (int k1 = 0; k1 <= du1; ++k1)
+        {
+            for (int j2 = 0; j2 <= D2; ++j2)
+            {
+                AMREX_D_TERM
+                (
+                    tmp[0+j2*AMREX_SPACEDIM] = 0.0;,
+                    tmp[1+j2*AMREX_SPACEDIM] = 0.0;,
+                    tmp[2+j2*AMREX_SPACEDIM] = 0.0;
+                )
+                for (int j1 = 0; j1 <= D1; ++j1)
+                {
+                    AMREX_D_TERM
+                    (
+                        tmp[0+j2*AMREX_SPACEDIM] += dBF1[j1+k1*du1]*this->P[0+(j1+iu1+(1+N1)*(j2+iu2))*AMREX_SPACEDIM];,
+                        tmp[1+j2*AMREX_SPACEDIM] += dBF1[j1+k1*du1]*this->P[1+(j1+iu1+(1+N1)*(j2+iu2))*AMREX_SPACEDIM];,
+                        tmp[2+j2*AMREX_SPACEDIM] += dBF1[j1+k1*du1]*this->P[2+(j1+iu1+(1+N1)*(j2+iu2))*AMREX_SPACEDIM];
+                    )
+                }
+            }
+
+            dd = amrex::min(d-k1, du2);
+
+            for (int k2 = 0; k2 <= dd; ++k2)
+            {
+                AMREX_D_TERM
+                (
+                    dkx[0+(k1+(1+d)*k2)*AMREX_SPACEDIM] = 0.0;,
+                    dkx[1+(k1+(1+d)*k2)*AMREX_SPACEDIM] = 0.0;,
+                    dkx[2+(k1+(1+d)*k2)*AMREX_SPACEDIM] = 0.0;
+                )
+                for (int j2 = 0; j2 <= D2; ++j2)
+                {
+                    AMREX_D_TERM
+                    (
+                        dkx[0+(k1+(1+d)*k2)*AMREX_SPACEDIM] += dBF2[j2+k2*du2]*tmp[0+j2*AMREX_SPACEDIM];,
+                        dkx[1+(k1+(1+d)*k2)*AMREX_SPACEDIM] += dBF2[j2+k2*du2]*tmp[1+j2*AMREX_SPACEDIM];,
+                        dkx[2+(k1+(1+d)*k2)*AMREX_SPACEDIM] += dBF2[j2+k2*du2]*tmp[2+j2*AMREX_SPACEDIM];
+                    )
+                }
+            }
+        }
+    }
+    // ================================================================
+
 };
 
 } // namespace bsplines

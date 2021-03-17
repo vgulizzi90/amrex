@@ -2171,6 +2171,7 @@ amrex::Print() << std::endl;
         sensor.FillBoundary(mesh.geom.periodicity());
 
         amrex::Real ds;
+        /*
         if (sp == 1)
         {
             ds = AMREX_D_PICK(-1.5, -2.0, -2.425);
@@ -2183,6 +2184,21 @@ amrex::Print() << std::endl;
         {
             ds = AMREX_D_PICK(-2.5, -3.25, -5.00);
         }
+        */
+        /**/
+        if (sp == 1)
+        {
+            ds = AMREX_D_PICK(-1.5, -4.0, -2.425);
+        }
+        else if (sp == 2)
+        {
+            ds = AMREX_D_PICK(-1.5, -4.5, -2.425);
+        }
+        else if (sp == 3)
+        {
+            ds = AMREX_D_PICK(-2.5, -5.0, -5.00);
+        }
+        /**/
         
         for (amrex::MFIter mfi(X); mfi.isValid(); ++mfi)
         {

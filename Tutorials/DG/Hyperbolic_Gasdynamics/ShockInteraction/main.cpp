@@ -138,6 +138,11 @@ void main_main()
                 volume = AMREX_D_TERM(len[0],*len[1],*len[2])-AMREX_D_PICK(2.0*r, 0.5*M_PI*r*r, 0.25*(4.0/3.0)*M_PI*r*r*r);
                 surface = AMREX_D_PICK(0.0, M_PI*r, M_PI*r*r);
             }
+            else if (amr.IG.eb_flag == 2)
+            {
+                volume = 1.0;
+                surface = 1.0;
+            }
             else
             {
 amrex::Print() << "main.cpp - CHECK THE COMPUTED QUADRATURE RULES" << std::endl;

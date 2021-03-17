@@ -85,6 +85,29 @@ public IDEAL_GAS_BASE
 
             PHI[0] = r*r-(AMREX_D_TERM((x[0]-xc[0])*(x[0]-xc[0]),+(x[1]-xc[1])*(x[1]-xc[1]),+(x[2]-xc[2])*(x[2]-xc[2])));
         }
+        else if (this->eb_flag == 2)
+        {
+            const amrex::Real xw = this->params[5];
+            const amrex::Real alpha = this->params[6]*M_PI/180.0;
+            const amrex::Real ca = std::cos(alpha);
+            const amrex::Real sa = std::sin(alpha);
+            const amrex::Real Rw1 = this->params[7];
+            const amrex::Real Rw2 = this->params[8];
+            const amrex::Real Cw1[2] = {xw+Rw1*sa, -Rw1*ca};
+            const amrex::Real Cw2[2] = {xw+Rw1*sa, -Rw1*ca+Rw1+Rw2};
+
+            const amrex::Real d1 = std::sqrt((x[0]-Cw1[0])*(x[0]-Cw1[0])+(x[1]-Cw1[1])*(x[1]-Cw1[1]));
+            const amrex::Real d2 = std::sqrt((x[0]-Cw2[0])*(x[0]-Cw2[0])+(x[1]-Cw2[1])*(x[1]-Cw2[1]));
+
+            if (x[0] <= Cw1[0])
+            {
+                PHI[0] = Rw1-d1;
+            }
+            else
+            {
+                PHI[0] = d2-Rw2;
+            }
+        }
         else
         {
 amrex::Abort("IDEAL_GAS.F_PHI");
@@ -257,7 +280,7 @@ amrex::Abort("IDEAL_GAS.F_PHI");
     */
     void F_FIELDS_NAMES(amrex::Vector<std::string> & fields_names) const
     {
-        if ((this->eb_flag == -1) || (this->eb_flag == 0))
+        if ((this->eb_flag == -1) || (this->eb_flag == 0) || (this->eb_flag == 2))
         {
             fields_names = {"density",
                             AMREX_D_DECL("velocity_x", "velocity_y", "velocity_z"),
@@ -277,7 +300,7 @@ amrex::Abort("IDEAL_GAS.F_FIELDS_NAMES");
     */
     void F_FIELDS_DOMAINS(amrex::Vector<int> & fields_domains) const
     {
-        if ((this->eb_flag == -1) || (this->eb_flag == 0))
+        if ((this->eb_flag == -1) || (this->eb_flag == 0) || (this->eb_flag == 2))
         {
             fields_domains = {0, AMREX_D_DECL(0, 0, 0), 0};
         }
@@ -481,6 +504,7 @@ public amrex::DG::AMR::Base
         // REFINE ACROSS THE EMBEDDED GEOMETRY ------------------------
         tags.setVal(untagged);
 
+/*
         if (this->max_level == 2)
         {
             if (lev == 0)
@@ -494,6 +518,7 @@ amrex::Print() << "ErrorEst" << std::endl;
 amrex::Print() << "this->max_level: " << this->max_level << std::endl;
 exit(-1);
         }
+*/
         // ------------------------------------------------------------
 
         // EVAL TROUBLED CELLS ----------------------------------------

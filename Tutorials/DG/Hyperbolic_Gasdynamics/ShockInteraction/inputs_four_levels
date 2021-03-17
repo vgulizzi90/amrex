@@ -1,15 +1,30 @@
 # SPACE ###############################################################
-geometry.prob_lo     = 0.0 0.5 0.5
-geometry.prob_hi     = 1.0 1.0 1.0
+# CIRCLE/SPHERE =======================================================
+#geometry.prob_lo     = 0.0 0.5 0.5
+#geometry.prob_hi     = 1.0 1.0 1.0
+#geometry.is_periodic = 0 0 0
+# =====================================================================
+
+# CONVEX-CONCAVE CYLINDRICAL WALL =====================================
+geometry.prob_lo     = 0.0 0.0
+geometry.prob_hi     = 240.0 80.0
 geometry.is_periodic = 0 0 0
+# =====================================================================
 #######################################################################
 
 
 
 # TIME ################################################################
-time.T = 0.2
+# CIRCLE/SPHERE =======================================================
+#time.T = 0.2
 #time.T = 0.138359
+#time.n_steps = 100000
+# =====================================================================
+
+# CONVEX-CONCAVE CYLINDRICAL WALL =====================================
+time.T = 80.0
 time.n_steps = 100000
+# =====================================================================
 #######################################################################
 
 
@@ -18,39 +33,39 @@ time.n_steps = 100000
 # AMR =================================================================
 amr.v = 1
 
-amr.n_cell        = 16 8 8
-amr.max_grid_size = 4 4 4 4
+amr.n_cell        = 96 32 32
+amr.max_grid_size = 4 8 8 4
 amr.max_level     = 3
 amr.ref_ratio     = 4 4 4 4
-amr.blocking_factor = 4
-amr.n_error_buf = 4 4 4
+amr.blocking_factor = 4 4 2
+amr.n_error_buf = 4 4 2
 amr.grid_eff = 1.0
 # =====================================================================
 
 
 # AMR GRIDS ===========================================================
 # 2D
-#grids.CFL = 0.27 0.27 0.27 0.27
-
-# 3D
 grids.CFL = 0.27 0.27 0.27 0.27
 
+# 3D
+#grids.CFL = 0.27 0.27 0.27 0.27
+
 # LEVEL SET FUNCTIONS
-grids.space_p = 2 2 2 2
-grids.space_q = 2 2 2 2
+grids.space_p = 3 3 3 3
+grids.space_q = 3 3 3 3
 # =====================================================================
 
 
 # IMPLICITLY-DEFINED MESH =============================================
 # 2D
-#implicit_meshes.space_q = 3 4 4 4
-#implicit_meshes.space_q_ie = 5 6 6 6
-#implicit_meshes.volume_fraction_threshold = 0.3 0.3 0.3 0.3
+implicit_meshes.space_q = 4 4 4 4
+implicit_meshes.space_q_ie = 6 6 6 6
+implicit_meshes.volume_fraction_threshold = 0.3 0.3 0.3 0.3
 
 # 3D
-implicit_meshes.space_q = 3 4 4 4 
-implicit_meshes.space_q_ie = 5 7 7 7
-implicit_meshes.volume_fraction_threshold = 0.3 0.3 0.3 0.3
+#implicit_meshes.space_q = 3 4 4 4 
+#implicit_meshes.space_q_ie = 5 7 7 7
+#implicit_meshes.volume_fraction_threshold = 0.3 0.3 0.3 0.3
 # =====================================================================
 
 
@@ -68,24 +83,31 @@ dG.space_p = 1 3 3 0
 # =====================================================================
 
 # CIRCLE/SPHERE =======================================================
-problem.int_params = 0
+#problem.int_params = 0
 
 # 2D
 #problem.params = 1.4 0.2 2.81 1.0 0.0 1.0 0.10 0.5 0.5
 
 # 3D
-problem.params = 1.4 0.2 2.89 1.0 0.0 1.0 0.10 0.5 0.5 0.5
+#problem.params = 1.4 0.2 2.89 1.0 0.0 1.0 0.10 0.5 0.5 0.5
+# =====================================================================
+
+# CONVEX-CONCAVE CYLINDRICAL WALL =====================================
+problem.int_params = 2
+problem.params = 1.4 79.5 1.19 1.0 0.0 1.0 80.0 65.0 60.6 60.6
 # =====================================================================
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
 #       which should be input as follows
 #
 #       int_params: eb_flag
-#       params: gamma x1s Ms rhoL uL pL geo_parameters
+#       params: gamma x1s Ms rho0 u0 p0 geo_parameters
 #
 #       where:
 #       - eb_flag: flag to activate the embedded boundary
 #                  -1: no embedded boundary
+#                   0: embedded circle (in 2D) or sphere (3D)
+#                   2: convex-concave cylindrical wall
 #
 #       - gamma: specific heats ratio
 #       - x1s: the shock location
@@ -103,6 +125,12 @@ problem.params = 1.4 0.2 2.89 1.0 0.0 1.0 0.10 0.5 0.5 0.5
 #        - r: radius of the embedded circle
 #        - (x1c x2c x3c): coordinates of the center of the embedded
 #                         sphere
+#       if (problem.int_params == 2 and AMREX_SPACEDIM == 2):
+#        geo_parameters: xw alpha Rw1 Rw2
+#        - xw: location of the wall
+#        - alpha: angle of the tangent line to the wall
+#        - Rw1: radius of the convex wall
+#        - Rw2: radius of the concave wall
 #
 #######################################################################
 
