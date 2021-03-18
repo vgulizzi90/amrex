@@ -96,9 +96,11 @@ public IDEAL_GAS_BASE
             const amrex::Real Cw1[2] = {xw+Rw1*sa, -Rw1*ca};
             const amrex::Real Cw2[2] = {xw+Rw1*sa, -Rw1*ca+Rw1+Rw2};
 
-            const amrex::Real d1 = std::sqrt((x[0]-Cw1[0])*(x[0]-Cw1[0])+(x[1]-Cw1[1])*(x[1]-Cw1[1]));
-            const amrex::Real d2 = std::sqrt((x[0]-Cw2[0])*(x[0]-Cw2[0])+(x[1]-Cw2[1])*(x[1]-Cw2[1]));
+            const amrex::Real d1 = Rw1-std::sqrt((x[0]-Cw1[0])*(x[0]-Cw1[0])+(x[1]-Cw1[1])*(x[1]-Cw1[1]));
+            const amrex::Real d2 = std::sqrt((x[0]-Cw2[0])*(x[0]-Cw2[0])+(x[1]-Cw2[1])*(x[1]-Cw2[1]))-Rw2;
+            const amrex::Real d3 = (x[0]-Cw2[0]-Rw2);
 
+            /*
             if (x[0] <= Cw1[0])
             {
                 PHI[0] = Rw1-d1;
@@ -106,6 +108,15 @@ public IDEAL_GAS_BASE
             else
             {
                 PHI[0] = d2-Rw2;
+            }
+            */
+            if ((x[0] >= Cw2[0]) && (x[1] <= Cw2[1]))
+            {
+                PHI[0] = d2;
+            }
+            else
+            {
+                PHI[0] = amrex::max(d1, d3);
             }
         }
         else

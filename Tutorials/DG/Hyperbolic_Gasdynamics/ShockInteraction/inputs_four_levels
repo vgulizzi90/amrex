@@ -7,7 +7,7 @@
 
 # CONVEX-CONCAVE CYLINDRICAL WALL =====================================
 geometry.prob_lo     = 0.0 0.0
-geometry.prob_hi     = 240.0 80.0
+geometry.prob_hi     = 240.0 120.0
 geometry.is_periodic = 0 0 0
 # =====================================================================
 #######################################################################
@@ -33,11 +33,11 @@ time.n_steps = 100000
 # AMR =================================================================
 amr.v = 1
 
-amr.n_cell        = 96 32 32
-amr.max_grid_size = 4 8 8 4
+amr.n_cell        = 96 48 48
+amr.max_grid_size = 4 8 8 8
 amr.max_level     = 3
 amr.ref_ratio     = 4 4 4 4
-amr.blocking_factor = 4 4 2
+amr.blocking_factor = 4 4 4
 amr.n_error_buf = 4 4 2
 amr.grid_eff = 1.0
 # =====================================================================
@@ -94,7 +94,7 @@ dG.space_p = 1 3 3 0
 
 # CONVEX-CONCAVE CYLINDRICAL WALL =====================================
 problem.int_params = 2
-problem.params = 1.4 79.5 1.19 1.0 0.0 1.0 80.0 65.0 60.6 60.6
+problem.params = 1.4 79.9 1.19 1.0 0.0 1.0 80.0 65.0 60.6 60.6
 # =====================================================================
 #######################################################################
 # NOTE: int_params and params contains the parameters of the problem,
