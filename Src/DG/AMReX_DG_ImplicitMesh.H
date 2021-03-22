@@ -17,9 +17,9 @@
 #include <AMReX_DG_InputReader.H>
 #include <AMReX_DG_BFX.H>
 
-#define __i__ 221
-#define __j__ 101
-#define __k__ 14
+#define __i__ 12
+#define __j__ 0
+#define __k__ 0
 
 namespace amrex
 {
@@ -531,7 +531,7 @@ std::string ELM_TYPE_DESCRIPTION(const short etype)
     const bool elm_is_large = (etype%10 == __DG_ELM_TYPE_LARGE__);
     const bool elm_is_small = (etype%10 == __DG_ELM_TYPE_SMALL__);
     const bool elm_is_partial = (etype == __DG_ELM_TYPE_PARTIAL__);
-    const bool elm_is_ghost = (etype/100 == 1);
+    const bool elm_is_ghost = (etype/1000 == 1);
     const bool elm_is_not_ghost = !elm_is_ghost;
     const bool elm_is_valid = (elm_is_entire || elm_is_large) && elm_is_not_ghost;
     const bool elm_is_extended = elm_is_valid && (etype/10 == 1);
@@ -696,7 +696,7 @@ bool ELM_IS_VALID(const short etype)
 {
     const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
     const bool elm_is_large = (etype%10 == __DG_ELM_TYPE_LARGE__);
-    const bool elm_is_not_ghost = (etype/100 != 1);
+    const bool elm_is_not_ghost = (etype/1000 != 1);
     const bool elm_is_valid = (elm_is_entire || elm_is_large) && elm_is_not_ghost;
 
     return elm_is_valid;
@@ -766,7 +766,7 @@ bool ELM_IS_STANDARD_CELL(const short etype)
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 bool ELM_IS_GHOST(const short etype)
 {
-    const bool elm_is_ghost = (etype/100 == 1);
+    const bool elm_is_ghost = (etype/1000 == 1);
 
     return elm_is_ghost;
 }
@@ -1997,11 +1997,11 @@ struct ImplicitMesh
 
                     if (elm_is_entire)
                     {
-                        eType_fab(i,j,k,ELM_TYPE(dom)) = 100+__DG_ELM_TYPE_ENTIRE__;
+                        eType_fab(i,j,k,ELM_TYPE(dom)) = 1000+__DG_ELM_TYPE_ENTIRE__;
                     }
                     else if (elm_is_partial)
                     {
-                        eType_fab(i,j,k,ELM_TYPE(dom)) = 100+__DG_ELM_TYPE_LARGE__;
+                        eType_fab(i,j,k,ELM_TYPE(dom)) = 1000+__DG_ELM_TYPE_LARGE__;
                     }
 
                 }
@@ -2259,11 +2259,11 @@ else
                 {
                     if (elm_is_entire)
                     {
-                        eType_fab(i,j,k,ELM_TYPE(dom)) = 100+__DG_ELM_TYPE_ENTIRE__;
+                        eType_fab(i,j,k,ELM_TYPE(dom)) = 1000+__DG_ELM_TYPE_ENTIRE__;
                     }
                     else if (elm_is_small_or_large)
                     {
-                        eType_fab(i,j,k,ELM_TYPE(dom)) = 100+__DG_ELM_TYPE_LARGE__;
+                        eType_fab(i,j,k,ELM_TYPE(dom)) = 1000+__DG_ELM_TYPE_LARGE__;
                     }
                 }
             });
@@ -2316,7 +2316,7 @@ else
                             msg += "| face: "+std::to_string(fi)+","+std::to_string(fj)+","+std::to_string(fk)+"\n";
                             msg += "| cell   : "+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"\n";
                             msg += "| BF_cell: "+std::to_string(BF_i)+","+std::to_string(BF_j)+","+std::to_string(BF_k)+"\n";
-                            Warning(msg);
+                            Abort(msg);
 #endif
                         }
                         if (!fbx.contains(nbr_BF_i, nbr_BF_j, nbr_BF_k))
@@ -2332,7 +2332,7 @@ else
                             msg += "| face: "+std::to_string(fi)+","+std::to_string(fj)+","+std::to_string(fk)+"\n";
                             msg += "| nbr_cell   : "+std::to_string(nbr_i)+","+std::to_string(nbr_j)+","+std::to_string(nbr_k)+"\n";
                             msg += "| nbr_BF_cell: "+std::to_string(nbr_BF_i)+","+std::to_string(nbr_BF_j)+","+std::to_string(nbr_BF_k)+"\n";
-                            Warning(msg);
+                            Abort(msg);
 #endif
                         }
                     }

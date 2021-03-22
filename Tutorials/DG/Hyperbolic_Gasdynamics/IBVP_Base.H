@@ -1137,6 +1137,9 @@ amrex::Abort("F_NF_PRESCRIBED_VELOCITY_1 - SLIP WALL");
                                  const amrex::Real * nbr_xc, const amrex::Real * nbr_P,
                                  amrex::Real * S, amrex::Real * rhs) const
     {
+#if (AMREX_SPACEDIM == 1)
+        S[0] += (nbr_xc[0]-xc[0])*(nbr_xc[0]-xc[0]);
+#endif
 #if (AMREX_SPACEDIM == 2)
         S[0+0*2] += (nbr_xc[0]-xc[0])*(nbr_xc[0]-xc[0]);
         S[0+1*2] += (nbr_xc[0]-xc[0])*(nbr_xc[1]-xc[1]);
@@ -1150,7 +1153,7 @@ amrex::Abort("F_NF_PRESCRIBED_VELOCITY_1 - SLIP WALL");
         S[1+0*3]  = S[0+1*3];
         S[2+0*3]  = S[0+2*3];
         S[1+1*3] += (nbr_xc[1]-xc[1])*(nbr_xc[1]-xc[1]);
-        S[1+2*3] += (nbr_xc[2]-xc[2])*(nbr_xc[2]-xc[2]);
+        S[1+2*3] += (nbr_xc[1]-xc[1])*(nbr_xc[2]-xc[2]);
         S[2+1*3]  = S[1+2*3];
         S[2+2*3] += (nbr_xc[2]-xc[2])*(nbr_xc[2]-xc[2]);
 #endif
@@ -1336,7 +1339,7 @@ amrex::Abort("F_NF_PRESCRIBED_VELOCITY_1 - SLIP WALL");
                     // ------------------------------------------------
 
 /*
-if (i == __i__ && j == __j__)
+if (i == __i__ && j == __j__ && k == __k__)
 {
 amrex::Print() << "xc: " << std::endl;
 amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, 1, xc);
@@ -1355,7 +1358,7 @@ amrex::Print() << "nbr_xcs: " << std::endl;
 amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, __DG_BASE_STENCIL_N_NBR__, nbr_xcs);
 amrex::Print() << "nbr_Ps: " << std::endl;
 amrex::DG::IO::PrintRealArray2D(DG_N_SOL, __DG_BASE_STENCIL_N_NBR__, nbr_Ps);
-exit(-1);
+//exit(-1);
 }
 */
 
@@ -1372,6 +1375,17 @@ exit(-1);
                                 this->UpdateLeastSquareSystem(xc, P, &nbr_xcs[AMREX_SPACEDIM*n], &nbr_Ps[DG_N_SOL*n], S, rhs);
                             }
                         }
+
+/*
+if (i == __i__ && j == __j__ && k == __k__)
+{
+amrex::Print() << "S: " << std::endl;
+amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, AMREX_SPACEDIM, S);
+amrex::Print() << "rhs: " << std::endl;
+amrex::DG::IO::PrintRealArray2D(AMREX_SPACEDIM, DG_N_SOL, rhs);
+}
+*/
+
 
 #if (AMREX_SPACEDIM == 1)
                         for (int u = 0; u < DG_N_SOL; ++u) dP[u] = rhs[u]/S[0];
@@ -1400,10 +1414,11 @@ exit(-1);
                     // ------------------------------------------------
 
 /*
-if (i == __i__ && j == __j__)
+if (i == __i__ && j == __j__ && k == __k__)
 {
 amrex::Print() << "dP: " << std::endl;
 amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, dP);
+exit(-1);
 }
 */
 

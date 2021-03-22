@@ -417,6 +417,42 @@ public amrex::DG::AMR::Base
         const char tagged = amrex::TagBox::SET;
         // ------------------------------------------------------------
 
+        // SIMPLE EB WITH AMR TEST ------------------------------------
+        if (this->GG.eb_flag == 102)
+        {
+            for (amrex::MFIter mfi(tags); mfi.isValid(); ++mfi)
+            {
+                const amrex::Box & bx = mfi.validbox();
+
+                amrex::Array4<short const> const & eType_fab = this->meshes[lev]->eType.array(mfi);
+                amrex::Array4<char> const & tags_fab = tags.array(mfi);
+                
+                amrex::ParallelFor(bx,
+                [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+                {
+                    const short etype = eType_fab(i,j,k,amrex::DG::ELM_TYPE(dom));
+
+                    if (amrex::DG::ELM_IS_NOT_EMPTY(etype) && (tags_fab(i,j,k) != tagged))
+                    {
+                        // LOCAL PARAMETERS
+                        const amrex::Real xc[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0],
+                                                                             prob_lo[1]+(j+0.5)*dx[1],
+                                                                             prob_lo[2]+(k+0.5)*dx[2])};
+
+                        const amrex::Real phi = this->GG.phi_shock(xc);
+                        
+                        if (std::abs(phi) < dx[0])
+                        {
+                            tags_fab(i,j,k) = tagged;
+                        }
+                    }
+                });
+                amrex::Gpu::synchronize();
+            }
+            tags.FillBoundary(this->meshes[lev]->geom.periodicity());
+        }
+        // ------------------------------------------------------------
+
         // NACA 0012 AIRFOIL ------------------------------------------
         if (this->GG.eb_flag == 40012)
         {
