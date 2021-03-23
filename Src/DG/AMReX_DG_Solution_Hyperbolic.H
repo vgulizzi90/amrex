@@ -3320,7 +3320,7 @@ void Eval_dXdt(const Real t,
         {
             if (matfactories[lev]->std_elem.p == 0)
             {
-                dXs[lev].define(Xs[lev].boxarray, Xs[lev].distributionMap, AMREX_SPACEDIM*N_SOL, 1);
+                dXs[lev].define(Xs[lev].boxarray, Xs[lev].distributionMap, AMREX_SPACEDIM*N_SOL, Xs[lev].n_grow);
                 dXs[lev] = 0.0;
             }
         }

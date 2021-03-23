@@ -410,7 +410,8 @@ public amrex::DG::AMR::Base
     virtual void MakeNewLevelFromScratch(int lev, amrex::Real /*time*/, const amrex::BoxArray & ba, const amrex::DistributionMapping & dm) override
     {
         // PARAMETERS -------------------------------------------------
-        const int ngr = 1;
+        const int mask_n_grow = 1;
+        const int X_n_grow = 2;
         // ------------------------------------------------------------
         
         // VARIABLES --------------------------------------------------
@@ -456,7 +457,7 @@ public amrex::DG::AMR::Base
         // ------------------------------------------------------------
 
         // MASKS ------------------------------------------------------
-        this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, ngr);
+        this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, mask_n_grow);
         this->masks[lev] = __DG_CELL_UNMASKED__;
         // ------------------------------------------------------------
 
@@ -464,7 +465,7 @@ public amrex::DG::AMR::Base
         const int p = level_inputs.dG.space_p;
         const int X_n_comp = DG_N_SOL*(AMREX_D_TERM((1+p),*(1+p),*(1+p)));
         
-        this->Xs[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, X_n_comp, ngr);
+        this->Xs[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, X_n_comp, X_n_grow);
         this->Xs[lev] = 0.0;
         // ------------------------------------------------------------
 
@@ -562,7 +563,8 @@ exit(-1);
     virtual void MakeNewLevelFromCoarse(int lev, amrex::Real time, const amrex::BoxArray & ba, const amrex::DistributionMapping & dm) override
     {
         // PARAMETERS -------------------------------------------------
-        const int ngr = 1;
+        const int mask_n_grow = 1;
+        const int X_n_grow = 2;
         // ------------------------------------------------------------
         
         // VARIABLES --------------------------------------------------
@@ -626,7 +628,7 @@ exit(-1);
             // --------------------------------------------------------
 
             // MASKS --------------------------------------------------
-            this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, ngr);
+            this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, mask_n_grow);
             this->masks[lev] = __DG_CELL_UNMASKED__;
             // --------------------------------------------------------
 
@@ -634,7 +636,7 @@ exit(-1);
             const int p = level_inputs.dG.space_p;
             const int X_n_comp = DG_N_SOL*(AMREX_D_TERM((1+p),*(1+p),*(1+p)));
 
-            this->Xs[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, X_n_comp, ngr);
+            this->Xs[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, X_n_comp, X_n_grow);
             this->Xs[lev] = 0.0;
 
             const amrex::Gpu::ManagedVector<int> Sol2Dom(DG_N_SOL, 0);
@@ -660,7 +662,7 @@ exit(-1);
     virtual void RemakeLevel(int lev, amrex::Real time, const amrex::BoxArray & ba, const amrex::DistributionMapping & dm) override
     {
         // PARAMETERS -------------------------------------------------
-        const int ngr = 1;
+        const int mask_n_grow = 1;
         // ------------------------------------------------------------
         
         // VARIABLES --------------------------------------------------
@@ -706,7 +708,7 @@ exit(-1);
             // --------------------------------------------------------
 
             // MASKS --------------------------------------------------
-            this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, ngr);
+            this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, mask_n_grow);
             this->masks[lev] = __DG_CELL_UNMASKED__;
             // --------------------------------------------------------
 
@@ -787,7 +789,7 @@ exit(-1);
             // MAKE THE LEVELS
             const int N_PHI = 1;
             const int N_DOM = 1;
-            const int ngr = 1;
+            const int mask_n_grow = 1;
             int phi_info[2];
 
             for (int lev = 0; lev <= this->max_level; ++lev)
@@ -819,7 +821,7 @@ exit(-1);
                                                               *this->matfactories[lev]);
                 }
 
-                this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, ngr);
+                this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, mask_n_grow);
                 this->masks[lev] = __DG_CELL_UNMASKED__;
             }
         }

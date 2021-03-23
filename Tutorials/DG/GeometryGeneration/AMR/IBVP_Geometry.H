@@ -335,7 +335,8 @@ public amrex::DG::AMR::Base
     virtual void MakeNewLevelFromScratch(int lev, amrex::Real /*time*/, const amrex::BoxArray & ba, const amrex::DistributionMapping & dm) override
     {
         // PARAMETERS -------------------------------------------------
-        const int ngr = 1;
+        const int mask_n_grow = 1;
+        const int X_n_grow = 1;
         // ------------------------------------------------------------
         
         // VARIABLES --------------------------------------------------
@@ -370,7 +371,7 @@ public amrex::DG::AMR::Base
         // ------------------------------------------------------------
 
         // MASKS ------------------------------------------------------
-        this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, ngr);
+        this->masks[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, 1, mask_n_grow);
         this->masks[lev] = __DG_CELL_UNMASKED__;
         // ------------------------------------------------------------
 
@@ -378,7 +379,7 @@ public amrex::DG::AMR::Base
         const int p = level_inputs.dG.space_p;
         const int X_n_comp = N_SOL*(AMREX_D_TERM((1+p),*(1+p),*(1+p)));
 
-        this->Xs[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, X_n_comp, ngr);
+        this->Xs[lev].define(this->meshes[lev]->cc_ba, this->meshes[lev]->dm, X_n_comp, X_n_grow);
         this->Xs[lev] = 0.0;
         // ------------------------------------------------------------
 
