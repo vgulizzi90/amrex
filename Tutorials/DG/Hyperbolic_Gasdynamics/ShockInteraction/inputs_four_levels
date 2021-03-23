@@ -1,7 +1,7 @@
 # SPACE ###############################################################
 # CIRCLE/SPHERE =======================================================
 geometry.prob_lo     = 0.0 0.5 0.5
-geometry.prob_hi     = 1.0 1.0 1.0
+geometry.prob_hi     = 4.0 1.0 1.0
 geometry.is_periodic = 0 0 0
 # =====================================================================
 
@@ -16,7 +16,7 @@ geometry.is_periodic = 0 0 0
 
 # TIME ################################################################
 # CIRCLE/SPHERE =======================================================
-time.T = 0.1
+time.T = 0.2
 #time.T = 0.138359
 time.n_steps = 100000
 # =====================================================================
@@ -33,7 +33,7 @@ time.n_steps = 100000
 # AMR =================================================================
 amr.v = 1
 
-amr.n_cell        = 16 8 8
+amr.n_cell        = 64 8 8
 amr.max_grid_size = 4 8 8 8
 amr.max_level     = 3
 amr.ref_ratio     = 4 4 4 4
@@ -63,9 +63,10 @@ grids.space_q = 2 2 2 2
 #implicit_meshes.volume_fraction_threshold = 0.3 0.3 0.3 0.3
 
 # 3D
-implicit_meshes.space_q = 3 4 4 4 
+implicit_meshes.space_q = 3 3 3 3 
 implicit_meshes.space_q_ie = 5 7 7 7
 implicit_meshes.volume_fraction_threshold = 0.15 0.15 0.15 0.15
+implicit_meshes.active = 0 0 1 1
 # =====================================================================
 
 
@@ -138,9 +139,9 @@ problem.params = 1.4 0.2 2.89 1.0 0.0 1.0 0.10 0.5 0.5 0.5
 
 # POST-PROCESSING INFO ################################################
 plot_int = 120
-plot_filepath = PROBLEM_FOUR_LEVELS
+plot_filepath = PROBLEM_3D_FOUR_LEVELS
 checkpoint_int = 120
-checkpoint_filepath = PROBLEM_FOUR_LEVELS
+checkpoint_filepath = PROBLEM_3D_FOUR_LEVELS
 
 # 2D
 #regrid_int = 5

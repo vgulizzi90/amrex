@@ -28,7 +28,7 @@ struct MatrixFactory
 {
     // DATA MEMBERS ###################################################
     // CLASS-WIDE PARAMETERS
-    static const int dom_data_ngr = 1;
+    static const int dom_data_ngr = 2;
 
     // GRID
     StandardRectangle<AMREX_SPACEDIM> std_elem;

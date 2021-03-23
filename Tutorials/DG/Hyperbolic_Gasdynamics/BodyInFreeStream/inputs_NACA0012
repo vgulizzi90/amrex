@@ -7,8 +7,8 @@ geometry.is_periodic = 0 0 0
 
 
 # TIME ################################################################
-time.T = 4.0
-time.n_steps = 1
+time.T = 20.0
+time.n_steps = 400000
 #######################################################################
 
 
@@ -18,7 +18,7 @@ time.n_steps = 1
 amr.v = 1
 
 amr.n_cell        = 64 64 64
-amr.max_grid_size = 4 16 16 16 4
+amr.max_grid_size = 4 16 16
 amr.max_level     = 5
 amr.ref_ratio     = 4
 amr.blocking_factor = 4
@@ -41,7 +41,6 @@ implicit_meshes.space_q = 1 2 3 3 3 3
 implicit_meshes.space_q_ie = 1 5 6 6 6 6
 
 implicit_meshes.volume_fraction_threshold = 0.3 0.3 0.3 0.3 0.3 0.3
-implicit_meshes.active = 0 0 0 1 1 1
 # =====================================================================
 
 
@@ -54,9 +53,7 @@ dG.space_p = 1 1 2 3 3 0
 
 # PROBLEM #############################################################
 problem.int_params = 40012
-#problem.params = 1.4 0.5 2.00 32.01 32.0 1.0 # subsonic
-#problem.params = 1.4 0.8 1.25 32.01 32.0 1.0 # transonic
-problem.params = 1.4 1.5 0.00 32.01 32.0 1.0 # supersonic
+problem.params = 1.4 0.8 1.25 32.01 32.0 1.0
 #######################################################################
 # NOTE: params contains the parameters of the problem, which should be
 #       input as follows
@@ -85,9 +82,9 @@ problem.params = 1.4 1.5 0.00 32.01 32.0 1.0 # supersonic
 
 # POST-PROCESSING INFO ################################################
 plot_int = 5000
-plot_filepath = PROBLEM_NACA0012_supersonic
+plot_filepath = PROBLEM_NACA0012_transonic
 checkpoint_int = 5000
-checkpoint_filepath = PROBLEM_NACA0012_supersonic
+checkpoint_filepath = PROBLEM_NACA0012_transonic
 
 # 2D
 regrid_int = 5
@@ -95,5 +92,5 @@ regrid_int = 5
 # 3D
 #regrid_int = 5
 
-restart = -1
+restart = 195000
 #######################################################################

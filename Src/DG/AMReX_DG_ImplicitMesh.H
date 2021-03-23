@@ -897,7 +897,7 @@ struct ImplicitMesh
 {
     // DATA MEMBERS ###################################################
     // CLASS-WIDE PARAMETERS
-    static const int dom_data_ngr = 1;
+    static const int dom_data_ngr = 2;
     static const int bou_data_ngr = 0;
     
     // GRID

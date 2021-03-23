@@ -516,7 +516,7 @@ public amrex::DG::AMR::Base
         // REFINE ACROSS THE EMBEDDED GEOMETRY ------------------------
         tags.setVal(untagged);
 
-/*
+/**/
         if (this->max_level == 2)
         {
             if (lev == 0)
@@ -524,13 +524,20 @@ public amrex::DG::AMR::Base
                 this->TrackLevelsets(*this->meshes[lev], tags, tagged);
             }
         }
+	else if (this->max_level == 3)
+	{
+	    if ((lev == 0) || (lev == 1))
+	    {
+	        this->TrackLevelsets(*this->meshes[lev], tags, tagged);
+	    }
+	}
         else
         {
 amrex::Print() << "ErrorEst" << std::endl;
 amrex::Print() << "this->max_level: " << this->max_level << std::endl;
 exit(-1);
         }
-*/
+/**/
         // ------------------------------------------------------------
 
         // EVAL TROUBLED CELLS ----------------------------------------
