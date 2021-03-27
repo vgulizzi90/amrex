@@ -1058,7 +1058,7 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath_root,
             const Dim3 hi = ubound(bx);
 
             Array4<Real const> const & PHI_fab = mesh.PHI.array(mfi);
-            Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+            //Array4<short const> const & eType_fab = mesh.eType.array(mfi);
             Array4<short const> const & eBouType_fab = mesh.eBouType[dir].array(mfi);
             Array4<int const> const & mask_fab = mask.array(mfi);
 
@@ -1070,9 +1070,11 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath_root,
                 int mi, mj, mk, pi, pj, pk;
                 Real m_cell_lo[AMREX_SPACEDIM], m_cell_hi[AMREX_SPACEDIM];
                 Real p_cell_lo[AMREX_SPACEDIM], p_cell_hi[AMREX_SPACEDIM];
+                /*
                 int m_etype, p_etype;
                 bool m_elm_is_small, p_elm_is_small, cells_are_merged;
                 int m_merged_b, p_merged_b;
+                */
                 int m_mask, p_mask;
                 Real x[AMREX_SPACEDIM];
                 Real m_PHI[__DG_MAX_N_PHI__], p_PHI[__DG_MAX_N_PHI__];
@@ -1184,26 +1186,15 @@ void ExportImplicitMesh_BouData_VTK(const std::string & folderpath_root,
                     {
                         for (int dom = 0; dom < N_DOM; ++dom)
                         {
-                            // elm^-
-                            m_etype = eType_fab(mi,mj,mk,ELM_TYPE(dom));
-                            m_elm_is_small = (m_etype%10 == __DG_ELM_TYPE_SMALL__);
-                            m_merged_b = (m_elm_is_small) ? (m_etype/10) : -1;
+                            const short bou_type = eBouType_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
 
-                            // elm^+
-                            p_etype = eType_fab(pi,pj,pk,ELM_TYPE(dom));
-                            p_elm_is_small = (p_etype%10 == __DG_ELM_TYPE_SMALL__);
-                            p_merged_b = (p_elm_is_small) ? (p_etype/10) : -1;
-
-                            // Check whether the cells are merged
-                            cells_are_merged = ((m_merged_b == 2*dir+1) || (p_merged_b == 2*dir));
-
-                            if (cells_are_merged)
+                            if (ELM_BOU_IS_VALID(bou_type))
                             {
-                                VTK_cell_fields_ptr[N_DOM+dom][VTK_cell_field_pos] = 0;
+                                VTK_cell_fields_ptr[N_DOM+dom][VTK_cell_field_pos] = 1;
                             }
                             else
                             {
-                                VTK_cell_fields_ptr[N_DOM+dom][VTK_cell_field_pos] = 1;
+                                VTK_cell_fields_ptr[N_DOM+dom][VTK_cell_field_pos] = 0;
                             }
                         }
                     }

@@ -471,7 +471,7 @@ Print() << ELM_TYPE_DESCRIPTION(etype) << std::endl;
 Print() << "elm_is_tagged: " << (elm_is_not_tagged ? "no" : "yes") << std::endl;
 }
 */
-
+                    /*
                     if (ELM_IS_EXTENDED(etype) && elm_is_not_tagged)
                     {
                         // LOCAL VARIABLES
@@ -488,6 +488,22 @@ Print() << "elm_is_tagged: " << (elm_is_not_tagged ? "no" : "yes") << std::endl;
                             nbr_is_tagged = (tags_fab(nbr_i,nbr_j,nbr_k) == tagval);
 
                             if ((nbr_merged_b == nbr_b) && nbr_is_tagged)
+                            {
+                                tags_fab(i,j,k) = tagval;
+                            }
+                        }
+                    }
+                    */
+                    if (ELM_IS_EXTENDED(etype) && elm_is_not_tagged)
+                    {
+                        for (int n = 0; n < __DG_EXTENDED_STENCIL_N_NBR__; ++n)
+                        {
+                            const int nbr_i = i+extended_stencil_table_i[n];
+                            const int nbr_j = j+extended_stencil_table_j[n];
+                            const int nbr_k = k+extended_stencil_table_k[n];
+                            const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                            const bool nbr_is_tagged = (tags_fab(nbr_i,nbr_j,nbr_k) == tagval);
+                            if (CELLS_ARE_MERGED(i, j, k, nbr_i, nbr_j, nbr_k, nbr_etype) && nbr_is_tagged)
                             {
                                 tags_fab(i,j,k) = tagval;
                             }

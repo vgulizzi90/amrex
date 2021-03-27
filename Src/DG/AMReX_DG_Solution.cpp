@@ -170,10 +170,10 @@ void AddSmallElementsContribution(const ImplicitMesh & mesh,
             
             // LOCAL VARIABLES
             short nbr_etype;
-            int nbr_i, nbr_j, nbr_k, nbr_b, nbr_merged_b;
-            bool nbr_is_small;
+            int nbr_i, nbr_j, nbr_k;
 
             // EXTENDED ELEMENTS
+            /*
             if (elm_is_extended)
             for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
             {
@@ -188,6 +188,25 @@ void AddSmallElementsContribution(const ImplicitMesh & mesh,
                     for (int rs = 0; rs < sNp; ++rs)
                     {
                         X_fab(i,j,k,rs+ru*sNp) += X_fab(nbr_i,nbr_j,nbr_k,rs+ru*sNp);
+                    }
+                }
+            }
+            */
+            if (elm_is_extended)
+            {
+                for (int n = 0; n < __DG_EXTENDED_STENCIL_N_NBR__; ++n)
+                {
+                    nbr_i = i+extended_stencil_table_i[n];
+                    nbr_j = j+extended_stencil_table_j[n];
+                    nbr_k = k+extended_stencil_table_k[n];
+                    nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                    
+                    if (CELLS_ARE_MERGED(i, j, k, nbr_i, nbr_j, nbr_k, nbr_etype))
+                    {
+                        for (int rs = 0; rs < sNp; ++rs)
+                        {
+                            X_fab(i,j,k,rs+ru*sNp) += X_fab(nbr_i,nbr_j,nbr_k,rs+ru*sNp);
+                        }
                     }
                 }
             }

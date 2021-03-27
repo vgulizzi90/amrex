@@ -5,6 +5,9 @@
 #include <iomanip>
 #include <string>
 
+#include <AMReX_Print.H>
+#include <AMReX_DG_LinAlg.H>
+
 // TESTED ROUTINES ====================================================
 extern "C"
 {
@@ -33,13 +36,6 @@ extern "C"
 
 }
 // ====================================================================
-
-#define AMREX_GPU_HOST_DEVICE
-#define AMREX_FORCE_INLINE __inline__
-#define Real double
-#define Abort() exit(-1)
-
-#include "../../../Src/DG/AMReX_DG_LinAlg.H"
 
 // AUXILIARY ROUTINES =================================================
 void iPrint2D(const std::string & name, int Nr, int Nc, const int * a)
@@ -79,7 +75,7 @@ void ErrMsg(const std::string & region, const std::string routine)
     exit(-1);
 }
 
-void Eye(const int N, Real * A)
+void Eye(const int N, double * A)
 {
     std::fill(A, A+N*N, 0.0);
     for (int n = 0; n < N; ++n)
@@ -311,10 +307,10 @@ int main()
         char UPLO = 'L';
         char TRANS = 'T';
         char DIAG = 'U';
-        Real alpha = 1.0;//distr(gen);
+        double alpha = 1.0;//distr(gen);
         int sizeA = LDA*((SIDE == 'L') ? M : N);
         int sizeB = LDB*N;
-        Real A[sizeA], B[sizeB], X[sizeB], XRef[sizeB];
+        double A[sizeA], B[sizeB], X[sizeB], XRef[sizeB];
 
         // INIT
         for (int n = 0; n < sizeA; ++n)
@@ -616,7 +612,7 @@ int main()
 
     // DPOTRS
     {
-        int M = 25;
+        int M = 8;
         int N = 4;
         
         double A0[M*M], A[M*M], ARef[M*M], X[M*N], XRef[M*N], X0[M*N];

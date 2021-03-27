@@ -40,25 +40,153 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void NBR_CELL(const int i, const int j, const int k, const int b,
               int & nbr_i, int & nbr_j, int & nbr_k, int & nbr_b)
 {
-    // Neighboring cell id
-    // b = 0 <-> nbr_i = i-1, nbr_j = j,   nbr_k = k
-    // b = 1 <-> nbr_i = i+1, nbr_j = j,   nbr_k = k
-    // b = 2 <-> nbr_i = i,   nbr_j = j-1, nbr_k = k
-    // b = 3 <-> nbr_i = i,   nbr_j = j+1, nbr_k = k
-    // b = 4 <-> nbr_i = i,   nbr_j = j,   nbr_k = k-1
-    // b = 5 <-> nbr_i = i,   nbr_j = j,   nbr_k = k+1
-    nbr_i = i+(-1+2*(b%2))*((b/2)-1)*((b/2)-2)/2;
-    nbr_j = j+(-1+2*(b%2))*(2-(b/2))*(b/2);
-    nbr_k = k+(-1+2*(b%2))*((b/2)-1)*(b/2)/2;
+    if (b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__)
+    {
+        // Neighboring cell id
+        // b = 0 <-> nbr_i = i-1, nbr_j = j,   nbr_k = k
+        // b = 1 <-> nbr_i = i+1, nbr_j = j,   nbr_k = k
+        // b = 2 <-> nbr_i = i,   nbr_j = j-1, nbr_k = k
+        // b = 3 <-> nbr_i = i,   nbr_j = j+1, nbr_k = k
+        // b = 4 <-> nbr_i = i,   nbr_j = j,   nbr_k = k-1
+        // b = 5 <-> nbr_i = i,   nbr_j = j,   nbr_k = k+1
+        nbr_i = i+(-1+2*(b%2))*((b/2)-1)*((b/2)-2)/2;
+        nbr_j = j+(-1+2*(b%2))*(2-(b/2))*(b/2);
+        nbr_k = k+(-1+2*(b%2))*((b/2)-1)*(b/2)/2;
 
-    // Boundary id as seen by the neighboring cell
-    // b = 0 <-> nbr_b = 1
-    // b = 1 <-> nbr_b = 0
-    // b = 2 <-> nbr_b = 3
-    // b = 3 <-> nbr_b = 2
-    // b = 4 <-> nbr_b = 5
-    // b = 5 <-> nbr_b = 4
-    nbr_b = b+1-2*(b%2);
+        // Boundary id as seen by the neighboring cell
+        // b = 0 <-> nbr_b = 1
+        // b = 1 <-> nbr_b = 0
+        // b = 2 <-> nbr_b = 3
+        // b = 3 <-> nbr_b = 2
+        // b = 4 <-> nbr_b = 5
+        // b = 5 <-> nbr_b = 4
+        nbr_b = b+1-2*(b%2);
+    }
+    else
+    {
+#if (AMREX_SPACEDIM == 2)
+        // Neighboring cell id
+        // b = 4+0 <-> nbr_i = i-1, nbr_j = j-1, nbr_k = k
+        // b = 4+1 <-> nbr_i = i+1, nbr_j = j-1, nbr_k = k
+        // b = 4+2 <-> nbr_i = i-1, nbr_j = j+1, nbr_k = k
+        // b = 4+3 <-> nbr_i = i+1, nbr_j = j+1, nbr_k = k
+        nbr_i = i+2*(b%2)-1;
+        nbr_j = j+2*((b-4)/2)-1;
+        nbr_k = k;
+#endif
+#if (AMREX_SPACEDIM == 3)
+        switch (b)
+        {
+            case 6:
+                nbr_i = i;
+                nbr_j = j-1;
+                nbr_k = k-1;
+                break;
+            case 7:
+                nbr_i = i;
+                nbr_j = j+1;
+                nbr_k = k-1;
+                break;
+            case 8:
+                nbr_i = i-1;
+                nbr_j = j;
+                nbr_k = k-1;
+                break;
+            case 9:
+                nbr_i = i+1;
+                nbr_j = j;
+                nbr_k = k-1;
+                break;
+                
+            case 10:
+                nbr_i = i-1;
+                nbr_j = j-1;
+                nbr_k = k;
+                break;
+            case 11:
+                nbr_i = i+1;
+                nbr_j = j-1;
+                nbr_k = k;
+                break;
+            case 12:
+                nbr_i = i-1;
+                nbr_j = j+1;
+                nbr_k = k;
+                break;
+            case 13:
+                nbr_i = i+1;
+                nbr_j = j+1;
+                nbr_k = k;
+                break;
+                
+            case 14:
+                nbr_i = i;
+                nbr_j = j-1;
+                nbr_k = k+1;
+                break;
+            case 15:
+                nbr_i = i;
+                nbr_j = j+1;
+                nbr_k = k+1;
+                break;
+            case 16:
+                nbr_i = i-1;
+                nbr_j = j;
+                nbr_k = k+1;
+                break;
+            case 17:
+                nbr_i = i+1;
+                nbr_j = j;
+                nbr_k = k+1;
+                break;
+
+            case 18:
+                nbr_i = i-1;
+                nbr_j = j-1;
+                nbr_k = k-1;
+                break;
+            case 19:
+                nbr_i = i+1;
+                nbr_j = j-1;
+                nbr_k = k-1;
+                break;
+            case 20:
+                nbr_i = i-1;
+                nbr_j = j+1;
+                nbr_k = k-1;
+                break;
+            case 21:
+                nbr_i = i+1;
+                nbr_j = j+1;
+                nbr_k = k-1;
+                break;
+
+            case 22:
+                nbr_i = i-1;
+                nbr_j = j-1;
+                nbr_k = k+1;
+                break;
+            case 23:
+                nbr_i = i+1;
+                nbr_j = j-1;
+                nbr_k = k+1;
+                break;
+            case 24:
+                nbr_i = i-1;
+                nbr_j = j+1;
+                nbr_k = k+1;
+                break;
+            case 25:
+                nbr_i = i+1;
+                nbr_j = j+1;
+                nbr_k = k+1;
+                break;
+        }
+#endif
+
+        // Boundary id as seen by the neighboring cell
+        nbr_b = -1;
+    }
 }
 
 /**
@@ -219,6 +347,75 @@ void BF_CELL(const Real * prob_lo, const Real * dx,
 {
     int BF_i, BF_j, BF_k;
     BF_CELL(prob_lo, dx, i, j, k, etype, BF_i, BF_j, BF_k, BF_lo, BF_hi);
+}
+
+/**
+ * \brief Given the indices of two cells, return true if the cells are merged.
+ *
+ * \param[in] (i,j,k): indices of the cell.
+ * \param[in] (nbr_i,nbr_j,nbr_k): indices of the neighboring cell.
+ *
+ * \return true if the cells are merged, false otherwise.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELLS_ARE_MERGED(const int i, const int j, const int k,
+                      const int nbr_i, const int nbr_j, const int nbr_k)
+{
+    return ((i == nbr_i) && (j == nbr_j) && (k == nbr_k));
+}
+/**
+ * \brief Given the indices of two cells and the element type, return true if the cells are merged.
+ *
+ * \param[in] (i,j,k): indices of the cell.
+ * \param[in] etype: type of the cell.
+ * \param[in] (nbr_i,nbr_j,nbr_k): indices of the neighboring cell.
+ *
+ * \return true if the cells are merged, false otherwise.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELLS_ARE_MERGED(const int i, const int j, const int k, const short etype,
+                      const int nbr_i, const int nbr_j, const int nbr_k)
+{
+    int BF_i, BF_j, BF_k;
+    BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+    return ((BF_i == nbr_i) && (BF_j == nbr_j) && (BF_k == nbr_k));
+}
+/**
+ * \brief Given the indices of two cells and the element type, return true if the cells are merged.
+ *
+ * \param[in] (i,j,k): indices of the cell.
+ * \param[in] (nbr_i,nbr_j,nbr_k): indices of the neighboring cell.
+ * \param[in] nbr_etype: type of the neighboring cell.
+ *
+ * \return true if the cells are merged, false otherwise.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELLS_ARE_MERGED(const int i, const int j, const int k,
+                      const int nbr_i, const int nbr_j, const int nbr_k, const short nbr_etype)
+{
+    int nbr_BF_i, nbr_BF_j, nbr_BF_k;
+    BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+    return ((i == nbr_BF_i) && (j == nbr_BF_j) && (k == nbr_BF_k));
+}
+/**
+ * \brief Given the indices of two cells and the element type, return true if the cells are merged.
+ *
+ * \param[in] (i,j,k): indices of the cell.
+ * \param[in] etype: type of the cell.
+ * \param[in] (nbr_i,nbr_j,nbr_k): indices of the neighboring cell.
+ * \param[in] nbr_etype: type of the neighboring cell.
+ *
+ * \return true if the cells are merged, false otherwise.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELLS_ARE_MERGED(const int i, const int j, const int k, const short etype,
+                      const int nbr_i, const int nbr_j, const int nbr_k, const short nbr_etype)
+{
+    int BF_i, BF_j, BF_k;
+    int nbr_BF_i, nbr_BF_j, nbr_BF_k;
+    BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+    BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+    return ((BF_i == nbr_BF_i) && (BF_j == nbr_BF_j) && (BF_k == nbr_BF_k));
 }
 
 // FOR ALGOIM
@@ -2010,7 +2207,8 @@ struct ImplicitMesh
         }
         this->eType.FillBoundary(this->geom.periodicity());
 
-        // SETUP MERGING INFO
+        // SETUP MERGING INFO (OLD VERSION)
+        /*
         for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
         {
             const Box & bx = mfi.validbox();
@@ -2065,42 +2263,6 @@ struct ImplicitMesh
                         }
                     }
 
-/*
-if (i == 40 && j == 36 && k == 27)
-{
-const int r = ParallelDescriptor::MyProc();
-
-const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
-
-Print(r) << "HELLO " << std::endl;
-Print(r) << "etype: " << ELM_TYPE_DESCRIPTION(etype) << std::endl;
-
-BF_CELL(i, j, k, etype, nbr_i, nbr_j, nbr_k);
-
-Print(r) << "nbr: (" << nbr_i << "," << nbr_j << "," << nbr_k << ")" << std::endl;
-
-Print(r) << "domain.contains(nbr): " << domain.contains(nbr_i, nbr_j, nbr_k) << std::endl;
-Print(r) << "fabbox.contains(nbr): " << fbx.contains(nbr_i, nbr_j, nbr_k) << std::endl;
-
-Print(r) << "fbx: " << fbx << std::endl;
-
-exit(-1);
-}
-*/
-
-/*
-if (j > i)
-{
-    const int b = 2;
-    eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__+b*10;
-}
-else
-{
-    const int b = 0;
-    eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__+b*10;
-}
-*/
-
                     // MARK THE BOUNDARY AS INVALID
                     if (elm_has_been_merged)
                     {
@@ -2114,13 +2276,13 @@ else
                             eBouType_fab_0(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_PARTIAL_INVALID__;
                         }
 #if (AMREX_SPACEDIM > 1)
-                        if ((b == 2) || (b == 3))
+                        else if ((b == 2) || (b == 3))
                         {
                             eBouType_fab_1(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_PARTIAL_INVALID__;
                         }
 #endif
 #if (AMREX_SPACEDIM > 2)
-                        if ((b == 4) || (b == 5))
+                        else if ((b == 4) || (b == 5))
                         {
                             eBouType_fab_2(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_PARTIAL_INVALID__;
                         }
@@ -2166,12 +2328,14 @@ else
             Gpu::synchronize();
         }
         this->eType.FillBoundary(this->geom.periodicity());
+        */
 
         // MARK THE EXTENDED ELEMENT AND THE DISAPPEARED BOUNDARIES AS
-        // INVALID (FROM EXTENDED ELEMENTS VIEWPOINT)
+        // INVALID (FROM EXTENDED ELEMENTS VIEWPOINT) (OLD VERSION)
         // This is needed because merging can happen across the boxes
         // and, up to now, the disappeared boundaries have been marked
         // only on the boxes containing the small elements.
+        /*
         for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
         {
             const Box & bx = mfi.validbox();
@@ -2238,6 +2402,295 @@ else
             Gpu::synchronize();
         }
         this->eType.FillBoundary(this->geom.periodicity());
+        */
+
+        // SETUP MERGING INFO (NEW VERSION - BIG-STENCIL MERGING)
+        /**/
+        for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<Real const> const & eInfo_fab = this->eInfo.array(mfi);
+
+            Array4<short> const & eType_fab = this->eType.array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // LOCAL PARAMETERS
+                const bool elm_is_partial = ELM_IS_PARTIAL(eType_fab(i,j,k,ELM_TYPE(dom)));
+                
+                const Real vf = eInfo_fab(i,j,k,ELM_VOLUME_FRACTION(dom));
+
+                // LOCAL VARIABLES
+                int nbr_i, nbr_j, nbr_k, nbr_b;
+                Real nbr_vf, best_nbr_vf;
+                bool elm_has_been_merged, nbr_is_not_ghost;
+
+                // CONDITIONS FOR SMALL ELEMENTS
+                if (elm_is_partial && (vf < vft))
+                {
+                    elm_has_been_merged = false;
+                    best_nbr_vf = vft;
+
+                    // Search among the neighbors. We currently limit the
+                    // search to the neighboring cells that share a 
+                    // boundary with the current cell.
+                    for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                    {
+                        // Neighboring cell id and boundary
+                        NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+
+                        //nbr_is_valid = domain.contains(nbr_i, nbr_j, nbr_k);
+                        nbr_is_not_ghost = (!ELM_IS_GHOST(eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom))));
+
+                        nbr_vf = eInfo_fab(nbr_i,nbr_j,nbr_k,ELM_VOLUME_FRACTION(dom));
+
+                        if ((nbr_vf > best_nbr_vf) && nbr_is_not_ghost)
+                        {
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__+b*10;
+                            elm_has_been_merged = true;
+                            best_nbr_vf = nbr_vf;
+                        }
+                    }
+
+#if (AMREX_SPACEDIM == 2)
+                    // In 2D, extend the search to the elements that share a 
+                    // corner with the current cell
+                    if (!elm_has_been_merged)
+                    {
+                        for (int b = 0; b < __DG_STD_ELEM_N_SPACE_CORNERS__; ++b)
+                        {
+                            // Neighboring cell id and boundary
+                            const int bb = b+__DG_STD_ELEM_N_SPACE_BOUNDARIES__;
+                            NBR_CELL(i, j, k, bb, nbr_i, nbr_j, nbr_k, nbr_b);
+
+                            nbr_is_not_ghost = (!ELM_IS_GHOST(eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom))));
+
+                            nbr_vf = eInfo_fab(nbr_i,nbr_j,nbr_k,ELM_VOLUME_FRACTION(dom));
+
+                            if ((nbr_vf > best_nbr_vf) && nbr_is_not_ghost)
+                            {
+                                eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__+bb*10;
+                                elm_has_been_merged = true;
+                                best_nbr_vf = nbr_vf;
+                            }
+//Print() << "bb, nbr_i, nbr_j, nbr_k, nbr_b, vf: " << bb << ", " << nbr_i << ", " << nbr_j << ", " << nbr_k << ", " << nbr_b << " " << nbr_vf << std::endl;
+                        }
+//Print() << ELM_TYPE_DESCRIPTION(eType_fab(i,j,k,ELM_TYPE(dom))) << std::endl;
+//Print() << "merging with corners" << std::endl;
+//exit(-1);
+                    }
+#endif
+#if (AMREX_SPACEDIM == 3)
+                    // In 3D, extend the search to the elements that share an
+                    // edge with the current cell
+                    if (!elm_has_been_merged)
+                    {
+                        for (int b = 0; b < __DG_STD_ELEM_N_SPACE_EDGES__; ++b)
+                        {
+                            // Neighboring cell id and boundary
+                            const int bb = b+__DG_STD_ELEM_N_SPACE_BOUNDARIES__;
+                            NBR_CELL(i, j, k, bb, nbr_i, nbr_j, nbr_k, nbr_b);
+
+                            nbr_is_not_ghost = (!ELM_IS_GHOST(eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom))));
+
+                            nbr_vf = eInfo_fab(nbr_i,nbr_j,nbr_k,ELM_VOLUME_FRACTION(dom));
+
+                            if ((nbr_vf > best_nbr_vf) && nbr_is_not_ghost)
+                            {
+                                eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__+bb*10;
+                                elm_has_been_merged = true;
+                                best_nbr_vf = nbr_vf;
+                            }
+//Print() << "bb, nbr_i, nbr_j, nbr_k, nbr_b, vf: " << bb << ", " << nbr_i << ", " << nbr_j << ", " << nbr_k << ", " << nbr_b << " " << nbr_vf << std::endl;
+                        }
+//Print() << "edge neighbors" << std::endl;
+//exit(-1);
+                    }
+
+                    // In 3D, extend the search to the elements that share a
+                    // corner with the current cell
+                    if (!elm_has_been_merged)
+                    {
+                        for (int b = 0; b < __DG_STD_ELEM_N_SPACE_CORNERS__; ++b)
+                        {
+                            // Neighboring cell id and boundary
+                            const int bb = b+__DG_STD_ELEM_N_SPACE_BOUNDARIES__+__DG_STD_ELEM_N_SPACE_EDGES__;
+                            NBR_CELL(i, j, k, bb, nbr_i, nbr_j, nbr_k, nbr_b);
+
+                            nbr_is_not_ghost = (!ELM_IS_GHOST(eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom))));
+
+                            nbr_vf = eInfo_fab(nbr_i,nbr_j,nbr_k,ELM_VOLUME_FRACTION(dom));
+
+                            if ((nbr_vf > best_nbr_vf) && nbr_is_not_ghost)
+                            {
+                                eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__+bb*10;
+                                elm_has_been_merged = true;
+                                best_nbr_vf = nbr_vf;
+                            }
+//Print() << "bb, nbr_i, nbr_j, nbr_k, nbr_b, vf: " << bb << ", " << nbr_i << ", " << nbr_j << ", " << nbr_k << ", " << nbr_b << " " << nbr_vf << std::endl;
+                        }
+//Print() << "corner neighbors" << std::endl;
+//exit(-1);
+                    }
+#endif
+
+//if (j > i)
+//{
+//    const int b = 2;
+//    eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__+b*10;
+//}
+//else
+//{
+//    const int b = 0;
+//    eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_SMALL__+b*10;
+//}
+
+                    // CHECK
+                    if (!elm_has_been_merged)
+                    {
+                        printf("\n");
+                        printf("ERROR: AMReX_DG_ImplicitMesh.H - ImplicitMesh::Make\n");
+                        printf("| Could not find a neighboring cell suitable for merging:\n");
+                        printf("| dom: %d\n", dom);
+                        printf("| i,j,k: %d,%d,%d\n", i, j, k);
+                        printf("| Volume fraction: %f\n", vf);
+                        for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                        {
+                            // Neighboring cell id and boundary
+                            NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+                            nbr_vf = eInfo_fab(nbr_i,nbr_j,nbr_k,ELM_VOLUME_FRACTION(dom));
+                            if (bx.contains(nbr_i,nbr_j,nbr_k))
+                            {
+                                printf("| Volume fraction (nbr = %d): %f\n", b, nbr_vf);
+                            }
+                            else
+                            {
+                                printf("| Volume fraction (nbr = %d -- in fabbox): %f\n", b, nbr_vf);
+                            }
+                        }
+                        printf("\n");
+                        Abort("");
+                    }
+                }
+                // ELSE THE ELEMENT IS LARGE
+                else if (elm_is_partial && (vf >= vft))
+                {
+                    eType_fab(i,j,k,ELM_TYPE(dom)) = __DG_ELM_TYPE_LARGE__;
+                }
+            });
+            Gpu::synchronize();
+        }
+        this->eType.FillBoundary(this->geom.periodicity());
+        /**/
+
+        // MARK EXTENDED ELEMENTS (NEW VERSION - BIG-STENCIL MERGING)
+        /**/
+        for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short> const & eType_fab = this->eType.array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // LOCAL PARAMETERS
+                const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_valid = ELM_IS_VALID(etype);
+
+                if (elm_is_valid)
+                {
+                    bool elm_is_extended;
+                    int n;
+
+//Print() << "i, j, k: " << i << ", " << j << ", " << k << std::endl;
+
+                    elm_is_extended = false;
+                    n = 0;
+                    while (!elm_is_extended && (n < __DG_EXTENDED_STENCIL_N_NBR__))
+                    {
+                        const int nbr_i = i+extended_stencil_table_i[n];
+                        const int nbr_j = j+extended_stencil_table_j[n];
+                        const int nbr_k = k+extended_stencil_table_k[n];
+                        const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                        int BF_i, BF_j, BF_k;
+                        
+                        BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, BF_i, BF_j, BF_k);
+
+                        if ((i == BF_i) && (j == BF_j) && (k == BF_k))
+                        {
+                            elm_is_extended = true;
+                            eType_fab(i,j,k,ELM_TYPE(dom)) = etype+10;
+//Print() << "nbr_i, nbr_j, nbr_k: " << nbr_i << ", " << nbr_j << ", " << nbr_k << " -> " << BF_i << ", " << BF_j << ", " << BF_k << std::endl;
+                        }
+                        else
+                        {
+                            n += 1;
+                        }
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+        this->eType.FillBoundary(this->geom.periodicity());
+        /**/
+
+        // MARK INVALID BOUNDARIES (NEW VERSION - BIG-STENCIL MERGING)
+        /**/
+        for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+        {
+            for (MFIter mfi(this->eBouType[dir]); mfi.isValid(); ++mfi)
+            {
+                const Box & bx = mfi.validbox();
+
+                Array4<short> const & eBouType_fab = this->eBouType[dir].array(mfi);
+                Array4<short const> const & eType_fab = this->eType.array(mfi);
+
+                ParallelFor(bx, N_DOM,
+                [=] AMREX_GPU_DEVICE (int fi, int fj, int fk, int dom) noexcept
+                {
+                    int i, j, k, nbr_i, nbr_j, nbr_k;
+                    short etype, nbr_etype;
+                    //bool elm_is_small, nbr_is_small;
+                    //int BF_i, BF_j, BF_k, nbr_BF_i, nbr_BF_j, nbr_BF_k;
+
+                    FACE2NBRS(fi, fj, fk, dir, i, j, k, nbr_i, nbr_j, nbr_k);
+
+                    etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                    nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+
+                    //elm_is_small = ELM_IS_SMALL(etype);
+                    //nbr_is_small = ELM_IS_SMALL(nbr_etype);
+
+                    //BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+                    //BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                    /*
+                    if (elm_is_small && !nbr_is_small && (BF_i == nbr_i) && (BF_j == nbr_j) && (BF_k == nbr_k))
+                    {
+                        eBouType_fab(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_PARTIAL_INVALID__;
+                    }
+                    else if (!elm_is_small && nbr_is_small && (i == nbr_BF_i) && (j == nbr_BF_j) && (k == nbr_BF_k))
+                    {
+                        eBouType_fab(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_PARTIAL_INVALID__;
+                    }
+                    else if (elm_is_small && nbr_is_small && (BF_i == nbr_BF_i) && (BF_j == nbr_BF_j) && (BF_k == nbr_BF_k))
+                    {
+                        eBouType_fab(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_PARTIAL_INVALID__;
+                    }
+                    */
+                    //if ((BF_i == nbr_BF_i) && (BF_j == nbr_BF_j) && (BF_k == nbr_BF_k))
+                    if (CELLS_ARE_MERGED(i, j, k, etype, nbr_i, nbr_j, nbr_k, nbr_etype))
+                    {
+                        eBouType_fab(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_PARTIAL_INVALID__;
+                    }
+                });
+                Gpu::synchronize();
+            }
+        }
+        /**/
         // ============================================================
 
         // MARK GHOST CELLS AS ENTIRE OR LARGE CELLS ==================
@@ -2278,7 +2731,7 @@ else
             for (MFIter mfi(this->eBouType[dir]); mfi.isValid(); ++mfi)
             {
                 const Box & bx = mfi.validbox();
-                const Box fbx = convert(bx, IntVect::TheCellVector()).grow(1);
+                const Box fbx = convert(bx, IntVect::TheCellVector()).grow(this->dom_data_ngr);
 
                 Array4<short const> const & eBouType_fab = this->eBouType[dir].array(mfi);
                 Array4<short const> const & eType_fab = this->eType.array(mfi);
@@ -2394,6 +2847,8 @@ else
         // ============================================================
 
         // UPDATE THE CENTROIDS OF THE EXTENDED ELEMENTS ==============
+        // (OLD VERSION)
+        /*
         for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
         {
             const Box & bx = mfi.validbox();
@@ -2459,6 +2914,73 @@ else
             Gpu::synchronize();
         }
         this->eInfo.FillBoundary();
+        */
+
+        // NEW VERSION - BIG-STENCIL MERGING 
+        /**/
+        for (MFIter mfi(this->eType); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & eType_fab = this->eType.array(mfi);
+
+            Array4<Real> const & eInfo_fab = this->eInfo.array(mfi);
+
+            ParallelFor(bx, N_DOM,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // LOCAL PARAMETERS
+                const short etype = eType_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_extended = ELM_IS_EXTENDED(etype);
+
+                // Cycle over the boundaries and add the small element
+                // contribution to the centroid.
+                if (elm_is_extended)
+                {
+                    for (int n = 0; n < __DG_EXTENDED_STENCIL_N_NBR__; ++n)
+                    {
+                        const int nbr_i = i+extended_stencil_table_i[n];
+                        const int nbr_j = j+extended_stencil_table_j[n];
+                        const int nbr_k = k+extended_stencil_table_k[n];
+                        const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                        int nbr_BF_i, nbr_BF_j, nbr_BF_k;
+
+                        BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+
+                        if ((i == nbr_BF_i) && (j == nbr_BF_j) && (k == nbr_BF_k))
+                        {
+                            // UPDATE ITS CENTROID
+                            const Real small_V = eInfo_fab(nbr_i,nbr_j,nbr_k,ELM_VOLUME(dom));
+                            const Real V = eInfo_fab(i,j,k,ELM_VOLUME(dom));
+                            
+                            Real small_S[AMREX_SPACEDIM], S[AMREX_SPACEDIM];
+
+                            AMREX_D_TERM
+                            (
+                                small_S[0] = eInfo_fab(nbr_i,nbr_j,nbr_k,ELM_CENTROID_X1(dom))*small_V;,
+                                small_S[1] = eInfo_fab(nbr_i,nbr_j,nbr_k,ELM_CENTROID_X2(dom))*small_V;,
+                                small_S[2] = eInfo_fab(nbr_i,nbr_j,nbr_k,ELM_CENTROID_X3(dom))*small_V;
+                            )
+                            AMREX_D_TERM
+                            (
+                                S[0] = eInfo_fab(i,j,k,ELM_CENTROID_X1(dom))*V;,
+                                S[1] = eInfo_fab(i,j,k,ELM_CENTROID_X2(dom))*V;,
+                                S[2] = eInfo_fab(i,j,k,ELM_CENTROID_X3(dom))*V;
+                            )
+                            AMREX_D_TERM
+                            (
+                                eInfo_fab(i,j,k,ELM_CENTROID_X1(dom)) = (S[0]+small_S[0])/(V+small_V);,
+                                eInfo_fab(i,j,k,ELM_CENTROID_X2(dom)) = (S[1]+small_S[1])/(V+small_V);,
+                                eInfo_fab(i,j,k,ELM_CENTROID_X3(dom)) = (S[2]+small_S[2])/(V+small_V);
+                            )
+                        }
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+        this->eInfo.FillBoundary();
+        /**/
         // ============================================================
 
         // COUNT THE NUMBER OF ENTIRE EXTENDED ELEMENTS ===============

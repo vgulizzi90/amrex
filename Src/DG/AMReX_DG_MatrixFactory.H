@@ -331,8 +331,7 @@ struct MatrixFactory
 
                 // LOCAL VARIABLES
                 short nbr_etype;
-                int nbr_i, nbr_j, nbr_k, nbr_b, nbr_merged_b;
-                bool nbr_is_small;
+                int nbr_i, nbr_j, nbr_k;
                 long nbr_pos;
                 Real MM[__DG_SOL_MAX_SPACE_Np__*__DG_SOL_MAX_SPACE_Np__];
                 int info;
@@ -349,6 +348,7 @@ struct MatrixFactory
 
                 // Cycle over the boundaries, check whether the element
                 // is extended and add the contribution
+                /*
                 if (elm_is_extended)
                 for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
                 {
@@ -366,6 +366,27 @@ struct MatrixFactory
                         {
                             // Mass matrix
                             MM[rs] += eMMCh_mem_ptr[nbr_pos+rs];
+                        }
+                    }
+                }
+                */
+                if (elm_is_extended)
+                {
+                    for (int n = 0; n < __DG_EXTENDED_STENCIL_N_NBR__; ++n)
+                    {
+                        nbr_i = i+extended_stencil_table_i[n];
+                        nbr_j = j+extended_stencil_table_j[n];
+                        nbr_k = k+extended_stencil_table_k[n];
+                        nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                        
+                        if (CELLS_ARE_MERGED(i, j, k, nbr_i, nbr_j, nbr_k, nbr_etype))
+                        {
+                            nbr_pos = eMMCh_pos_fab(nbr_i,nbr_j,nbr_k,dom);
+                            for (int rs = 0; rs < (sNp*sNp); ++rs)
+                            {
+                                // Mass matrix
+                                MM[rs] += eMMCh_mem_ptr[nbr_pos+rs];
+                            }
                         }
                     }
                 }

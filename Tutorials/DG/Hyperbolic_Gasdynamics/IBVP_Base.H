@@ -33,6 +33,8 @@
 // AUXILIARY PARAMETERS
 #define SMALL_p 1.0e-10
 #define SMALL_rho 1.0e-19
+
+#define BJ_USE_P
 // ####################################################################
 
 
@@ -1199,6 +1201,31 @@ amrex::Abort("F_NF_PRESCRIBED_VELOCITY_1 - SLIP WALL");
         this->F_U2P(U, P);
     }
 
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void Fab2xcU(const int i, const int j, const int k, const int dom,
+                 const amrex::Array4<const amrex::Real> & eInfo_fab,
+                 const amrex::Array4<const amrex::Real> & X_fab,
+                 amrex::Real * xc, amrex::Real * U) const
+    {
+        // CENTROID
+        AMREX_D_TERM
+        (
+            xc[0] = eInfo_fab(i,j,k,amrex::DG::ELM_CENTROID_X1(dom));,
+            xc[1] = eInfo_fab(i,j,k,amrex::DG::ELM_CENTROID_X2(dom));,
+            xc[2] = eInfo_fab(i,j,k,amrex::DG::ELM_CENTROID_X3(dom));
+        )
+
+        // CONSERVED VARIABLES
+        U[RHO] = X_fab(i,j,k,RHO);
+        AMREX_D_TERM
+        (
+            U[RHOV1] = X_fab(i,j,k,RHOV1);,
+            U[RHOV2] = X_fab(i,j,k,RHOV2);,
+            U[RHOV3] = X_fab(i,j,k,RHOV3);
+        )
+        U[TE] = X_fab(i,j,k,TE);
+    }
+
     AMREX_GPU_DEVICE AMREX_FORCE_INLINE
     void LimitSlopes(amrex::Real * slopes, const amrex::Real * tmp_slopes, const amrex::Real theta = 1.0) const
     {
@@ -1554,7 +1581,19 @@ exit(-1);
                     // ------------------------------------------------
 
                     // STORE THE SLOPES -------------------------------
-                    /*
+#ifdef BJ_USE_P
+                    for (int u = 0; u < DG_N_SOL; ++u)
+                    {
+                        AMREX_D_TERM
+                        (
+                            dX_fab(i,j,k,0+AMREX_SPACEDIM*u) = dP[u+0*DG_N_SOL];,
+                            dX_fab(i,j,k,1+AMREX_SPACEDIM*u) = dP[u+1*DG_N_SOL];,
+                            dX_fab(i,j,k,2+AMREX_SPACEDIM*u) = dP[u+2*DG_N_SOL];
+                        )
+                    }
+
+#else
+
                     this->F_DP2DU(t, xc, U, &dP[0*DG_N_SOL], &rhs[0*DG_N_SOL]);
 #if (AMREX_SPACEDIM > 1)
                     this->F_DP2DU(t, xc, U, &dP[1*DG_N_SOL], &rhs[1*DG_N_SOL]);
@@ -1572,28 +1611,7 @@ exit(-1);
                             dX_fab(i,j,k,2+AMREX_SPACEDIM*u) = rhs[u+2*DG_N_SOL];
                         )
                     }
-                    */
-
-/*
-if (i == __i__ && j == __j__)
-{
-amrex::Print() << "dP: " << std::endl;
-amrex::DG::IO::PrintRealArray2D(DG_N_SOL, AMREX_SPACEDIM, rhs);
-amrex::Print() << std::endl;
-exit(-1);
-}
-*/
-                    /**/
-                    for (int u = 0; u < DG_N_SOL; ++u)
-                    {
-                        AMREX_D_TERM
-                        (
-                            dX_fab(i,j,k,0+AMREX_SPACEDIM*u) = dP[u+0*DG_N_SOL];,
-                            dX_fab(i,j,k,1+AMREX_SPACEDIM*u) = dP[u+1*DG_N_SOL];,
-                            dX_fab(i,j,k,2+AMREX_SPACEDIM*u) = dP[u+2*DG_N_SOL];
-                        )
-                    }
-                    /**/
+#endif
                     // ------------------------------------------------------------
                 }
             });
@@ -1637,10 +1655,16 @@ exit(-1);
                 {
                     // VARIABLES
                     amrex::Real dummy_x[AMREX_SPACEDIM];
+#ifdef BJ_USE_P
                     amrex::Real tmp_P[DG_N_SOL];
                     amrex::Real min_P[DG_N_SOL], max_P[DG_N_SOL];
-                    
-                    // ELEMENT'S CENTROID AND PRIMARY VARIABLES
+#else
+                    amrex::Real tmp_U[DG_N_SOL];
+                    amrex::Real min_U[DG_N_SOL], max_U[DG_N_SOL];
+#endif
+
+#ifdef BJ_USE_P
+                    // PRIMARY VARIABLES
                     this->Fab2xcP(i, j, k, dom, eInfo_fab, X_fab, dummy_x, tmp_P);
 
                     for (int u = 0; u < DG_N_SOL; ++u)
@@ -1648,6 +1672,16 @@ exit(-1);
                         min_P[u] = tmp_P[u];
                         max_P[u] = tmp_P[u];
                     }
+#else
+                    // CONSERVED VARIABLES
+                    this->Fab2xcU(i, j, k, dom, eInfo_fab, X_fab, dummy_x, tmp_U);
+                    
+                    for (int u = 0; u < DG_N_SOL; ++u)
+                    {
+                        min_U[u] = tmp_U[u];
+                        max_U[u] = tmp_U[u];
+                    }
+#endif
 
                     for (int n = 0; n < __DG_BASE_STENCIL_N_NBR__; ++n)
                     {
@@ -1669,6 +1703,7 @@ exit(-1);
                             
                             if (!bad_nbr)
                             {
+#ifdef BJ_USE_P
                                 this->Fab2xcP(nbr_BF_i, nbr_BF_j, nbr_BF_k, dom, eInfo_fab, X_fab, dummy_x, tmp_P);
 
                                 for (int u = 0; u < DG_N_SOL; ++u)
@@ -1676,14 +1711,28 @@ exit(-1);
                                     min_P[u] = amrex::min(min_P[u], tmp_P[u]);
                                     max_P[u] = amrex::max(max_P[u], tmp_P[u]);
                                 }
+#else
+                                this->Fab2xcU(nbr_BF_i, nbr_BF_j, nbr_BF_k, dom, eInfo_fab, X_fab, dummy_x, tmp_U);
+
+                                for (int u = 0; u < DG_N_SOL; ++u)
+                                {
+                                    min_U[u] = amrex::min(min_U[u], tmp_U[u]);
+                                    max_U[u] = amrex::max(max_U[u], tmp_U[u]);
+                                }
+#endif
                             }
                         }
                     }
 
                     for (int u = 0; u < DG_N_SOL; ++u)
                     {
+#ifdef BJ_USE_P
                         bounds_fab(i,j,k,u) = min_P[u];
                         bounds_fab(i,j,k,u+DG_N_SOL) = max_P[u];
+#else
+                        bounds_fab(i,j,k,u) = min_U[u];
+                        bounds_fab(i,j,k,u+DG_N_SOL) = max_U[u];
+#endif
                     }
                 }
 
@@ -1725,11 +1774,18 @@ exit(-1);
 
                         // LOCAL VARIABLES
                         int BF_i, BF_j, BF_k;
-                        amrex::Real xc[AMREX_SPACEDIM], P[DG_N_SOL], min_P[DG_N_SOL], max_P[DG_N_SOL], Pr[DG_N_SOL];
+                        amrex::Real xc[AMREX_SPACEDIM];
+#ifdef BJ_USE_P
+                        amrex::Real P[DG_N_SOL], min_P[DG_N_SOL], max_P[DG_N_SOL], Pr[DG_N_SOL];
+#else
+                        amrex::Real U[DG_N_SOL], min_U[DG_N_SOL], max_U[DG_N_SOL], Ur[DG_N_SOL];
+#endif
                         int fi, fj, fk;
                         amrex::Real alphas[DG_N_SOL];
 
                         amrex::DG::BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+
+#ifdef BJ_USE_P
                         this->Fab2xcP(BF_i, BF_j, BF_k, dom, eInfo_fab, X_fab, xc, P);
                         for (int u = 0; u < DG_N_SOL; ++u)
                         {
@@ -1737,6 +1793,15 @@ exit(-1);
                             max_P[u] = bounds_fab(BF_i,BF_j,BF_k,u+DG_N_SOL);
                             alphas[u] = alpha_fab(i,j,k,u);
                         }
+#else
+                        this->Fab2xcU(BF_i, BF_j, BF_k, dom, eInfo_fab, X_fab, xc, U);
+                        for (int u = 0; u < DG_N_SOL; ++u)
+                        {
+                            min_U[u] = bounds_fab(BF_i,BF_j,BF_k,u);
+                            max_U[u] = bounds_fab(BF_i,BF_j,BF_k,u+DG_N_SOL);
+                            alphas[u] = alpha_fab(i,j,k,u);
+                        }
+#endif
 
                         for (int b = 2*dir; b < 2*(dir+1); ++b)
                         {
@@ -1762,6 +1827,7 @@ exit(-1);
                                     // EVAL RECONSTRUCTED SOLUTION
                                     for (int u = 0; u < DG_N_SOL; ++u)
                                     {
+#ifdef BJ_USE_P
                                         Pr[u] = P[u];
                                         AMREX_D_TERM
                                         (
@@ -1769,11 +1835,21 @@ exit(-1);
                                             Pr[u] += dX_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*u)*(x[1]-xc[1]);,
                                             Pr[u] += dX_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*u)*(x[2]-xc[2]);
                                         )
+#else
+                                        Ur[u] = U[u];
+                                        AMREX_D_TERM
+                                        (
+                                            Ur[u] += dX_fab(BF_i,BF_j,BF_k,0+AMREX_SPACEDIM*u)*(x[0]-xc[0]);,
+                                            Ur[u] += dX_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*u)*(x[1]-xc[1]);,
+                                            Ur[u] += dX_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*u)*(x[2]-xc[2]);
+                                        )
+#endif
                                     }
 
                                     // UPDATE LIMITING COEFFICIENTS
                                     for (int u = 0; u < DG_N_SOL; ++u)
                                     {
+#ifdef BJ_USE_P
                                         if (Pr[u] > max_P[u])
                                         {
                                             alphas[u] = amrex::min(alphas[u], (max_P[u]-P[u])/(Pr[u]-P[u]));
@@ -1782,6 +1858,16 @@ exit(-1);
                                         {
                                             alphas[u] = amrex::min(alphas[u], (min_P[u]-P[u])/(Pr[u]-P[u]));
                                         }
+#else
+                                        if (Ur[u] > max_U[u])
+                                        {
+                                            alphas[u] = amrex::min(alphas[u], (max_U[u]-U[u])/(Ur[u]-U[u]));
+                                        }
+                                        else if (Ur[u] < min_U[u])
+                                        {
+                                            alphas[u] = amrex::min(alphas[u], (min_U[u]-U[u])/(Ur[u]-U[u]));
+                                        }
+#endif
                                     }
                                 }
                             }
@@ -1829,10 +1915,17 @@ exit(-1);
                         
                         // LOCAL VARIABLES
                         int BF_i, BF_j, BF_k;
-                        amrex::Real xc[AMREX_SPACEDIM], P[DG_N_SOL], min_P[DG_N_SOL], max_P[DG_N_SOL], Pr[DG_N_SOL];
+                        amrex::Real xc[AMREX_SPACEDIM];
+#ifdef BJ_USE_P
+                        amrex::Real P[DG_N_SOL], min_P[DG_N_SOL], max_P[DG_N_SOL], Pr[DG_N_SOL];
+#else
+                        amrex::Real U[DG_N_SOL], min_U[DG_N_SOL], max_U[DG_N_SOL], Ur[DG_N_SOL];
+#endif
                         amrex::Real alphas[DG_N_SOL];
 
                         amrex::DG::BF_CELL(i, j, k, etype, BF_i, BF_j, BF_k);
+
+#ifdef BJ_USE_P
                         this->Fab2xcP(BF_i, BF_j, BF_k, dom, eInfo_fab, X_fab, xc, P);
                         for (int u = 0; u < DG_N_SOL; ++u)
                         {
@@ -1840,6 +1933,15 @@ exit(-1);
                             max_P[u] = bounds_fab(BF_i,BF_j,BF_k,u+DG_N_SOL);
                             alphas[u] = alpha_fab(i,j,k,u);
                         }
+#else
+                        this->Fab2xcU(BF_i, BF_j, BF_k, dom, eInfo_fab, X_fab, xc, U);
+                        for (int u = 0; u < DG_N_SOL; ++u)
+                        {
+                            min_U[u] = bounds_fab(BF_i,BF_j,BF_k,u);
+                            max_U[u] = bounds_fab(BF_i,BF_j,BF_k,u+DG_N_SOL);
+                            alphas[u] = alpha_fab(i,j,k,u);
+                        }
+#endif
 
                         for (int q = 0; q < bou_Nq; ++q)
                         {
@@ -1852,6 +1954,7 @@ exit(-1);
                             // EVAL RECONSTRUCTED SOLUTION
                             for (int u = 0; u < DG_N_SOL; ++u)
                             {
+#ifdef BJ_USE_P
                                 Pr[u] = P[u];
                                 AMREX_D_TERM
                                 (
@@ -1859,11 +1962,21 @@ exit(-1);
                                     Pr[u] += dX_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*u)*(x[1]-xc[1]);,
                                     Pr[u] += dX_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*u)*(x[2]-xc[2]);
                                 )
+#else
+                                Ur[u] = U[u];
+                                AMREX_D_TERM
+                                (
+                                    Ur[u] += dX_fab(BF_i,BF_j,BF_k,0+AMREX_SPACEDIM*u)*(x[0]-xc[0]);,
+                                    Ur[u] += dX_fab(BF_i,BF_j,BF_k,1+AMREX_SPACEDIM*u)*(x[1]-xc[1]);,
+                                    Ur[u] += dX_fab(BF_i,BF_j,BF_k,2+AMREX_SPACEDIM*u)*(x[2]-xc[2]);
+                                )
+#endif
                             }
 
                             // UPDATE LIMITING COEFFICIENTS
                             for (int u = 0; u < DG_N_SOL; ++u)
                             {
+#ifdef BJ_USE_P
                                 if (Pr[u] > max_P[u])
                                 {
                                     alphas[u] = amrex::min(alphas[u], (max_P[u]-P[u])/(Pr[u]-P[u]));
@@ -1872,6 +1985,16 @@ exit(-1);
                                 {
                                     alphas[u] = amrex::min(alphas[u], (min_P[u]-P[u])/(Pr[u]-P[u]));
                                 }
+#else
+                                if (Ur[u] > max_U[u])
+                                {
+                                    alphas[u] = amrex::min(alphas[u], (max_U[u]-U[u])/(Ur[u]-U[u]));
+                                }
+                                else if (Ur[u] < min_U[u])
+                                {
+                                    alphas[u] = amrex::min(alphas[u], (min_U[u]-U[u])/(Ur[u]-U[u]));
+                                }
+#endif
                             }
                         }
 
@@ -1915,6 +2038,7 @@ exit(-1);
                     }
 
                     // LOOP OVER THE BOUNDARIES
+                    /*
                     for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
                     {
                         amrex::DG::NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
@@ -1924,6 +2048,22 @@ exit(-1);
                         const bool cells_are_merged = (nbr_merged_b == nbr_b);
 
                         if (cells_are_merged)
+                        {
+                            for (int u = 0; u < DG_N_SOL; ++u)
+                            {
+                                alphas[u] = amrex::min(alphas[u], alpha_fab(nbr_i,nbr_j,nbr_k,u));
+                            }
+                        }
+                    }
+                    */
+                    for (int n = 0; n < __DG_EXTENDED_STENCIL_N_NBR__; ++n)
+                    {
+                        nbr_i = i+amrex::DG::extended_stencil_table_i[n];
+                        nbr_j = j+amrex::DG::extended_stencil_table_j[n];
+                        nbr_k = k+amrex::DG::extended_stencil_table_k[n];
+                        const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,amrex::DG::ELM_TYPE(dom));
+                        
+                        if (amrex::DG::CELLS_ARE_MERGED(i, j, k, nbr_i, nbr_j, nbr_k, nbr_etype))
                         {
                             for (int u = 0; u < DG_N_SOL; ++u)
                             {
@@ -1949,11 +2089,15 @@ exit(-1);
             const amrex::Box & bx = mfi.validbox();
 
             amrex::Array4<short const> const & eType_fab = mesh.eType.array(mfi);
+#ifdef BJ_USE_P
             amrex::Array4<amrex::Real const> const & eInfo_fab = mesh.eInfo.array(mfi);
+#endif
 
             amrex::Array4<amrex::Real const> const & alpha_fab = alpha.array(mfi);
 
+#ifdef BJ_USE_P
             amrex::Array4<amrex::Real const> const & X_fab = X.array(mfi);
+#endif
             amrex::Array4<amrex::Real> const & dX_fab = dX.array(mfi);
 
             amrex::ParallelFor(bx,
@@ -1964,10 +2108,14 @@ exit(-1);
 
                 if (amrex::DG::ELM_IS_VALID(etype))
                 {
+#ifdef BJ_USE_P
                     amrex::Real xc[AMREX_SPACEDIM];
                     amrex::Real U[DG_N_SOL];
-                    amrex::Real dP[DG_N_SOL*AMREX_SPACEDIM], dU[DG_N_SOL*AMREX_SPACEDIM];
+                    amrex::Real dP[DG_N_SOL*AMREX_SPACEDIM];
+#endif
+                    amrex::Real dU[DG_N_SOL*AMREX_SPACEDIM];
 
+#ifdef BJ_USE_P
                     // CENTROID
                     AMREX_D_TERM
                     (
@@ -1985,7 +2133,9 @@ exit(-1);
                         U[RHOV3] = X_fab(i,j,k,RHOV3);
                     )
                     U[TE] = X_fab(i,j,k,TE);
+#endif
 
+#ifdef BJ_USE_P
                     // LIMITED SLOPES OF THE PRIMARY VARIABLES
                     for (int u = 0; u < DG_N_SOL; ++u)
                     {
@@ -1996,7 +2146,20 @@ exit(-1);
                             dP[u+2*DG_N_SOL] = dX_fab(i,j,k,2+AMREX_SPACEDIM*u)*alpha_fab(i,j,k,u);
                         )
                     }
+#else
+                    // LIMITED SLOPES OF THE CONSERVED VARIABLES
+                    for (int u = 0; u < DG_N_SOL; ++u)
+                    {
+                        AMREX_D_TERM
+                        (
+                            dU[u+0*DG_N_SOL] = dX_fab(i,j,k,0+AMREX_SPACEDIM*u)*alpha_fab(i,j,k,u);,
+                            dU[u+1*DG_N_SOL] = dX_fab(i,j,k,1+AMREX_SPACEDIM*u)*alpha_fab(i,j,k,u);,
+                            dU[u+2*DG_N_SOL] = dX_fab(i,j,k,2+AMREX_SPACEDIM*u)*alpha_fab(i,j,k,u);
+                        )
+                    }
+#endif
 
+#ifdef BJ_USE_P
                     // LIMITED SLOPES OF THE CONSERVED VARIABLES
                     this->F_DP2DU(t, xc, U, &dP[0*DG_N_SOL], &dU[0*DG_N_SOL]);
 #if (AMREX_SPACEDIM > 1)
@@ -2004,6 +2167,8 @@ exit(-1);
 #endif
 #if (AMREX_SPACEDIM > 2)
                     this->F_DP2DU(t, xc, U, &dP[2*DG_N_SOL], &dU[2*DG_N_SOL]);
+#endif
+
 #endif
 
 /*
@@ -2239,6 +2404,7 @@ amrex::Print() << std::endl;
                     err = sensor_fab(i,j,k,1);
 
                     // ADD CONTRIBUTION FROM SMALL ELEMENTS
+                    /*
                     for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
                     {
                         int nbr_i, nbr_j, nbr_k, nbr_b;
@@ -2249,6 +2415,20 @@ amrex::Print() << std::endl;
                         const int nbr_merged_b = (nbr_is_small) ? (nbr_etype/10) : -1;
 
                         if (nbr_merged_b == nbr_b)
+                        {
+                            norm += sensor_fab(nbr_i,nbr_j,nbr_k,0);
+                            err += sensor_fab(nbr_i,nbr_j,nbr_k,1);
+                        }
+                    }
+                    */
+                    for (int n = 0; n < __DG_EXTENDED_STENCIL_N_NBR__; ++n)
+                    {
+                        const int nbr_i = i+amrex::DG::extended_stencil_table_i[n];
+                        const int nbr_j = j+amrex::DG::extended_stencil_table_j[n];
+                        const int nbr_k = k+amrex::DG::extended_stencil_table_k[n];
+                        const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,amrex::DG::ELM_TYPE(dom));
+                        
+                        if (amrex::DG::CELLS_ARE_MERGED(i, j, k, nbr_i, nbr_j, nbr_k, nbr_etype))
                         {
                             norm += sensor_fab(nbr_i,nbr_j,nbr_k,0);
                             err += sensor_fab(nbr_i,nbr_j,nbr_k,1);
@@ -2464,6 +2644,7 @@ amrex::Print() << std::endl;
                     val = sensor_fab(i,j,k,1);
 
                     // ADD CONTRIBUTION FROM SMALL ELEMENTS
+                    /*
                     for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
                     {
                         int nbr_i, nbr_j, nbr_k, nbr_b;
@@ -2474,6 +2655,21 @@ amrex::Print() << std::endl;
                         const int nbr_merged_b = (nbr_is_small) ? (nbr_etype/10) : -1;
 
                         if (nbr_merged_b == nbr_b)
+                        {
+                            norm += sensor_fab(nbr_i,nbr_j,nbr_k,0);
+                            val += sensor_fab(nbr_i,nbr_j,nbr_k,1);
+                        }
+                    }
+                    */
+
+                    for (int n = 0; n < __DG_EXTENDED_STENCIL_N_NBR__; ++n)
+                    {
+                        const int nbr_i = i+amrex::DG::extended_stencil_table_i[n];
+                        const int nbr_j = j+amrex::DG::extended_stencil_table_j[n];
+                        const int nbr_k = k+amrex::DG::extended_stencil_table_k[n];
+                        const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,amrex::DG::ELM_TYPE(dom));
+                        
+                        if (amrex::DG::CELLS_ARE_MERGED(i, j, k, nbr_i, nbr_j, nbr_k, nbr_etype))
                         {
                             norm += sensor_fab(nbr_i,nbr_j,nbr_k,0);
                             val += sensor_fab(nbr_i,nbr_j,nbr_k,1);

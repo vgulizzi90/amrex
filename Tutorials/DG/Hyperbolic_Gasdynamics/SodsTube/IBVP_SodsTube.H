@@ -257,7 +257,7 @@ amrex::Abort("IDEAL_GAS.F_PHI");
             }
 
             /* Smooth shock
-            const amrex::Real beta = 100.0;
+            const amrex::Real beta = 1000.0;
             const amrex::Real fs = std::atan(beta*(xi-xis))/M_PI+0.5;
 
             Uxi[RHO] = (rhoR-rhoL)*fs+rhoL;
@@ -727,7 +727,7 @@ public amrex::DG::AMR::Base
     {
         // PARAMETERS -------------------------------------------------
         const int mask_n_grow = 1;
-        const int X_n_grow = 1;
+        const int X_n_grow = 2;
         // ------------------------------------------------------------
         
         // VARIABLES --------------------------------------------------
@@ -994,7 +994,7 @@ public amrex::DG::AMR::Base
     {
         // PARAMETERS -------------------------------------------------
         const int mask_n_grow = 1;
-        const int X_n_grow = 1;
+        const int X_n_grow = 2;
         // ------------------------------------------------------------
         
         // VARIABLES --------------------------------------------------

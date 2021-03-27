@@ -1901,3 +1901,26 @@ void Eval_dXdt(const Real t,
     // ================================================================
 #endif
 }
+
+
+
+
+// CORI
+if (sp == 1)
+{
+    ds = AMREX_D_PICK(-1.5, -2.0, -4.0);
+    ds = AMREX_D_PICK(-1.5, -2.0, -3.0);
+}
+else if (sp == 2)
+{
+    ds = AMREX_D_PICK(-1.5, -2.0, -4.5);
+    ds = AMREX_D_PICK(-1.5, -2.0, -3.5);
+}
+else if (sp == 3)
+{
+    ds = AMREX_D_PICK(-2.5, -3.25, -5.00);
+    ds = AMREX_D_PICK(-2.5, -3.25, -4.00);
+}
+
+
+

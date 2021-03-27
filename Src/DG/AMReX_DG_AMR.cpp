@@ -593,18 +593,23 @@ void CheckMergeLeaking(const ImplicitMesh & mesh, const int N_DOM, const iMultiF
             }
             else if (elm_is_extended)
             {
-                int nbr_i, nbr_j, nbr_k, nbr_b;
+                int nbr_i, nbr_j, nbr_k;
 
-                for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                //for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                for (int n = 0; n < __DG_EXTENDED_STENCIL_N_NBR__; ++n)
                 {
-                    NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+                    //NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+                    nbr_i = i+extended_stencil_table_i[n];
+                    nbr_j = j+extended_stencil_table_j[n];
+                    nbr_k = k+extended_stencil_table_k[n];
                     
                     const short nbr_etype = eType_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
-                    const short nbr_merged_b = (ELM_IS_SMALL(nbr_etype)) ? (nbr_etype/10) : -1;
+                    //const short nbr_merged_b = (ELM_IS_SMALL(nbr_etype)) ? (nbr_etype/10) : -1;
                     const bool nbr_is_ghost = ELM_IS_GHOST(nbr_etype);
                     const bool nbr_cell_is_masked = CELL_IS_MASKED(mask_fab(nbr_i,nbr_j,nbr_k));
 
-                    if (nbr_merged_b == nbr_b)
+                    //if (nbr_merged_b == nbr_b)
+                    if (CELLS_ARE_MERGED(i, j, k, nbr_i, nbr_j, nbr_k, nbr_etype))
                     {
                         if (elm_is_ghost && !nbr_is_ghost)
                         {
