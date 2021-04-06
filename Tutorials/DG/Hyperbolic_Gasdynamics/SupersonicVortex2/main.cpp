@@ -134,8 +134,12 @@ void main_main()
             const amrex::Real t = 0.0;
             amrex::Real dom_err;
             
-            dom_err = amrex::DG::AMR::EvalError(t, DG_N_SOL, amr, amr.IG);
-            dom_err = std::sqrt(dom_err);
+            // L_2 norm
+            //dom_err = amrex::DG::AMR::EvalError(t, DG_N_SOL, amr, amr.IG);
+            //dom_err = std::sqrt(dom_err);
+
+            // L_inf norm
+            dom_err = amrex::DG::AMR::EvalErrorInfNorm(t, DG_N_SOL, amr, amr.IG);
                       
             amrex::Print() << "| dom_err: " << std::scientific << std::setprecision(5) << std::setw(12) << dom_err << std::endl;
 
@@ -222,8 +226,12 @@ void main_main()
 
                 // EVAL ERROR
                 {
-                    dom_err = amrex::DG::AMR::EvalError(t, DG_N_SOL, amr, amr.IG);
-                    dom_err = std::sqrt(dom_err);
+                    // L_2 norm
+                    //dom_err = amrex::DG::AMR::EvalError(t, DG_N_SOL, amr, amr.IG);
+                    //dom_err = std::sqrt(dom_err);
+
+                    // L_inf norm
+                    dom_err = amrex::DG::AMR::EvalErrorInfNorm(t, DG_N_SOL, amr, amr.IG);
                 }
                 
                 // WRITE TO OUTPUT
