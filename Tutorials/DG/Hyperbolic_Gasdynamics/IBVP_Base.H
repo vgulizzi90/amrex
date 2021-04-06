@@ -34,6 +34,7 @@
 #define SMALL_p 1.0e-10
 #define SMALL_rho 1.0e-19
 
+//#define APPLY_LIMITER
 #define BJ_USE_P
 // ####################################################################
 
@@ -1449,7 +1450,7 @@ exit(-1);
 }
 */
 
-
+#ifdef APPLY_LIMITER
                     // LIMIT THE COMPUTED SLOPES ----------------------
                     /**/
                     // STORE THE CHARACTERISTICS CENTRAL DIFFERENCE IN rhs
@@ -1579,9 +1580,10 @@ exit(-1);
                     }
                     /**/
                     // ------------------------------------------------
+#endif
 
                     // STORE THE SLOPES -------------------------------
-#ifdef BJ_USE_P
+#if defined(BJ_USE_P) && defined(APPLY_LIMITER)
                     for (int u = 0; u < DG_N_SOL; ++u)
                     {
                         AMREX_D_TERM
@@ -1621,7 +1623,8 @@ exit(-1);
 
 
         // APPLY THE BARTH JESPERSEN LIMITER
-        /**/
+#ifdef APPLY_LIMITER
+
 #ifdef AMREX_USE_CUDA
         amrex::Real const * eBouQuad_mem_ptr = mesh.eBouQuad_device_mem.data();
         amrex::Real const * eIntBouQuad_mem_ptr = mesh.eIntBouQuad_device_mem.data();
@@ -2194,7 +2197,7 @@ amrex::Print() << std::endl;
             amrex::Gpu::synchronize();
         }
         dX.FillBoundary(mesh.geom.periodicity());
-        /**/
+#endif
     }
     // ================================================================
 
@@ -2351,7 +2354,7 @@ amrex::Print() << std::endl;
         sensor.FillBoundary(mesh.geom.periodicity());
 
         amrex::Real ds;
-        /**/
+        /*
         if (sp == 1)
         {
             ds = AMREX_D_PICK(-1.5, -2.0, -4.0);
@@ -2364,8 +2367,8 @@ amrex::Print() << std::endl;
         {
             ds = AMREX_D_PICK(-2.5, -3.25, -5.00);
         }
+        */
         /**/
-        /*
         if (sp == 1)
         {
             ds = AMREX_D_PICK(-1.5, -4.0, -2.425);
@@ -2378,7 +2381,7 @@ amrex::Print() << std::endl;
         {
             ds = AMREX_D_PICK(-2.5, -5.0, -5.00);
         }
-        */
+        /**/
         
         for (amrex::MFIter mfi(X); mfi.isValid(); ++mfi)
         {
