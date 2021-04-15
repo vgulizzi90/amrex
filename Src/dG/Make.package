@@ -1,0 +1,21 @@
+CEXE_headers += AMReX_VTK_Utils.H
+
+CEXE_headers += AMReX_dG_Constants.H
+CEXE_headers += AMReX_dG_Tables.H
+CEXE_headers += AMReX_dG_Utils.H
+CEXE_headers += AMReX_dG_BasisFunctions.H
+CEXE_headers += AMReX_dG_LinAlg.H
+CEXE_headers += AMReX_dG_StandardElements.H
+CEXE_headers += AMReX_dG_Mesh.H
+CEXE_headers += AMReX_dG_AMR.H
+CEXE_headers += AMReX_dG.H
+
+CEXE_sources += AMReX_dG_Utils.cpp
+CEXE_sources += AMReX_VTK_Utils.cpp
+CEXE_sources += AMReX_dG_LinAlg.cpp
+CEXE_sources += AMReX_dG_Mesh.cpp
+CEXE_sources += AMReX_dG_AMR.cpp
+
+VPATH_LOCATIONS += $(AMREX_HOME)/Src/dG
+INCLUDE_LOCATIONS += $(AMREX_HOME)/Src/dG
+INCLUDE_LOCATIONS += $(AMREX_HOME)/Src/dG/Algoim
