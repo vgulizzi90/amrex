@@ -23,7 +23,7 @@ namespace dG
  * \return a string showing hh:mm:ss.
  *
 */
-std::string second_to_hms(const Real s)
+std::string seconds_to_hms(const Real s)
 {
     const int int_s = (int) std::round(s);
     const int aux = int_s/60;
@@ -278,7 +278,7 @@ void print_real_array_2d(const int Nr, const int Nc, const Real * src, std::ostr
     */
     std::string TimeKeeper::get_elapsed_time_in_hms() const
     {
-        return second_to_hms(this->elapsed_time);
+        return seconds_to_hms(this->elapsed_time);
     }
     // ================================================================
 // ####################################################################
@@ -330,7 +330,7 @@ void print_real_array_2d(const int Nr, const int Nc, const Real * src, std::ostr
 
         tmp_int = 1;
         pp.query("output_overwrite", tmp_int);
-        this->output_overwrite = (tmp_int != 0);
+        this->output_overwrite = (tmp_int > 0);
 
         this->output_folderpath = replace_input_keywords(this->output_folderpath);
         // ------------------------------------------------------------

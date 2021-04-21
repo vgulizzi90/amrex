@@ -21,7 +21,7 @@ namespace dG
 {
 
 // AUXILIARY UTILITIES ################################################
-std::string second_to_hms(const Real s);
+std::string seconds_to_hms(const Real s);
 std::string replace_input_keywords(const std::string & is);
 // ####################################################################
 

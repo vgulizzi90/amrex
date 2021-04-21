@@ -7,8 +7,8 @@ geometry.is_periodic = 0 0
 
 
 # TIME ################################################################
-time.T = 10.0
-time.n_steps = 100000
+time.T = 1000.0
+time.n_steps = 30
 #######################################################################
 
 
@@ -23,24 +23,22 @@ amr.max_level     = 0
 # =====================================================================
 
 
-# QUADRATURE ==========================================================
+# MESH ================================================================
 mesh[0].embedded_geometry_is_active = 1
-mesh[0].embedded_geometry_defined_by = levelset
+mesh[0].embedded_geometry_defined_by = level_set
 mesh[0].box_pruning_is_active = 1
 mesh[0].quadrature_order_regular_elements = 4
 mesh[0].quadrature_order_cut_elements = 6
 # =====================================================================
 
 
-# DISCONTINUOUS GALERKIN METHODS ======================================
-dG[0].space_p = 3
-dG[0].cell_merging_is_active = 1
-dG[0].cell_merging_volume_fraction_threshold = 0.3
-# =====================================================================
-
-
-# TIME INTEGRATOR =====================================================
-#time_integrator = Runge-Kutta
+# SOLUTION ============================================================
+solution[0].space_p = 0
+solution[0].FV_is_active = 1
+solution[0].cell_merging_is_active = 1
+solution[0].cell_merging_volume_fraction_threshold = 0.3
+solution[0].time_integration = explicit_RKdG
+solution[0].time_integration_CFL = 0.3
 # =====================================================================
 #######################################################################
 
@@ -68,7 +66,9 @@ norm = L_inf
 wall_time = 10.0
 wall_time_units = s
 
-output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_nc$(amr.n_cell)_gs$(amr.max_grid_size)
+output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_p$(solution[0].space_p)_nc$(amr.n_cell)_gs$(amr.max_grid_size)
+plot_filename = plt
+plot_int = 100
 output_overwrite = 1
 
 restart = -1

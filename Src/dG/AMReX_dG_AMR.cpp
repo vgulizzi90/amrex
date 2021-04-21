@@ -14,7 +14,7 @@ namespace amrex
 {
 namespace dG
 {
-namespace AMR
+namespace amr
 {
 
 // ADAPTIVE MESH REFINEMENT CLASS #####################################
@@ -26,7 +26,13 @@ namespace AMR
         this->meshes.resize(n_levels);
         for (int lev = 0; lev < n_levels; ++lev)
         {
-            this->meshes[lev] = new StructuredMesh();
+            this->meshes[lev] = new Mesh();
+        }
+
+        this->solutions.resize(n_levels);
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            this->solutions[lev] = new Solution();
         }
 
         this->masks.resize(n_levels);
@@ -39,6 +45,14 @@ namespace AMR
     {
         const int n_levels = this->max_level+1;
 
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            if (this->solutions[lev] != nullptr)
+            {
+                delete this->solutions[lev];
+            }
+        }
+        
         for (int lev = 0; lev < n_levels; ++lev)
         {
             if (this->meshes[lev] != nullptr)
@@ -65,11 +79,19 @@ namespace AMR
         this->inputs.read_input_file();
         // ------------------------------------------------------------
 
-        // INIT STRUCTURED MESHES INPUTS ------------------------------
+        // INIT MESHES INPUTS -----------------------------------------
         for (int lev = 0; lev < n_levels; ++lev)
         {
             ParmParse pp("mesh["+std::to_string(lev)+"]");
             this->meshes[lev]->read_input_file(pp);
+        }
+        // ------------------------------------------------------------
+
+        // INIT SOLUTIONS INPUTS --------------------------------------
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            ParmParse pp("solution["+std::to_string(lev)+"]");
+            this->solutions[lev]->read_input_file(pp);
         }
         // ------------------------------------------------------------
     }
@@ -81,6 +103,34 @@ namespace AMR
     void SinglePatch::init()
     {
         this->init_inputs();
+    }
+    // ================================================================
+
+
+    // READERS ========================================================
+    bool SinglePatch::advance_in_time_continue(const int n, const Real t) const
+    {
+        const int N = this->inputs.time.n_steps;
+        const Real T = this->inputs.time.T;
+        bool cond;
+
+        cond = (n < N);
+        cond = cond && (t < T*(1.0-1.0e-12));
+
+        return cond;
+    }
+
+    int SinglePatch::get_largest_dG_space_p() const
+    {
+        int sp;
+
+        sp = 0;
+        for (int lev = 0; lev <= this->finest_level; ++lev)
+        {
+            sp = amrex::max(sp, this->solutions[lev]->params.space_p);
+        }
+
+        return sp;
     }
     // ================================================================
 
@@ -116,7 +166,7 @@ namespace AMR
         // ------------------------------------------------------------
 
         // COMPUTE VALUES ---------------------------------------------
-        for (int lev = 0; lev <= this->max_level; ++lev)
+        for (int lev = 0; lev <= this->finest_level; ++lev)
         {
             const iMultiFab & mask = this->masks[lev];
 
@@ -175,7 +225,6 @@ namespace AMR
                 Print() << "|  - Computed: " << computed_surface[dom] << ", error (%): " << err << std::endl;
             }
         }
-        Print() << std::endl;
         // ------------------------------------------------------------
     }
 
@@ -197,10 +246,10 @@ namespace AMR
 
     // INPUT/OUTPUT ===================================================
     /**
-    * \brief Make output folder path for the current step.
-    *
-    * \param[in] n: time step index.
-    * \param[in] t: time.
+     * \brief Make output folder path for the current step.
+     *
+     * \param[in] n: time step index.
+     * \param[in] t: time.
     */
     void SinglePatch::make_step_output_folder(const int n, const amrex::Real t) const
     {
@@ -216,7 +265,7 @@ namespace AMR
         // ------------------------------------------------------------
 
         // CREATE LEVEL/STEP DIRECTORIES ------------------------------
-        for (int lev = 0; lev <= this->max_level; ++lev)
+        for (int lev = 0; lev <= this->finest_level; ++lev)
         {
             UtilCreateDirectory(this->inputs.get_level_step_folderpath(lev, n), 0755);
         }
@@ -226,6 +275,6 @@ namespace AMR
 // ####################################################################
 
 
-} // namespace AMR
+} // namespace amr
 } // namespace dG
 } // namespace amrex

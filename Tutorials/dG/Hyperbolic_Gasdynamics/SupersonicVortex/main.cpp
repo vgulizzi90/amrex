@@ -24,7 +24,16 @@ void main_main()
 
     // VARIABLES ======================================================
     amrex::dG::TimeKeeper time_keeper;
+
+    // USER-DEFINED AMR
     SupersonicVortex::AMR amr;
+    
+    // RESTART INFO
+    int n0;
+    amrex::Real t0;
+
+    // ERROR
+    amrex::Real err_old, err_new, err_norm;
     // ================================================================
 
     // OPENING ========================================================
@@ -52,6 +61,10 @@ void main_main()
     // INITIAL CONDITIONS =============================================
     amr.init();
 
+    // RESTART INFO
+    n0 = ((amr.inputs.restart > 0) ? amr.inputs.restart : 0);
+    t0 = ((amr.inputs.restart > 0) ? amr.inputs.restart_time : 0.0);
+
     // CHECK QUADRATURE
     {
         const amrex::Real ri = amr.ibvp.problem_params.r_inner;
@@ -66,18 +79,95 @@ void main_main()
         amr.check_quadrature_rules(volume, surface);
     }
 
-    // EVAL ERROR
-    {
-
-    }
-
     // EXPORT
     {
-        const int n = ((amr.inputs.restart > 0) ? amr.inputs.restart : 0);
-        const amrex::Real t = ((amr.inputs.restart > 0) ? amr.inputs.restart_time : 0.0);
+        const int n = n0;
+        const amrex::Real t = t0;
 
-        amr.export_mesh(n, t, "mesh");
+        if (amr.inputs.plot(n, t))
+        {
+            amr.make_step_output_folder(n, t);
+            amr.export_solution(n, "solution", t);
+        }
     }
+
+    // EVAL ERROR
+    {
+        const amrex::Real t = t0;
+
+        err_old = 0.0;
+        amr.eval_error(t, err_new, err_norm);
+        err_new = err_new/err_norm;
+
+        amrex::Print() << "INITIAL ERROR REPORT:" << std::endl;
+        amrex::Print() << "| err(t = " << t << "): " << std::scientific << std::setprecision(5) << std::setw(12) << err_new << std::endl;
+    }
+    // ================================================================
+
+
+    // ADVANCE IN TIME ================================================
+    amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
+    {
+        // TIME STEP / TIME / TIME INCREMENT
+        int n;
+        amrex::Real t, dt;
+        
+        // CLOCK TIME PER TIME STEP / ETA
+        amrex::Real ct, ct_avg, eta;
+
+        // ADVANCE IN TIME
+        n = n0;
+        t = t0;
+        dt = 0.0;
+        ct_avg = 0.0;
+        eta = 0.0;
+        while (amr.advance_in_time_continue(n, t) && (std::abs(err_old-err_new)/err_new > 1.0e-5))
+        {
+            // TIME STEP TIC
+            time_keeper.tic();
+
+            // SWAP OLD AND NEW ERROR
+            std::swap(err_old, err_new);
+
+            // COMPUTE TIME INCREMENT
+            dt = amr.eval_dt(t);
+            dt = amrex::min(t+dt, amr.inputs.time.T)-t;
+
+            // TAKE TIME STEP
+            amr.take_time_step(t, dt);
+
+            // UPDATE TIME STEP
+            n += 1;
+            t += dt;
+
+            // EXPORT
+            if (amr.inputs.plot(n, t))
+            {
+                amr.make_step_output_folder(n, t);
+                amr.export_solution(n, "solution", t);
+            }
+
+            // EVAL ERROR
+            amr.eval_error(t, err_new, err_norm);
+            err_new = err_new/err_norm;
+
+            // TIME STEP TOC
+            time_keeper.toc();
+
+            // CLOCK TIME PER TIME STEP / ETA
+            ct = time_keeper.get_elapsed_time_in_seconds();
+            ct_avg = (ct_avg*(n-n0-1)+ct)/(1.0*(n-n0));
+            eta = amrex::min((amr.inputs.time.T-t)/dt, 1.0*(amr.inputs.time.n_steps-n))*ct_avg;
+
+            // REPORT TO SCREEN
+            amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
+            amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
+                            << dt << ", t = " << t << ", err = " << err_new
+                            << ", ct [s] = " << ct_avg 
+                            << ", eta = " << amrex::dG::seconds_to_hms(eta) << std::endl;
+        }
+    }
+    amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
     // ================================================================
 
 

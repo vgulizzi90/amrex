@@ -11,10 +11,111 @@
 
 #include <AMReX_REAL.H>
 
+#define __DG_BASE_STENCIL_N_NBR__ AMREX_D_PICK(2, 4, 6)
+#define __DG_EXTENDED_STENCIL_N_NBR__ AMREX_D_PICK(2, 8, 26)
+
 namespace amrex
 {
 namespace dG
 {
+namespace tables
+{
+
+// STENCILS ###########################################################
+AMREX_GPU_DEVICE
+const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> base_stencil_i =
+{
+#if (AMREX_SPACEDIM == 1)
+    -1, +1
+#endif
+#if (AMREX_SPACEDIM == 2)
+    -1, +1, 0, 0
+#endif
+#if (AMREX_SPACEDIM == 3)
+    -1, +1, 0, 0, 0, 0
+#endif
+};
+AMREX_GPU_DEVICE
+const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> base_stencil_j =
+{
+#if (AMREX_SPACEDIM == 1)
+    0, 0
+#endif
+#if (AMREX_SPACEDIM == 2)
+    0, 0, -1, +1
+#endif
+#if (AMREX_SPACEDIM == 3)
+    0, 0, -1, +1, 0, 0
+#endif
+};
+AMREX_GPU_DEVICE
+const GpuArray<int, __DG_BASE_STENCIL_N_NBR__> base_stencil_k = 
+{
+#if (AMREX_SPACEDIM == 1)
+    0, 0
+#endif
+#if (AMREX_SPACEDIM == 2)
+    0, 0, 0, 0
+#endif
+#if (AMREX_SPACEDIM == 3)
+    0, 0, 0, 0, -1, +1
+#endif
+};
+
+AMREX_GPU_DEVICE
+const GpuArray<int, __DG_EXTENDED_STENCIL_N_NBR__> extended_stencil_i =
+{
+#if (AMREX_SPACEDIM == 1)
+    -1, +1
+#endif
+#if (AMREX_SPACEDIM == 2)
+    -1, 0, +1,
+    -1,    +1,
+    -1, 0, +1
+#endif
+#if (AMREX_SPACEDIM == 3)
+    -1, 0, +1, -1, 0, +1, -1, 0, +1,
+    -1, 0, +1, -1,    +1, -1, 0, +1,
+    -1, 0, +1, -1, 0, +1, -1, 0, +1
+#endif
+};
+AMREX_GPU_DEVICE
+const GpuArray<int, __DG_EXTENDED_STENCIL_N_NBR__> extended_stencil_j =
+{
+#if (AMREX_SPACEDIM == 1)
+    0, 0
+#endif
+#if (AMREX_SPACEDIM == 2)
+    -1, -1, -1,
+     0,      0,
+    +1, +1, +1
+#endif
+#if (AMREX_SPACEDIM == 3)
+    -1, -1, -1, 0,  0,  0, +1, +1, +1,
+    -1, -1, -1, 0,      0, +1, +1, +1,
+    -1, -1, -1, 0,  0,  0, +1, +1, +1
+#endif
+};
+AMREX_GPU_DEVICE
+const GpuArray<int, __DG_EXTENDED_STENCIL_N_NBR__> extended_stencil_k = 
+{
+#if (AMREX_SPACEDIM == 1)
+    0, 0
+#endif
+#if (AMREX_SPACEDIM == 2)
+    0, 0, 0,
+    0,    0,
+    0, 0, 0
+#endif
+#if (AMREX_SPACEDIM == 3)
+    -1, -1, -1, -1, -1, -1, -1, -1, -1,
+     0,  0,  0,  0,      0,  0,  0,  0,
+    +1, +1, +1, +1, +1, +1, +1, +1, +1
+#endif
+};
+// ####################################################################
+
+
 
 // GAUSS-LOBATTO ABSCISSAE AND WEIGHTS IN THE INTERVAL [-1,1] #########
 const Real gau_lob_1_x[1] = {+0.0000000000000000e+00};
@@ -306,6 +407,7 @@ const Real gau_lob_16_w[16] = {+8.3333333333333332e-03,
                                +8.3333333333333332e-03};
 // ####################################################################
 
+} // namespace tables
 } // namespace dG
 } // namespace amrex
 

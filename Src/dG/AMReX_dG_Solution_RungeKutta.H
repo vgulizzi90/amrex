@@ -1,0 +1,991 @@
+//
+// Author : Vincenzo Gulizzi (LBL)
+// Contact: vgulizzi@lbl.gov
+//
+/** \file AMReX_dG_Solution_RungeKutta.H
+ * \brief Functions to advance solutions in time using Runge-Kutta algorithms.
+*/
+
+#ifndef AMREX_DG_SOLUTION_RUNGE_KUTTA_H_
+#define AMREX_DG_SOLUTION_RUNGE_KUTTA_H_
+
+#include <AMReX_VTK_Utils.H>
+
+#include <AMReX_dG_Solution.H>
+
+namespace amrex
+{
+namespace dG
+{
+
+namespace hyperbolic_pde
+{
+namespace explicit_RK
+{
+
+// DG METHOD: DOMAIN CONTRIBUTION #####################################
+/**
+ * \brief Add the domain contribution to the time derivative of the dG coefficients.
+ *
+ * \param[in] t: time.
+ * \param[in] geom: amrex geometry object.
+ * \param[in] mesh: Mesh object; contains information about embedded geometries.
+ * \param[in] solution: Solution object; contains information about embedded geometries.
+ * \param[in] X: MultiFab object containing the dG coefficients.
+ * \param[in] dXdt: MultiFab objects that will be modified with domain contribution to the time
+ *                  derivatives of the dG coefficients.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ *
+ * The following integral is evaluated: 
+ *
+ * int_{V} BF(x)_{,k}^T F_k(t, x, U)
+ *
+*/
+template <typename IBVP>
+void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & mesh, const Solution & solution,
+                             const MultiFab & X, MultiFab & dXdt, const IBVP & ibvp)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("dG::hyperbolic_pde::explicit_RK::add_dom_contrib_to_dXdt(...)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS -----------------------------------------------------
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
+
+    // DOMAINS / UNKNOWN FIELDS
+    const int n_domains = ibvp.get_number_of_domains();
+    const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
+
+    // ORDER
+    const int sp = solution.params.space_p;
+    const int sNp = AMREX_D_TERM((1+sp),*(1+sp),*(1+sp));
+    // ----------------------------------------------------------------
+
+    // EVAL THE DOMAIN INTEGRALS --------------------------------------
+#ifdef AMREX_USE_GPU
+        const Real * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_dev_mem.data();
+#else
+        const Real * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_host_mem.data();
+#endif
+
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<long const> const & cell_dom_quad_info_fab = mesh.cell_dom_quad_info.array(mfi);
+        Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+        Array4<Real const> const & X_fab = X.array(mfi);
+
+        Array4<Real> const & dXdt_fab = dXdt.array(mfi);
+
+        ParallelFor(bx, n_domains,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+
+            if (ELM_IS_NOT_EMPTY(etype))
+            {
+                // LOCAL PARAMETERS
+                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                   prob_lo[1]+j*dx[1],
+                                                                   prob_lo[2]+k*dx[2])};
+
+                // QUADRATURE INFO
+                const int dom_Nq = cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_NQ(dom));
+                const long pos = cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_POS(dom));
+                const Real * x_ptr = &cell_dom_quad_mem_ptr[pos];
+
+                // LOCAL VARIABLES
+                Real x[AMREX_SPACEDIM], w;
+                Real integrand;
+                Real U[__DG_MAX_N_UNKNOWN_FIELDS__];
+                Real AMREX_D_DECL(F1[__DG_MAX_N_UNKNOWN_FIELDS__], F2[__DG_MAX_N_UNKNOWN_FIELDS__], F3[__DG_MAX_N_UNKNOWN_FIELDS__]);
+
+                // UNKNOWN FIELDS
+                dG_space_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+
+                // EVAL THE INTEGRAL
+                for (int q = 0; q < dom_Nq; ++q)
+                {
+                    // Quadrature point and weight
+                    const long x_pos = (AMREX_SPACEDIM+1)*q;
+                    AMREX_D_TERM
+                    (
+                        x[0] = x_ptr[x_pos+0]+cell_lo[0];,
+                        x[1] = x_ptr[x_pos+1]+cell_lo[1];,
+                        x[2] = x_ptr[x_pos+2]+cell_lo[2];
+                    )
+                    w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+                    // Solution at (t, x)
+                    bfu.eval_bf_table(x);
+                    bfu.eval_unsafe(0, n_unknown_fields, U);
+
+                    // Fluxes as functions of (t, x, U)
+                    ibvp.eval_F(dom, t, x, U, AMREX_D_DECL(F1, F2, F3));
+
+                    // Integral contribution
+                    for (int ru = 0; ru < n_unknown_fields; ++ru)
+                    for (int rs = 0; rs < sNp; ++rs)
+                    {
+                        AMREX_D_TERM
+                        (
+                            integrand  = bfu.dBFdx1[rs]*F1[ru];,
+                            integrand += bfu.dBFdx2[rs]*F2[ru];,
+                            integrand += bfu.dBFdx3[rs]*F3[ru];
+                        )
+                        
+                        dXdt_fab(i,j,k,rs+ru*sNp) += integrand*w;
+                    }
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+    // ----------------------------------------------------------------
+}
+// ####################################################################
+
+
+
+// DG METHOD: BOUNDARY CONTRIBUTION ###################################
+template <typename IBVP>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void FX_BCS(const int n_unknown_fields,
+            const int dom, const Real t,
+            const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
+            dG_space_bfx & bfu,
+            const int fi, const int fj, const int fk,
+            Array4<Real> const & FX_fab, const int FX_offset,
+            const IBVP & ibvp)
+{
+    // LOCAL PARAMETERS
+    const int sNp = bfu.Np;
+
+    // LOCAL VARIABLES
+    Real x[AMREX_SPACEDIM], w;
+    Real integrand;
+    Real U[__DG_MAX_N_UNKNOWN_FIELDS__], NFn[__DG_MAX_N_UNKNOWN_FIELDS__];
+
+    // EVAL THE INTEGRAL
+    for (int q = 0; q < bou_Nq; ++q)
+    {
+        // Quadrature point and weight
+        const long x_pos = (AMREX_SPACEDIM+1)*q;
+        AMREX_D_TERM
+        (
+            x[0] = x_ptr[x_pos+0]+face_lo[0];,
+            x[1] = x_ptr[x_pos+1]+face_lo[1];,
+            x[2] = x_ptr[x_pos+2]+face_lo[2];
+        )
+        w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+        // Solution at (t, x)
+        bfu.eval(x, 0, n_unknown_fields, U);
+
+        // Numerical flux as a functions of (t, x, un, U)
+        ibvp.eval_NFn_BCs(dom, t, x, un, U, NFn);
+
+        // Integral contribution
+        for (int ru = 0; ru < n_unknown_fields; ++ru)
+        for (int rs = 0; rs < sNp; ++rs)
+        {
+            integrand = bfu.BF[rs]*NFn[ru];
+            FX_fab(fi,fj,fk,FX_offset+rs+ru*sNp) += integrand*w;
+        }
+    }
+}
+
+template <typename IBVP>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void FX_ICS(const int n_unknown_fields,
+            const int dom, const Real t,
+            const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
+            dG_space_bfx & m_bfu, dG_space_bfx & p_bfu,
+            const int fi, const int fj, const int fk,
+            Array4<Real> const & FX_fab, const int FX_offset,
+            const IBVP & ibvp)
+{
+    // LOCAL PARAMETERS
+    const int m_sNp = m_bfu.Np;
+    const int p_sNp = p_bfu.Np;
+
+    // LOCAL VARIABLES
+    Real x[AMREX_SPACEDIM], w;
+    Real integrand;
+    Real m_U[__DG_MAX_N_UNKNOWN_FIELDS__], p_U[__DG_MAX_N_UNKNOWN_FIELDS__], NFn[__DG_MAX_N_UNKNOWN_FIELDS__];
+
+    // EVAL THE INTEGRAL
+    for (int q = 0; q < bou_Nq; ++q)
+    {
+        // Quadrature point and weight
+        const long x_pos = (AMREX_SPACEDIM+1)*q;
+        AMREX_D_TERM
+        (
+            x[0] = x_ptr[x_pos+0]+face_lo[0];,
+            x[1] = x_ptr[x_pos+1]+face_lo[1];,
+            x[2] = x_ptr[x_pos+2]+face_lo[2];
+        )
+        w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+        // Solution at (t, x)
+        m_bfu.eval(x, 0, n_unknown_fields, m_U);
+        p_bfu.eval(x, 0, n_unknown_fields, p_U);
+
+        // Numerical flux as a functions of (t, x, un, U^-, U^+)
+        ibvp.eval_NFn_intraphase(dom, t, x, un, m_U, p_U, NFn);
+
+        // Integral contribution
+        for (int ru = 0; ru < n_unknown_fields; ++ru)
+        {
+            for (int rs = 0; rs < m_sNp; ++rs)
+            {
+                integrand = m_bfu.BF[rs]*NFn[ru];
+                FX_fab(fi,fj,fk,rs+ru*m_sNp) += integrand*w;
+            }
+            for (int rs = 0; rs < p_sNp; ++rs)
+            {
+                integrand = p_bfu.BF[rs]*NFn[ru];
+                FX_fab(fi,fj,fk,FX_offset+rs+ru*p_sNp) -= integrand*w;
+            }
+        }
+    }
+}
+
+/**
+ * \brief Eval the boundary fluxes at the intraphase.
+ *
+ * \param[in] t: time.
+ * \param[in] geom: amrex geometry object.
+ * \param[in] mesh: Mesh object; contains information about embedded geometries.
+ * \param[in] solution: Solution object.
+ * \param[in] X: MultiFab object containing the dG coefficients.
+ * \param[in] FX: an array of MultiFab objects that will contain the fluxes.
+ * \param[in] FX_offset: an integer used for accessing the FX components.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ *
+ * The following integral is evaluated: 
+ *
+ * int_{dV} BF(x)^T NF(t, x, un, U^-, U^+)
+ *
+ * This routine is intended to be used for single-level applications
+ * or for the coarsest level in a multi-level applications.
+ *
+*/
+template <typename IBVP>
+void eval_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, const Solution & solution,
+                     const MultiFab & X, Array<MultiFab, AMREX_SPACEDIM> & FX, const int FX_offset, const IBVP & ibvp)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("dG::hyperbolic_pde::explicit_RK::eval_bou_fluxes(...)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS -----------------------------------------------------
+    // GRID
+    const Box domain = geom.Domain();
+    const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
+    const GpuArray<int, AMREX_SPACEDIM> is_periodic = geom.isPeriodicArray();
+
+    // DOMAINS / UNKNOWN FIELDS
+    const int n_domains = ibvp.get_number_of_domains();
+    const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
+
+    // ORDER
+    const int sp = solution.params.space_p;
+    // ----------------------------------------------------------------
+
+    // INITIALIZATION -------------------------------------------------
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+        FX[dir] = 0.0;
+    }
+    // ----------------------------------------------------------------
+
+    // EVAL THE BOUNDARY INTEGRALS ------------------------------------
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+#ifdef AMREX_USE_GPU
+        Real const * cell_bou_quad_mem_ptr = mesh.cell_bou_quad_dev_mem[dir].data();
+#else
+        Real const * cell_bou_quad_mem_ptr = mesh.cell_bou_quad_host_mem[dir].data();
+#endif
+
+        for (MFIter mfi(FX[dir]); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<long const> const & cell_bou_quad_info_fab = mesh.cell_bou_quad_info[dir].array(mfi);
+            Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+            Array4<short const> const & elm_bou_type_fab = solution.elm_bou_type[dir].array(mfi);
+            Array4<Real const> const & X_fab = X.array(mfi);
+            
+            Array4<Real> const & FX_fab = FX[dir].array(mfi);
+
+            ParallelFor(bx, n_domains,
+            [=] AMREX_GPU_DEVICE (int fi, int fj, int fk, int dom) noexcept
+            {
+                // ELEMENT BOUNDARY TYPE
+                const short ebtype = elm_bou_type_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
+
+                if (ELM_BOU_IS_VALID(ebtype))
+                {
+                    // LOCAL PARAMETERS
+                    const int ff = (dir == 0) ? fi : ((dir == 1) ? fj : fk);
+                    const Real face_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+fi*dx[0],
+                                                                       prob_lo[1]+fj*dx[1],
+                                                                       prob_lo[2]+fk*dx[2])};
+
+                    // QUADRATURE INFO
+                    const int bou_Nq = cell_bou_quad_info_fab(fi,fj,fk,CELL_BOU_QUAD_NQ(dom));
+                    const long pos = cell_bou_quad_info_fab(fi,fj,fk,CELL_BOU_QUAD_POS(dom));
+                    const Real * x_ptr = &cell_bou_quad_mem_ptr[pos];
+
+                    // LOCAL VARIABLES
+                    int mi, mj, mk, pi, pj, pk;
+                    short m_etype, p_etype;
+
+                    // NEIGHBOR CELLS SHARING THE FACE fi,fj,fk
+                    FACE_TO_NBRS(fi, fj, fk, dir, mi, mj, mk, pi, pj, pk);
+                    m_etype = elm_type_fab(mi,mj,mk,ELM_TYPE(dom));
+                    p_etype = elm_type_fab(pi,pj,pk,ELM_TYPE(dom));
+
+                    // UNKNOWN FIELDS
+                    dG_space_bfx m_bfu(&prob_lo[0], &dx[0], mi, mj, mk, m_etype, sp, X_fab);
+                    dG_space_bfx p_bfu(&prob_lo[0], &dx[0], pi, pj, pk, p_etype, sp, X_fab);
+
+                    // BOUNDARY CONDITIONS
+                    if ((ff == domain.smallEnd(dir)) && (is_periodic[dir] == 0))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = -1.0;
+
+                        // EVAL THE INTEGRAL
+                        FX_BCS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, p_bfu, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                    }
+                    // BOUNDARY CONDITIONS
+                    else if ((ff == (domain.bigEnd(dir)+1)) && (is_periodic[dir] == 0))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // EVAL THE INTEGRAL
+                        FX_BCS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, fi, fj, fk, FX_fab, 0, ibvp);
+                    }
+                    // INTRAPHASE CONDITIONS
+                    else
+                    {
+                        // UNIT NORMAL
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // EVAL THE INTEGRAL
+                        FX_ICS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, p_bfu, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+    }
+    // ----------------------------------------------------------------
+}
+
+/**
+ * \brief Add the boundary contribution to the time derivative of the dG coefficients.
+ *
+ * \param[in] t: time.
+ * \param[in] geom: amrex geometry object.
+ * \param[in] mesh: Mesh object; contains information about embedded geometries.
+ * \param[in] solution: Solution object.
+ * \param[in] X: MultiFab object containing the dG coefficients.
+ * \param[in] FX: an array of MultiFab objects containing the intraphase fluxes.
+ * \param[in] FX_offset: an integer used for accessing the FX components.
+ * \param[in] dXdt: MultiFab objects that will be modified with domain contribution to the time
+ *                  derivatives of the dG coefficients.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ *
+ * In addition to summing the contribution from the intraphase boundaries, the following integral is
+ * evaluated at the interfaces: 
+ *
+ * int_{dV} BF(x)^T NF(t, x, un, U^-, U^+)
+ *
+*/
+template <typename IBVP>
+void add_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & mesh, const Solution & solution,
+                             const MultiFab & X, const Array<MultiFab, AMREX_SPACEDIM> & FX, const int FX_offset, MultiFab & dXdt, const IBVP & ibvp)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("dG::hyperbolic_pde::explicit_RK::add_bou_contrib_to_dXdt(...)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS -----------------------------------------------------
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
+
+    // DOMAINS / UNKNOWN FIELDS
+    const int n_domains = ibvp.get_number_of_domains();
+    const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
+
+    // ORDER
+    const int sp = solution.params.space_p;
+    const int sNp = AMREX_D_TERM((1+sp),*(1+sp),*(1+sp));
+    // ----------------------------------------------------------------
+
+    // EVAL THE INTERFACE BOUNDARY INTEGRALS --------------------------
+#ifdef AMREX_USE_GPU
+        Real const * cell_int_bou_quad_mem_ptr = mesh.cell_int_bou_quad_dev_mem.data();
+#else
+        Real const * cell_int_bou_quad_mem_ptr = mesh.cell_int_bou_quad_host_mem.data();
+#endif
+
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<long const> const & cell_int_bou_quad_info_fab = mesh.cell_int_bou_quad_info.array(mfi);
+        Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+        Array4<Real const> const & X_fab = X.array(mfi);
+
+        Array4<Real> const & dXdt_fab = dXdt.array(mfi);
+
+        ParallelFor(bx, n_domains,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+
+            if (ELM_IS_LARGE_OR_SMALL(etype))
+            {
+                // NEIGHBORING DOMAIN
+                const int nbr_dom = ibvp.get_nbr_dom(dom);
+
+                // QUADRATURE INFO
+                const int bou_Nq = cell_int_bou_quad_info_fab(i,j,k,CELL_INT_BOU_QUAD_NQ(dom));
+                const long pos = cell_int_bou_quad_info_fab(i,j,k,CELL_INT_BOU_QUAD_POS(dom));
+                const Real * x_ptr = &cell_int_bou_quad_mem_ptr[pos];
+
+                // LOCAL VARIABLES
+                Real x[AMREX_SPACEDIM], w, un[AMREX_SPACEDIM];
+                Real integrand;
+                Real U[__DG_MAX_N_UNKNOWN_FIELDS__], NFn[__DG_MAX_N_UNKNOWN_FIELDS__];
+
+                if (nbr_dom == -1)
+                {
+                    // UNKNOWN FIELDS
+                    dG_space_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+
+                    // EVAL THE INTEGRAL
+                    for (int q = 0; q < bou_Nq; ++q)
+                    {
+                        // Quadrature point, weight and unit normal
+                        const long x_pos = (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*q;
+                        AMREX_D_TERM
+                        (
+                            x[0] = x_ptr[x_pos+0];,
+                            x[1] = x_ptr[x_pos+1];,
+                            x[2] = x_ptr[x_pos+2];
+                        )
+                        w = x_ptr[x_pos+AMREX_SPACEDIM];
+                        AMREX_D_TERM
+                        (
+                            un[0] = x_ptr[x_pos+AMREX_SPACEDIM+1+0];,
+                            un[1] = x_ptr[x_pos+AMREX_SPACEDIM+1+1];,
+                            un[2] = x_ptr[x_pos+AMREX_SPACEDIM+1+2];
+                        )
+
+                        // Solution at (t, x)
+                        bfu.eval(x, 0, n_unknown_fields, U);
+
+                        // Numerical flux as a functions of (t, x, un, U)
+                        ibvp.eval_NFn_ICs(dom, t, x, un, U, NFn);
+
+                        // Integral contribution
+                        for (int ru = 0; ru < n_unknown_fields; ++ru)
+                        for (int rs = 0; rs < sNp; ++rs)
+                        {
+                            integrand = bfu.BF[rs]*NFn[ru];
+                            dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+                        }
+                    }
+                }
+                else
+                {
+Abort("dG::hyperbolic_pde::explicit_RK::add_bou_contrib_to_dXdt - nbr_dom != -1");
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+    // ----------------------------------------------------------------
+
+    // ADD THE INTRAPHASE BOUNDARY INTEGRALS --------------------------
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+        const int b = 2*dir;
+        
+        for (MFIter mfi(X); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+            Array4<Real const> const & FX_fab = FX[dir].array(mfi);
+
+            Array4<Real> const & dXdt_fab = dXdt.array(mfi);
+
+            ParallelFor(bx, n_domains,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // ELEMENT TYPE
+                const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+
+                if (ELM_IS_NOT_EMPTY(etype))
+                {
+                    // LOCAL VARIABLES
+                    int fi, fj, fk;
+
+                    GRID_FACE(i, j, k, b+1, fi, fj, fk);
+
+                    for (int ru = 0; ru < n_unknown_fields; ++ru)
+                    for (int rs = 0; rs < sNp; ++rs)
+                    {
+                        dXdt_fab(i,j,k,rs+ru*sNp) -= (FX_fab(fi,fj,fk,rs+ru*sNp)+FX_fab(i,j,k,FX_offset+rs+ru*sNp));
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+    }
+    dXdt.FillBoundary(geom.periodicity());
+    // ----------------------------------------------------------------
+}
+// ####################################################################
+
+
+
+// FV METHOD: BOUNDARY CONTRIBUTION ###################################
+template <typename IBVP>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void FX_BCS(const int n_unknown_fields,
+            const int dom, const Real t,
+            const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
+            dG_space_rx & rx,
+            const int fi, const int fj, const int fk,
+            Array4<Real> const & FX_fab, const int FX_offset,
+            const IBVP & ibvp)
+{
+    // LOCAL VARIABLES
+    Real x[AMREX_SPACEDIM], w;
+    Real integrand;
+    Real U[__DG_MAX_N_UNKNOWN_FIELDS__], NFn[__DG_MAX_N_UNKNOWN_FIELDS__];
+
+    // EVAL THE INTEGRAL
+    for (int q = 0; q < bou_Nq; ++q)
+    {
+        // Quadrature point and weight
+        const long x_pos = (AMREX_SPACEDIM+1)*q;
+        AMREX_D_TERM
+        (
+            x[0] = x_ptr[x_pos+0]+face_lo[0];,
+            x[1] = x_ptr[x_pos+1]+face_lo[1];,
+            x[2] = x_ptr[x_pos+2]+face_lo[2];
+        )
+        w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+        // Solution at (t, x)
+        rx.eval(x, 0, n_unknown_fields, U);
+
+        // Numerical flux as a functions of (t, x, un, U)
+        ibvp.eval_NFn_BCs(dom, t, x, un, U, NFn);
+
+        // Integral contribution
+        for (int ru = 0; ru < n_unknown_fields; ++ru)
+        {
+            integrand = NFn[ru];
+            FX_fab(fi,fj,fk,FX_offset+ru) += integrand*w;
+        }
+    }
+}
+
+template <typename IBVP>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void FX_ICS(const int n_unknown_fields,
+            const int dom, const Real t,
+            const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
+            dG_space_rx & m_ru, dG_space_rx & p_ru,
+            const int fi, const int fj, const int fk,
+            Array4<Real> const & FX_fab, const int FX_offset,
+            const IBVP & ibvp)
+{
+    // LOCAL VARIABLES
+    Real x[AMREX_SPACEDIM], w;
+    Real integrand;
+    Real m_U[__DG_MAX_N_UNKNOWN_FIELDS__], p_U[__DG_MAX_N_UNKNOWN_FIELDS__], NFn[__DG_MAX_N_UNKNOWN_FIELDS__];
+
+    // EVAL THE INTEGRAL
+    for (int q = 0; q < bou_Nq; ++q)
+    {
+        // Quadrature point and weight
+        const long x_pos = (AMREX_SPACEDIM+1)*q;
+        AMREX_D_TERM
+        (
+            x[0] = x_ptr[x_pos+0]+face_lo[0];,
+            x[1] = x_ptr[x_pos+1]+face_lo[1];,
+            x[2] = x_ptr[x_pos+2]+face_lo[2];
+        )
+        w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+        // Solution at (t, x)
+        m_ru.eval(x, 0, n_unknown_fields, m_U);
+        p_ru.eval(x, 0, n_unknown_fields, p_U);
+
+        // Numerical flux as a functions of (t, x, un, U^-, U^+)
+        ibvp.eval_NFn_intraphase(dom, t, x, un, m_U, p_U, NFn);
+
+        // Integral contribution
+        for (int ru = 0; ru < n_unknown_fields; ++ru)
+        {
+            integrand = NFn[ru];
+            FX_fab(fi,fj,fk,ru) += integrand*w;
+            integrand = NFn[ru];
+            FX_fab(fi,fj,fk,FX_offset+ru) -= integrand*w;
+        }
+    }
+}
+
+
+/**
+ * \brief Eval the boundary fluxes at the intraphase.
+ *
+ * \param[in] t: time.
+ * \param[in] geom: amrex geometry object.
+ * \param[in] mesh: Mesh object; contains information about embedded geometries.
+ * \param[in] solution: Solution object.
+ * \param[in] X: MultiFab object containing the solution states.
+ * \param[in] dX: MultiFab object containing the solution slopes.
+ * \param[in] FX: an array of MultiFab objects that will contain the fluxes.
+ * \param[in] FX_offset: an integer used for accessing the FX components.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ *
+ * The following integral is evaluated: 
+ *
+ * int_{dV} BF(x)^T NF(t, x, un, U^-, U^+)
+ *
+ * This routine is intended to be used for single-level applications
+ * or for the coarsest level in a multi-level applications.
+ *
+*/
+template <typename IBVP>
+void eval_FV_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, const Solution & solution,
+                        const MultiFab & X, const MultiFab & dX, Array<MultiFab, AMREX_SPACEDIM> & FX, const int FX_offset, const IBVP & ibvp)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("dG::hyperbolic_pde::explicit_RK::eval_FV_bou_fluxes(...)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS -----------------------------------------------------
+    // GRID
+    const Box domain = geom.Domain();
+    const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
+    const GpuArray<int, AMREX_SPACEDIM> is_periodic = geom.isPeriodicArray();
+
+    // DOMAINS / UNKNOWN FIELDS
+    const int n_domains = ibvp.get_number_of_domains();
+    const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
+    // ----------------------------------------------------------------
+
+    // INITIALIZATION -------------------------------------------------
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+        FX[dir] = 0.0;
+    }
+    // ----------------------------------------------------------------
+
+    // EVAL THE BOUNDARY INTEGRALS ------------------------------------
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+#ifdef AMREX_USE_GPU
+        Real const * cell_bou_quad_mem_ptr = mesh.cell_bou_quad_dev_mem[dir].data();
+#else
+        Real const * cell_bou_quad_mem_ptr = mesh.cell_bou_quad_host_mem[dir].data();
+#endif
+
+        for (MFIter mfi(FX[dir]); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<long const> const & cell_bou_quad_info_fab = mesh.cell_bou_quad_info[dir].array(mfi);
+            Array4<Real const> const & elm_centroid_fab = solution.elm_centroid.array(mfi);
+            Array4<short const> const & elm_bou_type_fab = solution.elm_bou_type[dir].array(mfi);
+            Array4<Real const> const & X_fab = X.array(mfi);
+            Array4<Real const> const & dX_fab = dX.array(mfi);
+            
+            Array4<Real> const & FX_fab = FX[dir].array(mfi);
+
+            ParallelFor(bx, n_domains,
+            [=] AMREX_GPU_DEVICE (int fi, int fj, int fk, int dom) noexcept
+            {
+                // ELEMENT BOUNDARY TYPE
+                const short ebtype = elm_bou_type_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
+
+                if (ELM_BOU_IS_VALID(ebtype))
+                {
+                    // LOCAL PARAMETERS
+                    const int ff = (dir == 0) ? fi : ((dir == 1) ? fj : fk);
+                    const Real face_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+fi*dx[0],
+                                                                       prob_lo[1]+fj*dx[1],
+                                                                       prob_lo[2]+fk*dx[2])};
+
+                    // QUADRATURE INFO
+                    const int bou_Nq = cell_bou_quad_info_fab(fi,fj,fk,CELL_BOU_QUAD_NQ(dom));
+                    const long pos = cell_bou_quad_info_fab(fi,fj,fk,CELL_BOU_QUAD_POS(dom));
+                    const Real * x_ptr = &cell_bou_quad_mem_ptr[pos];
+
+                    // LOCAL VARIABLES
+                    int mi, mj, mk, pi, pj, pk;
+
+                    // NEIGHBOR CELLS SHARING THE FACE fi,fj,fk
+                    FACE_TO_NBRS(fi, fj, fk, dir, mi, mj, mk, pi, pj, pk);
+
+                    // UNKNOWN FIELDS (WITH RECONSTRUCTION)
+                    dG_space_rx m_ru(mi, mj, mk, X_fab, dX_fab);
+                    AMREX_D_TERM
+                    (
+                        m_ru.xc[0] = elm_centroid_fab(mi,mj,mk,ELM_CENTROID_X1(dom));,
+                        m_ru.xc[1] = elm_centroid_fab(mi,mj,mk,ELM_CENTROID_X2(dom));,
+                        m_ru.xc[2] = elm_centroid_fab(mi,mj,mk,ELM_CENTROID_X3(dom));
+                    )
+                    dG_space_rx p_ru(pi, pj, pk, X_fab, dX_fab);
+                    AMREX_D_TERM
+                    (
+                        p_ru.xc[0] = elm_centroid_fab(pi,pj,pk,ELM_CENTROID_X1(dom));,
+                        p_ru.xc[1] = elm_centroid_fab(pi,pj,pk,ELM_CENTROID_X2(dom));,
+                        p_ru.xc[2] = elm_centroid_fab(pi,pj,pk,ELM_CENTROID_X3(dom));
+                    )
+
+                    // BOUNDARY CONDITIONS
+                    if ((ff == domain.smallEnd(dir)) && (is_periodic[dir] == 0))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = -1.0;
+
+                        // EVAL THE INTEGRAL
+                        FX_BCS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, p_ru, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                    }
+                    // BOUNDARY CONDITIONS
+                    else if ((ff == (domain.bigEnd(dir)+1)) && (is_periodic[dir] == 0))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // EVAL THE INTEGRAL
+                        FX_BCS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, m_ru, fi, fj, fk, FX_fab, 0, ibvp);
+                    }
+                    // INTRAPHASE CONDITIONS
+                    else
+                    {
+                        // UNIT NORMAL
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // EVAL THE INTEGRAL
+                        FX_ICS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, m_ru, p_ru, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+    }
+    // ----------------------------------------------------------------
+}
+
+/**
+ * \brief Add the boundary contribution to the time derivative of solution states.
+ *
+ * \param[in] t: time.
+ * \param[in] geom: amrex geometry object.
+ * \param[in] mesh: Mesh object; contains information about embedded geometries.
+ * \param[in] solution: Solution object.
+ * \param[in] X: MultiFab object containing the solution states.
+ * \param[in] dX: MultiFab object containing the solution slopes.
+ * \param[in] FX: an array of MultiFab objects containing the intraphase fluxes.
+ * \param[in] FX_offset: an integer used for accessing the FX components.
+ * \param[in] dXdt: MultiFab objects that will be modified with domain contribution to the time
+ *                  derivatives of the dG coefficients.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ *
+ * In addition to summing the contribution from the intraphase boundaries, the following integral is
+ * evaluated at the interfaces: 
+ *
+ * int_{dV} BF(x)^T NF(t, x, un, U^-, U^+)
+ *
+*/
+template <typename IBVP>
+void add_FV_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & mesh, const Solution & solution,
+                                const MultiFab & X, const MultiFab & dX, const Array<MultiFab, AMREX_SPACEDIM> & FX, const int FX_offset, MultiFab & dXdt, const IBVP & ibvp)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("dG::hyperbolic_pde::explicit_RK::add_FV_bou_contrib_to_dXdt(...)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS -----------------------------------------------------
+    // DOMAINS / UNKNOWN FIELDS
+    const int n_domains = ibvp.get_number_of_domains();
+    const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
+    // ----------------------------------------------------------------
+
+    // EVAL THE INTERFACE BOUNDARY INTEGRALS --------------------------
+#ifdef AMREX_USE_GPU
+        Real const * cell_int_bou_quad_mem_ptr = mesh.cell_int_bou_quad_dev_mem.data();
+#else
+        Real const * cell_int_bou_quad_mem_ptr = mesh.cell_int_bou_quad_host_mem.data();
+#endif
+
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<long const> const & cell_int_bou_quad_info_fab = mesh.cell_int_bou_quad_info.array(mfi);
+        Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+        Array4<Real const> const & elm_centroid_fab = solution.elm_centroid.array(mfi);
+        Array4<Real const> const & X_fab = X.array(mfi);
+        Array4<Real const> const & dX_fab = dX.array(mfi);
+
+        Array4<Real> const & dXdt_fab = dXdt.array(mfi);
+
+        ParallelFor(bx, n_domains,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+
+            if (ELM_IS_LARGE_OR_SMALL(etype))
+            {
+                // NEIGHBORING DOMAIN
+                const int nbr_dom = ibvp.get_nbr_dom(dom);
+
+                // QUADRATURE INFO
+                const int bou_Nq = cell_int_bou_quad_info_fab(i,j,k,CELL_INT_BOU_QUAD_NQ(dom));
+                const long pos = cell_int_bou_quad_info_fab(i,j,k,CELL_INT_BOU_QUAD_POS(dom));
+                const Real * x_ptr = &cell_int_bou_quad_mem_ptr[pos];
+
+                // LOCAL VARIABLES
+                Real x[AMREX_SPACEDIM], w, un[AMREX_SPACEDIM];
+                Real integrand;
+                Real U[__DG_MAX_N_UNKNOWN_FIELDS__], NFn[__DG_MAX_N_UNKNOWN_FIELDS__];
+
+                if (nbr_dom == -1)
+                {
+                    // UNKNOWN FIELDS (WITH RECONSTRUCTION)
+                    dG_space_rx rx(i, j, k, X_fab, dX_fab);
+                    AMREX_D_TERM
+                    (
+                        rx.xc[0] = elm_centroid_fab(i,j,k,ELM_CENTROID_X1(dom));,
+                        rx.xc[1] = elm_centroid_fab(i,j,k,ELM_CENTROID_X2(dom));,
+                        rx.xc[2] = elm_centroid_fab(i,j,k,ELM_CENTROID_X3(dom));
+                    )
+
+                    // EVAL THE INTEGRAL
+                    for (int q = 0; q < bou_Nq; ++q)
+                    {
+                        // Quadrature point, weight and unit normal
+                        const long x_pos = (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*q;
+                        AMREX_D_TERM
+                        (
+                            x[0] = x_ptr[x_pos+0];,
+                            x[1] = x_ptr[x_pos+1];,
+                            x[2] = x_ptr[x_pos+2];
+                        )
+                        w = x_ptr[x_pos+AMREX_SPACEDIM];
+                        AMREX_D_TERM
+                        (
+                            un[0] = x_ptr[x_pos+AMREX_SPACEDIM+1+0];,
+                            un[1] = x_ptr[x_pos+AMREX_SPACEDIM+1+1];,
+                            un[2] = x_ptr[x_pos+AMREX_SPACEDIM+1+2];
+                        )
+
+                        // Solution at (t, x)
+                        rx.eval(x, 0, n_unknown_fields, U);
+
+                        // Numerical flux as a functions of (t, x, un, U)
+                        ibvp.eval_NFn_ICs(dom, t, x, un, U, NFn);
+
+                        // Integral contribution
+                        for (int ru = 0; ru < n_unknown_fields; ++ru)
+                        {
+                            integrand = NFn[ru];
+                            dXdt_fab(i,j,k,ru) -= integrand*w;
+                        }
+                    }
+                }
+                else
+                {
+Abort("dG::hyperbolic_pde::explicit_RK::add_FV_bou_contrib_to_dXdt - nbr_dom != -1");
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+    // ----------------------------------------------------------------
+
+    // ADD THE INTRAPHASE BOUNDARY INTEGRALS --------------------------
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+        const int b = 2*dir;
+        
+        for (MFIter mfi(X); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+            Array4<Real const> const & FX_fab = FX[dir].array(mfi);
+
+            Array4<Real> const & dXdt_fab = dXdt.array(mfi);
+
+            ParallelFor(bx, n_domains,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // ELEMENT TYPE
+                const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+
+                if (ELM_IS_NOT_EMPTY(etype))
+                {
+                    // LOCAL VARIABLES
+                    int fi, fj, fk;
+
+                    GRID_FACE(i, j, k, b+1, fi, fj, fk);
+
+                    for (int ru = 0; ru < n_unknown_fields; ++ru)
+                    {
+                        dXdt_fab(i,j,k,ru) -= (FX_fab(fi,fj,fk,ru)+FX_fab(i,j,k,FX_offset+ru));
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+    }
+    dXdt.FillBoundary(geom.periodicity());
+    // ----------------------------------------------------------------
+}
+// ####################################################################
+
+} // namespace explicit_RK
+} // namespace hyperbolic_pde
+
+} // namespace dG
+} // namespace amrex
+
+#endif

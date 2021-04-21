@@ -16,4 +16,11 @@
 #include <AMReX_dG_LinAlg.H>
 #include <AMReX_dG_StandardElements.H>
 #include <AMReX_dG_Mesh.H>
+#include <AMReX_dG_Mesh_Output.H>
+#include <AMReX_dG_BFX.H>
+#include <AMReX_dG_Solution.H>
+#include <AMReX_dG_Solution_Utils.H>
+#include <AMReX_dG_Solution_RungeKutta.H>
+#include <AMReX_dG_Solution_Output.H>
 #include <AMReX_dG_AMR.H>
+#include <AMReX_dG_AMR_Utils.H>

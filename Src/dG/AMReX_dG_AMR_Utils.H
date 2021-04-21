@@ -1,0 +1,551 @@
+//
+// Author : Vincenzo Gulizzi (LBL)
+// Contact: vgulizzi@lbl.gov
+//
+/** \file AMReX_dG_AMR_Utils.H
+ * \brief Functions for AMR computations.
+*/
+
+#ifndef AMREX_DG_AMR_UTILS_H_
+#define AMREX_DG_AMR_UTILS_H_
+
+#include <AMReX_dG_Solution_RungeKutta.H>
+#include <AMReX_dG_AMR.H>
+
+namespace amrex
+{
+namespace dG
+{
+namespace hyperbolic_pde
+{
+namespace amr_utils
+{
+
+// ADVANCE IN TIME ####################################################
+// TIME INCREMENT =====================================================
+/**
+ * \brief Compute the time increment.
+ *
+ * \param[in] amr: SinglePath AMR object.
+ * \param[in] t: time.
+ * \param[in] X: a vector of MultiFabs containing the solution coefficients.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ * \return the time increment.
+*/
+template <typename IBVP>
+Real eval_dt(const amr::SinglePatch & amr, const Real t, const Vector<MultiFab> & X, const IBVP & ibvp)
+{
+    const int finest_level = amr.finestLevel();
+    Real dt;
+
+    dt = std::numeric_limits<Real>::max();
+    for (int lev = 0; lev <= finest_level; ++lev)
+    {
+        const Mesh & mesh = *amr.meshes[lev];
+        const Solution & solution = *amr.solutions[lev];
+        const iMultiFab & mask = amr.masks[lev];
+
+        dt = amrex::min(dt, solution.eval_dt(t, amr.Geom(lev), mesh, X[lev], mask, ibvp));
+    }
+
+    return dt;
+}
+// ====================================================================
+
+
+// TAKE TIME STEP USING EXPLICIT RUNGE-KUTTA ALGORITHMS ===============
+/**
+ * \brief Get the order of the Runge-Kutta algorithm to match the space discretization order.
+ *
+ * \param[in] amr: SinglePath AMR object.
+ *
+ * \return the time increment.
+*/
+int get_explicit_RKdG_order(const amr::SinglePatch & amr)
+{
+    // PARAMETERS -----------------------------------------------------
+    const int finest_level = amr.finestLevel();
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    int RK_order;
+    // ----------------------------------------------------------------
+
+    // FIND THE HIGHEST SPACE DISCRETIZATION ORDER --------------------
+    RK_order = 1;
+    for (int lev = 0; lev <= finest_level; ++lev)
+    {
+        const Solution & solution = *amr.solutions[lev];
+        
+        int RK_order_lev;
+
+        RK_order_lev = solution.params.space_p+1;
+        if ((solution.params.space_p == 0) && solution.params.FV_is_active)
+        {
+            RK_order_lev = 2;
+        }
+
+        RK_order = amrex::max(RK_order, RK_order_lev);
+    }
+    // ----------------------------------------------------------------
+
+    return RK_order;
+}
+
+/**
+ * \brief Eval the time derivatives of the dG coefficients
+ *
+ * \param[in] amr: SinglePath AMR object.
+ * \param[in] t: time.
+ * \param[in] X: a vector of MultiFab objects containing the dG coefficients.
+ * \param[in] dXdt: a vector of MultiFab objects that will contain the time derivatives of the dG coefficients.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ * \return the time increment.
+*/
+template <typename IBVP>
+void eval_dXdt_explicit_RKdG(const amr::SinglePatch & amr, const Real t, const Vector<MultiFab> & X, Vector<MultiFab> & dXdt, const IBVP & ibvp)
+{
+    // PARAMETERS -----------------------------------------------------
+    const int finest_level = amr.finestLevel();
+    const int n_levels = finest_level+1;
+
+    // UNKNOWN FIELDS
+    const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
+
+    // DG ORDER / FX OFFSET
+    const int largest_sp = amr.get_largest_dG_space_p();
+    const int largest_sNp = AMREX_D_TERM((1+largest_sp),*(1+largest_sp),*(1+largest_sp));
+    const int FX_offset = largest_sNp*n_unknown_fields;
+    const int FX_n_comp = 2*FX_offset;
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    Vector<Array<MultiFab, AMREX_SPACEDIM>> FX(n_levels);
+    Vector<MultiFab> dX(n_levels);
+    // ----------------------------------------------------------------
+
+    // INITIALIZE FLUX MULTIFABS --------------------------------------
+    // FLUXES
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        const BoxArray ba = X[lev].boxarray;
+#if (AMREX_SPACEDIM == 1)
+        const BoxArray fc_ba[1] = {convert(ba, IntVect(1))};
+#endif
+#if (AMREX_SPACEDIM == 2)
+        const BoxArray fc_ba[2] = {convert(ba, IntVect(1,0)),
+                                   convert(ba, IntVect(0,1))};
+#endif
+#if (AMREX_SPACEDIM == 3)
+        const BoxArray fc_ba[3] = {convert(ba, IntVect(1,0,0)),
+                                   convert(ba, IntVect(0,1,0)),
+                                   convert(ba, IntVect(0,0,1))};
+#endif
+        for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+        {
+            FX[lev][dir].define(fc_ba[dir], X[lev].distributionMap, FX_n_comp, 0);
+            FX[lev][dir] = 0.0;
+        }
+    }
+
+    // SLOPES FOR FINITE VOLUME SCHEMES
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        const Mesh & mesh = *amr.meshes[lev];
+        const Solution & solution = *amr.solutions[lev];
+
+        if ((solution.params.space_p == 0) && solution.params.FV_is_active)
+        {
+            dX[lev].define(X[lev].boxarray, X[lev].distributionMap, AMREX_SPACEDIM*n_unknown_fields, X[lev].n_grow);
+            
+            ibvp.eval_FV_slopes(amr.Geom(lev), mesh, solution, X[lev], dX[lev]);
+        }
+    }
+
+    // TIME DERIVATIVES
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        dXdt[lev] = 0.0;
+    }
+    // ----------------------------------------------------------------
+
+    // DOMAIN INTEGRAL CONTRIBUTION TO THE TIME DERIVATIVES -----------
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        // FIRST-ORDER METHODS
+        if (amr.solutions[lev]->params.space_p == 0)
+        {
+            // ...
+        }
+        // HIGH-ORDER METHODS
+        else
+        {
+            explicit_RK::add_dom_contrib_to_dXdt(t, amr.Geom(lev), *amr.meshes[lev], *amr.solutions[lev], X[lev], dXdt[lev], ibvp);
+        }
+    }
+    // ----------------------------------------------------------------
+
+    // BOUNDARY INTEGRAL CONTRIBUTION TO THE TIME DERIVATIVES ---------
+    // COMPUTE BOUNDARY FLUXES: LEVEL 0
+    {
+        const int lev = 0;
+        const Solution & solution = *amr.solutions[lev];
+        
+        // FINITE VOLUME SCHEME
+        if ((solution.params.space_p == 0) && solution.params.FV_is_active)
+        {
+            explicit_RK::eval_FV_bou_fluxes(t, amr.Geom(lev), *amr.meshes[lev], *amr.solutions[lev], X[lev], dX[lev], FX[lev], FX_offset, ibvp);
+        }
+        // DISCONTINUOUS GALERKIN SCHEME
+        else
+        {
+            explicit_RK::eval_bou_fluxes(t, amr.Geom(lev), *amr.meshes[lev], *amr.solutions[lev], X[lev], FX[lev], FX_offset, ibvp);
+        }
+    }
+
+    // COMPUTE BOUNDARY FLUXES: LEVEL > 0
+    for (int lev = 1; lev < n_levels; ++lev)
+    {
+        const Solution & solution = *amr.solutions[lev];
+
+Print() << "COMPUTE BOUNDARY FLUXES: LEVEL > 0" << std::endl;
+exit(-1);
+    }
+
+    // COPY FLUXES FROM FINE TO COARSE LEVEL
+    for (int lev = (n_levels-1); lev > 0; --lev)
+    {
+Print() << "COPY FLUXES FROM FINE TO COARSE LEVEL" << std::endl;
+exit(-1);
+    }
+
+    // ACTUALLY ADD THE BOUNDARY INTEGRAL CONTRIBUTION
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        const Solution & solution = *amr.solutions[lev];
+
+        // FINITE VOLUME SCHEME
+        if ((solution.params.space_p == 0) && solution.params.FV_is_active)
+        {
+            explicit_RK::add_FV_bou_contrib_to_dXdt(t, amr.Geom(lev), *amr.meshes[lev], *amr.solutions[lev], X[lev], dX[lev], FX[lev], FX_offset, dXdt[lev], ibvp);
+        }
+        // DISCONTINUOUS GALERKIN SCHEME
+        else
+        {
+            explicit_RK::add_bou_contrib_to_dXdt(t, amr.Geom(lev), *amr.meshes[lev], *amr.solutions[lev], X[lev], FX[lev], FX_offset, dXdt[lev], ibvp);
+        }
+    }
+    // ----------------------------------------------------------------
+
+    // EXTENDED ELEMENTS AND MULTIPLICATION BY INVERSE MASS MATRIX ----
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        const Geometry & geom = amr.Geom(lev);
+        Solution & solution = *amr.solutions[lev];
+        
+        solution.add_small_elements_contribution(geom, dXdt[lev], ibvp);
+        solution.multiply_by_inverse_space_mass_matrix(geom, dXdt[lev], ibvp);
+    }
+    // ----------------------------------------------------------------
+}
+
+/**
+ * \brief Advance in time using explicit Runge-Kutta algorithms.
+ *
+ * \param[in] amr: SinglePath AMR object.
+ * \param[in] t: time.
+ * \param[in] dt: time increment.
+ * \param[inout] X: a vector of MultiFabs that will contain the updated solution coefficients.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ * \return the time increment.
+*/
+template <typename IBVP>
+void take_time_step_using_explicit_RKdG(const amr::SinglePatch & amr, const Real t, const Real dt, Vector<MultiFab> & X_new, const IBVP & ibvp)
+{
+    // PARAMETERS -----------------------------------------------------
+    const int finest_level = amr.finestLevel();
+    const int n_levels = finest_level+1;
+
+    // RUNGE-KUTTA ORDER
+    const int RK_order = get_explicit_RKdG_order(amr);
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    Vector<MultiFab> X_old(n_levels);
+    // ----------------------------------------------------------------
+
+    // SWAP NEW AND OLD -----------------------------------------------
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        X_old[lev].define(X_new[lev].boxarray, X_new[lev].distributionMap, X_new[lev].n_comp, X_new[lev].n_grow);
+        std::swap(X_old[lev], X_new[lev]);
+    }
+    // ----------------------------------------------------------------
+
+    // RK1 ------------------------------------------------------------
+    if (RK_order == 1)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_dG_AMR_Utils.H - take_time_step_using_explicit_RKdG\n";
+        msg += "| Unexpected order: "+std::to_string(RK_order)+"\n";
+        Abort(msg);
+    }
+    // ----------------------------------------------------------------
+    // RK2 ------------------------------------------------------------
+    else if (RK_order == 2)
+    {
+        // NEEDED MULTIFABS
+        Vector<MultiFab> dXdt(n_levels);
+        Vector<MultiFab> X1(n_levels);
+
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            const MultiFab & X = X_old[lev];
+            
+            dXdt[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            X1[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+        }
+
+        // RK2 STEP 1
+        // dXdt := dXdt(t, X_old)
+        eval_dXdt_explicit_RKdG(amr, t, X_old, dXdt, ibvp);
+
+        // X1 := X_old+dt*dXdt
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            MultiFab::LinComb(X1[lev], 1.0, X_old[lev], 0, dt, dXdt[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+            amr.solutions[lev]->copy_solution_to_small_elements(amr.Geom(lev), X1[lev], ibvp);
+        }
+
+        // RK2 STEP 2
+        // dXdt := dXdt(t+dt, X1)
+        eval_dXdt_explicit_RKdG(amr, t+dt, X1, dXdt, ibvp);
+
+        // X_new := (1/2)*X_old+(1/2)*X1+(dt/2)*dXdt
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            MultiFab::LinComb(X_new[lev], 0.5, X_old[lev], 0, 0.5, X1[lev], 0, 0, X_new[lev].n_comp, X_new[lev].n_grow);
+            MultiFab::Saxpy(X_new[lev], 0.5*dt, dXdt[lev], 0, 0, X_new[lev].n_comp, X_new[lev].n_grow);
+            amr.solutions[lev]->copy_solution_to_small_elements(amr.Geom(lev), X_new[lev], ibvp);
+        }
+    }
+    // ----------------------------------------------------------------
+    // RK3 ------------------------------------------------------------
+    else if (RK_order == 3)
+    {
+        // NEEDED MULTIFABS
+        Vector<MultiFab> dXdt1(n_levels);
+        Vector<MultiFab> dXdt2(n_levels);
+        Vector<MultiFab> dXdt3(n_levels);
+        Vector<MultiFab> X1(n_levels);
+
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            const MultiFab & X = X_old[lev];
+            
+            dXdt1[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            dXdt2[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            dXdt3[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            X1[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+        }
+
+        // RK3 STEP 1
+        // dXdt1 := dXdt(t, X_old)
+        eval_dXdt_explicit_RKdG(amr, t, X_old, dXdt1, ibvp);
+
+        // X1 := X_old+dt*dXdt1
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            MultiFab::LinComb(X1[lev], 1.0, X_old[lev], 0, dt, dXdt1[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+            amr.solutions[lev]->copy_solution_to_small_elements(amr.Geom(lev), X1[lev], ibvp);
+        }
+
+        // RK3 STEP 2
+        // dXdt2 := dXdt(t+dt, X1)
+        eval_dXdt_explicit_RKdG(amr, t+dt, X1, dXdt2, ibvp);
+
+        // X1 := X_old+(dt/4)*dXdt1+(dt/4)*dXdt2
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            MultiFab::LinComb(X1[lev], 1.0, X_old[lev], 0, 0.25*dt, dXdt1[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+            MultiFab::Saxpy(X1[lev],                       0.25*dt, dXdt2[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+            amr.solutions[lev]->copy_solution_to_small_elements(amr.Geom(lev), X1[lev], ibvp);
+        }
+
+        // RK3 STEP 3
+        // dXdt3 := dXdt(t+dt/2, X1)
+        eval_dXdt_explicit_RKdG(amr, t+0.5*dt, X1, dXdt3, ibvp);
+
+        // X_new := X_old+(dt/6)*dXdt1+(dt/6)*dXdt2+(2*dt/3)*dXdt3
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            MultiFab::LinComb(X_new[lev], 1.0, X_old[lev], 0,     dt/6.0, dXdt1[lev], 0, 0, X_new[lev].n_comp, X_new[lev].n_grow);
+            MultiFab::Saxpy(X_new[lev],                           dt/6.0, dXdt2[lev], 0, 0, X_new[lev].n_comp, X_new[lev].n_grow);
+            MultiFab::Saxpy(X_new[lev],                       2.0*dt/3.0, dXdt3[lev], 0, 0, X_new[lev].n_comp, X_new[lev].n_grow);
+            amr.solutions[lev]->copy_solution_to_small_elements(amr.Geom(lev), X_new[lev], ibvp);
+        }
+    }
+    // ----------------------------------------------------------------
+    // RK4 ------------------------------------------------------------
+    else if (RK_order == 4)
+    {
+        // NEEDED MULTIFABS
+        Vector<MultiFab> dXdt1(n_levels);
+        Vector<MultiFab> dXdt2(n_levels);
+        Vector<MultiFab> dXdt3(n_levels);
+        Vector<MultiFab> dXdt4(n_levels);
+        Vector<MultiFab> X1(n_levels);
+
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            const MultiFab & X = X_old[lev];
+            
+            dXdt1[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            dXdt2[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            dXdt3[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            dXdt4[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+            X1[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+        }
+        
+        // RK4 STEP 1
+        // dXdt1 := dXdt(t, X_old)
+        eval_dXdt_explicit_RKdG(amr, t, X_old, dXdt1, ibvp);
+
+        // X1 := X_old+(dt/2)*dXdt1
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            MultiFab::LinComb(X1[lev], 1.0, X_old[lev], 0, 0.5*dt, dXdt1[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+            amr.solutions[lev]->copy_solution_to_small_elements(amr.Geom(lev), X1[lev], ibvp);
+        }
+
+        // RK4 STEP 2
+        // dXdt2 := dXdt(t+dt/2, X1)
+        eval_dXdt_explicit_RKdG(amr, t+0.5*dt, X1, dXdt2, ibvp);
+
+        // X1 := X_old+(dt/2)*dXdt2
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            MultiFab::LinComb(X1[lev], 1.0, X_old[lev], 0, 0.5*dt, dXdt2[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+            amr.solutions[lev]->copy_solution_to_small_elements(amr.Geom(lev), X1[lev], ibvp);
+        }
+
+        // RK4 STEP 3
+        // dXdt3 := dXdt(t+dt/2, X1)
+        eval_dXdt_explicit_RKdG(amr, t+0.5*dt, X1, dXdt3, ibvp);
+
+        // X1 := X_old+dt*dXdt3
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            MultiFab::LinComb(X1[lev], 1.0, X_old[lev], 0, dt, dXdt3[lev], 0, 0, X1[lev].n_comp, X1[lev].n_grow);
+            amr.solutions[lev]->copy_solution_to_small_elements(amr.Geom(lev), X1[lev], ibvp);
+        }
+
+        // RK4 STEP 4
+        // dXdt4 := dXdt(t+dt, X1)
+        eval_dXdt_explicit_RKdG(amr, t+dt, X1, dXdt4, ibvp);
+
+        // X_new := X_old+(dt/6)*dXdt1+(dt/3)*dXdt2+(dt/3)*dXdt3+(dt/6)*dXdt4
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            MultiFab::LinComb(X_new[lev], 1.0, X_old[lev], 0, dt/6.0, dXdt1[lev], 0, 0, X_new[lev].n_comp, X_new[lev].n_grow);
+            MultiFab::Saxpy(X_new[lev],                       dt/3.0, dXdt2[lev], 0, 0, X_new[lev].n_comp, X_new[lev].n_grow);
+            MultiFab::Saxpy(X_new[lev],                       dt/3.0, dXdt3[lev], 0, 0, X_new[lev].n_comp, X_new[lev].n_grow);
+            MultiFab::Saxpy(X_new[lev],                       dt/6.0, dXdt4[lev], 0, 0, X_new[lev].n_comp, X_new[lev].n_grow);
+            amr.solutions[lev]->copy_solution_to_small_elements(amr.Geom(lev), X_new[lev], ibvp);
+        }
+    }
+    // ----------------------------------------------------------------
+    else
+    {
+        std::string msg;
+        msg  = "\n";
+        msg += "ERROR: AMReX_dG_AMR_Utils.H - take_time_step_using_explicit_RKdG\n";
+        msg += "| Unexpected order: "+std::to_string(RK_order)+"\n";
+        Abort(msg);
+    }
+    // ----------------------------------------------------------------
+
+    // RESTRICT FINE SOLUTION ONTO THE COARSE LEVEL -------------------
+    for (int lev = (n_levels-1); lev > 0; --lev)
+    {
+Print() << "RESTRICT FINE SOLUTION ONTO THE COARSE LEVEL " << std::endl;
+exit(-1);
+    }
+    // ----------------------------------------------------------------
+}
+// ====================================================================
+
+
+// TAKE TIME STEP (GENERAL) ===========================================
+/**
+ * \brief Advance in time.
+ *
+ * \param[in] amr: SinglePath AMR object.
+ * \param[in] t: time.
+ * \param[in] dt: time increment.
+ * \param[inout] X: a vector of MultiFabs that will contain the updated solution coefficients.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ * \return the time increment.
+*/
+template <typename IBVP>
+void take_time_step(const amr::SinglePatch & amr, const Real t, const Real dt, Vector<MultiFab> & X, const IBVP & ibvp)
+{
+    // PARAMETERS -------------------------------------------------
+    const int finest_level = amr.finestLevel();
+    // ------------------------------------------------------------
+
+    // VARIABLES --------------------------------------------------
+    std::string time_integration;
+    // ------------------------------------------------------------
+
+    // TIME INTEGRATION -------------------------------------------
+    // At this moment, all AMR levels must use the same time
+    // integration algorithm.
+    // ------------------------------------------------------------
+    {
+        const int lev = 0;
+        const Solution & solution = *amr.solutions[lev];
+
+        time_integration = solution.params.time_integration;
+    }
+    for (int lev = 1; lev <= finest_level; ++lev)
+    {
+        const Solution & solution = *amr.solutions[lev];
+
+        if (time_integration.compare(solution.params.time_integration) != 0)
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_AMR_Utils.H - take_time_step\n";
+            msg += "| At this moment all AMR levels must use the same time integration algorithm.\n";
+            Abort(msg);
+        }
+    }
+    // ------------------------------------------------------------
+
+    // SELECT TIME INTEGRATION ALGORITHM --------------------------
+    {
+        const int lev = 0;
+        const Solution & solution = *amr.solutions[lev];
+
+        if (solution.time_integration_is_explicit_RKdG())
+        {
+            take_time_step_using_explicit_RKdG(amr, t, dt, X, ibvp);
+        }
+    }
+    // ------------------------------------------------------------
+}
+// ====================================================================
+// #################################################################### 
+
+} // namespace amr_utils
+} // namespace hyperbolic_pde
+} // namespace dG
+} // namespace amrex
+
+#endif

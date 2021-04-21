@@ -25,6 +25,8 @@
 #include <AMReX_dG_StandardElements.H>
 
 #define __DG_STD_ELEM_N_SPACE_BOUNDARIES__ (2*AMREX_SPACEDIM)
+#define __DG_STD_ELEM_N_SPACE_EDGES__ AMREX_D_PICK(2, 4, 12)
+#define __DG_STD_ELEM_N_SPACE_CORNERS__ AMREX_D_PICK(2, 4, 8)
 
 // CELL TYPE
 #define __DG_CELL_TYPE_N_COMP_PER_DOM__ 1
@@ -45,10 +47,35 @@
 #define __DG_CELL_BOU_QUAD_N_COMP_PER_DOM__ 2
 #define __DG_CELL_INT_BOU_QUAD_N_COMP_PER_DOM__ 2
 
+// GHOST
+#define __DG_CELL_GHOST__ 1000
+
 // MASK
 #define __DG_CELL_NON_MASKED__ 0
 #define __DG_CELL_MASKED__ 1
 #define __DG_LEVEL_BOUNDARY__ 2
+
+// ELEMENT TYPE
+#define __DG_ELM_TYPE_N_COMP_PER_DOM__ 1
+#define __DG_ELM_TYPE_UNDEFINED__ -2
+#define __DG_ELM_TYPE_EMPTY__ -1
+#define __DG_ELM_TYPE_ENTIRE__ 1
+#define __DG_ELM_TYPE_LARGE__ 2
+#define __DG_ELM_TYPE_SMALL__ 3
+#define __DG_ELM_TYPE_PARTIAL__ 5
+
+// ELEMENT BOUNDARY TYPE
+#define __DG_ELM_BOU_TYPE_N_COMP_PER_DOM__ 1
+#define __DG_ELM_BOU_TYPE_UNDEFINED__ -2
+#define __DG_ELM_BOU_TYPE_EMPTY__ -1
+#define __DG_ELM_BOU_TYPE_ENTIRE__ 1
+#define __DG_ELM_BOU_TYPE_PARTIAL__ 5
+#define __DG_ELM_BOU_TYPE_PARTIAL_INVALID__ 6
+
+// DEBUG
+#define __i__ 7
+#define __j__ 8
+#define __k__ 0
 
 namespace amrex
 {
@@ -64,11 +91,45 @@ AlgoimQuadRule AlgoimQuadGen(const F & phi, const Real * lo, const Real * hi, co
 // ====================================================================
 
 
+// GHOST CELLS ========================================================
+/**
+ * \brief Given the cell_type, return true if the cell is a ghost cell, false otherwise.
+ *
+ * \param[in] cell_type: cell type.
+ *
+ * \return true if the cell is a ghost cell, false otherwise.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELL_IS_GHOST(const short cell_type)
+{
+    const bool cell_is_ghost = (cell_type/__DG_CELL_GHOST__ == 1);
+
+    return cell_is_ghost;
+}
+// ====================================================================
+
+
 // CELL TYPE ==========================================================
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 int CELL_TYPE(const int dom)
 {
     return (__DG_CELL_TYPE_N_COMP_PER_DOM__*dom);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELL_IS_EMPTY(const short ctype)
+{
+    return (ctype == __DG_CELL_TYPE_EMPTY__);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELL_IS_ENTIRE(const short ctype)
+{
+    return (ctype == __DG_CELL_TYPE_ENTIRE__);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELL_IS_CUT(const short ctype)
+{
+    return (ctype == __DG_CELL_TYPE_CUT__);
 }
 // ====================================================================
 
@@ -78,6 +139,21 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 int CELL_BOU_TYPE(const int dom)
 {
     return (__DG_CELL_BOU_TYPE_N_COMP_PER_DOM__*dom);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELL_BOU_IS_EMPTY(const short cbtype)
+{
+    return (cbtype == __DG_CELL_BOU_TYPE_EMPTY__);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELL_BOU_IS_ENTIRE(const short cbtype)
+{
+    return (cbtype == __DG_CELL_BOU_TYPE_ENTIRE__);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELL_BOU_IS_CUT(const short cbtype)
+{
+    return (cbtype == __DG_CELL_BOU_TYPE_CUT__);
 }
 // ====================================================================
 
@@ -121,7 +197,7 @@ int CELL_INT_BOU_QUAD_POS(const int dom)
 // ====================================================================
 
 
-// NEIGHBORS INFORMATION ==============================================
+// NEIGHBORS INFORMATION (CELLS) ======================================
 /**
  * \brief Return the indices of the cell that shares the b-th boundary of the current cell.
  *
@@ -285,6 +361,30 @@ void NBR_CELL(const int i, const int j, const int k, const int b,
 }
 
 /**
+ * \brief Return the face indices corresponding to the b-th boundary of the current cell.
+ *
+ * \param[in] (i,j,k): indices of the current cell.
+ * \param[in] b: boundary of the current cell.
+ * \param[out] (fi,fj,fk): indices of the face.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void GRID_FACE(const int i, const int j, const int k, const int b,
+               int & fi, int & fj, int & fk)
+{
+    // Grid face id
+    // b = 0 <-> fi = i,   fj = j,   fk = k
+    // b = 1 <-> fi = i+1, fj = j,   fk = k
+    // b = 2 <-> fi = i,   fj = j,   fk = k
+    // b = 3 <-> fi = i,   fj = j+1, fk = k
+    // b = 4 <-> fi = i,   fj = j,   fk = k
+    // b = 5 <-> fi = i,   fj = j,   fk = k+1
+    fi = i+(b%2)*((b/2)-1)*((b/2)-2)/2;
+    fj = j+(b%2)*(2-(b/2))*(b/2);
+    fk = k+(b%2)*((b/2)-1)*(b/2)/2;
+}
+
+/**
  * \brief Return the indices of the neighbor cells sharing the face (fi,fj,fk).
  *
  * \param[in] (fi,fj,fk): indices of the current cell.
@@ -363,16 +463,230 @@ bool CELL_IS_NOT_MASKED(const int val)
     return (val == __DG_CELL_NON_MASKED__);
 }
 // ====================================================================
+
+
+// ELEMENT TYPE =======================================================
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_TYPE(const int dom)
+{
+    return (__DG_ELM_TYPE_N_COMP_PER_DOM__*dom);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_EMPTY(const short etype)
+{
+    return (etype == __DG_ELM_TYPE_EMPTY__);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_NOT_EMPTY(const short etype)
+{
+    return (etype != __DG_ELM_TYPE_EMPTY__);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_ENTIRE(const short etype)
+{
+    return (etype%10 == __DG_ELM_TYPE_ENTIRE__);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_PARTIAL(const short etype)
+{
+    return (etype == __DG_ELM_TYPE_PARTIAL__);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_SMALL(const short etype)
+{
+    return (etype%10 == __DG_ELM_TYPE_SMALL__);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_LARGE(const short etype)
+{
+    return (etype%10 == __DG_ELM_TYPE_LARGE__);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_LARGE_OR_SMALL(const short etype)
+{
+    return ((etype%10 == __DG_ELM_TYPE_LARGE__) || (etype%10 == __DG_ELM_TYPE_SMALL__));
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_VALID(const short etype)
+{
+    const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
+    const bool elm_is_large = (etype%10 == __DG_ELM_TYPE_LARGE__);
+    const bool elm_is_not_ghost = (etype/__DG_CELL_GHOST__ != 1);
+    
+    return ((elm_is_entire || elm_is_large) && elm_is_not_ghost);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_EXTENDED(const short etype)
+{
+    const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
+    const bool elm_is_large = (etype%10 == __DG_ELM_TYPE_LARGE__);
+    
+    return ((elm_is_entire || elm_is_large) && (etype/10 == 1));
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_ENTIRE_EXTENDED(const short etype)
+{
+    const bool elm_is_entire = (etype%10 == __DG_ELM_TYPE_ENTIRE__);
+    
+    return (elm_is_entire && (etype/10 == 1));
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_IS_GHOST(const short etype)
+{
+    const bool elm_is_ghost = (etype/__DG_CELL_GHOST__ == 1);
+
+    return elm_is_ghost;
+}
+// ====================================================================
+
+
+// ELEMENT CENTROID ===================================================
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_CENTROID_X1(const int dom)
+{
+    return (AMREX_SPACEDIM*dom);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_CENTROID_X2(const int dom)
+{
+    return (AMREX_SPACEDIM*dom+1);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_CENTROID_X3(const int dom)
+{
+    return (AMREX_SPACEDIM*dom+2);
+}
+// ====================================================================
+
+
+// NEIGHBORS INFORMATION (ELEMENTS) ===================================
+/**
+ * \brief Get indices of the cell providing support for the basis functions over the cell (i,j,k).
+ *
+ * \param[in] (i,j,k): indices of the cell.
+ * \param[in] etype: type of the cell; remember that if the cell (i,j,k) is small, then the support
+ *                   of the basis functions is that of the cells that extends into it.
+ * \param[out] (bf_i,bf_j,bf_k): indices of the cell that provides the support for the current cell.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void BF_CELL(const int i, const int j, const int k, const short etype,
+             int & bf_i, int & bf_j, int & bf_k)
+{
+    if (ELM_IS_SMALL(etype))
+    {
+        const int b = etype/10;
+        int nbr_b;
+        NBR_CELL(i, j, k, b, bf_i, bf_j, bf_k, nbr_b);
+    }
+    else
+    {
+        bf_i = i;
+        bf_j = j;
+        bf_k = k;
+    }
+}
+
+/**
+ * \brief Given the indices of two cells, return true if the cells are merged.
+ *
+ * \param[in] (i,j,k): indices of the cell.
+ * \param[in] (nbr_i,nbr_j,nbr_k): indices of the neighboring cell.
+ *
+ * \return true if the cells are merged, false otherwise.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELLS_ARE_MERGED(const int i, const int j, const int k,
+                      const int nbr_i, const int nbr_j, const int nbr_k)
+{
+    return ((i == nbr_i) && (j == nbr_j) && (k == nbr_k));
+}
+/**
+ * \brief Given the indices of two cells and the element type, return true if the cells are merged.
+ *
+ * \param[in] (i,j,k): indices of the cell.
+ * \param[in] etype: type of the cell.
+ * \param[in] (nbr_i,nbr_j,nbr_k): indices of the neighboring cell.
+ *
+ * \return true if the cells are merged, false otherwise.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELLS_ARE_MERGED(const int i, const int j, const int k, const short etype,
+                      const int nbr_i, const int nbr_j, const int nbr_k)
+{
+    int bf_i, bf_j, bf_k;
+    BF_CELL(i, j, k, etype, bf_i, bf_j, bf_k);
+    return ((bf_i == nbr_i) && (bf_j == nbr_j) && (bf_k == nbr_k));
+}
+/**
+ * \brief Given the indices of two cells and the element type, return true if the cells are merged.
+ *
+ * \param[in] (i,j,k): indices of the cell.
+ * \param[in] (nbr_i,nbr_j,nbr_k): indices of the neighboring cell.
+ * \param[in] nbr_etype: type of the neighboring cell.
+ *
+ * \return true if the cells are merged, false otherwise.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELLS_ARE_MERGED(const int i, const int j, const int k,
+                      const int nbr_i, const int nbr_j, const int nbr_k, const short nbr_etype)
+{
+    int nbr_BF_i, nbr_BF_j, nbr_BF_k;
+    BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+    return ((i == nbr_BF_i) && (j == nbr_BF_j) && (k == nbr_BF_k));
+}
+/**
+ * \brief Given the indices of two cells and the element type, return true if the cells are merged.
+ *
+ * \param[in] (i,j,k): indices of the cell.
+ * \param[in] etype: type of the cell.
+ * \param[in] (nbr_i,nbr_j,nbr_k): indices of the neighboring cell.
+ * \param[in] nbr_etype: type of the neighboring cell.
+ *
+ * \return true if the cells are merged, false otherwise.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool CELLS_ARE_MERGED(const int i, const int j, const int k, const short etype,
+                      const int nbr_i, const int nbr_j, const int nbr_k, const short nbr_etype)
+{
+    int bf_i, bf_j, bf_k;
+    int nbr_BF_i, nbr_BF_j, nbr_BF_k;
+    BF_CELL(i, j, k, etype, bf_i, bf_j, bf_k);
+    BF_CELL(nbr_i, nbr_j, nbr_k, nbr_etype, nbr_BF_i, nbr_BF_j, nbr_BF_k);
+    return ((bf_i == nbr_BF_i) && (bf_j == nbr_BF_j) && (bf_k == nbr_BF_k));
+}
+// ====================================================================
+
+
+// ELEMENT BOUNDARY TYPE ==============================================
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_BOU_TYPE(const int dom)
+{
+    return (__DG_ELM_BOU_TYPE_N_COMP_PER_DOM__*dom);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_BOU_IS_VALID(const short ebtype)
+{
+    return (ebtype != __DG_ELM_BOU_TYPE_PARTIAL_INVALID__);
+}
+// ====================================================================
 // ####################################################################
 
 
 
-// STRUCTURED MESH CLASS ##############################################
+// MESH CLASS #########################################################
 /**
  * \brief Structured mesh parameters class.
  *
 */
-struct StructuredMeshParameters
+struct MeshParameters
 {
     // DATA MEMBERS ===================================================
     bool embedded_geometry_is_active;
@@ -384,7 +698,7 @@ struct StructuredMeshParameters
 
 
     // CONSTRUCTOR ====================================================
-    StructuredMeshParameters()
+    MeshParameters()
     :
     embedded_geometry_is_active{false},
     embedded_geometry_defined_by{""},
@@ -396,24 +710,25 @@ struct StructuredMeshParameters
 };
 
 /**
- * \brief Structured mesh class.
+ * \brief Mesh class.
  *
 */
-struct StructuredMesh
+struct Mesh
 {
     // DATA MEMBERS ===================================================
     static const int dom_data_n_grow = 1;
     static const int bou_data_n_grow = 0;
 
-    StructuredMeshParameters params;
+    MeshParameters params;
 
     // BOXARRAY AND DISTRIBUTION MAPPING
-    BoxArray pruned_ba;
-    DistributionMapping pruned_dm;
+    BoxArray ba;
+    DistributionMapping dm;
 
-    // CELL TYPE
+    // CELL TYPE / CELL BOUNDARY TYPE / CELL INFO
     sMultiFab cell_type;
     Array<sMultiFab, AMREX_SPACEDIM> cell_bou_type;
+    MultiFab cell_vf;
 
     // QUADRATURE INFO
     lMultiFab cell_dom_quad_info;
@@ -441,7 +756,7 @@ struct StructuredMesh
 
     // READERS ========================================================
     bool uses_embedded_geometries() const;
-    bool uses_levelset() const;
+    bool uses_level_set() const;
     bool uses_box_pruning() const;
     // ================================================================
 
@@ -450,20 +765,20 @@ struct StructuredMesh
     /**
      * \brief Initialize the multifabs that will contain the mesh information.
      *
-     * \param[in] ba: amrex BoxArray object; contains the block-structured grids.
-     * \param[in] dm: amrex DistributionMapping object; contains the distribution of the grids among the
-     *                processors.
+     * \param[in] ba_: amrex BoxArray object; contains the block-structured grids.
+     * \param[in] dm_: amrex DistributionMapping object; contains the distribution of the grids among the
+     *                 processors.
      * \param[in] ibvp: initial boundary value problem object.
      *
     */
     template <typename IBVP>
-    void init_multifabs(const BoxArray & ba, const DistributionMapping & dm, const IBVP & ibvp)
+    void init_multifabs(const BoxArray & ba_, const DistributionMapping & dm_, const IBVP & ibvp)
     {
         // PARAMETERS -------------------------------------------------
         // DOMAINS
         const int n_domains = ibvp.get_number_of_domains();
         
-        // COMPONENTS OF THE CELL/CELL BOU TYPE MULTIFABS
+        // COMPONENTS OF THE CELL / CELL BOU TYPE MULTIFABS
         // Type
         const int cell_type_n_comp = n_domains*__DG_CELL_TYPE_N_COMP_PER_DOM__;
         const int cell_bou_type_n_comp = n_domains*__DG_CELL_BOU_TYPE_N_COMP_PER_DOM__;
@@ -477,43 +792,52 @@ struct StructuredMesh
 
         // FACE-CENTERED BOX ARRAYS
 #if (AMREX_SPACEDIM == 1)
-        const BoxArray fc_ba[1] = {convert(ba, IntVect(1))};
+        const BoxArray fc_ba[1] = {convert(ba_, IntVect(1))};
 #endif
 #if (AMREX_SPACEDIM == 2)
-        const BoxArray fc_ba[2] = {convert(ba, IntVect(1,0)),
-                                   convert(ba, IntVect(0,1))};
+        const BoxArray fc_ba[2] = {convert(ba_, IntVect(1,0)),
+                                   convert(ba_, IntVect(0,1))};
 #endif
 #if (AMREX_SPACEDIM == 3)
-        const BoxArray fc_ba[3] = {convert(ba, IntVect(1,0,0)),
-                                   convert(ba, IntVect(0,1,0)),
-                                   convert(ba, IntVect(0,0,1))};
+        const BoxArray fc_ba[3] = {convert(ba_, IntVect(1,0,0)),
+                                   convert(ba_, IntVect(0,1,0)),
+                                   convert(ba_, IntVect(0,0,1))};
 #endif
         // ------------------------------------------------------------
 
         // INITIALIZATION ---------------------------------------------
-        // CELL TYPE
-        this->cell_type.define(ba, dm, cell_dom_quad_info_n_comp, this->dom_data_n_grow);
+        // CELL / CELL BOU TYPE
+        this->cell_type.define(ba_, dm_, cell_type_n_comp, this->dom_data_n_grow);
         this->cell_type = __DG_CELL_TYPE_UNDEFINED__;
         for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
         {
-            this->cell_bou_type[dim].define(fc_ba[dim], dm, cell_bou_quad_info_n_comp, this->bou_data_n_grow);
+            this->cell_bou_type[dim].define(fc_ba[dim], dm_, cell_bou_type_n_comp, this->bou_data_n_grow);
             this->cell_bou_type[dim] = __DG_CELL_BOU_TYPE_UNDEFINED__;
         }
+
+        // CELL VOLUME FRACTION
+        this->cell_vf.define(ba_, dm_, n_domains, this->dom_data_n_grow);
+        this->cell_vf = 0.0;
         
         // QUADRATURE INFO
-        this->cell_dom_quad_info.define(ba, dm, cell_dom_quad_info_n_comp, this->dom_data_n_grow);
+        this->cell_dom_quad_info.define(ba_, dm_, cell_dom_quad_info_n_comp, this->dom_data_n_grow);
         this->cell_dom_quad_info = -1L;
 
         for (int dim = 0; dim < AMREX_SPACEDIM; ++dim)
         {
-            this->cell_bou_quad_info[dim].define(fc_ba[dim], dm, cell_bou_quad_info_n_comp, this->bou_data_n_grow);
+            this->cell_bou_quad_info[dim].define(fc_ba[dim], dm_, cell_bou_quad_info_n_comp, this->bou_data_n_grow);
             this->cell_bou_quad_info[dim] = -1L;
         }
 
-        this->cell_int_bou_quad_info.define(ba, dm, cell_int_bou_quad_info_n_comp, this->dom_data_n_grow);
+        this->cell_int_bou_quad_info.define(ba_, dm_, cell_int_bou_quad_info_n_comp, this->dom_data_n_grow);
         this->cell_int_bou_quad_info = -1L;
         // ------------------------------------------------------------
     }
+    // ================================================================
+
+
+    // GHOST CELLS ====================================================
+    void label_ghost_cells(const Geometry & geom, const int n_domains);
     // ================================================================
 
 
@@ -523,14 +847,14 @@ struct StructuredMesh
      *
      * \param[in] t: time.
      * \param[in] geom: amrex geometry object.
-     * \param[in] ba: amrex BoxArray object; contains the block-structured grids.
-     * \param[in] dm: amrex DistributionMapping object; contains the distribution of the grids among the
+     * \param[in] ba_: amrex BoxArray object; contains the block-structured grids.
+     * \param[in] dm_: amrex DistributionMapping object; contains the distribution of the grids among the
      *                processors.
      * \param[in] ibvp: initial boundary value problem object.
      *
     */
     template <typename IBVP>
-    void make_from_scratch_by_levelset(const Real t, const Geometry & geom, const BoxArray & ba, const DistributionMapping & dm, IBVP & ibvp)
+    void make_from_scratch_by_level_set(const Real t, const Geometry & geom, const BoxArray & ba_, const DistributionMapping & dm_, IBVP & ibvp)
     {
         // PARAMETERS -------------------------------------------------
         // GRID
@@ -553,10 +877,14 @@ struct StructuredMesh
         long cell_int_bou_quad_mem_pos;
         // ------------------------------------------------------------
 
+        // SET TIME FOR THE LEVEL SET ---------------------------------
+        ibvp.level_set.set_time(t);
+        // ------------------------------------------------------------
+
         // PRUNE BOX ARRAY AND DISTRIBUTION MAPPING (IF REQUESTED) ----
         if (this->uses_box_pruning())
         {
-            BoxList old_bl(ba);
+            BoxList old_bl(ba_);
             BoxList new_bl;
 
             for (const Box & bx : old_bl)
@@ -569,7 +897,7 @@ struct StructuredMesh
                 bx_is_empty = true;
                 for (int dom = 0; dom < n_domains; ++dom)
                 {
-                    ibvp.levelset.set_domain(dom);
+                    ibvp.level_set.set_domain(dom);
 
                     for (int k = lo.z; k <= hi.z; ++k)
                     for (int j = lo.y; j <= hi.y; ++j)
@@ -577,11 +905,11 @@ struct StructuredMesh
                     {
                         // LOCAL PARAMETERS
                         const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
-                                                                        prob_lo[1]+j*dx[1],
-                                                                        prob_lo[2]+k*dx[2])};
+                                                                           prob_lo[1]+j*dx[1],
+                                                                           prob_lo[2]+k*dx[2])};
                         const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+1)*dx[0],
-                                                                        prob_lo[1]+(j+1)*dx[1],
-                                                                        prob_lo[2]+(k+1)*dx[2])};
+                                                                           prob_lo[1]+(j+1)*dx[1],
+                                                                           prob_lo[2]+(k+1)*dx[2])};
                         const Real entire_cell_volume = AMREX_D_PICK(dx[0], dx[0]*dx[1], dx[0]*dx[1]*dx[2]);
 
                         // LOCAL VARIABLES
@@ -589,7 +917,7 @@ struct StructuredMesh
 
                         // ALGOIM QUADRATURE RULE
                         const int qo = 2;
-                        AlgoimQuadRule quad = AlgoimQuadGen(ibvp.levelset, cell_lo, cell_hi, -1, -1, qo);
+                        AlgoimQuadRule quad = AlgoimQuadGen(ibvp.level_set, cell_lo, cell_hi, -1, -1, qo);
 
                         cell_volume = quad([](const auto & /*x*/) {return 1.0;});
                         volume_fraction = cell_volume/entire_cell_volume;
@@ -610,18 +938,18 @@ struct StructuredMesh
             AllGatherBoxes(new_bl.data());
 
             // NEW BOXARRAY AND DISTRIBUTION MAPPING
-            this->pruned_ba = BoxArray(new_bl);
-            this->pruned_dm.define(this->pruned_ba);
+            this->ba = BoxArray(new_bl);
+            this->dm.define(this->ba);
         }
         else
         {
-            this->pruned_ba = ba;
-            this->pruned_dm = dm;
+            this->ba = ba_;
+            this->dm = dm_;
         }
         // ------------------------------------------------------------
 
         // INIT THE MULTIFAB ------------------------------------------
-        this->init_multifabs(this->pruned_ba, this->pruned_dm, ibvp);
+        this->init_multifabs(this->ba, this->dm, ibvp);
         // ------------------------------------------------------------
 
         // INITIALIZE THE QUADRATURE FOR THE STANDARD ELEMENT ---------
@@ -702,12 +1030,13 @@ struct StructuredMesh
             const Dim3 hi = ubound(bx);
 
             Array4<short> const & cell_type_fab = this->cell_type.array(mfi);
+            Array4<Real> const & cell_vf_fab = this->cell_vf.array(mfi);
             Array4<long> const & cell_dom_quad_info_fab = this->cell_dom_quad_info.array(mfi);
             Array4<long> const & cell_int_bou_quad_info_fab = this->cell_int_bou_quad_info.array(mfi);
 
             for (int dom = 0; dom < n_domains; ++dom)
             {
-                ibvp.levelset.set_domain(dom);
+                ibvp.level_set.set_domain(dom);
 
                 for (int k = lo.z; k <= hi.z; ++k)
                 for (int j = lo.y; j <= hi.y; ++j)
@@ -728,7 +1057,7 @@ struct StructuredMesh
                     // DOMAIN QUADRATURE
                     {
                         // Algoim data structure
-                        AlgoimQuadRule quad = AlgoimQuadGen(ibvp.levelset, cell_lo, cell_hi, -1, -1, qo_cut);
+                        AlgoimQuadRule quad = AlgoimQuadGen(ibvp.level_set, cell_lo, cell_hi, -1, -1, qo_cut);
 
                         // Compute the volume fraction
                         cell_volume = quad([](const auto & /*x*/) {return 1.0;});
@@ -742,6 +1071,9 @@ struct StructuredMesh
                             // CELL TYPE
                             cell_type_fab(i,j,k,CELL_TYPE(dom)) = __DG_CELL_TYPE_EMPTY__;
 
+                            // CELL VOLUME FRACTION
+                            cell_vf_fab(i,j,k,dom) = 0.0;
+
                             // QUADRATURE INFO
                             cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_NQ(dom)) = 0L;
                             cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_POS(dom)) = -1L;
@@ -754,6 +1086,9 @@ struct StructuredMesh
                             // CELL TYPE
                             cell_type_fab(i,j,k,CELL_TYPE(dom)) = __DG_CELL_TYPE_ENTIRE__;
 
+                            // CELL VOLUME FRACTION
+                            cell_vf_fab(i,j,k,dom) = volume_fraction;
+
                             // QUADRATURE INFO
                             cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_NQ(dom)) = std_elm_dom_Nq;
                             cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_POS(dom)) = 0L;
@@ -765,6 +1100,9 @@ struct StructuredMesh
 
                             // CELL TYPE
                             cell_type_fab(i,j,k,CELL_TYPE(dom)) = __DG_CELL_TYPE_CUT__;
+
+                            // CELL VOLUME FRACTION
+                            cell_vf_fab(i,j,k,dom) = volume_fraction;
 
                             // QUADRATURE INFO
                             const int dom_Nq = quad.nodes.size();
@@ -801,7 +1139,7 @@ struct StructuredMesh
                     if (cell_is_cut)
                     {
                         // Algoim data structure
-                        AlgoimQuadRule quad = AlgoimQuadGen(ibvp.levelset, cell_lo, cell_hi, AMREX_SPACEDIM, -1, qo_cut);
+                        AlgoimQuadRule quad = AlgoimQuadGen(ibvp.level_set, cell_lo, cell_hi, AMREX_SPACEDIM, -1, qo_cut);
 
                         // QUADRATURE INFO
                         const int bou_Nq = quad.nodes.size();
@@ -828,7 +1166,7 @@ struct StructuredMesh
                             )
                             this->cell_int_bou_quad_host_mem[pos+AMREX_SPACEDIM] = quad.nodes[q].w;
 
-                            un = ibvp.levelset.grad(quad.nodes[q].x);
+                            un = ibvp.level_set.grad(quad.nodes[q].x);
                             tmp = 1.0/std::sqrt(AMREX_D_PICK(un[0]*un[0], un[0]*un[0]+un[1]*un[1], un[0]*un[0]+un[1]*un[1]+un[2]*un[2]));
                             AMREX_D_TERM
                             (
@@ -848,6 +1186,12 @@ struct StructuredMesh
                         // Update memory (nodes coordinates + weights +
                         // unit normal components)
                         cell_int_bou_quad_mem_pos += (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*bou_Nq;
+                    }
+                    else
+                    {
+                        // QUADRATURE INFO
+                        cell_int_bou_quad_info_fab(i,j,k,CELL_INT_BOU_QUAD_NQ(dom)) = 0L;
+                        cell_int_bou_quad_info_fab(i,j,k,CELL_INT_BOU_QUAD_POS(dom)) = -1L;
                     }
                 }
             }
@@ -881,7 +1225,7 @@ struct StructuredMesh
 
                 for (int dom = 0; dom < n_domains; ++dom)
                 {
-                    ibvp.levelset.set_domain(dom);
+                    ibvp.level_set.set_domain(dom);
 
                     for (int k = lo.z; k <= hi.z; ++k)
                     for (int j = lo.y; j <= hi.y; ++j)
@@ -901,7 +1245,7 @@ struct StructuredMesh
                         // BOUNDARY QUADRATURE
                         {
                             // Algoim data structure
-                            AlgoimQuadRule quad = AlgoimQuadGen(ibvp.levelset, cell_lo, cell_hi, dir, 0, qo_cut);
+                            AlgoimQuadRule quad = AlgoimQuadGen(ibvp.level_set, cell_lo, cell_hi, dir, 0, qo_cut);
 
                             // Compute the surface fraction
                             boundary_surface = quad([](const auto & /*x*/) {return 1.0;});
@@ -970,7 +1314,7 @@ struct StructuredMesh
         }
         // ------------------------------------------------------------
 
-        // COPY MEMORY TO THE DEVICE ----------------------------------
+        // COPY TO DEVICE ---------------------------------------------
 #ifdef AMREX_USE_GPU
         this->cell_dom_quad_dev_mem.resize(this->cell_dom_quad_host_mem.size());
         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
@@ -995,27 +1339,32 @@ struct StructuredMesh
      *
      * \param[in] t: time.
      * \param[in] geom: amrex Geometry object; contains dx and background domain lower end.
-     * \param[in] ba: amrex BoxArray object; contains the block-structured grids.
-     * \param[in] dm: amrex DistributionMapping object; contains the distribution of the grids among the
+     * \param[in] ba_: amrex BoxArray object; contains the block-structured grids.
+     * \param[in] dm_: amrex DistributionMapping object; contains the distribution of the grids among the
      *                processors.
      * \param[in] ibvp: initial boundary value problem object.
      *
     */
     template <typename IBVP>
-    void make_from_scratch(const Real t, const Geometry & geom, const BoxArray & ba, const DistributionMapping & dm, IBVP & ibvp)
+    void make_from_scratch(const Real t, const Geometry & geom, const BoxArray & ba_, const DistributionMapping & dm_, IBVP & ibvp)
     {
-        // EVAL THE QUADRATURE RULES ----------------------------------
+        // PARAMETERS -------------------------------------------------
+        // DOMAINS
+        const int n_domains = ibvp.get_number_of_domains();
+        // ------------------------------------------------------------
+
+        // MAKE MESH --------------------------------------------------
         if (this->uses_embedded_geometries())
         {
-            if (this->uses_levelset())
+            if (this->uses_level_set())
             {
-                this->make_from_scratch_by_levelset(t, geom, ba, dm, ibvp);
+                this->make_from_scratch_by_level_set(t, geom, ba_, dm_, ibvp);
             }
             else
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: AMReX_dG_Mesh.H - StructuredMesh::make_from_scratch\n";
+                msg +=  "ERROR: AMReX_dG_Mesh.H - Mesh::make_from_scratch\n";
                 msg += "| Unexpected method used to define the embedded geometry.\n";
                 msg += "| Unexpected method: "+this->params.embedded_geometry_defined_by+".\n";
                 Abort(msg);
@@ -1023,8 +1372,16 @@ struct StructuredMesh
         }
         else
         {
-            Abort("To be implemented!");
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_Mesh.H - Mesh::make_from_scratch\n";
+            msg += "| At this moment embedded geometries must be active.\n";
+            Abort(msg);
         }
+        // ------------------------------------------------------------
+
+        // LABEL GHOST CELLS ------------------------------------------
+        this->label_ghost_cells(geom, n_domains);
         // ------------------------------------------------------------
     }
     // ================================================================
@@ -1037,719 +1394,6 @@ struct StructuredMesh
                                    Real * computed_volume,
                                    Real * computed_volume_div,
                                    Real * computed_surface) const;
-    // ================================================================
-
-
-    // INPUT/OUTPUT ===================================================
-    /**
-    * \brief Export the mesh to VTK format.
-    *
-    * \param[in] level_folderpath: path where the .pvtu files will be written.
-    * \param[in] level_step_folderpath: path where the .vtu files will be written.
-    * \param[in] step_string: a zero-padded string containing the step number.
-    * \param[in] filename: name of the output file.
-    * \param[in] geom: amrex geometry object.
-    * \param[in] mask: a iMultiFab object that contains a single value for each cell.
-    * \param[in] ibvp: initial boundary value problem object.
-    */
-    template <typename IBVP>
-    void export_dom_data_to_VTK(const std::string & level_folderpath,
-                                const std::string & level_step_folderpath,
-                                const std::string & step_string,
-                                const std::string & filename,
-                                const Geometry & geom,
-                                const iMultiFab & mask,
-                                IBVP & ibvp) const
-    {
-        // PARAMETERS -------------------------------------------------
-        // CURRENT PROCESSOR
-        const int rank = ParallelDescriptor::MyProc();
-
-        // GRID
-        const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
-        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
-
-        // VTK
-        const int VTK_cell_id = AMREX_D_PICK(VTK_LINE_ID, VTK_QUAD_ID, VTK_HEXAHEDRON_ID);
-        const int VTK_cell_conn_len = AMREX_D_PICK(VTK_LINE_CONN_LEN, VTK_QUAD_CONN_LEN, VTK_HEXAHEDRON_CONN_LEN);
-
-        // DOMAINS
-        const int n_domains = ibvp.get_number_of_domains();
-        // ------------------------------------------------------------
-
-        // VARIABLES --------------------------------------------------
-        long VTK_cell_conn_size;
-
-        int n_VTK_nodal_fields, n_VTK_cell_fields;
-        
-        vtk::Cell_conn_t n_VTK_nodes;
-        vtk::Cell_offs_t n_VTK_cells;
-
-        Vector<vtk::Float_t> VTK_nodes;
-        Vector<vtk::Cell_conn_t> VTK_cell_conn;
-        Vector<vtk::Cell_offs_t> VTK_cell_offset;
-        Vector<vtk::Cell_type_t> VTK_cell_type;
-        Vector<Vector<vtk::Float_t>> VTK_nodal_fields;
-        Vector<std::string> VTK_nodal_fields_names;
-        Vector<Vector<vtk::Int_t>> VTK_cell_fields;
-        Vector<std::string> VTK_cell_fields_names;
-
-        long VTK_nodes_pos;
-        long VTK_cell_conn_pos, VTK_cell_offset_pos, VTK_cell_type_pos;
-        long VTK_nodal_field_pos;
-        long VTK_cell_field_pos;
-
-        long VTK_cell_conn_offset;
-
-        // STANDARD ELEMENT
-        StandardRectangle<AMREX_SPACEDIM> std_elm;
-        int cell_dom_Ng, cell_e, cell_dom_Ne;
-        Gpu::ManagedVector<int> subgrid_conn;
-        // ------------------------------------------------------------
-
-        // INITIALIZE THE GRID POINTS OF THE STANDARD ELEMENT ---------
-        std_elm.set_grid(&dx[0], 1);
-
-        cell_dom_Ng = std_elm.dom_Ng;
-        cell_e = std_elm.g;
-        cell_dom_Ne = AMREX_D_PICK(cell_e, cell_e*cell_e, cell_e*cell_e*cell_e);
-
-#if (AMREX_SPACEDIM == 1)
-        subgrid_conn = vtk::GriddedLine_Connectivity(cell_e);
-#endif
-#if (AMREX_SPACEDIM == 2)
-        subgrid_conn = vtk::GriddedQuad_Connectivity(cell_e);
-#endif
-#if (AMREX_SPACEDIM == 3)
-        subgrid_conn = vtk::GriddedHexahedron_Connectivity(cell_e);
-#endif
-        const int * subgrid_conn_ptr = subgrid_conn.data();
-
-        AMREX_D_TERM
-        (
-            Real const * dom_XI1g_ptr = std_elm.dom_XI1g.data();,
-            Real const * dom_XI2g_ptr = std_elm.dom_XI2g.data();,
-            Real const * dom_XI3g_ptr = std_elm.dom_XI3g.data();
-        )
-        // ------------------------------------------------------------
-
-        // GET NODAL FIELDS AND CELL FIELDS DATA ----------------------
-        // NODAL DATA
-        VTK_nodal_fields_names.clear();
-
-        n_VTK_nodal_fields = VTK_nodal_fields_names.size();
-
-        // CELL DATA
-        VTK_cell_fields_names.clear();
-        VTK_cell_fields_names.push_back("rank");
-        VTK_cell_fields_names.push_back("box");
-        VTK_cell_fields_names.push_back("index_i");
-        VTK_cell_fields_names.push_back("index_j");
-        VTK_cell_fields_names.push_back("index_k");
-        for (int dom = 0; dom < n_domains; ++dom)
-        {
-            VTK_cell_fields_names.push_back("cell_type_dom_"+std::to_string(dom));
-        }
-        for (int dom = 0; dom < n_domains; ++dom)
-        {
-            VTK_cell_fields_names.push_back("Nq_dom_"+std::to_string(dom));
-        }
-        VTK_cell_fields_names.push_back("mask");
-
-        n_VTK_cell_fields = VTK_cell_fields_names.size();
-        // ------------------------------------------------------------
-
-        // EVAL REQUIRED MEMORY ---------------------------------------
-        VTK_cell_conn_size = 0L;
-        
-        n_VTK_nodes = 0L;
-        n_VTK_cells = 0L;
-
-        for (MFIter mfi(this->cell_type); mfi.isValid(); ++mfi)
-        {
-            const Box & bx = mfi.validbox();
-            const Dim3 lo = lbound(bx);
-            const Dim3 hi = ubound(bx);
-
-            for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i)
-            {
-                VTK_cell_conn_size += cell_dom_Ne*VTK_cell_conn_len;
-
-                n_VTK_nodes += cell_dom_Ng;
-                n_VTK_cells += cell_dom_Ne;
-            }
-        }
-        // ------------------------------------------------------------
-
-        // ALLOCATE MEMORY --------------------------------------------
-        VTK_nodes.resize(3*n_VTK_nodes);
-        VTK_cell_conn.resize(VTK_cell_conn_size);
-        VTK_cell_offset.resize(n_VTK_cells+1);
-        VTK_cell_type.resize(n_VTK_cells);
-
-        VTK_nodal_fields.resize(n_VTK_nodal_fields);
-        for (int f = 0; f < n_VTK_nodal_fields; ++f)
-        {
-            VTK_nodal_fields[f].resize(n_VTK_nodes);
-        }
-
-        VTK_cell_fields.resize(n_VTK_cell_fields);
-        for (int f = 0; f < n_VTK_cell_fields; ++f)
-        {
-            VTK_cell_fields[f].resize(n_VTK_cells);
-        }
-        // ------------------------------------------------------------
-
-        // EVAL OUTPUT FIELDS -----------------------------------------
-        long bx_id;
-        bx_id = 0L;
-
-        vtk::Float_t * VTK_nodes_ptr = VTK_nodes.data();
-    
-        vtk::Cell_conn_t * VTK_cell_conn_ptr = VTK_cell_conn.data();
-        
-        vtk::Cell_offs_t * VTK_cell_offset_ptr = VTK_cell_offset.data();
-        VTK_cell_offset_ptr[0] = 0;
-        
-        vtk::Cell_type_t * VTK_cell_type_ptr = VTK_cell_type.data();
-
-        Vector<vtk::Float_t *> VTK_nodal_fields_ptr;
-        VTK_nodal_fields_ptr.resize(n_VTK_nodal_fields);
-        for (int f = 0; f < n_VTK_nodal_fields; ++f)
-        {
-            VTK_nodal_fields_ptr[f] = VTK_nodal_fields[f].data();
-        }
-
-        Vector<vtk::Int_t *> VTK_cell_fields_ptr;
-        VTK_cell_fields_ptr.resize(n_VTK_cell_fields);
-        for (int f = 0; f < n_VTK_cell_fields; ++f)
-        {
-            VTK_cell_fields_ptr[f] = VTK_cell_fields[f].data();
-        }
-        
-        VTK_nodes_pos = 0L;
-        VTK_cell_conn_pos = 0L;
-        VTK_cell_offset_pos = 1L;
-        VTK_cell_type_pos = 0L;
-
-        VTK_nodal_field_pos = 0L;
-        VTK_cell_field_pos = 0L;
-
-        VTK_cell_conn_offset = 0L;
-
-        for (MFIter mfi(this->cell_type); mfi.isValid(); ++mfi)
-        {
-            const Box & bx = mfi.validbox();
-            const Dim3 lo = lbound(bx);
-            const Dim3 hi = ubound(bx);
-
-            Array4<short const> const & cell_type_fab = this->cell_type.array(mfi);
-            Array4<long const> const & cell_dom_quad_info_fab = this->cell_dom_quad_info.array(mfi);
-            Array4<int const> const & mask_fab = mask.array(mfi);
-
-            for (int k = lo.z; k <= hi.z; ++k)
-            for (int j = lo.y; j <= hi.y; ++j)
-            for (int i = lo.x; i <= hi.x; ++i)
-            {
-                // LOCAL PARAMETERS
-                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
-                                                                   prob_lo[1]+j*dx[1],
-                                                                   prob_lo[2]+k*dx[2])};
-
-                // LOCAL VARIABLES
-                Real x[AMREX_SPACEDIM];
-
-                // LOOP OVER THE GRID POINTS
-                for (int g = 0; g < cell_dom_Ng; ++g)
-                {
-                    // GRID POINT
-                    AMREX_D_TERM
-                    (
-                        x[0] = dom_XI1g_ptr[g]+cell_lo[0];,
-                        x[1] = dom_XI2g_ptr[g]+cell_lo[1];,
-                        x[2] = dom_XI3g_ptr[g]+cell_lo[2];
-                    )
-
-                    // VTK NODE
-#if (AMREX_SPACEDIM == 1)
-                    VTK_nodes_ptr[VTK_nodes_pos+0] = x[0];
-                    VTK_nodes_ptr[VTK_nodes_pos+1] = 0.0;
-                    VTK_nodes_ptr[VTK_nodes_pos+2] = 0.0;
-#endif
-#if (AMREX_SPACEDIM == 2)
-                    VTK_nodes_ptr[VTK_nodes_pos+0] = x[0];
-                    VTK_nodes_ptr[VTK_nodes_pos+1] = x[1];
-                    VTK_nodes_ptr[VTK_nodes_pos+2] = 0.0;
-#endif
-#if (AMREX_SPACEDIM == 3)
-                    VTK_nodes_ptr[VTK_nodes_pos+0] = x[0];
-                    VTK_nodes_ptr[VTK_nodes_pos+1] = x[1];
-                    VTK_nodes_ptr[VTK_nodes_pos+2] = x[2];
-#endif
-
-                    // VTK NODAL FIELDS
-                    // ...
-
-                    // MOVE OFFSET
-                    VTK_nodes_pos += 3;
-                    VTK_nodal_field_pos += 1;
-
-                }
-
-                // LOOP OVER THE SUB CELLS
-                for (int e = 0; e < cell_dom_Ne; ++e)
-                {
-                    // VTK CELL CONNECTIVITY
-                    const int offset = e*VTK_cell_conn_len;
-                    for (int c = 0; c < VTK_cell_conn_len; ++c)
-                    {
-                        VTK_cell_conn_ptr[VTK_cell_conn_pos+c] = subgrid_conn_ptr[offset+c]+VTK_cell_conn_offset;
-                    }
-
-                    // VTK CELL OFFSET
-                    VTK_cell_offset_ptr[VTK_cell_offset_pos] = VTK_cell_offset_ptr[VTK_cell_offset_pos-1]+VTK_cell_conn_len;
-
-                    // VTK CELL TYPE
-                    VTK_cell_type_ptr[VTK_cell_type_pos] = VTK_cell_id;
-
-                    // VTK CELL FIELDS
-                    // RANK
-                    VTK_cell_fields_ptr[0][VTK_cell_field_pos] = rank;
-
-                    // BOX
-                    VTK_cell_fields_ptr[1][VTK_cell_field_pos] = bx_id;
-
-                    // I
-                    VTK_cell_fields_ptr[2][VTK_cell_field_pos] = i;
-                    // J
-                    VTK_cell_fields_ptr[3][VTK_cell_field_pos] = j;
-                    // K
-                    VTK_cell_fields_ptr[4][VTK_cell_field_pos] = k;
-
-                    // CELL TYPE
-                    for (int dom = 0; dom < n_domains; ++dom)
-                    {
-                        VTK_cell_fields_ptr[5+dom][VTK_cell_field_pos] = cell_type_fab(i,j,k,CELL_TYPE(dom));
-                    }
-
-                    // NUMBER OF QUADRATURE POINTS
-                    for (int dom = 0; dom < n_domains; ++dom)
-                    {
-                        VTK_cell_fields_ptr[5+n_domains+dom][VTK_cell_field_pos] = cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_NQ(dom));
-                    }
-
-                    // MASK
-                    VTK_cell_fields_ptr[5+n_domains+n_domains][VTK_cell_field_pos] = mask_fab(i,j,k);
-
-                    // MOVE OFFSET
-                    VTK_cell_conn_pos += VTK_cell_conn_len;
-                    VTK_cell_offset_pos += 1;
-                    VTK_cell_type_pos += 1;
-                    VTK_cell_field_pos += 1;
-                }
-
-                // MOVE OFFSET
-                VTK_cell_conn_offset += cell_dom_Ng;
-            }
-
-            bx_id += 1;
-        }
-        // ------------------------------------------------------------
-
-        // HEADER FILE ------------------------------------------------
-        if (ParallelDescriptor::IOProcessor())
-        {   
-            vtk::print_header_vtu(level_folderpath, level_step_folderpath, step_string, filename,
-                                  VTK_nodal_fields_names, VTK_cell_fields_names);
-        }
-        // ------------------------------------------------------------
-
-        // DATA FILE --------------------------------------------------
-        {
-            const std::string filepath = dG::io::make_path({level_step_folderpath, filename+"_"+std::to_string(rank)+".vtu"});
-            
-            vtk::print_unstructured_grid_data_vtu(filepath,
-                                                  n_VTK_nodes,
-                                                  n_VTK_cells,
-                                                  VTK_nodes,
-                                                  VTK_cell_conn,
-                                                  VTK_cell_offset,
-                                                  VTK_cell_type,
-                                                  VTK_nodal_fields,
-                                                  VTK_nodal_fields_names,
-                                                  VTK_cell_fields,
-                                                  VTK_cell_fields_names);
-        }
-        // ------------------------------------------------------------
-    }
-
-    /**
-    * \brief Export the mesh to VTK format.
-    *
-    * \param[in] level_folderpath: path where the .pvtu files will be written.
-    * \param[in] level_step_folderpath: path where the .vtu files will be written.
-    * \param[in] step_string: a zero-padded string containing the step number.
-    * \param[in] filename: name of the output file.
-    * \param[in] geom: amrex geometry object.
-    * \param[in] mask: a iMultiFab object that contains a single value for each cell.
-    * \param[in] ibvp: initial boundary value problem object.
-    */
-    template <typename IBVP>
-    void export_bou_data_to_VTK(const std::string & level_folderpath,
-                                const std::string & level_step_folderpath,
-                                const std::string & step_string,
-                                const std::string & filename,
-                                const Geometry & geom,
-                                const iMultiFab & mask,
-                                IBVP & ibvp) const
-    {
-        // PARAMETERS -------------------------------------------------
-        // CURRENT PROCESSOR
-        const int rank = ParallelDescriptor::MyProc();
-
-        // GRID
-        const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
-        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
-
-        // VTK
-        const int VTK_cell_id = AMREX_D_PICK(VTK_VERTEX_ID, VTK_LINE_ID, VTK_QUAD_ID);
-        const int VTK_cell_conn_len = AMREX_D_PICK(VTK_VERTEX_CONN_LEN, VTK_LINE_CONN_LEN, VTK_QUAD_CONN_LEN);
-
-        // DOMAINS
-        const int n_domains = ibvp.get_number_of_domains();
-        // ------------------------------------------------------------
-
-        // VARIABLES --------------------------------------------------
-        long VTK_cell_conn_size;
-
-        int n_VTK_nodal_fields, n_VTK_cell_fields;
-        
-        vtk::Cell_conn_t n_VTK_nodes;
-        vtk::Cell_offs_t n_VTK_cells;
-
-        Vector<vtk::Float_t> VTK_nodes;
-        Vector<vtk::Cell_conn_t> VTK_cell_conn;
-        Vector<vtk::Cell_offs_t> VTK_cell_offset;
-        Vector<vtk::Cell_type_t> VTK_cell_type;
-        Vector<Vector<vtk::Float_t>> VTK_nodal_fields;
-        Vector<std::string> VTK_nodal_fields_names;
-        Vector<Vector<vtk::Int_t>> VTK_cell_fields;
-        Vector<std::string> VTK_cell_fields_names;
-
-        long VTK_nodes_pos;
-        long VTK_cell_conn_pos, VTK_cell_offset_pos, VTK_cell_type_pos;
-        long VTK_nodal_field_pos;
-        long VTK_cell_field_pos;
-
-        long VTK_cell_conn_offset;
-
-        // STANDARD ELEMENT
-        StandardRectangle<AMREX_SPACEDIM> std_elm;
-        int cell_bou_Ng, cell_bou_Ne;
-#if (AMREX_SPACEDIM > 1)
-        int cell_e;
-#endif
-        Gpu::ManagedVector<int> subgrid_conn;
-        // ------------------------------------------------------------
-
-        // INITIALIZE THE GRID POINTS OF THE STANDARD ELEMENT ---------
-        std_elm.set_grid(&dx[0], 1);
-
-        cell_bou_Ng = std_elm.bou_Ng;
-#if (AMREX_SPACEDIM > 1)
-        cell_e = std_elm.g;
-#endif
-        cell_bou_Ne = AMREX_D_PICK(1, cell_e, cell_e*cell_e);
-#if (AMREX_SPACEDIM == 1)
-        subgrid_conn = {0};
-#endif
-#if (AMREX_SPACEDIM == 2)
-        subgrid_conn = vtk::GriddedLine_Connectivity(cell_e);
-#endif
-#if (AMREX_SPACEDIM == 3)
-        subgrid_conn = vtk::GriddedQuad_Connectivity(cell_e);
-#endif
-        const int * subgrid_conn_ptr = subgrid_conn.data();
-        // ------------------------------------------------------------
-
-        // GET NODAL FIELDS AND CELL FIELDS DATA ----------------------
-        // NODAL DATA
-        VTK_nodal_fields_names.clear();
-
-        n_VTK_nodal_fields = VTK_nodal_fields_names.size();
-
-        // CELL DATA
-        VTK_cell_fields_names.clear();
-        for (int dom = 0; dom < n_domains; ++dom)
-        {
-            VTK_cell_fields_names.push_back("cell_bou_type_dom_"+std::to_string(dom));
-        }
-        for (int dom = 0; dom < n_domains; ++dom)
-        {
-            VTK_cell_fields_names.push_back("Nq_dom_"+std::to_string(dom));
-        }
-        VTK_cell_fields_names.push_back("mask");
-
-        n_VTK_cell_fields = VTK_cell_fields_names.size();
-        // ------------------------------------------------------------
-
-        // EVAL REQUIRED MEMORY ---------------------------------------
-        VTK_cell_conn_size = 0L;
-    
-        n_VTK_nodes = 0L;
-        n_VTK_cells = 0L;
-
-        for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
-        {
-            for (MFIter mfi(this->cell_bou_type[dir]); mfi.isValid(); ++mfi)
-            {
-                const Box & bx = mfi.validbox();
-                const Dim3 lo = lbound(bx);
-                const Dim3 hi = ubound(bx);
-
-                for (int fk = lo.z; fk <= hi.z; ++fk)
-                for (int fj = lo.y; fj <= hi.y; ++fj)
-                for (int fi = lo.x; fi <= hi.x; ++fi)
-                {
-                    VTK_cell_conn_size += cell_bou_Ne*VTK_cell_conn_len;
-
-                    n_VTK_nodes += cell_bou_Ng;
-                    n_VTK_cells += cell_bou_Ne;
-                }
-            }
-        }
-        // ------------------------------------------------------------
-
-        // ALLOCATE MEMORY --------------------------------------------
-        VTK_nodes.resize(3*n_VTK_nodes);
-        VTK_cell_conn.resize(VTK_cell_conn_size);
-        VTK_cell_offset.resize(n_VTK_cells+1);
-        VTK_cell_type.resize(n_VTK_cells);
-
-        VTK_nodal_fields.resize(n_VTK_nodal_fields);
-        for (int f = 0; f < n_VTK_nodal_fields; ++f)
-        {
-            VTK_nodal_fields[f].resize(n_VTK_nodes);
-        }
-
-        VTK_cell_fields.resize(n_VTK_cell_fields);
-        for (int f = 0; f < n_VTK_cell_fields; ++f)
-        {
-            VTK_cell_fields[f].resize(n_VTK_cells);
-        }
-        // ------------------------------------------------------------
-
-        // EVAL OUTPUT FIELDS -----------------------------------------
-        vtk::Float_t * VTK_nodes_ptr = VTK_nodes.data();
-    
-        vtk::Cell_conn_t * VTK_cell_conn_ptr = VTK_cell_conn.data();
-        
-        vtk::Cell_offs_t * VTK_cell_offset_ptr = VTK_cell_offset.data();
-        VTK_cell_offset_ptr[0] = 0;
-        
-        vtk::Cell_type_t * VTK_cell_type_ptr = VTK_cell_type.data();
-
-        Vector<vtk::Float_t *> VTK_nodal_fields_ptr;
-        VTK_nodal_fields_ptr.resize(n_VTK_nodal_fields);
-        for (int f = 0; f < n_VTK_nodal_fields; ++f)
-        {
-            VTK_nodal_fields_ptr[f] = VTK_nodal_fields[f].data();
-        }
-
-        Vector<vtk::Int_t *> VTK_cell_fields_ptr;
-        VTK_cell_fields_ptr.resize(n_VTK_cell_fields);
-        for (int f = 0; f < n_VTK_cell_fields; ++f)
-        {
-            VTK_cell_fields_ptr[f] = VTK_cell_fields[f].data();
-        }
-        
-        VTK_nodes_pos = 0L;
-        VTK_cell_conn_pos = 0L;
-        VTK_cell_offset_pos = 1L;
-        VTK_cell_type_pos = 0L;
-
-        VTK_nodal_field_pos = 0L;
-        VTK_cell_field_pos = 0L;
-
-        VTK_cell_conn_offset = 0L;
-
-        for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
-        {
-            AMREX_D_TERM
-            (
-                Real const * bou_XI1g_ptr = std_elm.bou_XI1g[dir].data();,
-                Real const * bou_XI2g_ptr = std_elm.bou_XI2g[dir].data();,
-                Real const * bou_XI3g_ptr = std_elm.bou_XI3g[dir].data();
-            )
-
-            for (MFIter mfi(this->cell_bou_type[dir]); mfi.isValid(); ++mfi)
-            {
-                const Box & bx = mfi.validbox();
-                const Dim3 lo = lbound(bx);
-                const Dim3 hi = ubound(bx);
-
-                Array4<short const> const & cell_bou_type_fab = this->cell_bou_type[dir].array(mfi);
-                Array4<long const> const & cell_bou_quad_info_fab = this->cell_bou_quad_info[dir].array(mfi);
-                Array4<int const> const & mask_fab = mask.array(mfi);
-
-                for (int fk = lo.z; fk <= hi.z; ++fk)
-                for (int fj = lo.y; fj <= hi.y; ++fj)
-                for (int fi = lo.x; fi <= hi.x; ++fi)
-                {
-                    // LOCAL PARAMETERS
-                    const Real face_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+fi*dx[0],
-                                                                       prob_lo[1]+fj*dx[1],
-                                                                       prob_lo[2]+fk*dx[2])};
-
-                    // LOCAL VARIABLES
-                    int mi, mj, mk, pi, pj, pk;
-                    int m_mask, p_mask;
-                    Real x[AMREX_SPACEDIM];
-
-                    // NEIGHBOR CELLS SHARING THE FACE fi,fj,fk
-                    FACE_TO_NBRS(fi, fj, fk, dir, mi, mj, mk, pi, pj, pk);
-                    m_mask = mask_fab(mi,mj,mk);
-                    p_mask = mask_fab(pi,pj,pk);
-
-                    // LOOP OVER THE GRID POINTS
-                    for (int g = 0; g < cell_bou_Ng; ++g)
-                    {
-                        // GRID POINT
-                        AMREX_D_TERM
-                        (
-                            x[0] = bou_XI1g_ptr[g]+face_lo[0];,
-                            x[1] = bou_XI2g_ptr[g]+face_lo[1];,
-                            x[2] = bou_XI3g_ptr[g]+face_lo[2];
-                        )
-
-                        // VTK NODE
-#if (AMREX_SPACEDIM == 1)
-                        VTK_nodes_ptr[VTK_nodes_pos+0] = x[0];
-                        VTK_nodes_ptr[VTK_nodes_pos+1] = 0.0;
-                        VTK_nodes_ptr[VTK_nodes_pos+2] = 0.0;
-#endif
-#if (AMREX_SPACEDIM == 2)
-                        VTK_nodes_ptr[VTK_nodes_pos+0] = x[0];
-                        VTK_nodes_ptr[VTK_nodes_pos+1] = x[1];
-                        VTK_nodes_ptr[VTK_nodes_pos+2] = 0.0;
-#endif
-#if (AMREX_SPACEDIM == 3)
-                        VTK_nodes_ptr[VTK_nodes_pos+0] = x[0];
-                        VTK_nodes_ptr[VTK_nodes_pos+1] = x[1];
-                        VTK_nodes_ptr[VTK_nodes_pos+2] = x[2];
-#endif
-
-                        // VTK NODAL FIELDS
-                        // ...
-
-                        // MOVE OFFSET
-                        VTK_nodes_pos += 3;
-                        VTK_nodal_field_pos += 1;
-                    }
-
-                    // LOOP OVER THE SUB CELLS
-                    for (int e = 0; e < cell_bou_Ne; ++e)
-                    {
-                        // VTK CELL CONNECTIVITY
-                        const int offset = e*VTK_cell_conn_len;
-                        for (int c = 0; c < VTK_cell_conn_len; ++c)
-                        {
-                            VTK_cell_conn_ptr[VTK_cell_conn_pos+c] = subgrid_conn_ptr[offset+c]+VTK_cell_conn_offset;
-                        }
-
-                        // VTK CELL OFFSET
-                        VTK_cell_offset_ptr[VTK_cell_offset_pos] = VTK_cell_offset_ptr[VTK_cell_offset_pos-1]+VTK_cell_conn_len;
-
-                        // VTK CELL TYPE
-                        VTK_cell_type_ptr[VTK_cell_type_pos] = VTK_cell_id;
-
-                        // VTK CELL FIELDS
-                        // CELL BOU TYPE
-                        for (int dom = 0; dom < n_domains; ++dom)
-                        {
-                            VTK_cell_fields_ptr[dom][VTK_cell_field_pos] = cell_bou_type_fab(fi,fj,fk,CELL_BOU_TYPE(dom));
-                        }
-
-                        // NUMBER OF QUADRATURE POINTS
-                        for (int dom = 0; dom < n_domains; ++dom)
-                        {
-                            VTK_cell_fields_ptr[n_domains+dom][VTK_cell_field_pos] = cell_bou_quad_info_fab(fi,fj,fk,CELL_BOU_QUAD_NQ(dom));
-                        }
-
-                        // MASK
-                        VTK_cell_fields_ptr[n_domains+n_domains][VTK_cell_field_pos] = (m_mask == p_mask) ? m_mask : __DG_LEVEL_BOUNDARY__;
-
-                        // MOVE OFFSET
-                        VTK_cell_conn_pos += VTK_cell_conn_len;
-                        VTK_cell_offset_pos += 1;
-                        VTK_cell_type_pos += 1;
-                        VTK_cell_field_pos += 1;
-                    }
-
-                    // MOVE OFFSET
-                    VTK_cell_conn_offset += cell_bou_Ng;
-                }
-            }
-        }
-        // ------------------------------------------------------------
-
-        // HEADER FILE ------------------------------------------------
-        if (ParallelDescriptor::IOProcessor())
-        {   
-            vtk::print_header_vtu(level_folderpath, level_step_folderpath, step_string, filename,
-                                  VTK_nodal_fields_names, VTK_cell_fields_names);
-        }
-        // ------------------------------------------------------------
-
-        // DATA FILE --------------------------------------------------
-        {
-            const std::string filepath = dG::io::make_path({level_step_folderpath, filename+"_"+std::to_string(rank)+".vtu"});
-            
-            vtk::print_unstructured_grid_data_vtu(filepath,
-                                                  n_VTK_nodes,
-                                                  n_VTK_cells,
-                                                  VTK_nodes,
-                                                  VTK_cell_conn,
-                                                  VTK_cell_offset,
-                                                  VTK_cell_type,
-                                                  VTK_nodal_fields,
-                                                  VTK_nodal_fields_names,
-                                                  VTK_cell_fields,
-                                                  VTK_cell_fields_names);
-        }
-        // ------------------------------------------------------------
-    }
-    
-    /**
-    * \brief Export the mesh to VTK format.
-    *
-    * \param[in] level_folderpath: path where the .pvtu files will be written.
-    * \param[in] level_step_folderpath: path where the .vtu files will be written.
-    * \param[in] step_string: a zero-padded string containing the step number.
-    * \param[in] filename_root: root of the name of the output files.
-    * \param[in] geom: amrex geometry object.
-    * \param[in] mask: a iMultiFab object that contains a single value for each cell.
-    * \param[in] ibvp: initial boundary value problem object.
-    */
-    template <typename IBVP>
-    void export_to_VTK(const std::string & level_folderpath,
-                       const std::string & level_step_folderpath,
-                       const std::string & step_string,
-                       const std::string & filename_root,
-                       const Geometry & geom,
-                       const iMultiFab & mask,
-                       IBVP & ibvp) const
-    {
-        const std::string dom_data_filename = filename_root+"_dom_data";
-        const std::string bou_data_filename = filename_root+"_bou_data";
-
-        this->export_dom_data_to_VTK(level_folderpath, level_step_folderpath, step_string, dom_data_filename,
-                                     geom, mask, ibvp);
-        this->export_bou_data_to_VTK(level_folderpath, level_step_folderpath, step_string, bou_data_filename,
-                                     geom, mask, ibvp);
-    }
     // ================================================================
 
 };

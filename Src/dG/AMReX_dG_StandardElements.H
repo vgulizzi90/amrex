@@ -408,27 +408,27 @@ struct StandardRectangle
         }
         // ------------------------------------------------------------
 
-        // 1D GRID ABSCISSAE AND WEIGHTS ------------------------------
+        // 1D GRID ABSCISSAE ------------------------------------------
         // NOTE: These are referred to the [0,+1] interval.
         // ------------------------------------------------------------
         const Real * gau_lob_x_ptr;
 
-        if      (g_ == 0) {gau_lob_x_ptr = gau_lob_1_x;}
-        else if (g_ == 1) {gau_lob_x_ptr = gau_lob_2_x;}
-        else if (g_ == 2) {gau_lob_x_ptr = gau_lob_3_x;}
-        else if (g_ == 3) {gau_lob_x_ptr = gau_lob_4_x;}
-        else if (g_ == 4) {gau_lob_x_ptr = gau_lob_5_x;}
-        else if (g_ == 5) {gau_lob_x_ptr = gau_lob_6_x;}
-        else if (g_ == 6) {gau_lob_x_ptr = gau_lob_7_x;}
-        else if (g_ == 7) {gau_lob_x_ptr = gau_lob_8_x;}
-        else if (g_ == 8) {gau_lob_x_ptr = gau_lob_9_x;}
-        else if (g_ == 9) {gau_lob_x_ptr = gau_lob_10_x;}
-        else if (g_ == 10) {gau_lob_x_ptr = gau_lob_11_x;}
-        else if (g_ == 11) {gau_lob_x_ptr = gau_lob_12_x;}
-        else if (g_ == 12) {gau_lob_x_ptr = gau_lob_13_x;}
-        else if (g_ == 13) {gau_lob_x_ptr = gau_lob_14_x;}
-        else if (g_ == 14) {gau_lob_x_ptr = gau_lob_15_x;}
-        else if (g_ == 15) {gau_lob_x_ptr = gau_lob_16_x;}
+        if      (g_ == 0) {gau_lob_x_ptr = tables::gau_lob_1_x;}
+        else if (g_ == 1) {gau_lob_x_ptr = tables::gau_lob_2_x;}
+        else if (g_ == 2) {gau_lob_x_ptr = tables::gau_lob_3_x;}
+        else if (g_ == 3) {gau_lob_x_ptr = tables::gau_lob_4_x;}
+        else if (g_ == 4) {gau_lob_x_ptr = tables::gau_lob_5_x;}
+        else if (g_ == 5) {gau_lob_x_ptr = tables::gau_lob_6_x;}
+        else if (g_ == 6) {gau_lob_x_ptr = tables::gau_lob_7_x;}
+        else if (g_ == 7) {gau_lob_x_ptr = tables::gau_lob_8_x;}
+        else if (g_ == 8) {gau_lob_x_ptr = tables::gau_lob_9_x;}
+        else if (g_ == 9) {gau_lob_x_ptr = tables::gau_lob_10_x;}
+        else if (g_ == 10) {gau_lob_x_ptr = tables::gau_lob_11_x;}
+        else if (g_ == 11) {gau_lob_x_ptr = tables::gau_lob_12_x;}
+        else if (g_ == 12) {gau_lob_x_ptr = tables::gau_lob_13_x;}
+        else if (g_ == 13) {gau_lob_x_ptr = tables::gau_lob_14_x;}
+        else if (g_ == 14) {gau_lob_x_ptr = tables::gau_lob_15_x;}
+        else if (g_ == 15) {gau_lob_x_ptr = tables::gau_lob_16_x;}
         else
         {
             std::string msg;
@@ -444,7 +444,7 @@ struct StandardRectangle
         }
         // ------------------------------------------------------------
 
-        // ALLOCATE MEMORY FOR QUADRATURE ABSCISSAE AND WEIGHTS -------
+        // ALLOCATE MEMORY FOR GRID POINTS ABSCISSAE ------------------
         if (DIM == 1)
         {
             this->dom_XI1g.resize(this->dom_Ng);
@@ -485,11 +485,9 @@ struct StandardRectangle
         }
         // ------------------------------------------------------------
 
-        // STORE QUADRATURE ABSCISSAE AND WEIGHTS ---------------------
+        // STORE GRID POINTS ABSCISSAE --------------------------------
         if (DIM == 1)
         {
-            const Real aJ = dx_[0];
-
             int g1, pos;
             int dir;
 
@@ -506,8 +504,6 @@ struct StandardRectangle
         }
         else if (DIM == 2)
         {
-            const Real aJ = dx_[0]*dx_[1];
-
             int g1, g2, pos;
             int dir;
 
@@ -540,8 +536,6 @@ struct StandardRectangle
         }
         else if (DIM == 3)
         {
-            const Real aJ = dx_[0]*dx_[1]*dx_[2];
-
             int g1, g2, g3, pos;
             int dir;
 

@@ -24,6 +24,7 @@ namespace dG
 
 // TYPEDEFS ###########################################################
 // MULTIFABS ==========================================================
+typedef FabArray<BaseFab<char>> cMultiFab;
 typedef FabArray<BaseFab<short int>> sMultiFab;
 typedef FabArray<BaseFab<unsigned int>> uMultiFab;
 typedef FabArray<BaseFab<long>> lMultiFab;
