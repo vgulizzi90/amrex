@@ -37,30 +37,21 @@ namespace amr_utils
  *
  * \param[in] c_geom: coarse amrex Geometry object.
  * \param[in] c_mesh: coarse Mesh object.
- * \param[in] c_sp: polynomial order of the coarse mesh.
- * \param[in] c_elm_type: a sMultiFab containing the information about the elements' type of the
- *                        coarse mesh.
+ * \param[in] c_solution: coarse Solution object.
  * \param[in] rr: refinement ratio.
  * \param[in] f_geom: fine amrex Geometry object.
  * \param[in] f_mesh: fine Mesh object.
- * \param[in] f_elm_type: a sMultiFab containing the information about the elements' type of the
- *                        fine mesh.
- * \param[in] f_sp: polynomial order of the fine mesh.
- * \param[inout] elm_I_info: a lMultiFab that will contain the information on how to access the
- *                           interpolation operator.
- * \param[inout] elm_I_host_mem: a vector that will contain the interpolation operator.
- * \param[inout] elm_I_dev_mem: a vector that will contain the interpolation operator.
+ * \param[inout] f_solution: fine Solution object; it will contain the interpolation operator.
  * \param[in] ibvp: initial boundary value problem object.
 */
 template <typename IBVP>
-void eval_space_interpolation_unsafe(const Geometry & c_geom, const Mesh & c_mesh, const sMultiFab & c_elm_type, const int c_sp,
-                                     const IntVect rr,
-                                     const Geometry & f_geom, const Mesh & f_mesh, const sMultiFab & f_elm_type, const int f_sp,
-                                     lMultiFab & elm_I_info, Gpu::HostVector<Real> & elm_I_host_mem, Gpu::DeviceVector<Real> & elm_I_dev_mem,
-                                     const IBVP & ibvp)
+void eval_space_interpolation(const Geometry & c_geom, const Mesh & c_mesh, const Solution & c_solution,
+                              const IntVect rr,
+                              const Geometry & f_geom, const Mesh & f_mesh, Solution & f_solution,
+                              const IBVP & ibvp)
 {
     // PROFILING ------------------------------------------------------
-    BL_PROFILE("amrex::dG::amr_utils::eval_space_interpolation_unsafe(...)");
+    BL_PROFILE("amrex::dG::amr_utils::eval_space_interpolation(...)");
     // ----------------------------------------------------------------
 
     // PARAMETERS -----------------------------------------------------
@@ -73,6 +64,8 @@ void eval_space_interpolation_unsafe(const Geometry & c_geom, const Mesh & c_mes
     const int n_domains = ibvp.get_number_of_domains();
 
     // ORDER
+    const int c_sp = c_solution.params.space_p;
+    const int f_sp = f_solution.params.space_p;
     const int c_sNp = AMREX_D_TERM((1+c_sp),*(1+c_sp),*(1+c_sp));
     const int f_sNp = AMREX_D_TERM((1+f_sp),*(1+f_sp),*(1+f_sp));
 
@@ -87,9 +80,17 @@ void eval_space_interpolation_unsafe(const Geometry & c_geom, const Mesh & c_mes
     long elm_I_mem_pos;
     // ----------------------------------------------------------------
 
+if (!isMFIterSafe(c_solution.elm_type, f_solution.elm_type))
+{
+
+Print() << "eval_space_interpolation - We are in trouble!" << std::endl;
+exit(-1);
+
+}
+
     // INIT THE MULTIFAB ----------------------------------------------
-    elm_I_info.define(f_mesh.ba, f_mesh.dm, n_domains, f_mesh.dom_data_n_grow);
-    elm_I_info = -1L;
+    f_solution.elm_I_info.define(f_mesh.ba, f_mesh.dm, n_domains, f_mesh.dom_data_n_grow);
+    f_solution.elm_I_info = -1L;
     // ----------------------------------------------------------------
 
     // INITIALIZE THE STANDARD ELEMENT --------------------------------
@@ -104,10 +105,10 @@ void eval_space_interpolation_unsafe(const Geometry & c_geom, const Mesh & c_mes
         const int size = f_sNp*c_sNp*(AMREX_D_TERM(rr[0],*rr[1],*rr[2]));
 
         // Resize memory
-        elm_I_host_mem.resize(size);
+        f_solution.elm_I_host_mem.resize(size);
 
         // Store data
-        std::copy(f_std_elm.I.begin(), f_std_elm.I.end(), elm_I_host_mem.data());
+        std::copy(f_std_elm.I.begin(), f_std_elm.I.end(), f_solution.elm_I_host_mem.data());
 
         // Update memory
         elm_I_mem_pos += size;
@@ -117,21 +118,21 @@ void eval_space_interpolation_unsafe(const Geometry & c_geom, const Mesh & c_mes
     // EVAL AND STORE THE INTERPOLATION OPERATOR ----------------------
     Real const * f_cell_dom_quad_mem_ptr = f_mesh.cell_dom_quad_host_mem.data();
 
-    for (MFIter mfi(f_elm_type); mfi.isValid(); ++mfi)
+    for (MFIter mfi(f_solution.elm_type); mfi.isValid(); ++mfi)
     {
         const Box & bx = mfi.fabbox();
         const Dim3 lo = lbound(bx);
         const Dim3 hi = ubound(bx);
 
         // Coarse mesh
-        Array4<short const> const & c_elm_type_fab = c_elm_type.array(mfi);
+        Array4<short const> const & c_elm_type_fab = c_solution.elm_type.array(mfi);
         
         // Fine mesh
         Array4<long const> const & f_cell_dom_quad_info_fab = f_mesh.cell_dom_quad_info.array(mfi);
-        Array4<short const> const & f_elm_type_fab = f_elm_type.array(mfi);
+        Array4<short const> const & f_elm_type_fab = f_solution.elm_type.array(mfi);
 
         // Interpolation operator
-        Array4<long> const & elm_I_info_fab = elm_I_info.array(mfi);
+        Array4<long> const & elm_I_info_fab = f_solution.elm_I_info.array(mfi);
 
         for (int dom = 0; dom < n_domains; ++dom)
         for (int k = lo.z; k <= hi.z; ++k)
@@ -199,7 +200,7 @@ exit(-1);
                 elm_I_info_fab(i,j,k,dom) = elm_I_mem_pos;
 
                 // Expand memory
-                elm_I_host_mem.resize(elm_I_mem_pos+f_sNp*c_sNp);
+                f_solution.elm_I_host_mem.resize(elm_I_mem_pos+f_sNp*c_sNp);
 
                 // Store data
                 std::fill(I, I+f_sNp*c_sNp, 0.0);
@@ -226,7 +227,7 @@ exit(-1);
 
                 for (int rs = 0; rs < (f_sNp*c_sNp); ++rs)
                 {
-                    elm_I_host_mem[elm_I_mem_pos+rs] = I[rs];
+                    f_solution.elm_I_host_mem[elm_I_mem_pos+rs] = I[rs];
                 }
 
                 // Update memory
@@ -238,40 +239,11 @@ exit(-1);
 
 #ifdef AMREX_USE_GPU
     // COPY TO DEVICE -------------------------------------------------
-    elm_I_dev_mem.resize(elm_I_host_mem.size());
+    f_solution.elm_I_dev_mem.resize(f_solution.elm_I_host_mem.size());
 
-    Gpu::copy(Gpu::hostToDevice, elm_I_host_mem.begin(), elm_I_host_mem.end(), elm_I_dev_mem.begin());
+    Gpu::copy(Gpu::hostToDevice, f_solution.elm_I_host_mem.begin(), f_solution.elm_I_host_mem.end(), f_solution.elm_I_dev_mem.begin());
     // ----------------------------------------------------------------
 #endif
-}
-
-/**
- * \brief Eval and store the interpolation operator between a fine and a coarse mesh.
- *
- * \param[in] c_geom: coarse amrex Geometry object.
- * \param[in] c_mesh: coarse Mesh object.
- * \param[in] c_solution: coarse Solution object.
- * \param[in] rr: refinement ratio.
- * \param[in] f_geom: fine amrex Geometry object.
- * \param[in] f_mesh: fine Mesh object.
- * \param[inout] f_solution: fine Solution object; it will contain the interpolation operator.
- * \param[in] ibvp: initial boundary value problem object.
-*/
-template <typename IBVP>
-void eval_space_interpolation(const Geometry & c_geom, const Mesh & c_mesh, const Solution & c_solution,
-                              const IntVect rr,
-                              const Geometry & f_geom, const Mesh & f_mesh, Solution & f_solution,
-                              const IBVP & ibvp)
-{
-    // PROFILING ------------------------------------------------------
-    BL_PROFILE("amrex::dG::amr_utils::eval_space_interpolation(...)");
-    // ----------------------------------------------------------------
-
-    eval_space_interpolation_unsafe(c_geom, c_mesh, c_solution.elm_type, c_solution.params.space_p,
-                                    rr,
-                                    f_geom, f_mesh, f_solution.elm_type, f_solution.params.space_p,
-                                    f_solution.elm_I_info, f_solution.elm_I_host_mem, f_solution.elm_I_dev_mem,
-                                    ibvp);
 }
 
 /**
@@ -307,6 +279,14 @@ void interpolate(const Geometry & c_geom, const Solution & c_solution, const Mul
     const int c_sNp = AMREX_D_TERM((1+c_sp),*(1+c_sp),*(1+c_sp));
     const int f_sNp = AMREX_D_TERM((1+f_sp),*(1+f_sp),*(1+f_sp));
     // ----------------------------------------------------------------
+
+if (!isMFIterSafe(c_X, f_X))
+{
+
+Print() << "interpolate - We are in trouble!" << std::endl;
+exit(-1);
+
+}
 
     // INITIALIZATION -------------------------------------------------
     f_X = 0.0;
@@ -417,6 +397,14 @@ void restrict(const Geometry & f_geom, const Solution & f_solution, const MultiF
     ITX = 0.0;
     // ----------------------------------------------------------------
 
+if (!isMFIterSafe(ITX, f_solution.elm_I_info))
+{
+
+Print() << "restrict - We are in trouble!" << std::endl;
+exit(-1);
+
+}
+
     // AT THE COARSE MESH COVERED BY THE FINE MESH --------------------
     //
     // Compute: ITX := I^T*f_X
@@ -498,6 +486,7 @@ exit(-1);
     }
     else
     {
+Print() << "isNotMFIterSafe" << std::endl;
 exit(-1);
     }
     // ----------------------------------------------------------------

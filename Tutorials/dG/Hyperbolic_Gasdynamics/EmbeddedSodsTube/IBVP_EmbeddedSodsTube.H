@@ -711,7 +711,7 @@ exit(-1);
         }
 
         // Proper interpolation operator
-        if (lev > 1)
+        if (lev > 0)
         {
             this->eval_space_interpolation(lev, this->ibvp);
         }
