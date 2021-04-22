@@ -162,8 +162,10 @@ namespace dG
     {
         // PARAMETERS -------------------------------------------------
         // GRID
+        const amrex::Box domain = geom.Domain();
         const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
         const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
+        const amrex::GpuArray<int, AMREX_SPACEDIM> is_periodic = geom.isPeriodicArray();
         // ------------------------------------------------------------
 
         // VARIABLES --------------------------------------------------
@@ -362,7 +364,6 @@ namespace dG
                 const Box & bx = mfi.validbox();
 
                 Array4<long const> const & cell_bou_quad_info_fab = this->cell_bou_quad_info[dir].array(mfi);
-                Array4<short const> const & cell_type_fab = this->cell_type.array(mfi);
                 
                 Array4<Real> const & bou_quad_fab = bou_quad[dir].array(mfi);
 
@@ -379,7 +380,7 @@ namespace dG
 
                     // LOCAL VARIABLES
                     int mi, mj, mk, pi, pj, pk;
-                    bool m_ghost, p_ghost;
+                    bool m_is_outside_domain, p_is_outside_domain;
                     Real x[AMREX_SPACEDIM], w;
                     Real integrand;
                     Real cell_volume_div;
@@ -389,10 +390,10 @@ namespace dG
 
                     // NEIGHBOR CELLS SHARING THE FACE fi,fj,fk
                     FACE_TO_NBRS(fi, fj, fk, dir, mi, mj, mk, pi, pj, pk);
-                    m_ghost = CELL_IS_GHOST(cell_type_fab(mi,mj,mk,CELL_TYPE(dom)));
-                    p_ghost = CELL_IS_GHOST(cell_type_fab(pi,pj,pk,CELL_TYPE(dom)));
+                    m_is_outside_domain = (!domain.contains(mi, mj, mk) && (is_periodic[dir] == 0));
+                    p_is_outside_domain = (!domain.contains(pi, pj, pk) && (is_periodic[dir] == 0));
 
-                    if (m_ghost ^ p_ghost)
+                    if (m_is_outside_domain ^ p_is_outside_domain)
                     {
                         // EVAL THE INTEGRAL
                         for (int q = 0; q < bou_Nq; ++q)
@@ -410,7 +411,7 @@ namespace dG
                             cell_volume_div += integrand*w;
                         }
 
-                        if (m_ghost)
+                        if (m_is_outside_domain)
                         {
                             cell_volume_div *= -1.0;
                         }
@@ -429,6 +430,10 @@ namespace dG
         {
             computed_volume[dom] = dom_quad.sum(dom);
             computed_volume_div[dom] = dom_quad_div.sum(dom);
+            for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+            {
+                computed_volume_div[dom] += bou_quad[dir].sum(dom);
+            }
             computed_surface[dom] = int_bou_quad.sum(dom);
         }
         // ------------------------------------------------------------

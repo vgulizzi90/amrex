@@ -96,11 +96,10 @@ struct Solution
     Gpu::HostVector<Real> elm_MMCh_host_mem;
     Gpu::DeviceVector<Real> elm_MMCh_dev_mem;
 
-    // INTERPOLATION OPERATOR
-    lMultiFab elm_BfTBc_info;
-
-    Gpu::HostVector<Real> elm_BfTBc_host_mem;
-    Gpu::DeviceVector<Real> elm_BfTBc_dev_mem;
+    // INTERPOLATION OPERATORS
+    lMultiFab elm_I_info;
+    Gpu::HostVector<Real> elm_I_host_mem;
+    Gpu::DeviceVector<Real> elm_I_dev_mem;
     // ================================================================
 
 
@@ -622,7 +621,7 @@ struct Solution
      *
     */
     template <typename IBVP>
-    void add_small_elements_contribution(const Geometry & geom, MultiFab & X, const IBVP & ibvp)
+    void add_small_elements_contribution(const Geometry & geom, MultiFab & X, const IBVP & ibvp) const
     {
         // PARAMETERS -------------------------------------------------
         // NUMBER OF UNKNOWN FIELDS
@@ -689,7 +688,7 @@ struct Solution
      *
     */
     template <typename IBVP>
-    void copy_solution_to_small_elements(const Geometry & geom, MultiFab & X, const IBVP & ibvp)
+    void copy_solution_to_small_elements(const Geometry & geom, MultiFab & X, const IBVP & ibvp) const
     {
         // PARAMETERS -------------------------------------------------
         // NUMBER OF UNKNOWN FIELDS
@@ -810,14 +809,13 @@ struct Solution
     /**
      * \brief Eval and store the Cholesky decomposition of mass matrix for the mesh elements.
      *
-     * \param[in] t: time.
      * \param[in] geom: amrex Geometry object; contains dx and background domain lower end.
      * \param[in] mesh: Mesh object; contains information about embedded geometries.
      * \param[in] ibvp: initial boundary value problem object.
      *
     */
     template <typename IBVP>
-    void eval_space_mass_matrix(const Real /*t*/, const Geometry & geom, const Mesh & mesh, const IBVP & ibvp)
+    void eval_space_mass_matrix(const Geometry & geom, const Mesh & mesh, const IBVP & ibvp)
     {
         // PARAMETERS -------------------------------------------------
         // GRID
@@ -838,10 +836,6 @@ struct Solution
         // VARIABLES --------------------------------------------------
         StandardRectangle<AMREX_SPACEDIM> std_elm;
         long elm_MMCh_mem_pos;
-        // ------------------------------------------------------------
-
-        // MAKE SURE WE CAN HANDLE THE PROBLEM ------------------------
-
         // ------------------------------------------------------------
 
         // INIT THE MULTIFAB ------------------------------------------
@@ -906,9 +900,10 @@ struct Solution
                 // EMPTY ELEMENT
                 if (ELM_IS_EMPTY(etype))
                 {
+                    // Store memory offset
                     elm_MMCh_info_fab(i,j,k,dom) = -1L;
                 }
-                // ENTIRE ELEMENTS
+                // ENTIRE ELEMENT
                 else if (ELM_IS_ENTIRE(etype))
                 {
                     // For extended elements, we will add the
@@ -933,7 +928,7 @@ struct Solution
                         elm_MMCh_info_fab(i,j,k,dom) = 0L;
                     }
                 }
-                // LARGE OR SMALL ELEMENTS
+                // LARGE OR SMALL ELEMENT
                 else
                 {
                     // DOMAIN QUADRATURE INFO
@@ -981,13 +976,13 @@ struct Solution
         }
         // ------------------------------------------------------------
 
-        // COPY TO DEVICE ---------------------------------------------
 #ifdef AMREX_USE_GPU
+        // COPY TO DEVICE ---------------------------------------------
         this->elm_MMCh_dev_mem.resize(this->elm_MMCh_host_mem.size());
 
         Gpu::copy(Gpu::hostToDevice, this->elm_MMCh_host_mem.begin(), this->elm_MMCh_host_mem.end(), this->elm_MMCh_dev_mem.begin());
-#endif
         // ------------------------------------------------------------
+#endif
 
         // EVAL THE CHOLESKY DECOMPOSITION ----------------------------
 #ifdef AMREX_USE_GPU
@@ -1123,7 +1118,7 @@ struct Solution
      *
     */
     template <typename IBVP>
-    void multiply_by_inverse_space_mass_matrix(const Geometry & geom, MultiFab & X, const IBVP & ibvp, const bool use_fabbox = false)
+    void multiply_by_inverse_space_mass_matrix(const Geometry & geom, MultiFab & X, const IBVP & ibvp, const bool use_fabbox = false) const
     {
         // PARAMETERS -------------------------------------------------
         // NUMBER OF UNKNOWN FIELDS

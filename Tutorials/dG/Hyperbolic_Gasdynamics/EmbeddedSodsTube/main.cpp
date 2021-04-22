@@ -4,12 +4,12 @@
 // PDES INFORMATION ###################################################
 // SUMMARY:
 // In this tutorial, we solve the Gasdynamics equations for the
-// supersonic vortex problem using the discontinuous Galerkin method
+// embedded Sod's tube problem using the discontinuous Galerkin method
 // and the embedded-geometry approach.
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
-#include "IBVP_SupersonicVortex.H"
+#include "IBVP_EmbeddedSodsTube.H"
 // ====================================================================
 // ####################################################################
 
@@ -26,15 +26,12 @@ void main_main()
     amrex::dG::TimeKeeper time_keeper;
 
     // USER-DEFINED AMR
-    SupersonicVortex::AMR amr;
+    EmbeddedSodsTube::AMR amr;
     
     // RESTART INFO
     int n0;
     amrex::Real t0;
-
-    // ERROR
-    amrex::Real err_old, err_new, err_norm;
-    // ================================================================
+    // ================================================================   
 
 
     // OPENING ========================================================
@@ -68,14 +65,34 @@ void main_main()
 
     // CHECK QUADRATURE
     {
-        const amrex::Real ri = amr.ibvp.problem_params.r_inner;
-        const amrex::Real ro = amr.ibvp.problem_params.r_outer;
+        const amrex::Real diam = amr.ibvp.problem_params.diam;
+        const amrex::Real th = amr.ibvp.problem_params.theta;
+#if (AMREX_SPACEDIM == 3)
+        const amrex::Real ph = amr.ibvp.problem_params.phi;
+#endif
+
+        const amrex::Real cth = std::cos(th);
+        const amrex::Real sth = std::sin(th);
+#if (AMREX_SPACEDIM == 3)
+        const amrex::Real cph = std::cos(ph);
+        const amrex::Real sph = std::sin(ph);
+#endif
 
         amrex::Real volume;
         amrex::Real surface;
 
-        volume = 0.25*M_PI*(ro*ro-ri*ri);
-        surface = 0.5*M_PI*(ro+ri);
+#if (AMREX_SPACEDIM == 2)
+        if (th < 0.25*M_PI)
+        {
+            volume = diam/cth;
+            surface = 2.0/cth;
+        }
+        else
+        {
+            volume = diam/sth;
+            surface = 2.0/sth;
+        }
+#endif
 
         amr.check_quadrature_rules(volume, surface);
     }
@@ -90,18 +107,6 @@ void main_main()
             amr.make_step_output_folder(n, t);
             amr.export_solution(n, "solution", t);
         }
-    }
-
-    // EVAL ERROR
-    {
-        const amrex::Real t = t0;
-
-        err_old = 0.0;
-        amr.eval_error(t, err_new, err_norm);
-        err_new = err_new/err_norm;
-
-        amrex::Print() << "INITIAL ERROR REPORT:" << std::endl;
-        amrex::Print() << "| err(t = " << t << "): " << std::scientific << std::setprecision(5) << std::setw(12) << err_new << std::endl;
     }
     // ================================================================
 
@@ -122,13 +127,10 @@ void main_main()
         dt = 0.0;
         ct_avg = 0.0;
         eta = 0.0;
-        while (amr.advance_in_time_continues(n, t) && (std::abs(err_old-err_new)/err_new > 1.0e-5))
+        while (amr.advance_in_time_continues(n, t))
         {
             // TIME STEP TIC
             time_keeper.tic();
-
-            // SWAP OLD AND NEW ERROR
-            std::swap(err_old, err_new);
 
             // COMPUTE TIME INCREMENT
             dt = amr.eval_dt(t);
@@ -148,10 +150,6 @@ void main_main()
                 amr.export_solution(n, "solution", t);
             }
 
-            // EVAL ERROR
-            amr.eval_error(t, err_new, err_norm);
-            err_new = err_new/err_norm;
-
             // TIME STEP TOC
             time_keeper.toc();
 
@@ -163,7 +161,7 @@ void main_main()
             // REPORT TO SCREEN
             amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
             amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
-                            << dt << ", t = " << t << ", err = " << err_new
+                            << dt << ", t = " << t
                             << ", ct [s] = " << ct_avg 
                             << ", eta = " << amrex::dG::seconds_to_hms(eta) << std::endl;
         }

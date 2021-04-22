@@ -833,6 +833,10 @@ void eval_FV_slopes(const amrex::Real g,
                     const amrex::MultiFab & X,
                     amrex::MultiFab & dX)
 {
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("ideal_gas::eval_FV_slopes(...)");
+    // ----------------------------------------------------------------
+
     // PARAMETERS -----------------------------------------------------
     // GRID
     const amrex::Box domain = geom.Domain();
@@ -2195,6 +2199,194 @@ exit(-1);
     dX.FillBoundary(geom.periodicity());
     // ----------------------------------------------------------------
 #endif // APPLY_LIMITER
+}
+// ====================================================================
+
+
+// SHOCK SENSOR =======================================================
+/**
+ * \brief Tag those cells where the presence of the shock is sensed.
+ *
+ * \param[in] geom: amrex geometry object.
+ * \param[in] mesh: Mesh object; contains information about embedded geometries.
+ * \param[in] solution: Solution object.
+ * \param[in] X: a MultiFabs containing the solution dG coefficients.
+ * \param[in] X_low: a MultiFabs containing the projection of the dG coefficients in the space of
+ *                   lower order polynomials.
+ * \param[in] thr: threshold parameter that triggers the tagging.
+ * \param[inout] mask: the TagBoxArray containing the tags of the cells.
+ * \param[in] masked: the value to be assigned to the tagged cells.
+ *
+*/
+void shock_sensor(const amrex::Geometry & geom, const amrex::dG::Mesh & mesh, const amrex::dG::Solution & solution,
+                  const amrex::MultiFab & X, const amrex::MultiFab & X_low, const amrex::Real thr,
+                  amrex::TagBoxArray & mask, const char masked)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("ideal_gas::shock_sensor(...)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS -----------------------------------------------------
+    // GRID
+    const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+    const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
+
+    // ORDER
+    const int sp = solution.params.space_p;
+    const int sp_low = sp-1;
+
+    // DOMAINS
+    const int dom = 0;
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    amrex::MultiFab sensor(X.boxarray, X.distributionMap, 2, 1);
+    // ----------------------------------------------------------------
+
+    // INITIALIZATION -------------------------------------------------
+    sensor = 0.0;
+    // ----------------------------------------------------------------
+
+    // EVAL THE SENSOR ------------------------------------------------
+#ifdef AMREX_USE_GPU
+    const amrex::Real * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_dev_mem.data();
+#else
+    const amrex::Real * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_host_mem.data();
+#endif
+
+    for (amrex::MFIter mfi(sensor); mfi.isValid(); ++mfi)
+    {
+        const amrex::Box & bx = mfi.validbox();
+
+        amrex::Array4<long const> const & cell_dom_quad_info_fab = mesh.cell_dom_quad_info.array(mfi);
+        amrex::Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+        amrex::Array4<amrex::Real const> const & X_fab = X.array(mfi);
+        amrex::Array4<amrex::Real const> const & X_low_fab = X_low.array(mfi);
+
+        amrex::Array4<char const> const & mask_fab = mask.array(mfi);
+        
+        amrex::Array4<amrex::Real> const & sensor_fab = sensor.array(mfi);
+
+        amrex::ParallelFor(bx,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = elm_type_fab(i,j,k,amrex::dG::ELM_TYPE(dom));
+
+            if (amrex::dG::ELM_IS_NOT_EMPTY(etype) && (mask_fab(i,j,k) != masked))
+            {
+                // LOCAL PARAMETERS
+                const amrex::Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                          prob_lo[1]+j*dx[1],
+                                                                          prob_lo[2]+k*dx[2])};
+
+                // QUADRATURE INFO
+                const int dom_Nq = cell_dom_quad_info_fab(i,j,k,amrex::dG::CELL_DOM_QUAD_NQ(dom));
+                const long pos = cell_dom_quad_info_fab(i,j,k,amrex::dG::CELL_DOM_QUAD_POS(dom));
+                const amrex::Real * x_ptr = &cell_dom_quad_mem_ptr[pos];
+
+                // LOCAL VARIABLES
+                amrex::Real x[AMREX_SPACEDIM], w;
+                amrex::Real U[IDEAL_GAS_NU], U_low[IDEAL_GAS_NU];
+                amrex::Real err, norm;
+                amrex::Real integrand_err, integrand_norm;
+
+                // UNKNOWN FIELDS
+                amrex::dG::dG_space_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+                amrex::dG::dG_space_bfx bfu_low(&prob_lo[0], &dx[0], i, j, k, etype, sp_low, X_low_fab);
+
+                // EVAL THE INTEGRAL
+                err = norm = 0.0;
+                for (int q = 0; q < dom_Nq; ++q)
+                {
+                    // Quadrature point and weight
+                    const long x_pos = (AMREX_SPACEDIM+1)*q;
+                    AMREX_D_TERM
+                    (
+                        x[0] = x_ptr[x_pos+0]+cell_lo[0];,
+                        x[1] = x_ptr[x_pos+1]+cell_lo[1];,
+                        x[2] = x_ptr[x_pos+2]+cell_lo[2];
+                    )
+                    w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+                    // Solution at (t, x)
+                    bfu.eval(x, 0, IDEAL_GAS_NU, U);
+                    bfu_low.eval(x, 0, IDEAL_GAS_NU, U_low);
+
+                    integrand_err = (U[RHO]-U_low[RHO])*(U[RHO]-U_low[RHO]);
+                    integrand_norm = U[RHO]*U[RHO];
+
+                    err += integrand_err*w;
+                    norm += integrand_norm*w;
+                }
+
+                sensor_fab(i,j,k,0) = norm;
+                sensor_fab(i,j,k,1) = err;
+            }
+        });
+        amrex::Gpu::synchronize();
+    }
+    sensor.FillBoundary(geom.periodicity());
+    // ----------------------------------------------------------------
+
+    // TAG THE CELLS --------------------------------------------------
+    for (amrex::MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const amrex::Box & bx = mfi.validbox();
+
+        amrex::Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+        amrex::Array4<amrex::Real const> const & sensor_fab = sensor.array(mfi);
+
+        amrex::Array4<char> const & mask_fab = mask.array(mfi);
+
+        amrex::ParallelFor(bx,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = elm_type_fab(i,j,k,amrex::dG::ELM_TYPE(dom));
+
+            if (amrex::dG::ELM_IS_VALID(etype) && (mask_fab(i,j,k) != masked))
+            {
+                // LOCAL VARIABLES
+                amrex::Real err, norm;
+
+                norm = sensor_fab(i,j,k,0);
+                err = sensor_fab(i,j,k,1);
+
+                // Handle extended elements
+                for (int n = 0; n < __DG_EXTENDED_STENCIL_N_NBR__; ++n)
+                {
+                    const int nbr_i = i+amrex::dG::tables::extended_stencil_i[n];
+                    const int nbr_j = j+amrex::dG::tables::extended_stencil_j[n];
+                    const int nbr_k = k+amrex::dG::tables::extended_stencil_k[n];
+                    const short nbr_etype = elm_type_fab(nbr_i,nbr_j,nbr_k,amrex::dG::ELM_TYPE(dom));
+                    
+                    if (amrex::dG::CELLS_ARE_MERGED(i, j, k, nbr_i, nbr_j, nbr_k, nbr_etype))
+                    {
+                        norm += sensor_fab(nbr_i,nbr_j,nbr_k,0);
+                        err += sensor_fab(nbr_i,nbr_j,nbr_k,1);
+                    }
+                }
+
+                // Tag cells
+                err = err/norm;
+                if (err > 0.0)
+                {
+                    const amrex::Real s = std::log10(err);
+                    const amrex::Real s0 = -4.0*std::log10(sp);
+                    
+                    if (s > (s0+thr))
+                    {
+                        mask_fab(i,j,k) = masked;
+                    }
+                }
+            }
+        });
+        amrex::Gpu::synchronize();
+        
+    }
+    mask.FillBoundary(geom.periodicity());
+    // ----------------------------------------------------------------
 }
 // ====================================================================
 

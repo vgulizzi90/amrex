@@ -108,7 +108,7 @@ namespace amr
 
 
     // READERS ========================================================
-    bool SinglePatch::advance_in_time_continue(const int n, const Real t) const
+    bool SinglePatch::advance_in_time_continues(const int n, const Real t) const
     {
         const int N = this->inputs.time.n_steps;
         const Real T = this->inputs.time.T;

@@ -9,6 +9,7 @@
 #ifndef AMREX_DG_AMR_UTILS_H_
 #define AMREX_DG_AMR_UTILS_H_
 
+#include <AMReX_dG_StandardElements.H>
 #include <AMReX_dG_Solution_RungeKutta.H>
 #include <AMReX_dG_AMR.H>
 
@@ -16,11 +17,9 @@ namespace amrex
 {
 namespace dG
 {
+
 namespace hyperbolic_pde
 {
-namespace amr_utils
-{
-
 // ADVANCE IN TIME ####################################################
 // TIME INCREMENT =====================================================
 /**
@@ -191,34 +190,64 @@ void eval_dXdt_explicit_RKdG(const amr::SinglePatch & amr, const Real t, const V
     // COMPUTE BOUNDARY FLUXES: LEVEL 0
     {
         const int lev = 0;
+        const Geometry & geom = amr.Geom(lev);
+        const Mesh & mesh = *amr.meshes[lev];
         const Solution & solution = *amr.solutions[lev];
         
         // FINITE VOLUME SCHEME
         if ((solution.params.space_p == 0) && solution.params.FV_is_active)
         {
-            explicit_RK::eval_FV_bou_fluxes(t, amr.Geom(lev), *amr.meshes[lev], *amr.solutions[lev], X[lev], dX[lev], FX[lev], FX_offset, ibvp);
+            explicit_RK::eval_FV_bou_fluxes(t, geom, mesh, solution, X[lev], dX[lev], FX[lev], FX_offset, ibvp);
         }
         // DISCONTINUOUS GALERKIN SCHEME
         else
         {
-            explicit_RK::eval_bou_fluxes(t, amr.Geom(lev), *amr.meshes[lev], *amr.solutions[lev], X[lev], FX[lev], FX_offset, ibvp);
+            explicit_RK::eval_bou_fluxes(t, geom, mesh, solution, X[lev], FX[lev], FX_offset, ibvp);
         }
     }
 
     // COMPUTE BOUNDARY FLUXES: LEVEL > 0
     for (int lev = 1; lev < n_levels; ++lev)
     {
-        const Solution & solution = *amr.solutions[lev];
-
-Print() << "COMPUTE BOUNDARY FLUXES: LEVEL > 0" << std::endl;
+        const Geometry & c_geom = amr.Geom(lev-1);
+        const Mesh & c_mesh = *amr.meshes[lev-1];
+        const Solution & c_solution = *amr.solutions[lev-1];
+        const MultiFab & c_X = X[lev-1];
+        const IntVect rr = amr.refRatio(lev-1);
+        const Geometry & f_geom = amr.Geom(lev);
+        const Mesh & f_mesh = *amr.meshes[lev];
+        const Solution & f_solution = *amr.solutions[lev];
+        const MultiFab & f_X = X[lev];
+        const MultiFab & f_dX = dX[lev];
+        
+        // FINITE VOLUME SCHEME
+        if ((f_solution.params.space_p == 0) && f_solution.params.FV_is_active)
+        {
+            explicit_RK::eval_dG_FV_bou_fluxes(t,
+                                               c_geom, c_mesh, c_solution, c_X,
+                                               rr,
+                                               f_geom, f_mesh, f_solution, f_X, f_dX,
+                                               FX[lev], FX_offset,
+                                               ibvp);
+        }
+        // DISCONTINUOUS GALERKIN SCHEME
+        else
+        {
+Print() << "COMPUTE BOUNDARY FLUXES: LEVEL > 0 - DISCONTINUOUS GALERKIN SCHEME" << std::endl;
 exit(-1);
+            //explicit_RK::eval_dG_dG_bou_fluxes(t,
+            //                                   c_geom, c_mesh, c_solution, c_X,
+            //                                   rr,
+            //                                   f_geom, f_mesh, f_solution, f_X,
+            //                                   FX[lev], FX_offset,
+            //                                   ibvp);;
+        }
     }
 
     // COPY FLUXES FROM FINE TO COARSE LEVEL
     for (int lev = (n_levels-1); lev > 0; --lev)
     {
-Print() << "COPY FLUXES FROM FINE TO COARSE LEVEL" << std::endl;
-exit(-1);
+        average_down_faces(GetArrOfConstPtrs(FX[lev]), GetArrOfPtrs(FX[lev-1]), amr.refRatio(lev-1), amr.Geom(lev-1));
     }
 
     // ACTUALLY ADD THE BOUNDARY INTEGRAL CONTRIBUTION
@@ -472,8 +501,10 @@ void take_time_step_using_explicit_RKdG(const amr::SinglePatch & amr, const Real
     // RESTRICT FINE SOLUTION ONTO THE COARSE LEVEL -------------------
     for (int lev = (n_levels-1); lev > 0; --lev)
     {
-Print() << "RESTRICT FINE SOLUTION ONTO THE COARSE LEVEL " << std::endl;
-exit(-1);
+        amr_utils::restrict(amr.Geom(lev), *amr.solutions[lev], X_new[lev],
+                            amr.refRatio(lev-1),
+                            amr.Geom(lev-1), *amr.solutions[lev-1], X_new[lev-1],
+                            ibvp);
     }
     // ----------------------------------------------------------------
 }
@@ -542,9 +573,8 @@ void take_time_step(const amr::SinglePatch & amr, const Real t, const Real dt, V
 }
 // ====================================================================
 // #################################################################### 
-
-} // namespace amr_utils
 } // namespace hyperbolic_pde
+
 } // namespace dG
 } // namespace amrex
 

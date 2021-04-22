@@ -66,16 +66,12 @@ struct StandardRectangle
     Gpu::ManagedVector<Real> MM, MMCh, iMM;
 
     // INTERPOLATION
-    IntVect rr;
-    Gpu::ManagedVector<Real> IBfTBc;
     Gpu::ManagedVector<Real> I;
     // ================================================================
 
 
     // CONSTRUCTOR ====================================================
     StandardRectangle()
-    :
-    rr{IntVect::TheZeroVector()}
     {}
     // ================================================================
 
@@ -769,6 +765,205 @@ struct StandardRectangle
         io::print_real_array_2d(Np_, Np_, this->iMM.data());
         exit(-1);
         */
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief This method evaluates the interpolation of the standard element.
+     * 
+     * \param[in] c_p_: order of the basis functions at the coarse mesh.
+     * \param[in] rr: refinement ratio.
+     * \param[in] f_p_: order of the basis functions at the fine mesh.
+    */
+    void set_interpolation_operator(const int c_p_, const IntVect rr, const int f_p_)
+    {
+        // PARAMETERS -------------------------------------------------
+        const Real zero[3] = {0.0, 0.0, 0.0};
+        const int Nq_ = this->dom_Nq;
+        const int c_size_1d = Nq_*(1+c_p_);
+        const int f_size_1d = Nq_*(1+f_p_);
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        Vector<Real> c_P1(c_size_1d), c_P2(c_size_1d), c_P3(c_size_1d);
+        Vector<Real> f_P1(f_size_1d), f_P2(f_size_1d), f_P3(f_size_1d);
+        
+        int c_Np_, c_size_d;
+        int f_Np_, f_size_d;
+        Vector<Real> c_BF, f_BF;
+
+        int size_I;
+
+        Real c_lo[DIM], c_hi[DIM];
+        Vector<Real> I_tmp;
+        // ------------------------------------------------------------
+
+        // CHECKS -----------------------------------------------------
+        if ((c_p_ < 0) || (f_p_ < 0))
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_dG_StandardElements.H - StandardRectangle::set_interpolation_operator\n";
+            msg += "| The order of the basis functions must be positive.\n";
+            msg += "| Input order p = "+std::to_string(c_p_)+"\n";
+            msg += "| Input order p = "+std::to_string(f_p_)+"\n";
+            Abort(msg);
+        }
+        // ------------------------------------------------------------
+
+        // ORDER ------------------------------------------------------
+        if (DIM == 1)
+        {
+            c_Np_ = 1+c_p_;
+            f_Np_ = 1+f_p_;
+        }
+        else if (DIM == 2)
+        {
+            c_Np_ = (1+c_p_)*(1+c_p_);
+            f_Np_ = (1+f_p_)*(1+f_p_);
+        }
+        else if (DIM == 3)
+        {
+            c_Np_ = (1+c_p_)*(1+c_p_)*(1+c_p_);
+            f_Np_ = (1+f_p_)*(1+f_p_)*(1+f_p_);
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_StandardElements.H - StandardRectangle::set_interpolation_operator\n";
+            msg += "| Dimension = "+std::to_string(DIM)+" not implemented yet\n";
+            Abort(msg);
+        }
+        c_size_d = Nq_*c_Np_;
+        f_size_d = Nq_*f_Np_;
+
+        c_BF.resize(c_size_d);
+        f_BF.resize(f_size_d);
+
+        size_I = f_Np_*c_Np_*(AMREX_D_TERM(rr[0],*rr[1],*rr[2]));
+        this->I.resize(size_I);
+        // ------------------------------------------------------------
+
+        // EVAL THE BASIS FUNCTIONS OF THE FINE ELEMENT ---------------
+        {
+            if (DIM == 1)
+            {
+                // DOMAIN
+                DG_space_1d_BF_Table_NxL(Nq_, f_p_,
+                                         this->dom_XI1q.data(), 0.0, this->dx[0],
+                                         f_BF.data());
+            }
+            else if (DIM == 2)
+            {
+                // DOMAIN
+                DG_space_2d_BF_Table_NxL(Nq_, f_p_,
+                                         this->dom_XI1q.data(), this->dom_XI2q.data(), zero, this->dx,
+                                         f_P1.data(), f_P2.data(),
+                                         f_BF.data());
+                
+            }
+            else if (DIM == 3)
+            {
+                // DOMAIN
+                DG_space_3d_BF_Table_NxL(Nq_, f_p_,
+                                         this->dom_XI1q.data(), this->dom_XI2q.data(), this->dom_XI3q.data(), zero, this->dx,
+                                         f_P1.data(), f_P2.data(), f_P3.data(),
+                                         f_BF.data());
+            }
+            else
+            {
+                std::string msg;
+                msg  = "\n";
+                msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::set_interpolation_operator\n";
+                msg += "| Dimension = "+std::to_string(DIM)+" not implemented yet\n";
+                Abort(msg);
+            }
+        }
+        // ------------------------------------------------------------
+
+        // INTERPOLATION OPERATOR -------------------------------------
+        std::fill(this->I.begin(), this->I.end(), 0.0);
+
+        I_tmp.resize(f_Np_*c_Np_);
+
+        if (DIM == 2)
+        {
+            for (int f_j = 0; f_j < rr[1]; ++f_j)
+            for (int f_i = 0; f_i < rr[0]; ++f_i)
+            {
+                // EVAL THE BASIS FUNCTIONS (COARSE ELEMENT)
+                c_lo[0] =       -f_i *this->dx[0]; c_lo[1] =       -f_j *this->dx[1];
+                c_hi[0] = (rr[0]-f_i)*this->dx[0]; c_hi[1] = (rr[1]-f_j)*this->dx[1];
+
+                DG_space_2d_BF_Table_NxL(Nq_, c_p_,
+                                         this->dom_XI1q.data(), this->dom_XI2q.data(), c_lo, c_hi,
+                                         c_P1.data(), c_P2.data(),
+                                         c_BF.data());
+
+                std::fill(I_tmp.begin(), I_tmp.end(), 0.0);
+                for (int c = 0; c < c_Np_; ++c)
+                for (int r = 0; r < f_Np_; ++r)
+                for (int k = 0; k < Nq_; ++k)
+                {
+                    const int pos = r+c*f_Np_;
+                    const int pos_r = k+r*Nq_;
+                    const int pos_c = k+c*Nq_;
+
+                    I_tmp[pos] += f_BF[pos_r]*c_BF[pos_c]*this->dom_Wq[k];
+                }
+
+                const int pos = (f_i+f_j*rr[0])*f_Np_*c_Np_;
+                std::copy(I_tmp.begin(), I_tmp.end(), &this->I[pos]);
+
+/*
+Print() << std::endl << "c_lo: "; io::print_real_array_2d(1, DIM, c_lo);
+Print() << "c_hi: "; io::print_real_array_2d(1, DIM, c_hi);
+Print() << "I_ptr(" << f_i << "," << f_j << "): " << std::endl;
+io::print_real_array_2d(f_Np_, c_Np_, &this->I[pos]);
+exit(-1);
+*/
+            }
+        }
+        else if (DIM == 3)
+        {
+            for (int f_k = 0; f_k < rr[2]; ++f_k)
+            for (int f_j = 0; f_j < rr[1]; ++f_j)
+            for (int f_i = 0; f_i < rr[0]; ++f_i)
+            {
+                // EVAL THE BASIS FUNCTIONS (COARSE ELEMENT)
+                c_lo[0] =       -f_i *this->dx[0]; c_lo[1] =       -f_j *this->dx[1]; c_lo[2] =       -f_k *this->dx[2];
+                c_hi[0] = (rr[0]-f_i)*this->dx[0]; c_hi[1] = (rr[1]-f_j)*this->dx[1]; c_hi[2] = (rr[2]-f_k)*this->dx[2];
+
+                DG_space_3d_BF_Table_NxL(Nq_, c_p_,
+                                         this->dom_XI1q.data(), this->dom_XI2q.data(), this->dom_XI3q.data(), c_lo, c_hi,
+                                         c_P1.data(), c_P2.data(), c_P3.data(),
+                                         c_BF.data());
+
+                std::fill(I_tmp.begin(), I_tmp.end(), 0.0);
+                for (int c = 0; c < c_Np_; ++c)
+                for (int r = 0; r < f_Np_; ++r)
+                for (int k = 0; k < Nq_; ++k)
+                {
+                    const int pos = r+c*f_Np_;
+                    const int pos_r = k+r*Nq_;
+                    const int pos_c = k+c*Nq_;
+
+                    I_tmp[pos] += f_BF[pos_r]*c_BF[pos_c]*this->dom_Wq[k];
+                }
+
+                const int pos = (f_i+f_j*rr[0]+f_k*rr[0]*rr[1])*f_Np_*c_Np_;
+                std::copy(I_tmp.begin(), I_tmp.end(), &this->I[pos]);
+            }
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_DG_StandardElement.H - StandardRectangle::set_interpolation_operator\n";
+            msg += "| Dimension = "+std::to_string(DIM)+" not implemented yet\n";
+            Abort(msg);
+        }
         // ------------------------------------------------------------
     }
     // ================================================================

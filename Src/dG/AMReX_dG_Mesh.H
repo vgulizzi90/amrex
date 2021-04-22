@@ -677,6 +677,44 @@ bool ELM_BOU_IS_VALID(const short ebtype)
     return (ebtype != __DG_ELM_BOU_TYPE_PARTIAL_INVALID__);
 }
 // ====================================================================
+
+
+// AMR ================================================================
+/**
+ * \brief Given the fine cell indices and the refinement ratio, eval the coarse cell indices.
+ *
+ * \param[in] (fi,fj,fk): indices of the fine cell.
+ * \param[in] rr: refinement ratio.
+ * \param[in] (ci,cj,ck): indices of the coarse cell corresponding to the fine cell.
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void FINE_TO_COARSE(const int fi, const int fj, const int fk, const IntVect & rr,
+                    int & ci, int & cj, int & ck)
+{
+#if (AMREX_SPACEDIM == 1)
+    const int ti = (fi%rr[0] >= 0) ? fi%rr[0] : (fi%rr[0]+rr[0]);
+    ci = (fi-ti)/rr[0];
+    cj = fj;
+    ck = fk;
+#endif
+#if (AMREX_SPACEDIM == 2)
+    const int ti = (fi%rr[0] >= 0) ? fi%rr[0] : (fi%rr[0]+rr[0]);
+    const int tj = (fj%rr[1] >= 0) ? fj%rr[1] : (fj%rr[1]+rr[1]);
+    ci = (fi-ti)/rr[0];
+    cj = (fj-tj)/rr[1];
+    ck = fk;
+#endif
+#if (AMREX_SPACEDIM == 3)
+    const int ti = (fi%rr[0] >= 0) ? fi%rr[0] : (fi%rr[0]+rr[0]);
+    const int tj = (fj%rr[1] >= 0) ? fj%rr[1] : (fj%rr[1]+rr[1]);
+    const int tk = (fk%rr[2] >= 0) ? fk%rr[2] : (fk%rr[2]+rr[2]);
+    ci = (fi-ti)/rr[0];
+    cj = (fj-tj)/rr[1];
+    ck = (fk-tk)/rr[2];
+#endif
+}
+// ====================================================================
 // ####################################################################
 
 
@@ -1314,8 +1352,8 @@ struct Mesh
         }
         // ------------------------------------------------------------
 
-        // COPY TO DEVICE ---------------------------------------------
 #ifdef AMREX_USE_GPU
+        // COPY TO DEVICE ---------------------------------------------
         this->cell_dom_quad_dev_mem.resize(this->cell_dom_quad_host_mem.size());
         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
         {
@@ -1329,9 +1367,8 @@ struct Mesh
             Gpu::copy(Gpu::hostToDevice, this->cell_bou_quad_host_mem[dir].begin(), this->cell_bou_quad_host_mem[dir].end(), this->cell_bou_quad_dev_mem[dir].begin());
         }
         Gpu::copy(Gpu::hostToDevice, this->cell_int_bou_quad_host_mem.begin(), this->cell_int_bou_quad_host_mem.end(), this->cell_int_bou_quad_dev_mem.begin());
-#endif
         // ------------------------------------------------------------
-
+#endif
     }
     
     /**

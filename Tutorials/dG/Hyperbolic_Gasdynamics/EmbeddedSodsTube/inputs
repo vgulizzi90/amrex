@@ -1,14 +1,14 @@
 # SPACE ###############################################################
-geometry.prob_lo     = 0.0 0.0
-geometry.prob_hi     = 1.43 1.43
-geometry.is_periodic = 0 0
+geometry.prob_lo     = 0.0 0.0 0.0
+geometry.prob_hi     = 1.0 1.0 1.0
+geometry.is_periodic = 0 0 0
 #######################################################################
 
 
 
 # TIME ################################################################
-time.T = 1000.0
-time.n_steps = 30
+time.T = 0.2
+time.n_steps = 5
 #######################################################################
 
 
@@ -17,29 +17,50 @@ time.n_steps = 30
 # AMR =================================================================
 amr.v = 1
 
-amr.n_cell        = 16 16
-amr.max_grid_size = 4 4
+amr.n_cell        = 64 64 64
+amr.max_grid_size = 4 4 4
 
-amr.max_level = 0
+amr.max_level = 1
+
+amr.ref_ratio = 4
+amr.blocking_factor = 2
+amr.n_error_buf = 1
+amr.grid_eff = 1.0
 # =====================================================================
 
 
 # MESH ================================================================
+# LEVEL 0
 mesh[0].embedded_geometry_is_active = 1
 mesh[0].embedded_geometry_defined_by = level_set
 mesh[0].box_pruning_is_active = 1
 mesh[0].quadrature_order_regular_elements = 4
-mesh[0].quadrature_order_cut_elements = 6
+mesh[0].quadrature_order_cut_elements = 8
+
+# LEVEL 1
+mesh[1].embedded_geometry_is_active = 1
+mesh[1].embedded_geometry_defined_by = level_set
+mesh[1].box_pruning_is_active = 1
+mesh[1].quadrature_order_regular_elements = 4
+mesh[1].quadrature_order_cut_elements = 8
 # =====================================================================
 
 
 # SOLUTION ============================================================
-solution[0].space_p = 0
-solution[0].FV_is_active = 1
+# LEVEL 0
+solution[0].space_p = 2
 solution[0].cell_merging_is_active = 1
 solution[0].cell_merging_volume_fraction_threshold = 0.3
 solution[0].time_integration = explicit_RKdG
 solution[0].time_integration_CFL = 0.3
+
+# LEVEL 1
+solution[1].space_p = 0
+solution[1].FV_is_active = 1
+solution[1].cell_merging_is_active = 1
+solution[1].cell_merging_volume_fraction_threshold = 0.3
+solution[1].time_integration = explicit_RKdG
+solution[1].time_integration_CFL = 0.3
 # =====================================================================
 #######################################################################
 
@@ -48,18 +69,28 @@ solution[0].time_integration_CFL = 0.3
 # PROBLEM #############################################################
 gamma = 1.4
 
-rho_inner = 1.0
-Mach_inner = 2.25
-r_inner = 1.0
-r_outer = 1.384
+rhoL = 1.0
+vL = 0.0
+pL = 1.0
+rhoR = 0.125
+vR = 0.0
+pR = 0.1
 
-norm = L_inf
+diam = 0.25
+theta = 30
+phi = 0
+
+threshold_amr = 0.0
+threshold_sensor = -2.5
 #######################################################################
 # gamma: specific heats ratio;
-# rho_inner: density at the inner radius of the circular annulus;
-# Mach_inner: mach number at the inner radius of the circular annulus;
-# r_inner, r_outer: inner and outer radii of the circular annulus;
-# norm: norm to be used to evaluate the error.
+# rhoL, uL, pL: left state
+# rhoR, uR, pR: right state
+# diam: diameter of the embedded Sod's tube
+# theta: azimuth (or inclination in 2d) of the embedded Sod's tube
+# phi: elevation of the embedded Sod's tube (used in 3d only)
+# threshold_amr: threshold parameters for the AMR algorithm
+# threshold_sensor: threshold parameters for the shock sensor
 #######################################################################
 
 
@@ -68,7 +99,7 @@ norm = L_inf
 wall_time = 10.0
 wall_time_units = s
 
-output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_p$(solution[0].space_p)_nc$(amr.n_cell)_gs$(amr.max_grid_size)
+output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_TH$(theta)_PH$(phi)
 plot_filename = plt
 plot_int = 100
 output_overwrite = 1
