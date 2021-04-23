@@ -45,7 +45,7 @@ void main_main()
     amrex::Print() << "#######################################################################" << std::endl;
     amrex::Print() << "# SUMMARY:                                                             " << std::endl;
     amrex::Print() << "# In this tutorial, we solve the Gasdynamics equations for the         " << std::endl;
-    amrex::Print() << "# supersonic vortex problem using the discontinuous Galerkin method    " << std::endl;
+    amrex::Print() << "# embedded Sod's tube problem using the discontinuous Galerkin method  " << std::endl;
     amrex::Print() << "# and the embedded-geometry approach.                                  " << std::endl;
     amrex::Print() << "#                                                                      " << std::endl;
     amrex::Print() << "#######################################################################" << std::endl;

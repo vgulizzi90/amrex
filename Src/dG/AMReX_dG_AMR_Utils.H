@@ -170,6 +170,27 @@ void eval_dXdt_explicit_RKdG(const amr::SinglePatch & amr, const Real t, const V
     }
     // ----------------------------------------------------------------
 
+#ifdef AMREX_DG_CHECK_FOR_NAN
+    // CHECK FOR NAN --------------------------------------------------
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        const Solution & solution = *amr.solutions[lev];
+
+        if ((solution.params.space_p == 0) && solution.params.FV_is_active)
+        {
+            if (dX[lev].contains_nan())
+            {
+                std::string msg;
+                msg  = "\n";
+                msg += "ERROR: AMReX_dG_AMR_Utils.H - eval_dXdt_explicit_RKdG\n";
+                msg += "| Reconstructed slopes multifab dX contains nans at level "+std::to_string(lev)+".\n";
+                Abort(msg);
+            }
+        }
+    }
+    // ----------------------------------------------------------------
+#endif
+
     // DOMAIN INTEGRAL CONTRIBUTION TO THE TIME DERIVATIVES -----------
     for (int lev = 0; lev < n_levels; ++lev)
     {
@@ -305,6 +326,22 @@ void take_time_step_using_explicit_RKdG(const amr::SinglePatch & amr, const Real
     // VARIABLES ------------------------------------------------------
     Vector<MultiFab> X_old(n_levels);
     // ----------------------------------------------------------------
+
+#ifdef AMREX_DG_CHECK_FOR_NAN
+    // CHECK FOR NAN --------------------------------------------------
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        if (X_new[lev].contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_dG_AMR_Utils.H - take_time_step_using_explicit_RKdG\n";
+            msg += "| Solution contains nans at level "+std::to_string(lev)+" on entry.\n";
+            Abort(msg);
+        }
+    }
+    // ----------------------------------------------------------------
+#endif
 
     // SWAP NEW AND OLD -----------------------------------------------
     for (int lev = 0; lev < n_levels; ++lev)
@@ -498,12 +535,28 @@ void take_time_step_using_explicit_RKdG(const amr::SinglePatch & amr, const Real
     }
     // ----------------------------------------------------------------
 
+#ifdef AMREX_DG_CHECK_FOR_NAN
+    // CHECK FOR NAN --------------------------------------------------
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        if (X_new[lev].contains_nan())
+        {
+            std::string msg;
+            msg  = "\n";
+            msg += "ERROR: AMReX_dG_AMR_Utils.H - take_time_step_using_explicit_RKdG\n";
+            msg += "| Solution contains nans at level "+std::to_string(lev)+".\n";
+            Abort(msg);
+        }
+    }
+    // ----------------------------------------------------------------
+#endif
+
     // RESTRICT FINE SOLUTION ONTO THE COARSE LEVEL -------------------
     for (int lev = (n_levels-1); lev > 0; --lev)
     {
         amr_utils::restrict(amr.Geom(lev), *amr.solutions[lev], X_new[lev],
                             amr.refRatio(lev-1),
-                            amr.Geom(lev-1), *amr.solutions[lev-1], X_new[lev-1],
+                            amr.Geom(lev-1), *amr.solutions[lev-1], X_new[lev-1], amr.masks[lev-1],
                             ibvp);
     }
     // ----------------------------------------------------------------

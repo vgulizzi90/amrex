@@ -22,6 +22,8 @@ namespace dG
 #define OS_SEP '/'
 #endif
 
+#define AMREX_DG_CHECK_FOR_NAN
+
 // TYPEDEFS ###########################################################
 // MULTIFABS ==========================================================
 typedef FabArray<BaseFab<char>> cMultiFab;

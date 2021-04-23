@@ -78,15 +78,29 @@ void eval_space_interpolation(const Geometry & c_geom, const Mesh & c_mesh, cons
     // VARIABLES ------------------------------------------------------
     StandardRectangle<AMREX_SPACEDIM> f_std_elm;
     long elm_I_mem_pos;
+
+    sMultiFab safe_c_elm_type;
+    const sMultiFab * safe_c_elm_type_ptr;
     // ----------------------------------------------------------------
 
-if (!isMFIterSafe(c_solution.elm_type, f_solution.elm_type))
-{
+    // PARALLEL COPY --------------------------------------------------
+    if (isMFIterSafe(c_solution.elm_type, f_solution.elm_type))
+    {
+        safe_c_elm_type_ptr = &c_solution.elm_type;
+    }
+    else
+    {
+        const BoxArray safe_c_ba = coarsen(f_mesh.ba, rr);
+        const DistributionMapping & f_dm = f_mesh.dm;
+        const int c_elm_type_n_comp = c_solution.elm_type.n_comp;
+        const IntVect c_elm_type_n_grow = c_solution.elm_type.n_grow;
 
-Print() << "eval_space_interpolation - We are in trouble!" << std::endl;
-exit(-1);
+        safe_c_elm_type.define(safe_c_ba, f_dm, c_elm_type_n_comp, c_elm_type_n_grow);
+        safe_c_elm_type.ParallelCopy(c_solution.elm_type, 0, 0, c_elm_type_n_comp, c_elm_type_n_grow, c_elm_type_n_grow, c_geom.periodicity());
 
-}
+        safe_c_elm_type_ptr = &safe_c_elm_type;
+    }
+    // ----------------------------------------------------------------
 
     // INIT THE MULTIFAB ----------------------------------------------
     f_solution.elm_I_info.define(f_mesh.ba, f_mesh.dm, n_domains, f_mesh.dom_data_n_grow);
@@ -125,7 +139,7 @@ exit(-1);
         const Dim3 hi = ubound(bx);
 
         // Coarse mesh
-        Array4<short const> const & c_elm_type_fab = c_solution.elm_type.array(mfi);
+        Array4<short const> const & c_elm_type_fab = safe_c_elm_type_ptr->array(mfi);
         
         // Fine mesh
         Array4<long const> const & f_cell_dom_quad_info_fab = f_mesh.cell_dom_quad_info.array(mfi);
@@ -367,7 +381,7 @@ exit(-1);
 template <typename IBVP>
 void restrict(const Geometry & f_geom, const Solution & f_solution, const MultiFab & f_X,
               const IntVect rr,
-              const Geometry & c_geom, const Solution & c_solution, MultiFab & c_X,
+              const Geometry & c_geom, const Solution & c_solution, MultiFab & c_X, const iMultiFab & c_mask,
               const IBVP & ibvp,
               const bool use_fabbox = false)
 {
@@ -386,28 +400,22 @@ void restrict(const Geometry & f_geom, const Solution & f_solution, const MultiF
     const int c_sNp = AMREX_D_TERM((1+c_sp),*(1+c_sp),*(1+c_sp));
 
     // MULTIFABS
-    const BoxArray safe_c_ba = coarsen(f_X.boxarray, rr);
+    const BoxArray coarsened_f_ba = coarsen(f_X.boxarray, rr);
     // ----------------------------------------------------------------
 
     // VARIABLES ------------------------------------------------------
-    MultiFab ITX(safe_c_ba, f_X.distributionMap, c_X.n_comp, c_X.n_grow);
+    MultiFab RX(coarsened_f_ba, f_X.distributionMap, c_X.n_comp, c_X.n_grow);
+    MultiFab safe_RX;
+    MultiFab * safe_RX_ptr;
     // ----------------------------------------------------------------
 
     // INITIALIZATION -------------------------------------------------
-    ITX = 0.0;
+    RX = 0.0;
     // ----------------------------------------------------------------
-
-if (!isMFIterSafe(ITX, f_solution.elm_I_info))
-{
-
-Print() << "restrict - We are in trouble!" << std::endl;
-exit(-1);
-
-}
 
     // AT THE COARSE MESH COVERED BY THE FINE MESH --------------------
     //
-    // Compute: ITX := I^T*f_X
+    // Compute: RX := I^T*f_X
     //
     // ----------------------------------------------------------------
 #ifdef AMREX_USE_GPU
@@ -416,19 +424,18 @@ exit(-1);
     const Real * elm_I_mem_ptr = f_solution.elm_I_host_mem.data();
 #endif
 
-    for (MFIter mfi(ITX); mfi.isValid(); ++mfi)
+    for (MFIter mfi(RX); mfi.isValid(); ++mfi)
     {
         const Box & bx = mfi.validbox();
 
         // Fine mesh
-        Array4<short const> const & f_elm_type_fab = f_solution.elm_type.array(mfi);
         Array4<Real const> const & f_X_fab = f_X.array(mfi);
 
         // Interpolation operator
         Array4<long const> const & elm_I_info_fab = f_solution.elm_I_info.array(mfi);
 
         // Coarse mesh
-        Array4<Real> const & ITX_fab = ITX.array(mfi);
+        Array4<Real> const & ITX_fab = RX.array(mfi);
 
         ParallelFor(bx, n_unknown_fields,
         [=] AMREX_GPU_DEVICE (int c_i, int c_j, int c_k, int ru) noexcept
@@ -456,7 +463,7 @@ exit(-1);
                 // ELEMENT TYPE (USING elm_I_info_fab)
                 const long pos = elm_I_info_fab(f_i,f_j,f_k,dom);
 
-                if (pos != -1)
+                if (pos != -1L)
                 {
                     // LOCAL PARAMETERS
                     const Real * I_ptr = &elm_I_mem_ptr[pos];
@@ -471,27 +478,52 @@ exit(-1);
         });
         Gpu::synchronize();
     }
-    ITX.FillBoundary(c_geom.periodicity());
+    RX.FillBoundary(c_geom.periodicity());
     // ----------------------------------------------------------------
 
     // AT THE COARSE MESH COVERED BY THE FINE MESH --------------------
     // 
-    // Compute: c_X := c_MM^(-1)*ITX
+    // Compute: RX := c_MM^(-1)*RX
     // 
     // ----------------------------------------------------------------
     if (isMFIterSafe(f_X, c_X))
     {
-Print() << "isMFIterSafe" << std::endl;
-exit(-1);
+        safe_RX_ptr = &RX;
     }
     else
     {
-Print() << "isNotMFIterSafe" << std::endl;
-exit(-1);
+        safe_RX.define(c_X.boxarray, c_X.distributionMap, RX.n_comp, RX.n_grow);
+        safe_RX = 0.0;
+        safe_RX.ParallelCopy(RX, 0, 0, RX.n_comp, RX.n_grow, RX.n_grow, c_geom.periodicity());
+
+        safe_RX_ptr = &safe_RX;
     }
+
+    c_solution.add_small_elements_contribution(c_geom, *safe_RX_ptr, ibvp);
+    c_solution.multiply_by_inverse_space_mass_matrix(c_geom, *safe_RX_ptr, ibvp);
+    c_solution.copy_solution_to_small_elements(c_geom, *safe_RX_ptr, ibvp);
     // ----------------------------------------------------------------
 
-    // COPY SOLUTION TO c_X -------------------------------------------
+    // REPLACE RESTRICTED SOLUTION IN c_X -----------------------------
+    for (MFIter mfi(c_X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<Real const> const & RX_fab = safe_RX_ptr->array(mfi);
+        Array4<int const> const & c_mask_fab = c_mask.array(mfi);
+
+        Array4<Real> const & c_X_fab = c_X.array(mfi);
+
+        ParallelFor(bx, c_X.n_comp,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int c) noexcept
+        {
+            if (CELL_IS_MASKED(c_mask_fab(i,j,k)))
+            {
+                c_X_fab(i,j,k,c) = RX_fab(i,j,k,c);
+            }
+        });
+        Gpu::synchronize();
+    }
     // ----------------------------------------------------------------
 }
 // ####################################################################
@@ -570,6 +602,58 @@ exit(-1);
     {
 Print() << "amrex::dG::amr::SinglePatch.ErrorEst" << std::endl;
 exit(-1);
+    }
+
+    virtual void ManualTagsPlacement(int lev, TagBoxArray & tags, const Vector<IntVect> & bf_lev) override
+    {
+        // PARAMETERS -------------------------------------------------
+        const Solution & solution = *this->solutions[lev];
+        const int n_domains = solution.elm_type.n_comp/__DG_ELM_TYPE_N_COMP_PER_DOM__;
+        const char tagged = TagBox::BUF;
+        // ------------------------------------------------------------
+
+        // TAG SMALL CELLS THAT ARE MERGED WITH TAGGED CELLS ----------
+        for (MFIter mfi(tags); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+
+            Array4<char> const & tags_fab = tags.array(mfi);
+
+            ParallelFor(bx,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
+            {
+                for (int dom = 0; dom < n_domains; ++dom)
+                {
+                    // ELEMENT TYPE
+                    const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                    const bool elm_is_not_tagged = (tags_fab(i,j,k) != tagged);
+
+                    if (ELM_IS_SMALL(etype) && elm_is_not_tagged)
+                    {
+                        // LOCAL PARAMETERS
+                        const int merged_b = etype/10;
+
+                        // LOCAL VARIABLES
+                        int nbr_i, nbr_j, nbr_k, nbr_b;
+                        bool nbr_is_tagged;
+
+                        NBR_CELL(i, j, k, merged_b, nbr_i, nbr_j, nbr_k, nbr_b);
+
+                        nbr_is_tagged = (tags_fab(nbr_i,nbr_j,nbr_k) == tagged);
+
+                        if (nbr_is_tagged)
+                        {
+                            tags_fab(i,j,k) = tagged;
+                        }
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+        tags.FillBoundary(this->geom[lev].periodicity());
+        // ------------------------------------------------------------
     }
     // ================================================================
 
