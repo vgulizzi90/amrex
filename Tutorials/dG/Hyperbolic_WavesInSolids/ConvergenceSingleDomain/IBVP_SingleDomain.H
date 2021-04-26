@@ -2,21 +2,25 @@
 // Author : Vincenzo Gulizzi (LBL)
 // Contact: vgulizzi@lbl.gov
 //
-/** \file IBVP_SupersonicVortex.H
+/** \file IBVP_SingleDomain.H
  * \brief Contains constants and data structures for the considered IBVP.
 */
 
-#include "../IBVP_IdealGas.H"
+#include "../IBVP_ElasticSolid.H"
 
-namespace SupersonicVortex
+namespace SingleDomain
 {
-
-// SUPERSONIC VORTEX: PROBLEM PARAMETERS ##############################
+// SINGLE DOMAIN: PROBLEM PARAMETERS ##################################
 struct ProblemParameters
 {
     // DATA MEMBERS ===================================================
-    amrex::Real gamma;
-    amrex::Real rho_inner, Mach_inner, r_inner, r_outer;
+    std::string shape;
+    amrex::Vector<amrex::Real> geo_parameters;
+
+    int n_domains;
+    amrex::Vector<std::string> material_type;
+    amrex::Vector<amrex::Vector<amrex::Real>> material_constants;
+    
     std::string norm;
     // ================================================================
 
@@ -25,13 +29,19 @@ struct ProblemParameters
     {
         amrex::ParmParse pp;
 
-        pp.get("gamma", this->gamma);
-        
-        pp.get("rho_inner", this->rho_inner);
-        pp.get("Mach_inner", this->Mach_inner);
-        pp.get("r_inner", this->r_inner);
-        pp.get("r_outer", this->r_outer);
-        
+        pp.get("shape", this->shape);
+        pp.getarr("geo_parameters", this->geo_parameters);
+
+        pp.get("n_domains", this->n_domains);
+        this->material_type.resize(this->n_domains);
+        this->material_constants.resize(this->n_domains);
+        for (int dom = 0; dom < this->n_domains; ++dom)
+        {
+            amrex::ParmParse pp_dom("domain["+std::to_string(dom)+"]");
+            pp_dom.get("material_type", this->material_type[dom]);
+            pp_dom.getarr("material_constants", this->material_constants[dom]);
+        }
+
         pp.get("norm", this->norm);
     }
     // ================================================================
@@ -40,23 +50,50 @@ struct ProblemParameters
 
 
 
-// SUPERSONIC VORTEX: LEVEL SET #######################################
+// SINGLE DOMAIN: LEVEL SET ###########################################
 template <int N>
 struct LevelSet
 {
     // DATA MEMBERS ===================================================
-    amrex::Real ri, ro;
+    int flag;
+    amrex::Vector<amrex::Real> params;
     int dom;
     // ================================================================
 
 
     // CONSTRUCTOR ====================================================
-    LevelSet(const amrex::Real r_inner, const amrex::Real r_outer)
+    LevelSet(const std::string & shape, const amrex::Vector<amrex::Real> & geo_parameters)
     :
-    ri{r_inner},
-    ro{r_outer},
+    flag{-1},
     dom{0}
-    {}
+    {
+        if (shape.compare("none") == 0)
+        {
+            this->flag = -1;
+            this->params.clear();
+        }
+        else if (shape.compare("circle") == 0)
+        {
+            this->flag = 0;
+            this->params.resize(AMREX_SPACEDIM+1);
+            AMREX_D_TERM
+            (
+                this->params[0] = geo_parameters[0];,
+                this->params[1] = geo_parameters[1];,
+                this->params[2] = geo_parameters[2];
+            )
+            this->params[AMREX_SPACEDIM] = geo_parameters[AMREX_SPACEDIM];
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: IBVP_SingleDomain.H - LevelSet::LevelSet\n";
+            msg += "| Unexpected shape for the level set.\n";
+            msg += "| shape: "+shape+".\n";
+            amrex::Abort(msg);
+        }
+    }
     // ================================================================
 
 
@@ -75,10 +112,32 @@ struct LevelSet
     // EVALUATION =====================================================
     amrex::Real eval(const amrex::Real * x) const
     {
-        const amrex::Real ri2 = this->ri*this->ri;
-        const amrex::Real ro2 = this->ro*this->ro;
-        const amrex::Real r2 = x[0]*x[0]+x[1]*x[1];
-        const amrex::Real res = (r2-ri2)*(r2-ro2);
+        amrex::Real res;
+
+        switch(this->flag)
+        {
+            case -1:
+                res = -1.0;
+                
+                break;
+            
+            case 0:
+                const amrex::Real dx[AMREX_SPACEDIM] = {AMREX_D_DECL(x[0]-this->params[0],
+                                                                     x[1]-this->params[1],
+                                                                     x[2]-this->params[2])};
+                const amrex::Real r = this->params[AMREX_SPACEDIM];
+                res = r*r-(AMREX_D_TERM(dx[0]*dx[0],+dx[1]*dx[1],+dx[2]*dx[2]));
+            
+                break;
+            
+            default:
+                std::string msg;
+                msg  = "\n";
+                msg +=  "ERROR: IBVP_SingleDomain.H - LevelSet::eval\n";
+                msg += "| Unexpected geometry flag.\n";
+                msg += "| this->flag: "+std::to_string(this->flag)+".\n";
+                amrex::Abort(msg);
+        }
 
         return res;
     }
@@ -89,10 +148,32 @@ struct LevelSet
     template <typename T>
     T operator() (const amrex::GpuArray<T, N> & x) const
     {
-        const amrex::Real ri2 = this->ri*this->ri;
-        const amrex::Real ro2 = this->ro*this->ro;
-        const T r2 = x[0]*x[0]+x[1]*x[1];
-        const T res = (r2-ri2)*(r2-ro2);
+        T res;
+
+        switch(this->flag)
+        {
+            case -1:
+                res = -1.0;
+                
+                break;
+            
+            case 0:
+                const T dx[AMREX_SPACEDIM] = {AMREX_D_DECL(x[0]-this->params[0],
+                                                           x[1]-this->params[1],
+                                                           x[2]-this->params[2])};
+                const amrex::Real r = this->params[AMREX_SPACEDIM];
+                res = r*r-(AMREX_D_TERM(dx[0]*dx[0],+dx[1]*dx[1],+dx[2]*dx[2]));
+            
+                break;
+            
+            default:
+                std::string msg;
+                msg  = "\n";
+                msg +=  "ERROR: IBVP_SingleDomain.H - LevelSet::operator()\n";
+                msg += "| Unexpected geometry flag.\n";
+                msg += "| this->flag: "+std::to_string(this->flag)+".\n";
+                amrex::Abort(msg);
+        }
 
         return res;
     }
@@ -100,13 +181,42 @@ struct LevelSet
     template <typename T>
     amrex::GpuArray<T, N> grad(const amrex::GpuArray<T, N> & x) const
     {
-        const amrex::Real ri2 = this->ri*this->ri;
-        const amrex::Real ro2 = this->ro*this->ro;
-        const T r2 = x[0]*x[0]+x[1]*x[1];
-        const T dr2dx = x[0]+x[0];
-        const T dr2dy = x[1]+x[1];
-        const T rr = (2.0*r2-ri2-ro2);
-        const amrex::GpuArray<T, N> res = {rr*dr2dx, rr*dr2dy};
+        amrex::GpuArray<T, N> res;
+
+        switch(this->flag)
+        {
+            case -1:
+                AMREX_D_TERM
+                (
+                    res[0] = 0.0;,
+                    res[1] = 0.0;,
+                    res[2] = 0.0;
+                )
+                
+                break;
+            
+            case 0:
+                const T dx[AMREX_SPACEDIM] = {AMREX_D_DECL(x[0]-this->params[0],
+                                                           x[1]-this->params[1],
+                                                           x[2]-this->params[2])};
+            
+                AMREX_D_TERM
+                (
+                    res[0] = -2.0*dx[0];,
+                    res[1] = -2.0*dx[1];,
+                    res[2] = -2.0*dx[2];
+                )
+                
+                break;
+            
+            default:
+                std::string msg;
+                msg  = "\n";
+                msg +=  "ERROR: IBVP_SingleDomain.H - LevelSet::grad\n";
+                msg += "| Unexpected geometry flag.\n";
+                msg += "| this->flag: "+std::to_string(this->flag)+".\n";
+                amrex::Abort(msg);
+        }
 
         return res;
     }
@@ -116,7 +226,7 @@ struct LevelSet
 
 
 
-// SUPERSONIC VORTEX: IBVP ############################################
+// SINGLE DOMAIN: IBVP ################################################
 struct IBVP
 {
     // DATA MEMBERS ===================================================
@@ -128,7 +238,7 @@ struct IBVP
     // CONSTRUCTOR ====================================================
     IBVP()
     :
-    level_set(this->problem_params.r_inner, this->problem_params.r_outer)
+    level_set(this->problem_params.shape, this->problem_params.geo_parameters)
     {}
     // ================================================================
 
@@ -150,7 +260,7 @@ struct IBVP
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     int get_number_of_unknown_fields() const
     {
-        return IDEAL_GAS_NU;
+        return ELASTIC_SOLID_NU;
     }
     /**
      * \brief Return the parent domain of the u-th unknown field.
@@ -176,51 +286,41 @@ struct IBVP
      * 
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
-     * \param[out] U: pointer to memory that will be filled with the value of the conserved variables
-     *                at (t, x).
+     * \param[out] U: pointer to memory that will be filled with the value of the unknown fields at
+     *                (t, x).
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_exact_solution(const amrex::Real /*t*/, const amrex::Real * x, amrex::Real * U) const
     {
-        // PARAMETERS
-        const amrex::Real g = this->problem_params.gamma;
-        const amrex::Real g2 = 0.5*(g-1.0);
-        const amrex::Real ig = 1.0/(g-1.0);
-        const amrex::Real rho_i = this->problem_params.rho_inner;
-        const amrex::Real M_i = this->problem_params.Mach_inner;
 
-        const amrex::Real r = std::sqrt(x[0]*x[0]+x[1]*x[1]);
-        const amrex::Real cth = x[0]/r;
-        const amrex::Real sth = x[1]/r;
-        const amrex::Real ri = this->problem_params.r_inner;
-        const amrex::Real rr2 = (ri/r)*(ri/r);
-
-        const amrex::Real rho = rho_i*std::pow(1.0+g2*M_i*M_i*(1.0-rr2), ig);
-        const amrex::Real a_i = 1.0;
-        const amrex::Real uth = a_i*M_i*(ri/r);
-        const amrex::Real u = -uth*sth;
-        const amrex::Real v = uth*cth;
-        const amrex::Real p = std::pow(rho, g)/g;
-
-        U[RHO] = rho;
-        U[RHOV1] = rho*u;
-        U[RHOV2] = rho*v;
-        U[TE] = ig*p+0.5*rho*(u*u+v*v);
-
-        /* Constant initial state
-        U[RHO] = 1.0;
-        U[RHOV1] = 0.0;
-        U[RHOV2] = 0.0;
-        U[TE] = ig;
-        */
+        /* Constant initial state */
+        AMREX_D_TERM
+        (
+            U[V1] = 1.0;,
+            U[V2] = 1.0;,
+            U[V3] = 1.0;
+        )
+        AMREX_D_TERM
+        (
+            U[S11] = 0.0;,
+            U[S22] = 0.0;,
+            U[S33] = 0.0;
+        )
+#if (AMREX_SPACEDIM == 2)
+        U[S12] = 0.0;
+#endif
+#if (AMREX_SPACEDIM == 3)
+        U[S23] = 0.0;
+        U[S13] = 0.0;
+        U[S12] = 0.0;
+#endif
     }
 
     /**
      * \brief Fill U with initial conditions at x.
      * 
      * \param[in] x: pointer to memory containing the space location.
-     * \param[out] U: pointer to memory that will be filled with the value of the conserved variables
-     *                at x.
+     * \param[out] U: pointer to memory that will be filled with the value of the unknown fields at x.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_ICs(const amrex::Real * x, amrex::Real * U) const
@@ -237,7 +337,7 @@ struct IBVP
      * \param[in] dom: domain index.
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
-     * \param[in] U: pointer to memory containing the value of the conserved variables at (t, x).
+     * \param[in] U: pointer to memory containing the value of the unknown fields at (t, x).
      * \param[out] err: error at (t, x).
      * \param[out] err_norm: error normalization at (t, x).
      *
@@ -248,12 +348,17 @@ struct IBVP
                           const amrex::Real * U,
                           amrex::Real & err, amrex::Real & err_norm) const
     {
-        amrex::Real U_exact[IDEAL_GAS_NU];
+        const int dom = 0;
+
+        amrex::Real U_exact[ELASTIC_SOLID_NU];
+        amrex::Real e, e_exact;
 
         this->eval_exact_solution(t, x, U_exact);
 
-        err = std::abs(U[RHO]-U_exact[RHO]);
-        err_norm = std::abs(U_exact[RHO]);
+        //e_exact = elastic_solid::eval_total_energy(rho, c, U_exact);
+
+amrex::Print() << "eval_error_L_inf" << std::endl;
+exit(-1);
     }
     // ================================================================
 
@@ -266,7 +371,7 @@ struct IBVP
      * \param[in] dx: pointer to memory containing the grid sizes.
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
-     * \param[in] U: pointer to memory containing the value of the conserved variables at (t, x).
+     * \param[in] U: pointer to memory containing the value of the unknown fields at (t, x).
      *
      * \return: time increment based on solution at (t, x).
     */
@@ -276,7 +381,9 @@ struct IBVP
                         const amrex::Real /*t*/, const amrex::Real * /*x*/,
                         const amrex::Real * U) const
     {
-        const amrex::Real w = ideal_gas::eval_largest_wave_speed(this->problem_params.gamma, U);
+amrex::Print() << "eval_dt" << std::endl;
+exit(-1);
+        const amrex::Real w = 1.0;//elastic_solid::eval_largest_wave_speed(this->problem_params.gamma, U);
 #if (AMREX_SPACEDIM == 1)
         const amrex::Real h = dx[0];
 #endif
@@ -298,7 +405,7 @@ struct IBVP
      * \param[in] dom: index of the domain.
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
-     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[in] U: pointer to memory containing the unknown fields.
      * \param[out] F1, F2, F3: pointer to memory that will contain the fluxes.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -306,7 +413,9 @@ struct IBVP
                 const amrex::Real /*t*/, const amrex::Real * /*x*/,
                 const amrex::Real * U, AMREX_D_DECL(amrex::Real * F1, amrex::Real * F2, amrex::Real * F3)) const
     {
-        ideal_gas::eval_F(this->problem_params.gamma, U, AMREX_D_DECL(F1, F2, F3));
+amrex::Print() << "eval_F" << std::endl;
+exit(-1);
+        //ideal_gas::eval_F(this->problem_params.gamma, U, AMREX_D_DECL(F1, F2, F3));
     }
     // ================================================================
 
@@ -319,9 +428,9 @@ struct IBVP
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
      * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
-     * \param[in] m_U: pointer to memory containing the conserved variables on the negative side of the
+     * \param[in] m_U: pointer to memory containing the unknown fields on the negative side of the
      *                 unit normal.
-     * \param[in] p_U: pointer to memory containing the conserved variables on the positive side of the
+     * \param[in] p_U: pointer to memory containing the unknown fields on the positive side of the
      *                 unit normal.
      * \param[out] NFn: pointer to memory that will contain the numerical flux.
     */
@@ -330,7 +439,9 @@ struct IBVP
                              const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
                              const amrex::Real * m_U, const amrex::Real * p_U, amrex::Real * NFn) const
     {
-        ideal_gas::eval_NFn_Riemann_solver(this->problem_params.gamma, un, m_U, p_U, NFn);
+amrex::Print() << "eval_NFn_intraphase" << std::endl;
+exit(-1);
+        //ideal_gas::eval_NFn_Riemann_solver(this->problem_params.gamma, un, m_U, p_U, NFn);
     }
 
     /**
@@ -340,7 +451,7 @@ struct IBVP
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
      * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
-     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[in] U: pointer to memory containing the unknown fields.
      * \param[out] NFn: pointer to memory that will contain the numerical flux.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -349,15 +460,17 @@ struct IBVP
                       const amrex::Real * U, amrex::Real * NFn) const
     {
         // VARIABLES --------------------------------------------------
-        amrex::Real U_exact[IDEAL_GAS_NU];
+        amrex::Real U_exact[ELASTIC_SOLID_NU];
         // ------------------------------------------------------------
 
         // EXACT SOLUTION ---------------------------------------------
         this->eval_exact_solution(t, x, U_exact);
         // ------------------------------------------------------------
 
+amrex::Print() << "eval_NFn_BCs" << std::endl;
+exit(-1);
         // BOUNDARY FLUX ----------------------------------------------
-        ideal_gas::eval_NFn_Riemann_solver(this->problem_params.gamma, un, U, U_exact, NFn);
+        //ideal_gas::eval_NFn_Riemann_solver(this->problem_params.gamma, un, U, U_exact, NFn);
         // ------------------------------------------------------------
     }
 
@@ -368,7 +481,7 @@ struct IBVP
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
      * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
-     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[in] U: pointer to memory containing the unknown fields.
      * \param[out] NFn: pointer to memory that will contain the numerical flux.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -376,7 +489,9 @@ struct IBVP
                       const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
                       const amrex::Real * U, amrex::Real * NFn) const
     {
-        ideal_gas::eval_NFn_wall(this->problem_params.gamma, un, U, NFn);
+amrex::Print() << "eval_NFn_ICs" << std::endl;
+exit(-1);
+        //ideal_gas::eval_NFn_wall(this->problem_params.gamma, un, U, NFn);
     }
     // ================================================================
 
@@ -398,7 +513,9 @@ struct IBVP
                         const amrex::MultiFab & X,
                         amrex::MultiFab & dX) const
     {
-        ideal_gas::eval_FV_slopes(this->problem_params.gamma, geom, mesh, solution, X, dX);
+amrex::Print() << "eval_FV_slopes" << std::endl;
+exit(-1);
+        //ideal_gas::eval_FV_slopes(this->problem_params.gamma, geom, mesh, solution, X, dX);
     }
     // ================================================================
 
@@ -411,7 +528,7 @@ struct IBVP
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     int get_number_of_output_fields() const
     {
-        return IDEAL_GAS_NU+4+1;
+        return ELASTIC_SOLID_NU+1+1;
     }
     /**
      * \brief Return the parent domain of the u-th output field.
@@ -429,14 +546,18 @@ struct IBVP
     */
     void get_output_fields_names(amrex::Vector<std::string> & output_fields_names) const
     {
-        output_fields_names = {"density",
-                               "velocity_x", "velocity_y",
-                               "pressure",
-                               "mach",
-                               "total_energy",
-                               "internal_energy",
-                               "density_error",
+#if (AMREX_SPACEDIM == 2)
+        output_fields_names = {"velocity_x", "velocity_y",
+                               "sigma_xx", "sigma_yy", "sigma_xy",
+                               "sigma_xx_error",
                                "level_set"};
+#endif
+#if (AMREX_SPACEDIM == 3)
+        output_fields_names = {"velocity_x", "velocity_y", "velocity_z",
+                               "sigma_xx", "sigma_yy", "sigma_zz", "sigma_yz", "sigma_xy", "sigma_xy",
+                               "sigma_xx_error",
+                               "level_set"};
+#endif
     }
 
     /**
@@ -445,7 +566,7 @@ struct IBVP
      * \param[in] dom: domain index.
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
-     * \param[in] U: pointer to memory that stores the conserved variables at (t,x).
+     * \param[in] U: pointer to memory that stores the unknown fields at (t,x).
      * \param[out] F: pointer to memory that will be filled with values of the output fields at (t,x).
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -453,21 +574,9 @@ struct IBVP
                             const amrex::Real * U,
                             amrex::Real * F) const
     {
-        // PARAMETERS -------------------------------------------------
-        const amrex::Real g = this->problem_params.gamma;
-        // ------------------------------------------------------------
-
         // VARIABLES --------------------------------------------------
-        amrex::Real rho, AMREX_D_DECL(v1, v2, v3), p, a, M;
-        amrex::Real U_exact[IDEAL_GAS_NU], phi;
+        amrex::Real U_exact[ELASTIC_SOLID_NU], phi;
         // ------------------------------------------------------------
-
-        // PRIMITIVE VARIABLES
-        ideal_gas::eval_primitive_variables(g, U, rho, AMREX_D_DECL(v1, v2, v3), p);
-
-        // SOUND SPEED AND MACH NUMBER
-        a = std::sqrt(g*p/rho);
-        M = std::sqrt(AMREX_D_TERM(v1*v1,+v2*v2,+v3*v3))/a;
 
         // EXACT SOLUTION
         this->eval_exact_solution(t, x, U_exact);
@@ -476,19 +585,28 @@ struct IBVP
         phi = this->level_set.eval(x);
 
         // OUTPUT FIELDS
-        F[RHO] = rho;
         AMREX_D_TERM
         (
-            F[RHOV1] = v1;,
-            F[RHOV2] = v2;,
-            F[RHOV3] = v3;
+            F[V1] = U[V1];,
+            F[V2] = U[V2];,
+            F[V3] = U[V3];
         )
-        F[TE] = p;
-        F[TE+1] = M;
-        F[TE+2] = U[TE];
-        F[TE+3] = p/(rho*(g-1.0));
-        F[TE+4] = rho-U_exact[RHO];
-        F[TE+5] = phi;
+        AMREX_D_TERM
+        (
+            F[S11] = U[S11];,
+            F[S22] = U[S22];,
+            F[S33] = U[S33];
+        )
+#if (AMREX_SPACEDIM == 2)
+        F[S12] = U[S12];
+#endif
+#if (AMREX_SPACEDIM == 3)
+        F[S23] = U[S23];
+        F[S13] = U[S13];
+        F[S12] = U[S12];
+#endif
+        F[ELASTIC_SOLID_NU] = U[S11]-U_exact[S11];
+        F[ELASTIC_SOLID_NU+1] = phi;
     }
     // ================================================================
 };
@@ -650,5 +768,4 @@ exit(-1);
     // ================================================================
 };
 // ####################################################################
-
-} // SupersonicVortex
+}

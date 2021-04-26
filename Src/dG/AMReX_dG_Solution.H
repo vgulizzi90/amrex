@@ -275,7 +275,7 @@ struct Solution
         // ELEMENT TYPE -----------------------------------------------
         for (MFIter mfi(mesh.cell_type); mfi.isValid(); ++mfi)
         {
-            const Box & bx = mfi.validbox();
+            const Box & bx = mfi.fabbox();
 
             Array4<short const> const & cell_type_fab = mesh.cell_type.array(mfi);
             Array4<short> const & elm_type_fab = this->elm_type.array(mfi);
@@ -745,50 +745,27 @@ struct Solution
 
     // MAKE FROM SCRATCH ==============================================
     /**
-     * \brief Make the data structures that will store the RKdG solution from scratch.
+     * \brief Make the data structures that will store the solution info from scratch.
      *
      * \param[in] t: time.
      * \param[in] geom: amrex Geometry object; contains dx and background domain lower end.
      * \param[in] mesh: Mesh object; contains information about embedded geometries.
-     * \param[inout] X: a MultiFab object that will be initialized to contain the dG coefficients.
      * \param[in] ibvp: initial boundary value problem object.
      *
     */
     template <typename IBVP>
-    void make_from_scratch_for_explicit_RKdG(const Real /*t*/, const Geometry & geom, const Mesh & mesh, MultiFab & X, const IBVP & ibvp)
-    {
-        // INIT THE MULTIFAB ------------------------------------------
-        this->init_space_solution_multifabs(mesh, X, ibvp);
-        // ------------------------------------------------------------
-
-        // ELEMENT / ELEMENT BOUNDARY TYPE ----------------------------
-        this->set_elm_and_elm_bou_type(geom, mesh, ibvp);
-        // ------------------------------------------------------------
-
-        // CELL MERGING -----------------------------------------------
-        if (this->uses_cell_merging())
-        {
-            this->set_cell_merging(geom, mesh, ibvp);
-        }
-        // ------------------------------------------------------------
-    }
-
-    /**
-     * \brief Make the data structures that will store the solution from scratch.
-     *
-     * \param[in] t: time.
-     * \param[in] geom: amrex Geometry object; contains dx and background domain lower end.
-     * \param[in] mesh: Mesh object; contains information about embedded geometries.
-     * \param[inout] X: a MultiFab object that will be initialized to contain the dG coefficients.
-     * \param[in] ibvp: initial boundary value problem object.
-     *
-    */
-    template <typename IBVP>
-    void make_from_scratch(const Real t, const Geometry & geom, const Mesh & mesh, MultiFab & X, const IBVP & ibvp)
+    void make_from_scratch(const Real t, const Geometry & geom, const Mesh & mesh, const IBVP & ibvp)
     {
         if (this->time_integration_is_explicit_RKdG())
         {
-            this->make_from_scratch_for_explicit_RKdG(t, geom, mesh, X, ibvp);
+            // ELEMENT / ELEMENT BOUNDARY TYPE
+            this->set_elm_and_elm_bou_type(geom, mesh, ibvp);
+
+            // CELL MERGING
+            if (this->uses_cell_merging())
+            {
+                this->set_cell_merging(geom, mesh, ibvp);
+            }
         }
         else
         {
@@ -801,6 +778,58 @@ struct Solution
 
         this->set_fields_parent_domains(ibvp);
         this->check_whether_problem_is_manageable(ibvp);
+    }
+    // ================================================================
+
+
+    // REMAKE =========================================================
+    /**
+     * \brief Remake the data structures that will store the solution info.
+     *
+     * \param[in] t: time.
+     * \param[in] geom: amrex Geometry object; contains dx and background domain lower end.
+     * \param[in] mesh: Mesh object; contains information about embedded geometries.
+     * \param[in] ibvp: initial boundary value problem object.
+     *
+    */
+    template <typename IBVP>
+    void remake(const Real t, const Geometry & geom, const Mesh & mesh, const IBVP & ibvp)
+    {
+        if (this->time_integration_is_explicit_RKdG())
+        {
+            // ELEMENT / ELEMENT BOUNDARY TYPE
+            this->set_elm_and_elm_bou_type(geom, mesh, ibvp);
+
+            // CELL MERGING
+            if (this->uses_cell_merging())
+            {
+                this->set_cell_merging(geom, mesh, ibvp);
+            }
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_Solution.H - Solution::remake\n";
+            msg += "| Unexpected input parameters.\n";
+            Abort(msg);
+        }
+    }
+
+    /**
+     * \brief Remake the data structures that will store the solution info.
+     *
+     * \param[in] t: time.
+     * \param[in] geom: amrex Geometry object; contains dx and background domain lower end.
+     * \param[in] mesh: Mesh object; contains information about embedded geometries.
+     * \param[inout] X: Multi object containing the dG coefficients.
+     * \param[in] ibvp: initial boundary value problem object.
+     *
+    */
+    template <typename IBVP>
+    void remake_solution(const Real t, const Geometry & geom, const Mesh & mesh, MultiFab & X, const IBVP & ibvp)
+    {
+        
     }
     // ================================================================
 
@@ -1309,7 +1338,7 @@ struct Solution
      * \param[in] ibvp: initial boundary value problem object.
     */
     template <typename IBVP>
-    void eval_space_centroids(const Geometry & geom, const Mesh & mesh, const IBVP & ibvp)
+    void eval_space_centroids(const Geometry & geom, const Mesh & mesh, const IBVP & ibvp, const bool include_ghost_cells = false)
     {
         // PARAMETERS -------------------------------------------------
         // GRID
@@ -1338,7 +1367,7 @@ struct Solution
 #endif
         for (MFIter mfi(this->elm_centroid); mfi.isValid(); ++mfi)
         {
-            const Box & bx = mfi.validbox();
+            const Box & bx = include_ghost_cells ? mfi.fabbox() : mfi.validbox();
 
             Array4<long const> const & cell_dom_quad_info_fab = mesh.cell_dom_quad_info.array(mfi);
             Array4<Real const> const & cell_vf_fab = mesh.cell_vf.array(mfi);

@@ -3,13 +3,13 @@
 
 // PDES INFORMATION ###################################################
 // SUMMARY:
-// In this tutorial, we solve the Gasdynamics equations for the
-// embedded Sod's tube problem using the discontinuous Galerkin method
-// and the embedded-geometry approach.
+// In this tutorial, we study the hp-convergence performance of
+// discontinuous Galerkin methods for the solution of the elastic wave
+// equation over domains with embedded geometries.
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
-#include "IBVP_EmbeddedSodsTube.H"
+#include "IBVP_SingleDomain.H"
 // ====================================================================
 // ####################################################################
 
@@ -26,12 +26,15 @@ void main_main()
     amrex::dG::TimeKeeper time_keeper;
 
     // USER-DEFINED AMR
-    EmbeddedSodsTube::AMR amr;
+    SingleDomain::AMR amr;
     
     // RESTART INFO
     int n0;
     amrex::Real t0;
-    // ================================================================   
+
+    // ERROR
+    amrex::Real err_old, err_new, err_norm;
+    // ================================================================
 
 
     // OPENING ========================================================
@@ -44,9 +47,9 @@ void main_main()
     amrex::Print() << "# Author: Vincenzo Gulizzi (vgulizzi@lbl.gov)                          " << std::endl;
     amrex::Print() << "#######################################################################" << std::endl;
     amrex::Print() << "# SUMMARY:                                                             " << std::endl;
-    amrex::Print() << "# In this tutorial, we solve the Gasdynamics equations for the         " << std::endl;
-    amrex::Print() << "# embedded Sod's tube problem using the discontinuous Galerkin method  " << std::endl;
-    amrex::Print() << "# and the embedded-geometry approach.                                  " << std::endl;
+    amrex::Print() << "# In this tutorial, we study the hp-convergence performance of         " << std::endl;
+    amrex::Print() << "# discontinuous Galerkin methods for the solution of the elastic wave  " << std::endl;
+    amrex::Print() << "# equation over domains with embedded geometries.                      " << std::endl;
     amrex::Print() << "#                                                                      " << std::endl;
     amrex::Print() << "#######################################################################" << std::endl;
     amrex::Print() << "# The selected space dimension at compile time is                      " << std::endl;
@@ -65,34 +68,36 @@ void main_main()
 
     // CHECK QUADRATURE
     {
-        const amrex::Real diam = amr.ibvp.problem_params.diam;
-        const amrex::Real th = amr.ibvp.problem_params.theta;
-#if (AMREX_SPACEDIM == 3)
-        const amrex::Real ph = amr.ibvp.problem_params.phi;
-#endif
-
-        const amrex::Real cth = std::cos(th);
-        const amrex::Real sth = std::sin(th);
-#if (AMREX_SPACEDIM == 3)
-        const amrex::Real cph = std::cos(ph);
-        const amrex::Real sph = std::sin(ph);
-#endif
+        const amrex::Real * prob_lo = amr.Geom(0).ProbLo();
+        const amrex::Real * prob_hi = amr.Geom(0).ProbHi();
+        const amrex::Real prob_len[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_hi[0]-prob_lo[0],
+                                                                   prob_hi[1]-prob_lo[1],
+                                                                   prob_hi[2]-prob_lo[2])};
+        const amrex::Real prob_volume = AMREX_D_TERM(prob_len[0],*prob_len[1],*prob_len[2]);
 
         amrex::Real volume;
         amrex::Real surface;
 
-#if (AMREX_SPACEDIM == 2)
-        if (th < 0.25*M_PI)
+        if (amr.ibvp.problem_params.shape.compare("none") == 0)
         {
-            volume = diam/cth;
-            surface = 2.0/cth;
+            surface = 0.0;
+            volume = prob_volume;
+        }
+        else if (amr.ibvp.problem_params.shape.compare("circle") == 0)
+        {
+            const amrex::Real r = amr.ibvp.level_set.params[AMREX_SPACEDIM];
+            surface = AMREX_D_PICK(0.0, 2.0*M_PI*r, 4.0*M_PI*r*r);
+            volume = prob_volume-(AMREX_D_PICK(2.0*r, M_PI*r*r, 4.0/3.0*M_PI*r*r*r));
         }
         else
         {
-            volume = diam/sth;
-            surface = 2.0/sth;
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: main.cpp\n";
+            msg += "| Unexpected geometry shape.\n";
+            msg += "| shape: "+amr.ibvp.problem_params.shape+".\n";
+            amrex::Abort(msg);
         }
-#endif
 
         amr.check_quadrature_rules(volume, surface);
     }
@@ -105,12 +110,23 @@ void main_main()
         if (amr.inputs.plot(n, t))
         {
             amr.make_step_output_folder(n, t);
-            amr.export_mesh(n, "mesh");
             amr.export_solution(n, "solution", t);
         }
     }
-    // ================================================================
 
+    // EVAL ERROR
+    {
+        const amrex::Real t = t0;
+
+        err_old = 0.0;
+        amr.eval_error(t, err_new, err_norm);
+        err_new = err_new/err_norm;
+
+        amrex::Print() << "INITIAL ERROR REPORT:" << std::endl;
+        amrex::Print() << "| err(t = " << t << "): " << std::scientific << std::setprecision(5) << std::setw(12) << err_new << std::endl;
+    }
+    // ================================================================
+/*
 
     // ADVANCE IN TIME ================================================
     amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
@@ -133,6 +149,9 @@ void main_main()
             // TIME STEP TIC
             time_keeper.tic();
 
+            // SWAP OLD AND NEW ERROR
+            std::swap(err_old, err_new);
+
             // COMPUTE TIME INCREMENT
             dt = amr.eval_dt(t);
             dt = amrex::min(t+dt, amr.inputs.time.T)-t;
@@ -148,15 +167,12 @@ void main_main()
             if (amr.inputs.plot(n, t))
             {
                 amr.make_step_output_folder(n, t);
-                amr.export_mesh(n, "mesh");
                 amr.export_solution(n, "solution", t);
             }
 
-            // REGRID
-            if (amr.inputs.regrid(n))
-            {
-                amr.regrid(n);
-            }
+            // EVAL ERROR
+            amr.eval_error(t, err_new, err_norm);
+            err_new = err_new/err_norm;
 
             // TIME STEP TOC
             time_keeper.toc();
@@ -169,14 +185,14 @@ void main_main()
             // REPORT TO SCREEN
             amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
             amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
-                            << dt << ", t = " << t
+                            << dt << ", t = " << t << ", err = " << err_new
                             << ", ct [s] = " << ct_avg 
                             << ", eta = " << amrex::dG::seconds_to_hms(eta) << std::endl;
         }
     }
     amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
     // ================================================================
-
+*/
 
     // CLOSING ========================================================
     // TOC -----------

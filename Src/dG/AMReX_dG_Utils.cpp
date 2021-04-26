@@ -299,6 +299,10 @@ void print_real_array_2d(const int Nr, const int Nc, const Real * src, std::ostr
         int tmp_int;
         // ------------------------------------------------------------
 
+        // AMR REGRID -------------------------------------------------
+        pp.query("amr.regrid_int", this->amr_regrid_int);
+        // ------------------------------------------------------------
+
         // WALL TIME --------------------------------------------------
         pp.query("wall_time", this->wall_time);
         pp.query("wall_time_units", this->wall_time_units);
@@ -369,6 +373,14 @@ void print_real_array_2d(const int Nr, const int Nc, const Real * src, std::ostr
         res = res || (n == this->time.n_steps);
         res = res || (std::abs(t/this->time.T-1.0) < 1.0e-12);
         res = res && (this->plot_int > 0);
+
+        return res;
+    }
+    bool InputReaderSinglePatch::regrid(const int n) const
+    {
+        bool res;
+        res = (n%(this->amr_regrid_int) == 0);
+        res = res && (this->amr_regrid_int > 0);
 
         return res;
     }

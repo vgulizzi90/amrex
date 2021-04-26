@@ -721,13 +721,13 @@ void export_bou_data_to_VTK(const std::string & level_folderpath,
 */
 template <typename IBVP>
 void export_to_VTK(const std::string & level_folderpath,
-                    const std::string & level_step_folderpath,
-                    const std::string & step_string,
-                    const std::string & filename_root,
-                    const Geometry & geom,
-                    const Mesh & mesh,
-                    const iMultiFab & mask,
-                    IBVP & ibvp)
+                   const std::string & level_step_folderpath,
+                   const std::string & step_string,
+                   const std::string & filename_root,
+                   const Geometry & geom,
+                   const Mesh & mesh,
+                   const iMultiFab & mask,
+                   IBVP & ibvp)
 {
     const std::string dom_data_filename = filename_root+"_dom_data";
     const std::string bou_data_filename = filename_root+"_bou_data";

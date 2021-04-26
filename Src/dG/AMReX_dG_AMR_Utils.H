@@ -261,9 +261,28 @@ exit(-1);
             //                                   rr,
             //                                   f_geom, f_mesh, f_solution, f_X,
             //                                   FX[lev], FX_offset,
-            //                                   ibvp);;
+            //                                   ibvp);
         }
     }
+
+#ifdef AMREX_DG_CHECK_FOR_NAN
+    // CHECK FOR NAN --------------------------------------------------
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+        {
+            if (FX[lev][dir].contains_nan())
+            {
+                std::string msg;
+                msg  = "\n";
+                msg += "ERROR: AMReX_dG_AMR_Utils.H - eval_dXdt_explicit_RKdG\n";
+                msg += "| Fluxes in direction "+std::to_string(dir)+" contains nans at level "+std::to_string(lev)+".\n";
+                Abort(msg);
+            }
+        }
+    }
+    // ----------------------------------------------------------------
+#endif
 
     // COPY FLUXES FROM FINE TO COARSE LEVEL
     for (int lev = (n_levels-1); lev > 0; --lev)

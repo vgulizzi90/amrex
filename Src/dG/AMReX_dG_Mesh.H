@@ -51,7 +51,7 @@
 #define __DG_CELL_GHOST__ 1000
 
 // MASK
-#define __DG_CELL_NON_MASKED__ 0
+#define __DG_CELL_NOT_MASKED__ 0
 #define __DG_CELL_MASKED__ 1
 #define __DG_LEVEL_BOUNDARY__ 2
 
@@ -73,8 +73,8 @@
 #define __DG_ELM_BOU_TYPE_PARTIAL_INVALID__ 6
 
 // DEBUG
-#define __i__ 7
-#define __j__ 8
+#define __i__ 144
+#define __j__ 100
 #define __k__ 0
 
 namespace amrex
@@ -124,12 +124,12 @@ bool CELL_IS_EMPTY(const short ctype)
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 bool CELL_IS_ENTIRE(const short ctype)
 {
-    return (ctype == __DG_CELL_TYPE_ENTIRE__);
+    return (ctype%10 == __DG_CELL_TYPE_ENTIRE__);
 }
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 bool CELL_IS_CUT(const short ctype)
 {
-    return (ctype == __DG_CELL_TYPE_CUT__);
+    return (ctype%10 == __DG_CELL_TYPE_CUT__);
 }
 // ====================================================================
 
@@ -460,7 +460,7 @@ bool CELL_IS_MASKED(const int val)
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 bool CELL_IS_NOT_MASKED(const int val)
 {
-    return (val == __DG_CELL_NON_MASKED__);
+    return (val == __DG_CELL_NOT_MASKED__);
 }
 // ====================================================================
 
@@ -1412,6 +1412,60 @@ struct Mesh
             std::string msg;
             msg  = "\n";
             msg +=  "ERROR: AMReX_dG_Mesh.H - Mesh::make_from_scratch\n";
+            msg += "| At this moment embedded geometries must be active.\n";
+            Abort(msg);
+        }
+        // ------------------------------------------------------------
+
+        // LABEL GHOST CELLS ------------------------------------------
+        this->label_ghost_cells(geom, n_domains);
+        // ------------------------------------------------------------
+    }
+    // ================================================================
+
+
+    // REMAKE =========================================================
+    /**
+     * \brief Remake the data structures that will store the mesh info.
+     *
+     * \param[in] t: time.
+     * \param[in] geom: amrex Geometry object; contains dx and background domain lower end.
+     * \param[in] ba_: amrex BoxArray object; contains the block-structured grids.
+     * \param[in] dm_: amrex DistributionMapping object; contains the distribution of the grids among the
+     *                processors.
+     * \param[in] ibvp: initial boundary value problem object.
+     *
+    */
+    template <typename IBVP>
+    void remake(const Real t, const Geometry & geom, const BoxArray & ba_, const DistributionMapping & dm_, IBVP & ibvp)
+    {
+        // PARAMETERS -------------------------------------------------
+        // DOMAINS
+        const int n_domains = ibvp.get_number_of_domains();
+        // ------------------------------------------------------------
+
+        // MAKE MESH --------------------------------------------------
+        if (this->uses_embedded_geometries())
+        {
+            if (this->uses_level_set())
+            {
+                this->make_from_scratch_by_level_set(t, geom, ba_, dm_, ibvp);
+            }
+            else
+            {
+                std::string msg;
+                msg  = "\n";
+                msg +=  "ERROR: AMReX_dG_Mesh.H - Mesh::remake\n";
+                msg += "| Unexpected method used to define the embedded geometry.\n";
+                msg += "| Unexpected method: "+this->params.embedded_geometry_defined_by+".\n";
+                Abort(msg);
+            }
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_Mesh.H - Mesh::remake\n";
             msg += "| At this moment embedded geometries must be active.\n";
             Abort(msg);
         }

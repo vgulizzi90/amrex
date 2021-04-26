@@ -11,7 +11,7 @@
 namespace EmbeddedSodsTube
 {
 
-// SUPERSONIC VORTEX: PROBLEM PARAMETERS ##############################
+// EMBEDDED SOD'S TUBE: PROBLEM PARAMETERS ############################
 struct ProblemParameters
 {
     // DATA MEMBERS ===================================================
@@ -48,9 +48,9 @@ struct ProblemParameters
 
 
 
-// SUPERSONIC VORTEX: IBVP ############################################
+// EMBEDDED SOD'S TUBE: LEVEL SET #####################################
 template <int N>
-struct Levelset
+struct LevelSet
 {
     // DATA MEMBERS ===================================================
     amrex::Real diam, theta, phi;
@@ -60,7 +60,7 @@ struct Levelset
 
     // CONSTRUCTOR ====================================================
 #if (AMREX_SPACEDIM == 2)
-    Levelset(const amrex::Real diam_, const amrex::Real theta_)
+    LevelSet(const amrex::Real diam_, const amrex::Real theta_)
     :
     diam{diam_},
     theta{theta_},
@@ -68,7 +68,7 @@ struct Levelset
     {}
 #endif
 #if (AMREX_SPACEDIM == 3)
-    Levelset(const amrex::Real diam_, const amrex::Real theta_, const amrex::Real phi_)
+    LevelSet(const amrex::Real diam_, const amrex::Real theta_, const amrex::Real phi_)
     :
     diam{diam_},
     theta{theta_},
@@ -166,12 +166,16 @@ struct Levelset
     }
     // ================================================================
 };
+// ####################################################################
 
+
+
+// EMBEDDED SOD'S TUBE: IBVP ##########################################
 struct IBVP
 {
     // DATA MEMBERS ===================================================
     ProblemParameters problem_params;
-    Levelset<AMREX_SPACEDIM> level_set;
+    LevelSet<AMREX_SPACEDIM> level_set;
     // ================================================================
 
 
@@ -284,12 +288,12 @@ struct IBVP
 
         ideal_gas::Un_to_U(xi_dir, Uxi, U);
 
-        /* Constant initial state */
+        /* Constant initial state
         U[RHO] = 1.0;
         U[RHOV1] = 0.0;
         U[RHOV2] = 0.0;
         U[TE] = 1.0/(g-1.0);
-        /**/
+        */
     }
     // ================================================================
 
@@ -551,7 +555,7 @@ struct IBVP
 
 
 
-// SUPERSONIC VORTEX: AMR #############################################
+// EMBEDDED SOD'S TUBE: AMR ###########################################
 struct AMR
 :
 public amrex::dG::amr::SinglePatch
@@ -678,53 +682,60 @@ exit(-1);
         // VARIABLES --------------------------------------------------
         amrex::dG::Mesh & mesh = *this->meshes[lev];
         amrex::dG::Solution & solution = *this->solutions[lev];
+        bool level_uses_FV;
+        // ------------------------------------------------------------
+
+        // FV LEVEL ---------------------------------------------------
+        level_uses_FV = ((solution.params.space_p == 0) && solution.params.FV_is_active);
         // ------------------------------------------------------------
 
         // MESH -------------------------------------------------------
         mesh.make_from_scratch(time, this->geom[lev], ba, dm, this->ibvp);
+        this->SetBoxArray(lev, mesh.ba);
+        this->SetDistributionMap(lev, mesh.dm);
         // ------------------------------------------------------------
 
         // SOLUTION ---------------------------------------------------
-        solution.make_from_scratch(time, this->geom[lev], mesh, this->X[lev], this->ibvp);
+        solution.make_from_scratch(time, this->geom[lev], mesh, this->ibvp);
         solution.eval_space_mass_matrix(this->geom[lev], mesh, this->ibvp);
-        solution.project_initial_conditions(this->geom[lev], mesh, this->X[lev], this->ibvp);
-
-        if ((solution.params.space_p == 0) && solution.params.FV_is_active)
+        if (level_uses_FV)
         {
-            solution.eval_space_centroids(this->geom[lev], mesh, this->ibvp);
+            solution.eval_space_centroids(this->geom[lev], mesh, this->ibvp, level_uses_FV);
         }
-        // ------------------------------------------------------------
 
-        // INTERPOLATION OPERATOR -------------------------------------
+        // INTERPOLATION OPERATOR
+        // Proper interpolation operator
+        if (lev > 0)
+        {
+            this->eval_space_interpolation(lev, this->ibvp);
+        }
         // Interpolation operator used for the shock sensor
         if (lev == 0)
         {
             amrex::dG::Solution & sensor_solution = *this->sensor.solutions[lev];
             
-            sensor_solution.make_from_scratch(time, this->geom[lev], mesh, this->sensor.X[lev], this->ibvp);
+            sensor_solution.make_from_scratch(time, this->geom[lev], mesh, this->ibvp);
             sensor_solution.eval_space_mass_matrix(this->geom[lev], mesh, this->ibvp);
-
             amrex::dG::amr_utils::eval_space_interpolation(this->geom[lev], mesh, solution,
                                                            amrex::IntVect::TheUnitVector(),
                                                            this->geom[lev], mesh, sensor_solution,
                                                            ibvp);
         }
 
-        // Proper interpolation operator
-        if (lev > 0)
+        // MULTIFABS
+        solution.init_space_solution_multifabs(mesh, this->X[lev], this->ibvp);
+        solution.project_initial_conditions(this->geom[lev], mesh, this->X[lev], this->ibvp, level_uses_FV);
+        if (lev == 0)
         {
-            this->eval_space_interpolation(lev, this->ibvp);
+            amrex::dG::Solution & sensor_solution = *this->sensor.solutions[lev];
+            sensor_solution.init_space_solution_multifabs(mesh, this->sensor.X[lev], this->ibvp);
+            sensor_solution.project_initial_conditions(this->geom[lev], mesh, this->sensor.X[lev], this->ibvp, level_uses_FV);
         }
         // ------------------------------------------------------------
 
         // MASKS ------------------------------------------------------
         this->masks[lev].define(mesh.ba, mesh.dm, 1, mask_n_grow);
         this->masks[lev] = 0;
-        // ------------------------------------------------------------
-
-        // SET BOX ARRAY AND DISTRIBUTION MAP -------------------------
-        this->SetBoxArray(lev, mesh.ba);
-        this->SetDistributionMap(lev, mesh.dm);
         // ------------------------------------------------------------
     }
     // ================================================================
@@ -816,9 +827,81 @@ exit(-1);
                 }
                 tags.FillBoundary(this->geom[lev].periodicity());
             }
-        // ------------------------------------------------------------
         }
         // ------------------------------------------------------------
+    }
+    // ================================================================
+
+
+    // REMAKE AN EXISTING LEVEL =======================================
+    virtual void RemakeLevel(int lev, amrex::Real time, const amrex::BoxArray & ba, const amrex::DistributionMapping & dm) override
+    {
+        // PARAMETERS -------------------------------------------------
+        const int mask_n_grow = 1;
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        amrex::dG::Mesh & mesh = *this->meshes[lev];
+        amrex::dG::Solution & solution = *this->solutions[lev];
+        bool level_uses_FV;
+        // ------------------------------------------------------------
+
+        // FV LEVEL ---------------------------------------------------
+        level_uses_FV = ((solution.params.space_p == 0) && solution.params.FV_is_active);
+        // ------------------------------------------------------------
+
+        // LEVEL = 0
+        if (lev == 0)
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: IBVP_EmbeddedSodsTube.H - AMR::RemakeLevel\n";
+            msg += "| Do not know how to remake level 0.\n";
+            amrex::Abort(msg);
+        }
+        // LEVEL > 0
+        else
+        {
+            // MESH ---------------------------------------------------
+            mesh.remake(time, this->geom[lev], ba, dm, this->ibvp);
+            this->SetBoxArray(lev, mesh.ba);
+            this->SetDistributionMap(lev, mesh.dm);
+            // --------------------------------------------------------
+
+            // SOLUTION -----------------------------------------------
+            solution.remake(time, this->geom[lev], mesh, this->ibvp);
+            solution.eval_space_mass_matrix(this->geom[lev], mesh, this->ibvp);
+            if (level_uses_FV)
+            {
+                solution.eval_space_centroids(this->geom[lev], mesh, this->ibvp, level_uses_FV);
+            }
+
+            // INTERPOLATION OPERATOR
+            this->eval_space_interpolation(lev, this->ibvp);
+
+            // MULTIFABS
+            amrex::dG::amr_utils::remake_solution(time, this->geom[lev-1], *this->solutions[lev-1], *this->meshes[lev-1], this->X[lev-1],
+                                                  this->refRatio(lev-1),
+                                                  this->geom[lev], solution, mesh, this->X[lev],
+                                                  ibvp,
+                                                  level_uses_FV);
+            // --------------------------------------------------------
+amrex::Print() << "EmbeddedSodsTube good so far " << std::endl;
+exit(-1);
+            // MASKS --------------------------------------------------
+            this->masks[lev].define(mesh.ba, mesh.dm, 1, mask_n_grow);
+            this->masks[lev] = __DG_CELL_NOT_MASKED__;
+            // --------------------------------------------------------
+        }
+    }
+    // ================================================================
+
+
+    // REGRIDDING =====================================================
+    void regrid(const int n)
+    {
+        amrex::dG::amr::SinglePatch::regrid(0, n);
+        this->update_masks();
     }
     // ================================================================
 

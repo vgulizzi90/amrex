@@ -56,9 +56,11 @@ r_outer = 1.384
 norm = L_inf
 #######################################################################
 # gamma: specific heats ratio;
+#
 # rho_inner: density at the inner radius of the circular annulus;
 # Mach_inner: mach number at the inner radius of the circular annulus;
 # r_inner, r_outer: inner and outer radii of the circular annulus;
+#
 # norm: norm to be used to evaluate the error.
 #######################################################################
 

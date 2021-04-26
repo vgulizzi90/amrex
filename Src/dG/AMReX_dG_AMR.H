@@ -294,13 +294,29 @@ void interpolate(const Geometry & c_geom, const Solution & c_solution, const Mul
     const int f_sNp = AMREX_D_TERM((1+f_sp),*(1+f_sp),*(1+f_sp));
     // ----------------------------------------------------------------
 
-if (!isMFIterSafe(c_X, f_X))
-{
+    // VARIABLES ------------------------------------------------------
+    MultiFab safe_c_X;
+    const MultiFab * safe_c_X_ptr;
+    // ----------------------------------------------------------------
 
-Print() << "interpolate - We are in trouble!" << std::endl;
-exit(-1);
+    // PARALLEL COPY --------------------------------------------------
+    if (isMFIterSafe(c_X, f_X))
+    {
+        safe_c_X_ptr = &c_X;
+    }
+    else
+    {
+        const BoxArray safe_c_ba = coarsen(f_X.boxarray, rr);
+        const DistributionMapping & f_dm = f_X.distributionMap;
+        const int c_X_n_comp = c_X.n_comp;
+        const IntVect c_X_n_grow = c_X.n_grow;
 
-}
+        safe_c_X.define(safe_c_ba, f_dm, c_X_n_comp, c_X_n_grow);
+        safe_c_X.ParallelCopy(c_X, 0, 0, c_X_n_comp, c_X_n_grow, c_X_n_grow, c_geom.periodicity());
+
+        safe_c_X_ptr = &safe_c_X;
+    }
+    // ----------------------------------------------------------------
 
     // INITIALIZATION -------------------------------------------------
     f_X = 0.0;
@@ -318,7 +334,7 @@ exit(-1);
         const Box & bx = use_fabbox ? mfi.fabbox() : mfi.validbox();
 
         // Coarse mesh
-        Array4<Real const> const & c_X_fab = c_X.array(mfi);
+        Array4<Real const> const & c_X_fab = safe_c_X_ptr->array(mfi);
 
         // Interpolation operator
         Array4<long const> const & elm_I_info_fab = f_solution.elm_I_info.array(mfi);
@@ -360,6 +376,52 @@ exit(-1);
     f_solution.add_small_elements_contribution(f_geom, f_X, ibvp);
     f_solution.multiply_by_inverse_space_mass_matrix(f_geom, f_X, ibvp, use_fabbox);
     f_solution.copy_solution_to_small_elements(f_geom, f_X, ibvp);
+}
+
+/**
+ * \brief Remake an existing solution using information from a coarse solution.
+ *
+ * \param[in] t: time.
+ * \param[in] c_geom: coarse amrex Geometry object.
+ * \param[in] c_solution: coarse Solution object.
+ * \param[in] c_mesh: coarse Mesh object.
+ * \param[in] c_X: MultiFab containing coarse solution.
+ * \param[in] rr: refinement ratio.
+ * \param[in] f_geom: fine amrex Geometry object.
+ * \param[in] f_mesh: fine Mesh object.
+ * \param[in] f_solution: fine Solution object.
+ * \param[inout] f_X: MultiFab that will contain the fine solution.
+ * \param[in] ibvp: initial boundary value problem object.
+*/
+template <typename IBVP>
+void remake_solution(const Real t,
+                     const Geometry & c_geom, const Solution & c_solution, const Mesh & c_mesh, const MultiFab & c_X,
+                     const IntVect rr,
+                     const Geometry & f_geom, const Solution & f_solution, const Mesh & f_mesh, MultiFab & f_X,
+                     const IBVP & ibvp,
+                     const bool include_ghost_cells = false)
+{
+    // VARIABLES ------------------------------------------------------
+    MultiFab f_X_new(f_mesh.ba, f_mesh.dm, f_X.n_comp, f_X.n_grow);
+    // ----------------------------------------------------------------
+
+    // INITIALIZATION -------------------------------------------------
+    f_X_new = 0.0;
+    // ----------------------------------------------------------------
+
+    // INTERPOLATE FROM COARSE ----------------------------------------
+    interpolate(c_geom, c_solution, c_X, rr, f_geom, f_solution, f_X_new, ibvp, include_ghost_cells);
+    // ----------------------------------------------------------------
+
+    // OVERWRITE WITH OLD SOLUTION ------------------------------------
+    f_X_new.ParallelCopy(f_X, 0, 0, f_X.n_comp, f_X.n_grow, f_X.n_grow, f_geom.periodicity());
+    f_X_new.FillBoundary(f_geom.periodicity());
+    f_solution.copy_solution_to_small_elements(f_geom, f_X_new, ibvp);
+    // ----------------------------------------------------------------
+
+    // SWAP NEW AND OLD -----------------------------------------------
+    std::swap(f_X, f_X_new);
+    // ----------------------------------------------------------------
 }
 // ####################################################################
 
@@ -591,7 +653,7 @@ exit(-1);
             this->masks[lev-1] = makeFineMask(c_cell_type, f_cell_type,
                                               c_cell_type.n_grow, this->ref_ratio[lev-1],
                                               this->Geom(lev-1).periodicity(),
-                                              __DG_CELL_NON_MASKED__, __DG_CELL_MASKED__);
+                                              __DG_CELL_NOT_MASKED__, __DG_CELL_MASKED__);
         }
     }
     // ================================================================

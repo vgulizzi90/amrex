@@ -114,6 +114,8 @@ struct InputReaderBase
     // DATA MEMBERS ===================================================
     Real start_time_s;
 
+    int amr_regrid_int;
+
     Real wall_time;
     std::string wall_time_units;
     Real wall_time_s;
@@ -134,6 +136,7 @@ struct InputReaderBase
     InputReaderBase()
     :
     start_time_s{second()},
+    amr_regrid_int{-1},
     wall_time{std::numeric_limits<Real>::max()},
     wall_time_units{"s"},
     wall_time_s{this->wall_time},
@@ -181,6 +184,7 @@ public InputReaderBase
 
     // READERS ========================================================
     bool plot(const int n, const Real t) const;
+    bool regrid(const int n) const;
     // ================================================================
 
 
