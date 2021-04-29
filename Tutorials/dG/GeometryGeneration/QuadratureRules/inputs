@@ -1,0 +1,77 @@
+# SPACE ###############################################################
+geometry.prob_lo     = 0.5 0.5 0.5
+geometry.prob_hi     = 1.0 1.0 1.0
+geometry.is_periodic = 0 0 0
+#######################################################################
+
+
+
+# DISCRETIZATION ######################################################
+# GRIDS ===============================================================
+n_cell        = 1 1 1
+max_grid_size = 4 4 4
+# =====================================================================
+
+
+# MESH ================================================================
+mesh.embedded_geometry_is_active = 1
+mesh.embedded_geometry_defined_by = level_set
+mesh.box_pruning_is_active = 1
+mesh.quadrature_order_regular_elements = 3
+mesh.quadrature_order_cut_elements = 3
+mesh.post_processing_grid_order = 15
+# =====================================================================
+#######################################################################
+
+
+
+# PROBLEM #############################################################
+use_two_phases = 0
+
+which_embedded_geometry = custom
+
+x_coord = 0.3
+y_coord = 0.34
+z_coord = 0.34
+radius = 0.45
+#######################################################################
+# use_two_phases: if > 0, the quadrature rules are generated for both
+#                 the interior and the exterior of the embedded
+#                 geometry.
+#                 Otherwise, the quadrature rules are generated only
+#                 for one part of the domain on the basis of how the
+#                 embedded geometry is defined.
+#
+# which_embedded_geometry: string that determine which geometry is
+#                          embedded in the background grid.
+# Supported embedded geometries are:
+# - circle/sphere
+# - custom
+#
+# The parameters of the embedded geometry are specified as follows:
+#
+# If ((mesh.embedded_geometry_defined_by == level_set) and (which_embedded_geometry == circle)):
+#     The input file must contain
+#         x_coord: x coordinate of the circle
+#         y_coord: y coordinate of the circle
+#         radius: radius of the circle
+#
+# If ((mesh.embedded_geometry_defined_by == level_set) and (which_embedded_geometry == sphere)):
+#     The input file must contain
+#         x_coord: x coordinate of the sphere
+#         y_coord: y coordinate of the sphere
+#         z_coord: z coordinate of the sphere
+#         radius: radius of the sphere
+#
+# If ((mesh.embedded_geometry_defined_by == level_set) and (which_embedded_geometry == custom)):
+#     The level set must be manually coded in IBVP_QuadratureRules.H.
+#
+#######################################################################
+
+
+
+# POST-PROCESSING INFO ################################################
+output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_$(which_embedded_geometry)
+plot_filename = plt
+output_overwrite = 1
+#######################################################################

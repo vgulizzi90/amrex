@@ -42,7 +42,6 @@ mesh[0].quadrature_order_cut_elements = 8
 # LEVEL 1
 mesh[1].embedded_geometry_is_active = 1
 mesh[1].embedded_geometry_defined_by = level_set
-mesh[1].box_pruning_is_active = 1
 mesh[1].quadrature_order_regular_elements = 4
 mesh[1].quadrature_order_cut_elements = 8
 # =====================================================================
@@ -106,7 +105,7 @@ wall_time_units = s
 
 output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_TH$(theta)_PH$(phi)
 plot_filename = plt
-plot_int = 100
+plot_int = 1
 output_overwrite = 1
 
 restart = -1

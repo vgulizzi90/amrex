@@ -155,6 +155,14 @@ struct InputReaderBase
     // READ INPUT FILE ================================================
     void read_input_file();
     // ================================================================
+
+
+    // OUTPUT FOLDERS =================================================
+    std::string get_step_string(const int n) const;
+    std::string get_output_folderpath() const;
+    std::string get_output_step_folderpath(const int n) const;
+    void make_step_output_folder(const int n) const;
+    // ================================================================
 };
 
 

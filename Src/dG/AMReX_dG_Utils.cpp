@@ -345,6 +345,54 @@ void print_real_array_2d(const int Nr, const int Nc, const Real * src, std::ostr
     }
     // ================================================================
 
+
+    // OUTPUT FOLDERS =================================================
+    std::string InputReaderBase::get_step_string(const int n) const
+    {
+        int n_digits;
+        n_digits = 1;
+        while (std::pow(10, n_digits) <= 1) n_digits += 1;
+        const std::string step_string = Concatenate("", n, n_digits);
+        
+        return step_string;
+    }
+
+    std::string InputReaderBase::get_output_folderpath() const
+    {
+        return this->output_folderpath;
+    }
+
+    std::string InputReaderBase::get_output_step_folderpath(const int n) const
+    {
+        int n_digits;
+        n_digits = 1;
+        while (std::pow(10, n_digits) <= 1) n_digits += 1;
+
+        const std::string step_folder = Concatenate("Step_", n, n_digits);
+        const std::string level_step_folderpath = io::make_path({this->output_folderpath, step_folder});
+
+        return level_step_folderpath;
+    }
+
+    void InputReaderBase::make_step_output_folder(const int n) const
+    {
+        // CREATE OUTPUT DIRECTORY ------------------------------------
+        if (this->output_overwrite)
+        {
+            UtilCreateDirectory(this->output_folderpath, 0755);
+        }
+        else
+        {
+            UtilCreateCleanDirectory(this->output_folderpath, 0755);
+        }
+        // ------------------------------------------------------------
+
+        // CREATE STEP DIRECTORIES ------------------------------------
+        UtilCreateDirectory(this->get_output_step_folderpath(n), 0755);
+        // ------------------------------------------------------------
+    }
+    // ================================================================
+
     
     // READ INPUT FILE ================================================
     void InputReaderSinglePatch::read_input_file()

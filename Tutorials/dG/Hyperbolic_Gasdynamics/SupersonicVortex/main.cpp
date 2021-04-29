@@ -68,8 +68,8 @@ void main_main()
 
     // CHECK QUADRATURE
     {
-        const amrex::Real ri = amr.ibvp.problem_params.r_inner;
-        const amrex::Real ro = amr.ibvp.problem_params.r_outer;
+        const amrex::Real ri = amr.ibvp.r_inner;
+        const amrex::Real ro = amr.ibvp.r_outer;
 
         amrex::Real volume;
         amrex::Real surface;
@@ -122,7 +122,7 @@ void main_main()
         dt = 0.0;
         ct_avg = 0.0;
         eta = 0.0;
-        while (amr.advance_in_time_continues(n, t) && (std::abs(err_old-err_new)/err_new > 1.0e-5))
+        while (amr.advance_in_time_continues(n, t))
         {
             // TIME STEP TIC
             time_keeper.tic();

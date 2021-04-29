@@ -1149,7 +1149,6 @@ void eval_dG_FV_bou_fluxes(const Real t,
                             {
                                 FX_fab(fi,fj,fk,rs+ru*c_sNp) *= fact;
                             }
-
                         }
                         // INTRAPHASE BETWEEN LEVEL AND COARSER LEVEL
                         else if (p_is_ghost)

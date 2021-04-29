@@ -40,7 +40,18 @@ namespace dG
 
         pp.query("quadrature_order_regular_elements", this->params.quadrature_order_regular_elements);
         pp.query("quadrature_order_cut_elements", this->params.quadrature_order_cut_elements);
+
+        pp.query("post_processing_grid_order", this->params.post_processing_grid_order);
         // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Read structured mesh parameters from input file.
+    */
+    void Mesh::read_input_file()
+    {
+        ParmParse pp("mesh");
+        this->read_input_file(pp);
     }
     // ================================================================
 
@@ -109,6 +120,12 @@ namespace dG
             [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
             {
                 ghostbuster_fab(i,j,k) = 0;
+
+if (bx.contains(135,96,0))
+{
+Print() << "bx.contains " << i << "," << j << "," << k << "? " << ((bx.contains(135,96,0)) ? "yes" : "no") << std::endl;
+}
+
             });
             Gpu::synchronize();
         }
@@ -437,6 +454,112 @@ namespace dG
             computed_surface[dom] = int_bou_quad.sum(dom);
         }
         // ------------------------------------------------------------
+    }
+    // ================================================================
+
+
+    // CHECK QUADRATURE RULES =========================================
+    /**
+     * \brief Compute the volume and surface of each domain.
+     *
+     * \param[in] geom: amrex geometry object.
+     * \param[in] n_domains: number of domains to be considered.
+     * \param[in] mask: a iMultiFab object that contains a single value for each cell.
+     * \param[in] exact_volume: exact_volume[dom] should contain the exact value of the volume of the
+     *                          dom-th domain.
+     * \param[in] exact_surface: exact_surface[dom] should contain the exact value of the surface of the
+     *                           dom-th domain.
+     *
+    */
+    void Mesh::check_quadrature_rules(const Geometry & geom,
+                                      const int n_domains,
+                                      const iMultiFab & mask,
+                                      const Real * exact_volume,
+                                      const Real * exact_surface) const
+    {
+        // VARIABLES --------------------------------------------------
+        Vector<Real> computed_volume(n_domains);
+        Vector<Real> computed_volume_div(n_domains);
+        Vector<Real> computed_surface(n_domains);
+        // ------------------------------------------------------------
+
+        // INITIALIZATION ---------------------------------------------
+        for (int dom = 0; dom < n_domains; ++dom)
+        {
+            computed_volume[dom] = 0.0;
+            computed_volume_div[dom] = 0.0;
+            computed_surface[dom] = 0.0;
+        }
+        // ------------------------------------------------------------
+
+        // COMPUTE VALUES ---------------------------------------------
+        {
+            this->eval_volumes_and_surfaces(geom,
+                                            n_domains,
+                                            mask,
+                                            computed_volume.data(),
+                                            computed_volume_div.data(),
+                                            computed_surface.data());
+        }
+        // ------------------------------------------------------------
+
+        // PRINT REPORT -----------------------------------------------
+        Print() << "EMBEDDED-MESH QUADRATURE REPORT:" << std::endl;
+        for (int dom = 0; dom < n_domains; ++dom)
+        {
+            Real err;
+
+            Print() << "| Domain " << dom << std::endl;
+            
+            Print() << "|  Volume: " << std::endl;
+            
+            Print() << "|  - Reference: " << exact_volume[dom] << std::endl;
+
+            err = 100.0*std::abs(computed_volume[dom]-exact_volume[dom])/exact_volume[dom];
+            Print() << "|  - Computed via dom. quadrature: " << computed_volume[dom] << ", error (%): " << err << std::endl;
+            
+            err = 100.0*std::abs(computed_volume_div[dom]-exact_volume[dom])/exact_volume[dom];
+            Print() << "|  - Computed via bou. quadrature: " << computed_volume_div[dom] << ", error (%): " << err << std::endl;
+
+            Print() << "|  Surface: " << std::endl;
+
+            if (exact_surface[dom] == 0.0)
+            {
+                Print() << "|  - Reference: " << exact_surface[dom] << std::endl;
+
+                err = std::abs(computed_surface[dom]-exact_surface[dom]);
+                Print() << "|  - Computed: " << computed_surface[dom] << ", error: " << err << std::endl;
+            }
+            else
+            {
+                Print() << "|  - Reference: " << exact_surface[dom] << std::endl;
+
+                err = 100.0*std::abs(computed_surface[dom]-exact_surface[dom])/exact_surface[dom];
+                Print() << "|  - Computed: " << computed_surface[dom] << ", error (%): " << err << std::endl;
+            }
+        }
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Compute the volume and surface of each domain.
+     *
+     * \param[in] geom: amrex geometry object.
+     * \param[in] n_domains: number of domains to be considered.
+     * \param[in] exact_volume: exact_volume[dom] should contain the exact value of the volume of the
+     *                          dom-th domain.
+     * \param[in] exact_surface: exact_surface[dom] should contain the exact value of the surface of the
+     *                           dom-th domain.
+     *
+    */
+    void Mesh::check_quadrature_rules(const Geometry & geom,
+                                      const int n_domains,
+                                      const Real * exact_volume,
+                                      const Real * exact_surface) const
+    {
+        iMultiFab mask(this->ba, this->dm, 1, this->dom_data_n_grow);
+        mask = __DG_CELL_NOT_MASKED__;
+        this->check_quadrature_rules(geom, n_domains, mask, exact_volume, exact_surface);
     }
     // ================================================================
 // ####################################################################

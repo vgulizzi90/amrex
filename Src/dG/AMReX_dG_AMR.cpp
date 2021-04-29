@@ -251,7 +251,7 @@ namespace amr
      * \param[in] n: time step index.
      * \param[in] t: time.
     */
-    void SinglePatch::make_step_output_folder(const int n, const amrex::Real t) const
+    void SinglePatch::make_step_output_folder(const int n, const Real t) const
     {
         // CREATE OUTPUT DIRECTORY ------------------------------------
         if (this->inputs.output_overwrite)

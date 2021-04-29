@@ -10,60 +10,35 @@
 
 namespace SupersonicVortex
 {
-
-// SUPERSONIC VORTEX: PROBLEM PARAMETERS ##############################
-struct ProblemParameters
-{
-    // DATA MEMBERS ===================================================
-    amrex::Real gamma;
-    amrex::Real rho_inner, Mach_inner, r_inner, r_outer;
-    std::string norm;
-    // ================================================================
-
-    // CONSTRUCTOR ====================================================
-    ProblemParameters()
-    {
-        amrex::ParmParse pp;
-
-        pp.get("gamma", this->gamma);
-        
-        pp.get("rho_inner", this->rho_inner);
-        pp.get("Mach_inner", this->Mach_inner);
-        pp.get("r_inner", this->r_inner);
-        pp.get("r_outer", this->r_outer);
-        
-        pp.get("norm", this->norm);
-    }
-    // ================================================================
-};
-// ####################################################################
-
-
-
 // SUPERSONIC VORTEX: LEVEL SET #######################################
 template <int N>
 struct LevelSet
 {
     // DATA MEMBERS ===================================================
-    amrex::Real ri, ro;
+    amrex::Real t;
     int dom;
+    amrex::Real ri, ro;
     // ================================================================
 
 
     // CONSTRUCTOR ====================================================
-    LevelSet(const amrex::Real r_inner, const amrex::Real r_outer)
+    LevelSet()
     :
-    ri{r_inner},
-    ro{r_outer},
+    t{0.0},
     dom{0}
-    {}
+    {
+        amrex::ParmParse pp;
+
+        pp.get("r_inner", this->ri);
+        pp.get("r_outer", this->ro);
+    }
     // ================================================================
 
 
     // AUXILIARY ROUTINES =============================================
-    void set_time(const amrex::Real /*t*/)
+    void set_time(const amrex::Real t_)
     {
-        // ...
+        this->t = t_;
     }
     void set_domain(const int dom_)
     {
@@ -120,16 +95,23 @@ struct LevelSet
 struct IBVP
 {
     // DATA MEMBERS ===================================================
-    ProblemParameters problem_params;
-    LevelSet<AMREX_SPACEDIM> level_set;
+    amrex::Real gamma;
+    amrex::Real rho_inner, Mach_inner, r_inner, r_outer;
     // ================================================================
 
 
     // CONSTRUCTOR ====================================================
     IBVP()
-    :
-    level_set(this->problem_params.r_inner, this->problem_params.r_outer)
-    {}
+    {
+        amrex::ParmParse pp;
+        
+        pp.get("gamma", this->gamma);
+        
+        pp.get("rho_inner", this->rho_inner);
+        pp.get("Mach_inner", this->Mach_inner);
+        pp.get("r_inner", this->r_inner);
+        pp.get("r_outer", this->r_outer);
+    }
     // ================================================================
 
 
@@ -183,16 +165,16 @@ struct IBVP
     void eval_exact_solution(const amrex::Real /*t*/, const amrex::Real * x, amrex::Real * U) const
     {
         // PARAMETERS
-        const amrex::Real g = this->problem_params.gamma;
+        const amrex::Real g = this->gamma;
         const amrex::Real g2 = 0.5*(g-1.0);
         const amrex::Real ig = 1.0/(g-1.0);
-        const amrex::Real rho_i = this->problem_params.rho_inner;
-        const amrex::Real M_i = this->problem_params.Mach_inner;
+        const amrex::Real rho_i = this->rho_inner;
+        const amrex::Real M_i = this->Mach_inner;
 
         const amrex::Real r = std::sqrt(x[0]*x[0]+x[1]*x[1]);
         const amrex::Real cth = x[0]/r;
         const amrex::Real sth = x[1]/r;
-        const amrex::Real ri = this->problem_params.r_inner;
+        const amrex::Real ri = this->r_inner;
         const amrex::Real rr2 = (ri/r)*(ri/r);
 
         const amrex::Real rho = rho_i*std::pow(1.0+g2*M_i*M_i*(1.0-rr2), ig);
@@ -276,7 +258,7 @@ struct IBVP
                         const amrex::Real /*t*/, const amrex::Real * /*x*/,
                         const amrex::Real * U) const
     {
-        const amrex::Real w = ideal_gas::eval_largest_wave_speed(this->problem_params.gamma, U);
+        const amrex::Real w = ideal_gas::eval_largest_wave_speed(this->gamma, U);
 #if (AMREX_SPACEDIM == 1)
         const amrex::Real h = dx[0];
 #endif
@@ -306,7 +288,7 @@ struct IBVP
                 const amrex::Real /*t*/, const amrex::Real * /*x*/,
                 const amrex::Real * U, AMREX_D_DECL(amrex::Real * F1, amrex::Real * F2, amrex::Real * F3)) const
     {
-        ideal_gas::eval_F(this->problem_params.gamma, U, AMREX_D_DECL(F1, F2, F3));
+        ideal_gas::eval_F(this->gamma, U, AMREX_D_DECL(F1, F2, F3));
     }
     // ================================================================
 
@@ -330,7 +312,7 @@ struct IBVP
                              const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
                              const amrex::Real * m_U, const amrex::Real * p_U, amrex::Real * NFn) const
     {
-        ideal_gas::eval_NFn_Riemann_solver(this->problem_params.gamma, un, m_U, p_U, NFn);
+        ideal_gas::eval_NFn_Riemann_solver(this->gamma, un, m_U, p_U, NFn);
     }
 
     /**
@@ -357,7 +339,7 @@ struct IBVP
         // ------------------------------------------------------------
 
         // BOUNDARY FLUX ----------------------------------------------
-        ideal_gas::eval_NFn_Riemann_solver(this->problem_params.gamma, un, U, U_exact, NFn);
+        ideal_gas::eval_NFn_Riemann_solver(this->gamma, un, U, U_exact, NFn);
         // ------------------------------------------------------------
     }
 
@@ -376,7 +358,7 @@ struct IBVP
                       const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
                       const amrex::Real * U, amrex::Real * NFn) const
     {
-        ideal_gas::eval_NFn_wall(this->problem_params.gamma, un, U, NFn);
+        ideal_gas::eval_NFn_wall(this->gamma, un, U, NFn);
     }
     // ================================================================
 
@@ -398,7 +380,7 @@ struct IBVP
                         const amrex::MultiFab & X,
                         amrex::MultiFab & dX) const
     {
-        ideal_gas::eval_FV_slopes(this->problem_params.gamma, geom, mesh, solution, X, dX);
+        ideal_gas::eval_FV_slopes(this->gamma, geom, mesh, solution, X, dX);
     }
     // ================================================================
 
@@ -411,7 +393,7 @@ struct IBVP
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     int get_number_of_output_fields() const
     {
-        return IDEAL_GAS_NU+4+1;
+        return IDEAL_GAS_NU+4;
     }
     /**
      * \brief Return the parent domain of the u-th output field.
@@ -435,8 +417,7 @@ struct IBVP
                                "mach",
                                "total_energy",
                                "internal_energy",
-                               "density_error",
-                               "level_set"};
+                               "density_error"};
     }
 
     /**
@@ -454,12 +435,12 @@ struct IBVP
                             amrex::Real * F) const
     {
         // PARAMETERS -------------------------------------------------
-        const amrex::Real g = this->problem_params.gamma;
+        const amrex::Real g = this->gamma;
         // ------------------------------------------------------------
 
         // VARIABLES --------------------------------------------------
         amrex::Real rho, AMREX_D_DECL(v1, v2, v3), p, a, M;
-        amrex::Real U_exact[IDEAL_GAS_NU], phi;
+        amrex::Real U_exact[IDEAL_GAS_NU];
         // ------------------------------------------------------------
 
         // PRIMITIVE VARIABLES
@@ -471,9 +452,6 @@ struct IBVP
 
         // EXACT SOLUTION
         this->eval_exact_solution(t, x, U_exact);
-
-        // LEVEL SET
-        phi = this->level_set.eval(x);
 
         // OUTPUT FIELDS
         F[RHO] = rho;
@@ -488,7 +466,6 @@ struct IBVP
         F[TE+2] = U[TE];
         F[TE+3] = p/(rho*(g-1.0));
         F[TE+4] = rho-U_exact[RHO];
-        F[TE+5] = phi;
     }
     // ================================================================
 };
@@ -502,11 +479,17 @@ struct AMR
 public amrex::dG::amr::SinglePatch
 {
     // DATA MEMBERS ===================================================
+    // LEVEL SET
+    LevelSet<AMREX_SPACEDIM> level_set;
+    
     // IBVP
     IBVP ibvp;
 
     // SOLUTION MULTIFABS
     amrex::Vector<amrex::MultiFab> X;
+
+    // NORM
+    std::string norm;
     // ================================================================
 
 
@@ -517,7 +500,14 @@ public amrex::dG::amr::SinglePatch
     {
         const int n_levels = this->max_level+1;
 
+        // SOLUTION MULTIFABS
         this->X.resize(n_levels);
+
+        // NORM
+        {
+            amrex::ParmParse pp;
+            pp.get("norm", this->norm);
+        }
     }
     // ================================================================
 
@@ -573,7 +563,19 @@ exit(-1);
         // ------------------------------------------------------------
 
         // MESH -------------------------------------------------------
-        mesh.make_from_scratch(time, this->geom[lev], ba, dm, this->ibvp);
+        if (mesh.uses_level_set())
+        {
+            mesh.make_from_scratch_by_level_set(time, this->geom[lev], ba, dm, this->ibvp, this->level_set);
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: IBVP_SupersonicVortex.H - AMR::MakeNewLevelFromScratch\n";
+            msg += "| Unexpected method used to define the embedded geometry.\n";
+            msg += "| Unexpected method: "+mesh.params.embedded_geometry_defined_by+".\n";
+            amrex::Abort(msg);
+        }
         this->SetBoxArray(lev, mesh.ba);
         this->SetDistributionMap(lev, mesh.dm);
         // ------------------------------------------------------------
@@ -602,7 +604,7 @@ exit(-1);
     // ERROR EVALUATION ===============================================
     void eval_error(const amrex::Real t, amrex::Real & err, amrex::Real & err_norm) const
     {
-        if (this->ibvp.problem_params.norm.compare("L_inf") == 0)
+        if (this->norm.compare("L_inf") == 0)
         {
             this->eval_error_L_inf(t, this->X, err, err_norm, this->ibvp);
         }
@@ -612,7 +614,7 @@ exit(-1);
             msg  = "\n";
             msg +=  "ERROR: IBVP_SupersonicVortex.H - AMR::eval_error\n";
             msg += "| Unexpected error norm.\n";
-            msg += "| requested norm           : "+this->ibvp.problem_params.norm+".\n";
+            msg += "| requested norm           : "+this->norm+".\n";
             amrex::Abort(msg);
         }
     }
@@ -645,7 +647,39 @@ exit(-1);
 
     void export_solution(const int n, const std::string & filename_root, const amrex::Real t)
     {
-        this->export_solution_to_VTK(n, filename_root, t, this->X, this->ibvp);
+        for (int lev = 0; lev <= this->finest_level; ++lev)
+        {
+            const amrex::dG::Mesh & mesh = *this->meshes[lev];
+            const amrex::dG::Solution & solution = *this->solutions[lev];
+            const amrex::iMultiFab & mask = this->masks[lev];
+
+            const std::string level_folderpath = this->inputs.get_level_folderpath(lev);
+            const std::string level_step_folderpath = this->inputs.get_level_step_folderpath(lev, n);
+            const std::string step_string = this->inputs.get_step_string(n);
+
+            if (mesh.uses_level_set())
+            {
+                if ((solution.params.space_p == 0) && solution.params.FV_is_active)
+                {
+                    amrex::dG::solution_io::export_FV_using_level_set_to_VTK(level_folderpath, level_step_folderpath, step_string, filename_root,
+                                                                             t, this->geom[lev], mesh, solution, this->X[lev], mask, this->ibvp, this->level_set);
+                }
+                else
+                {
+                    amrex::dG::solution_io::export_using_level_set_to_VTK(level_folderpath, level_step_folderpath, step_string, filename_root,
+                                                                          t, this->geom[lev], solution, this->X[lev], mask, this->ibvp, this->level_set);
+                }
+            }
+            else
+            {
+                std::string msg;
+                msg  = "\n";
+                msg +=  "ERROR: IBVP_SupersonicVortex.H - AMR::export_solution\n";
+                msg += "| Unexpected method used to define the embedded geometry.\n";
+                msg += "| Unexpected method: "+mesh.params.embedded_geometry_defined_by+".\n";
+                amrex::Abort(msg);
+            }
+        }
     }
     // ================================================================
 };

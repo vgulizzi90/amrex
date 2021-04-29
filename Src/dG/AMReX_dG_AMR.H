@@ -70,8 +70,8 @@ void eval_space_interpolation(const Geometry & c_geom, const Mesh & c_mesh, cons
     const int f_sNp = AMREX_D_TERM((1+f_sp),*(1+f_sp),*(1+f_sp));
 
     // QUADRATURE
-    const int c_qo_reg = c_mesh.params.quadrature_order_regular_elements+1;
-    const int f_qo_reg = f_mesh.params.quadrature_order_regular_elements+1;
+    const int c_qo_reg = c_mesh.params.quadrature_order_regular_elements;
+    const int f_qo_reg = f_mesh.params.quadrature_order_regular_elements;
     const int qo_reg = amrex::max(c_qo_reg, f_qo_reg);
     // ----------------------------------------------------------------
 
@@ -748,7 +748,7 @@ exit(-1);
 
 
     // CHECK QUADRATURE RULES =========================================
-    void check_quadrature_rules(const int N_DOM,
+    void check_quadrature_rules(const int n_domains,
                                 const Real * exact_volume,
                                 const Real * exact_surface) const;
     void check_quadrature_rules(const Real exact_volume,
@@ -780,7 +780,14 @@ exit(-1);
             
             Real err_lev, err_norm_lev;
 
-            solution.eval_error_L_inf(t, this->geom[lev], mesh, X[lev], mask, err_lev, err_norm_lev, ibvp);
+            if ((solution.params.space_p == 0) && solution.params.FV_is_active)
+            {
+                solution.eval_FV_error_L_inf(t, this->geom[lev], mesh, X[lev], mask, err_lev, err_norm_lev, ibvp);
+            }
+            else
+            {
+                solution.eval_error_L_inf(t, this->geom[lev], mesh, X[lev], mask, err_lev, err_norm_lev, ibvp);
+            }
 
             err = amrex::max(err, err_lev);
             err_norm = amrex::max(err_norm, err_norm_lev);
@@ -866,55 +873,6 @@ exit(-1);
 
             mesh_io::export_quadrature_points_to_VTK(level_folderpath, level_step_folderpath, step_string, filename_root,
                                                      this->geom[lev], mesh, mask, ibvp);
-        }
-        // ------------------------------------------------------------
-    }
-
-    /**
-     * \brief Export solutions to VTK format.
-     *
-     * \param[in] n: time step index.
-     * \param[in] filename_root: root of the filename containing the mesh output.
-     * \param[in] t: time.
-     * \param[in] X: a vector of MultiFabs containing the solution coefficients.
-     * \param[in] ibvp: initial boundary value problem object.
-    */
-    template <typename IBVP>
-    void export_solution_to_VTK(const int n, const std::string & filename_root, const Real t, const Vector<MultiFab> & X, const IBVP & ibvp) const
-    {
-        // EXPORT THE SOLUTIONS ---------------------------------------
-        for (int lev = 0; lev <= this->finest_level; ++lev)
-        {
-            const Mesh & mesh = *this->meshes[lev];
-            const Solution & solution = *this->solutions[lev];
-            const iMultiFab & mask = this->masks[lev];
-
-            const std::string level_folderpath = this->inputs.get_level_folderpath(lev);
-            const std::string level_step_folderpath = this->inputs.get_level_step_folderpath(lev, n);
-            const std::string step_string = this->inputs.get_step_string(n);
-
-            if (mesh.uses_level_set())
-            {
-                if ((solution.params.space_p == 0) && solution.params.FV_is_active)
-                {
-                    solution_io::export_FV_using_level_set_to_VTK(level_folderpath, level_step_folderpath, step_string, filename_root,
-                                                                  t, this->Geom(lev), mesh, solution, X[lev], mask, ibvp);
-                }
-                else
-                {
-                    solution_io::export_using_level_set_to_VTK(level_folderpath, level_step_folderpath, step_string, filename_root,
-                                                               t, this->Geom(lev), solution, X[lev], mask, ibvp);
-                }
-            }
-            else
-            {
-                std::string msg;
-                msg  = "\n";
-                msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::export_solution_to_VTK\n";
-                msg += "| Unexpected method used to define the embedded geometry.\n";
-                msg += "| Unexpected method: "+mesh.params.embedded_geometry_defined_by+".\n";
-                Abort(msg);
-            }
         }
         // ------------------------------------------------------------
     }

@@ -7,8 +7,8 @@ geometry.is_periodic = 0 0
 
 
 # TIME ################################################################
-time.T = 1000.0
-time.n_steps = 30
+time.T = 20.0
+time.n_steps = 100000
 #######################################################################
 
 
@@ -18,7 +18,7 @@ time.n_steps = 30
 amr.v = 1
 
 amr.n_cell        = 16 16
-amr.max_grid_size = 4 4
+amr.max_grid_size = 16 16
 
 amr.max_level = 0
 # =====================================================================
@@ -70,9 +70,8 @@ norm = L_inf
 wall_time = 10.0
 wall_time_units = s
 
-output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_p$(solution[0].space_p)_nc$(amr.n_cell)_gs$(amr.max_grid_size)
-plot_filename = plt
-plot_int = 100
+output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_p$(solution[0].space_p)_nc$(amr.n_cell)_gs$(amr.max_grid_size)_limited
+plot_int = -100
 output_overwrite = 1
 
 restart = -1

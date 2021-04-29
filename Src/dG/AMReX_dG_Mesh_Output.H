@@ -91,7 +91,7 @@ void export_dom_data_to_VTK(const std::string & level_folderpath,
     // ------------------------------------------------------------
 
     // INITIALIZE THE GRID POINTS OF THE STANDARD ELEMENT ---------
-    std_elm.set_grid(&dx[0], 1);
+    std_elm.set_grid(&dx[0], mesh.params.post_processing_grid_order);
 
     cell_dom_Ng = std_elm.dom_Ng;
     cell_e = std_elm.g;
@@ -440,7 +440,7 @@ void export_bou_data_to_VTK(const std::string & level_folderpath,
     // ------------------------------------------------------------
 
     // INITIALIZE THE GRID POINTS OF THE STANDARD ELEMENT ---------
-    std_elm.set_grid(&dx[0], 1);
+    std_elm.set_grid(&dx[0], mesh.params.post_processing_grid_order);
 
     cell_bou_Ng = std_elm.bou_Ng;
 #if (AMREX_SPACEDIM > 1)
@@ -737,6 +737,38 @@ void export_to_VTK(const std::string & level_folderpath,
     export_bou_data_to_VTK(level_folderpath, level_step_folderpath, step_string, bou_data_filename,
                            geom, mesh, mask, ibvp);
 }
+
+/**
+ * \brief Export the mesh to VTK format.
+ *
+ * \param[in] level_folderpath: path where the .pvtu files will be written.
+ * \param[in] level_step_folderpath: path where the .vtu files will be written.
+ * \param[in] step_string: a zero-padded string containing the step number.
+ * \param[in] filename_root: root of the name of the output files.
+ * \param[in] geom: amrex geometry object.
+ * \param[in] mesh: Mesh object.
+ * \param[in] ibvp: initial boundary value problem object.
+*/
+template <typename IBVP>
+void export_to_VTK(const std::string & level_folderpath,
+                   const std::string & level_step_folderpath,
+                   const std::string & step_string,
+                   const std::string & filename_root,
+                   const Geometry & geom,
+                   const Mesh & mesh,
+                   IBVP & ibvp)
+{
+    const std::string dom_data_filename = filename_root+"_dom_data";
+    const std::string bou_data_filename = filename_root+"_bou_data";
+
+    iMultiFab mask(mesh.ba, mesh.dm, 1, mesh.dom_data_n_grow);
+    mask = __DG_CELL_NOT_MASKED__;
+
+    export_dom_data_to_VTK(level_folderpath, level_step_folderpath, step_string, dom_data_filename,
+                           geom, mesh, mask, ibvp);
+    export_bou_data_to_VTK(level_folderpath, level_step_folderpath, step_string, bou_data_filename,
+                           geom, mesh, mask, ibvp);
+}
 // ====================================================================
 
 
@@ -829,7 +861,7 @@ void export_dom_quad_points_to_VTK(const std::string & level_folderpath,
         for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i)
         {
-            if (CELL_IS_NOT_MASKED(mask_fab(i,j,k,dom)))
+            if (CELL_IS_NOT_MASKED(mask_fab(i,j,k)))
             {
                 n_VTK_nodes += cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_NQ(dom));
             }
@@ -897,7 +929,7 @@ void export_dom_quad_points_to_VTK(const std::string & level_folderpath,
         for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i)
         {
-            if (CELL_IS_NOT_MASKED(mask_fab(i,j,k,dom)))
+            if (CELL_IS_NOT_MASKED(mask_fab(i,j,k)))
             {
                 // LOCAL PARAMETERS
                 const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
@@ -1331,7 +1363,7 @@ void export_int_bou_quad_points_to_VTK(const std::string & level_folderpath,
         for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i)
         {
-            if (CELL_IS_NOT_MASKED(mask_fab(i,j,k,dom)))
+            if (CELL_IS_NOT_MASKED(mask_fab(i,j,k)))
             {
                 n_VTK_nodes += cell_int_bou_quad_info_fab(i,j,k,CELL_INT_BOU_QUAD_NQ(dom));
             }
@@ -1399,7 +1431,7 @@ void export_int_bou_quad_points_to_VTK(const std::string & level_folderpath,
         for (int j = lo.y; j <= hi.y; ++j)
         for (int i = lo.x; i <= hi.x; ++i)
         {
-            if (CELL_IS_NOT_MASKED(mask_fab(i,j,k,dom)))
+            if (CELL_IS_NOT_MASKED(mask_fab(i,j,k)))
             {
                 // LOCAL PARAMETERS
                 const int bou_Nq = cell_int_bou_quad_info_fab(i,j,k,CELL_INT_BOU_QUAD_NQ(dom));
@@ -1507,6 +1539,41 @@ void export_quadrature_points_to_VTK(const std::string & level_folderpath,
     const std::string dom_data_filename = filename_root+"_dom_data";
     const std::string bou_data_filename = filename_root+"_bou_data";
     const std::string int_bou_data_filename = filename_root+"_int_bou_data";
+
+    export_dom_quad_points_to_VTK(level_folderpath, level_step_folderpath, step_string, dom_data_filename,
+                                  geom, mesh, mask, ibvp);
+    export_bou_quad_points_to_VTK(level_folderpath, level_step_folderpath, step_string, bou_data_filename,
+                                  geom, mesh, mask, ibvp);
+    export_int_bou_quad_points_to_VTK(level_folderpath, level_step_folderpath, step_string, int_bou_data_filename,
+                                      geom, mesh, mask, ibvp);
+}
+
+/**
+ * \brief Export the mesh quadrature points to VTK format.
+ *
+ * \param[in] level_folderpath: path where the .pvtu files will be written.
+ * \param[in] level_step_folderpath: path where the .vtu files will be written.
+ * \param[in] step_string: a zero-padded string containing the step number.
+ * \param[in] filename_root: root of the name of the output files.
+ * \param[in] geom: amrex geometry object.
+ * \param[in] mesh: Mesh object.
+ * \param[in] ibvp: initial boundary value problem object.
+*/
+template <typename IBVP>
+void export_quadrature_points_to_VTK(const std::string & level_folderpath,
+                                     const std::string & level_step_folderpath,
+                                     const std::string & step_string,
+                                     const std::string & filename_root,
+                                     const Geometry & geom,
+                                     const Mesh & mesh,
+                                     IBVP & ibvp)
+{
+    const std::string dom_data_filename = filename_root+"_dom_data";
+    const std::string bou_data_filename = filename_root+"_bou_data";
+    const std::string int_bou_data_filename = filename_root+"_int_bou_data";
+
+    iMultiFab mask(mesh.ba, mesh.dm, 1, mesh.dom_data_n_grow);
+    mask = __DG_CELL_NOT_MASKED__;
 
     export_dom_quad_points_to_VTK(level_folderpath, level_step_folderpath, step_string, dom_data_filename,
                                   geom, mesh, mask, ibvp);

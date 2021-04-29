@@ -29,6 +29,7 @@ namespace solution_io
  * \param[in] filename: name of the output file.
  * \param[in] solution: Solution object.
  * \param[in] ibvp: initial boundary value problem object.
+ *
 */
 template <typename IBVP>
 void export_centroids_to_VTK(const std::string & level_folderpath,
@@ -240,8 +241,9 @@ void export_centroids_to_VTK(const std::string & level_folderpath,
  * \param[in] X: a MultiFabs containing the solution coefficients.
  * \param[in] mask: a iMultiFab object that contains a single value for each cell.
  * \param[in] ibvp: initial boundary value problem object.
+ * \param[in] level_set: level set object.
 */
-template <typename IBVP>
+template <typename IBVP, typename LEVEL_SET>
 void export_dom_data_using_level_set_to_VTK(const std::string & level_folderpath,
                                             const std::string & level_step_folderpath,
                                             const std::string & step_string,
@@ -251,7 +253,8 @@ void export_dom_data_using_level_set_to_VTK(const std::string & level_folderpath
                                             const Solution & solution,
                                             const MultiFab & X,
                                             const iMultiFab & mask,
-                                            const IBVP & ibvp)
+                                            const IBVP & ibvp,
+                                            const LEVEL_SET & level_set)
 {
     // PARAMETERS -------------------------------------------------
     // CURRENT PROCESSOR
@@ -337,6 +340,7 @@ void export_dom_data_using_level_set_to_VTK(const std::string & level_folderpath
     {
         VTK_nodal_fields_names.push_back(output_fields_names[o]);
     }
+    VTK_nodal_fields_names.push_back("level_set");
 
     n_VTK_nodal_fields = VTK_nodal_fields_names.size();
 
@@ -513,6 +517,9 @@ void export_dom_data_using_level_set_to_VTK(const std::string & level_folderpath
                     VTK_nodal_fields_ptr[o][VTK_nodal_field_pos] = F[o];
                 }
 
+                // LEVEL SET
+                VTK_nodal_fields_ptr[n_output_fields][VTK_nodal_field_pos] = level_set.eval(x);
+
                 // MOVE OFFSET
                 VTK_nodes_pos += 3;
                 VTK_nodal_field_pos += 1;
@@ -597,8 +604,9 @@ void export_dom_data_using_level_set_to_VTK(const std::string & level_folderpath
  * \param[in] X: a MultiFabs containing the solution coefficients.
  * \param[in] mask: a iMultiFab object that contains a single value for each cell.
  * \param[in] ibvp: initial boundary value problem object.
+ * \param[in] level_set: level set object.
 */
-template <typename IBVP>
+template <typename IBVP, typename LEVEL_SET>
 void export_bou_data_using_level_set_to_VTK(const std::string & level_folderpath,
                                             const std::string & level_step_folderpath,
                                             const std::string & step_string,
@@ -608,7 +616,8 @@ void export_bou_data_using_level_set_to_VTK(const std::string & level_folderpath
                                             const Solution & solution,
                                             const MultiFab & /*X*/,
                                             const iMultiFab & mask,
-                                            const IBVP & ibvp)
+                                            const IBVP & ibvp,
+                                            const LEVEL_SET & level_set)
 {
     // PARAMETERS -------------------------------------------------
     // CURRENT PROCESSOR
@@ -847,7 +856,7 @@ void export_bou_data_using_level_set_to_VTK(const std::string & level_folderpath
 
                     // VTK NODAL FIELDS
                     // LEVEL SET
-                    VTK_nodal_fields_ptr[0][VTK_nodal_field_pos] = ibvp.level_set.eval(x);
+                    VTK_nodal_fields_ptr[0][VTK_nodal_field_pos] = level_set.eval(x);
 
                     // MOVE OFFSET
                     VTK_nodes_pos += 3;
@@ -934,8 +943,10 @@ void export_bou_data_using_level_set_to_VTK(const std::string & level_folderpath
  * \param[in] X: a MultiFabs containing the solution coefficients.
  * \param[in] mask: a iMultiFab object that contains a single value for each cell.
  * \param[in] ibvp: initial boundary value problem object.
+ * \param[in] level_set: level set object.
+ *
 */
-template <typename IBVP>
+template <typename IBVP, typename LEVEL_SET>
 void export_using_level_set_to_VTK(const std::string & level_folderpath,
                                     const std::string & level_step_folderpath,
                                     const std::string & step_string,
@@ -945,15 +956,16 @@ void export_using_level_set_to_VTK(const std::string & level_folderpath,
                                     const Solution & solution,
                                     const MultiFab & X,
                                     const iMultiFab & mask,
-                                    const IBVP & ibvp)
+                                    const IBVP & ibvp,
+                                    const LEVEL_SET & level_set)
 {
     const std::string dom_data_filename = filename_root+"_dom_data";
     const std::string bou_data_filename = filename_root+"_bou_data";
 
     export_dom_data_using_level_set_to_VTK(level_folderpath, level_step_folderpath, step_string, dom_data_filename,
-                                           t, geom, solution, X, mask, ibvp);
+                                           t, geom, solution, X, mask, ibvp, level_set);
     export_bou_data_using_level_set_to_VTK(level_folderpath, level_step_folderpath, step_string, bou_data_filename,
-                                           t, geom, solution, X, mask, ibvp);
+                                           t, geom, solution, X, mask, ibvp, level_set);
 }
 // ====================================================================
 // ####################################################################
@@ -976,8 +988,9 @@ void export_using_level_set_to_VTK(const std::string & level_folderpath,
  * \param[in] dX: a MultiFabs containing the solution slopes.
  * \param[in] mask: a iMultiFab object that contains a single value for each cell.
  * \param[in] ibvp: initial boundary value problem object.
+ * \param[in] level_set: level set object.
 */
-template <typename IBVP>
+template <typename IBVP, typename LEVEL_SET>
 void export_FV_dom_data_using_level_set_to_VTK(const std::string & level_folderpath,
                                                const std::string & level_step_folderpath,
                                                const std::string & step_string,
@@ -988,7 +1001,8 @@ void export_FV_dom_data_using_level_set_to_VTK(const std::string & level_folderp
                                                const MultiFab & X,
                                                const MultiFab & dX,
                                                const iMultiFab & mask,
-                                               const IBVP & ibvp)
+                                               const IBVP & ibvp,
+                                               const LEVEL_SET & level_set)
 {
     // PARAMETERS -------------------------------------------------
     // CURRENT PROCESSOR
@@ -1071,6 +1085,7 @@ void export_FV_dom_data_using_level_set_to_VTK(const std::string & level_folderp
     {
         VTK_nodal_fields_names.push_back(output_fields_names[o]);
     }
+    VTK_nodal_fields_names.push_back("level_set");
 
     n_VTK_nodal_fields = VTK_nodal_fields_names.size();
 
@@ -1254,6 +1269,9 @@ void export_FV_dom_data_using_level_set_to_VTK(const std::string & level_folderp
                     VTK_nodal_fields_ptr[o][VTK_nodal_field_pos] = F[o];
                 }
 
+                // LEVEL SET
+                VTK_nodal_fields_ptr[n_output_fields][VTK_nodal_field_pos] = level_set.eval(x);
+
                 // MOVE OFFSET
                 VTK_nodes_pos += 3;
                 VTK_nodal_field_pos += 1;
@@ -1339,8 +1357,9 @@ void export_FV_dom_data_using_level_set_to_VTK(const std::string & level_folderp
  * \param[in] dX: a MultiFabs containing the solution slopes.
  * \param[in] mask: a iMultiFab object that contains a single value for each cell.
  * \param[in] ibvp: initial boundary value problem object.
+ * \param[in] level_set: level set object.
 */
-template <typename IBVP>
+template <typename IBVP, typename LEVEL_SET>
 void export_FV_bou_data_using_level_set_to_VTK(const std::string & level_folderpath,
                                                const std::string & level_step_folderpath,
                                                const std::string & step_string,
@@ -1351,7 +1370,8 @@ void export_FV_bou_data_using_level_set_to_VTK(const std::string & level_folderp
                                                const MultiFab & /*X*/,
                                                const MultiFab & /*dX*/,
                                                const iMultiFab & mask,
-                                               const IBVP & ibvp)
+                                               const IBVP & ibvp,
+                                               const LEVEL_SET & level_set)
 {
     // PARAMETERS -------------------------------------------------
     // CURRENT PROCESSOR
@@ -1590,7 +1610,7 @@ void export_FV_bou_data_using_level_set_to_VTK(const std::string & level_folderp
 
                     // VTK NODAL FIELDS
                     // LEVEL SET
-                    VTK_nodal_fields_ptr[0][VTK_nodal_field_pos] = ibvp.level_set.eval(x);
+                    VTK_nodal_fields_ptr[0][VTK_nodal_field_pos] = level_set.eval(x);
 
                     // MOVE OFFSET
                     VTK_nodes_pos += 3;
@@ -1678,8 +1698,10 @@ void export_FV_bou_data_using_level_set_to_VTK(const std::string & level_folderp
  * \param[in] X: a MultiFabs containing the solution states.
  * \param[in] mask: a iMultiFab object that contains a single value for each cell.
  * \param[in] ibvp: initial boundary value problem object.
+ * \param[in] level_set: level set object.
+ *
 */
-template <typename IBVP>
+template <typename IBVP, typename LEVEL_SET>
 void export_FV_using_level_set_to_VTK(const std::string & level_folderpath,
                                       const std::string & level_step_folderpath,
                                       const std::string & step_string,
@@ -1690,7 +1712,8 @@ void export_FV_using_level_set_to_VTK(const std::string & level_folderpath,
                                       const Solution & solution,
                                       const MultiFab & X,
                                       const iMultiFab & mask,
-                                      const IBVP & ibvp)
+                                      const IBVP & ibvp,
+                                      const LEVEL_SET & level_set)
 {
     // PARAMETERS -----------------------------------------------------
     const std::string dom_data_filename = filename_root+"_dom_data";
@@ -1711,9 +1734,9 @@ void export_FV_using_level_set_to_VTK(const std::string & level_folderpath,
     
     // EXPORT SOLUTION ------------------------------------------------
     export_FV_dom_data_using_level_set_to_VTK(level_folderpath, level_step_folderpath, step_string, dom_data_filename,
-                                              t, geom, solution, X, dX, mask, ibvp);
+                                              t, geom, solution, X, dX, mask, ibvp, level_set);
     export_FV_bou_data_using_level_set_to_VTK(level_folderpath, level_step_folderpath, step_string, bou_data_filename,
-                                              t, geom, solution, X, dX, mask, ibvp);
+                                              t, geom, solution, X, dX, mask, ibvp, level_set);
 
     export_centroids_to_VTK(level_folderpath, level_step_folderpath, step_string, centroid_data_filename,
                             solution, ibvp);

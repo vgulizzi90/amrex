@@ -44,8 +44,9 @@ Real eval_dt(const amr::SinglePatch & amr, const Real t, const Vector<MultiFab> 
         const Mesh & mesh = *amr.meshes[lev];
         const Solution & solution = *amr.solutions[lev];
         const iMultiFab & mask = amr.masks[lev];
+        const Real dt_lev = solution.eval_dt(t, amr.Geom(lev), mesh, X[lev], mask, ibvp);
 
-        dt = amrex::min(dt, solution.eval_dt(t, amr.Geom(lev), mesh, X[lev], mask, ibvp));
+        dt = amrex::min(dt, dt_lev);
     }
 
     return dt;

@@ -73,8 +73,8 @@
 #define __DG_ELM_BOU_TYPE_PARTIAL_INVALID__ 6
 
 // DEBUG
-#define __i__ 144
-#define __j__ 100
+#define __i__ 33
+#define __j__ 24
 #define __k__ 0
 
 namespace amrex
@@ -732,6 +732,8 @@ struct MeshParameters
     bool box_pruning_is_active;
     
     int quadrature_order_regular_elements, quadrature_order_cut_elements;
+
+    int post_processing_grid_order;
     // ================================================================
 
 
@@ -742,7 +744,8 @@ struct MeshParameters
     embedded_geometry_defined_by{""},
     box_pruning_is_active{false},
     quadrature_order_regular_elements{-1},
-    quadrature_order_cut_elements{-1}
+    quadrature_order_cut_elements{-1},
+    post_processing_grid_order{1}
     {}
     // ================================================================
 };
@@ -789,6 +792,7 @@ struct Mesh
 
     // INITIALIZATION =================================================
     void read_input_file(const ParmParse & pp);
+    void read_input_file();
     // ================================================================
 
 
@@ -889,10 +893,12 @@ struct Mesh
      * \param[in] dm_: amrex DistributionMapping object; contains the distribution of the grids among the
      *                processors.
      * \param[in] ibvp: initial boundary value problem object.
+     * \param[in] level_set: level set object.
      *
     */
-    template <typename IBVP>
-    void make_from_scratch_by_level_set(const Real t, const Geometry & geom, const BoxArray & ba_, const DistributionMapping & dm_, IBVP & ibvp)
+    template <typename IBVP, typename LEVEL_SET>
+    void make_from_scratch_by_level_set(const Real t, const Geometry & geom, const BoxArray & ba_, const DistributionMapping & dm_,
+                                        IBVP & ibvp, LEVEL_SET & level_set)
     {
         // PARAMETERS -------------------------------------------------
         // GRID
@@ -904,7 +910,7 @@ struct Mesh
         const int n_domains = ibvp.get_number_of_domains();
 
         // QUADRATURE
-        const int qo_reg = this->params.quadrature_order_regular_elements+1;
+        const int qo_reg = this->params.quadrature_order_regular_elements;
         const int qo_cut = this->params.quadrature_order_cut_elements+1;
         // ------------------------------------------------------------
 
@@ -916,26 +922,27 @@ struct Mesh
         // ------------------------------------------------------------
 
         // SET TIME FOR THE LEVEL SET ---------------------------------
-        ibvp.level_set.set_time(t);
+        level_set.set_time(t);
         // ------------------------------------------------------------
 
         // PRUNE BOX ARRAY AND DISTRIBUTION MAPPING (IF REQUESTED) ----
         if (this->uses_box_pruning())
         {
-            BoxList old_bl(ba_);
+            sMultiFab dummy(ba_, dm_, 1, this->dom_data_n_grow);
+            
             BoxList new_bl;
 
-            for (const Box & bx : old_bl)
+            for (MFIter mfi(dummy); mfi.isValid(); ++mfi)
             {
-                const Box grown_bx = grow(bx, this->dom_data_n_grow);
-                const Dim3 lo = lbound(grown_bx);
-                const Dim3 hi = ubound(grown_bx);
+                const Box & bx = mfi.fabbox();
+                const Dim3 lo = lbound(bx);
+                const Dim3 hi = ubound(bx);
                 bool bx_is_empty;
 
                 bx_is_empty = true;
                 for (int dom = 0; dom < n_domains; ++dom)
                 {
-                    ibvp.level_set.set_domain(dom);
+                    level_set.set_domain(dom);
 
                     for (int k = lo.z; k <= hi.z; ++k)
                     for (int j = lo.y; j <= hi.y; ++j)
@@ -955,7 +962,7 @@ struct Mesh
 
                         // ALGOIM QUADRATURE RULE
                         const int qo = 2;
-                        AlgoimQuadRule quad = AlgoimQuadGen(ibvp.level_set, cell_lo, cell_hi, -1, -1, qo);
+                        AlgoimQuadRule quad = AlgoimQuadGen(level_set, cell_lo, cell_hi, -1, -1, qo);
 
                         cell_volume = quad([](const auto & /*x*/) {return 1.0;});
                         volume_fraction = cell_volume/entire_cell_volume;
@@ -968,7 +975,7 @@ struct Mesh
 
                 if (!bx_is_empty)
                 {
-                    new_bl.push_back(bx);
+                    new_bl.push_back(mfi.validbox());
                 }
             }
             
@@ -984,6 +991,20 @@ struct Mesh
             this->ba = ba_;
             this->dm = dm_;
         }
+
+        /*
+        {
+            const int n_procs = ParallelDescriptor::NProcs();
+            for (int r = 0; r < n_procs; ++r)
+            {
+            Print(r) << "this->ba: " << this->ba << std::endl;
+            Print(r) << "this->dm: " << this->dm << std::endl;
+            ParallelDescriptor::Barrier();
+            }
+            ParallelDescriptor::Barrier();
+            exit(-1);
+        }
+        */
         // ------------------------------------------------------------
 
         // INIT THE MULTIFAB ------------------------------------------
@@ -1074,7 +1095,7 @@ struct Mesh
 
             for (int dom = 0; dom < n_domains; ++dom)
             {
-                ibvp.level_set.set_domain(dom);
+                level_set.set_domain(dom);
 
                 for (int k = lo.z; k <= hi.z; ++k)
                 for (int j = lo.y; j <= hi.y; ++j)
@@ -1095,7 +1116,7 @@ struct Mesh
                     // DOMAIN QUADRATURE
                     {
                         // Algoim data structure
-                        AlgoimQuadRule quad = AlgoimQuadGen(ibvp.level_set, cell_lo, cell_hi, -1, -1, qo_cut);
+                        AlgoimQuadRule quad = AlgoimQuadGen(level_set, cell_lo, cell_hi, -1, -1, qo_cut);
 
                         // Compute the volume fraction
                         cell_volume = quad([](const auto & /*x*/) {return 1.0;});
@@ -1177,7 +1198,7 @@ struct Mesh
                     if (cell_is_cut)
                     {
                         // Algoim data structure
-                        AlgoimQuadRule quad = AlgoimQuadGen(ibvp.level_set, cell_lo, cell_hi, AMREX_SPACEDIM, -1, qo_cut);
+                        AlgoimQuadRule quad = AlgoimQuadGen(level_set, cell_lo, cell_hi, AMREX_SPACEDIM, -1, qo_cut);
 
                         // QUADRATURE INFO
                         const int bou_Nq = quad.nodes.size();
@@ -1204,7 +1225,7 @@ struct Mesh
                             )
                             this->cell_int_bou_quad_host_mem[pos+AMREX_SPACEDIM] = quad.nodes[q].w;
 
-                            un = ibvp.level_set.grad(quad.nodes[q].x);
+                            un = level_set.grad(quad.nodes[q].x);
                             tmp = 1.0/std::sqrt(AMREX_D_PICK(un[0]*un[0], un[0]*un[0]+un[1]*un[1], un[0]*un[0]+un[1]*un[1]+un[2]*un[2]));
                             AMREX_D_TERM
                             (
@@ -1263,7 +1284,7 @@ struct Mesh
 
                 for (int dom = 0; dom < n_domains; ++dom)
                 {
-                    ibvp.level_set.set_domain(dom);
+                    level_set.set_domain(dom);
 
                     for (int k = lo.z; k <= hi.z; ++k)
                     for (int j = lo.y; j <= hi.y; ++j)
@@ -1283,7 +1304,7 @@ struct Mesh
                         // BOUNDARY QUADRATURE
                         {
                             // Algoim data structure
-                            AlgoimQuadRule quad = AlgoimQuadGen(ibvp.level_set, cell_lo, cell_hi, dir, 0, qo_cut);
+                            AlgoimQuadRule quad = AlgoimQuadGen(level_set, cell_lo, cell_hi, dir, 0, qo_cut);
 
                             // Compute the surface fraction
                             boundary_surface = quad([](const auto & /*x*/) {return 1.0;});
@@ -1369,6 +1390,9 @@ struct Mesh
         Gpu::copy(Gpu::hostToDevice, this->cell_int_bou_quad_host_mem.begin(), this->cell_int_bou_quad_host_mem.end(), this->cell_int_bou_quad_dev_mem.begin());
         // ------------------------------------------------------------
 #endif
+        // LABEL GHOST CELLS ------------------------------------------
+        this->label_ghost_cells(geom, n_domains);
+        // ------------------------------------------------------------
     }
     
     /**
@@ -1385,6 +1409,14 @@ struct Mesh
     template <typename IBVP>
     void make_from_scratch(const Real t, const Geometry & geom, const BoxArray & ba_, const DistributionMapping & dm_, IBVP & ibvp)
     {
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "WARNING: AMReX_dG_Mesh.H - Mesh::make_from_scratch\n";
+            msg += "| Calling make_from_scratch is deprecated.\n";
+            Warning(msg);
+        }
+
         // PARAMETERS -------------------------------------------------
         // DOMAINS
         const int n_domains = ibvp.get_number_of_domains();
@@ -1395,7 +1427,7 @@ struct Mesh
         {
             if (this->uses_level_set())
             {
-                this->make_from_scratch_by_level_set(t, geom, ba_, dm_, ibvp);
+                this->make_from_scratch_by_level_set(t, geom, ba_, dm_, ibvp, ibvp.level_set);
             }
             else
             {
@@ -1416,10 +1448,6 @@ struct Mesh
             Abort(msg);
         }
         // ------------------------------------------------------------
-
-        // LABEL GHOST CELLS ------------------------------------------
-        this->label_ghost_cells(geom, n_domains);
-        // ------------------------------------------------------------
     }
     // ================================================================
 
@@ -1434,46 +1462,13 @@ struct Mesh
      * \param[in] dm_: amrex DistributionMapping object; contains the distribution of the grids among the
      *                processors.
      * \param[in] ibvp: initial boundary value problem object.
+     * \param[in] level_set: level set object.
      *
     */
-    template <typename IBVP>
-    void remake(const Real t, const Geometry & geom, const BoxArray & ba_, const DistributionMapping & dm_, IBVP & ibvp)
+    template <typename IBVP, typename LEVEL_SET>
+    void remake_by_level_set(const Real t, const Geometry & geom, const BoxArray & ba_, const DistributionMapping & dm_, IBVP & ibvp, LEVEL_SET & level_set)
     {
-        // PARAMETERS -------------------------------------------------
-        // DOMAINS
-        const int n_domains = ibvp.get_number_of_domains();
-        // ------------------------------------------------------------
-
-        // MAKE MESH --------------------------------------------------
-        if (this->uses_embedded_geometries())
-        {
-            if (this->uses_level_set())
-            {
-                this->make_from_scratch_by_level_set(t, geom, ba_, dm_, ibvp);
-            }
-            else
-            {
-                std::string msg;
-                msg  = "\n";
-                msg +=  "ERROR: AMReX_dG_Mesh.H - Mesh::remake\n";
-                msg += "| Unexpected method used to define the embedded geometry.\n";
-                msg += "| Unexpected method: "+this->params.embedded_geometry_defined_by+".\n";
-                Abort(msg);
-            }
-        }
-        else
-        {
-            std::string msg;
-            msg  = "\n";
-            msg +=  "ERROR: AMReX_dG_Mesh.H - Mesh::remake\n";
-            msg += "| At this moment embedded geometries must be active.\n";
-            Abort(msg);
-        }
-        // ------------------------------------------------------------
-
-        // LABEL GHOST CELLS ------------------------------------------
-        this->label_ghost_cells(geom, n_domains);
-        // ------------------------------------------------------------
+        this->make_from_scratch_by_level_set(t, geom, ba_, dm_, ibvp, level_set);
     }
     // ================================================================
 
@@ -1485,6 +1480,19 @@ struct Mesh
                                    Real * computed_volume,
                                    Real * computed_volume_div,
                                    Real * computed_surface) const;
+    // ================================================================
+
+
+    // CHECK QUADRATURE RULES =========================================
+    void check_quadrature_rules(const Geometry & geom,
+                                const int n_domains,
+                                const iMultiFab & mask,
+                                const Real * exact_volume,
+                                const Real * exact_surface) const;
+    void check_quadrature_rules(const Geometry & geom,
+                                const int n_domains,
+                                const Real * exact_volume,
+                                const Real * exact_surface) const;
     // ================================================================
 
 };

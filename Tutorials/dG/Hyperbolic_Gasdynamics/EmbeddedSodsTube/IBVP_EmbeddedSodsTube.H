@@ -10,29 +10,24 @@
 
 namespace EmbeddedSodsTube
 {
-
-// EMBEDDED SOD'S TUBE: PROBLEM PARAMETERS ############################
-struct ProblemParameters
+// EMBEDDED SOD'S TUBE: LEVEL SET #####################################
+template <int N>
+struct LevelSet
 {
     // DATA MEMBERS ===================================================
-    amrex::Real gamma;
-    amrex::Real rhoL, vL, pL, rhoR, vR, pR;
+    amrex::Real t;
+    int dom;
     amrex::Real diam, theta, phi;
     // ================================================================
 
+
     // CONSTRUCTOR ====================================================
-    ProblemParameters()
+    LevelSet()
+    :
+    t{0.0},
+    dom{0}
     {
         amrex::ParmParse pp;
-
-        pp.get("gamma", this->gamma);
-
-        pp.get("rhoL", this->rhoL);
-        pp.get("vL", this->vL);
-        pp.get("pL", this->pL);
-        pp.get("rhoR", this->rhoR);
-        pp.get("vR", this->vR);
-        pp.get("pR", this->pR);
 
         pp.get("diam", this->diam);
         pp.get("theta", this->theta);
@@ -43,45 +38,12 @@ struct ProblemParameters
 #endif
     }
     // ================================================================
-};
-// ####################################################################
-
-
-
-// EMBEDDED SOD'S TUBE: LEVEL SET #####################################
-template <int N>
-struct LevelSet
-{
-    // DATA MEMBERS ===================================================
-    amrex::Real diam, theta, phi;
-    int dom;
-    // ================================================================
-
-
-    // CONSTRUCTOR ====================================================
-#if (AMREX_SPACEDIM == 2)
-    LevelSet(const amrex::Real diam_, const amrex::Real theta_)
-    :
-    diam{diam_},
-    theta{theta_},
-    phi{0.0}
-    {}
-#endif
-#if (AMREX_SPACEDIM == 3)
-    LevelSet(const amrex::Real diam_, const amrex::Real theta_, const amrex::Real phi_)
-    :
-    diam{diam_},
-    theta{theta_},
-    phi{phi_}
-    {}
-#endif
-    // ================================================================
 
 
     // AUXILIARY ROUTINES =============================================
-    void set_time(const amrex::Real /*t*/)
+    void set_time(const amrex::Real t_)
     {
-        // ...
+        this->t = t_;
     }
     void set_domain(const int dom_)
     {
@@ -174,16 +136,34 @@ struct LevelSet
 struct IBVP
 {
     // DATA MEMBERS ===================================================
-    ProblemParameters problem_params;
-    LevelSet<AMREX_SPACEDIM> level_set;
+    amrex::Real gamma;
+    amrex::Real rhoL, vL, pL, rhoR, vR, pR;
+    amrex::Real diam, theta, phi;
     // ================================================================
 
 
     // CONSTRUCTOR ====================================================
     IBVP()
-    :
-    level_set(AMREX_D_DECL(this->problem_params.diam, this->problem_params.theta, this->problem_params.phi))
-    {}
+    {
+        amrex::ParmParse pp;
+
+        pp.get("gamma", this->gamma);
+
+        pp.get("rhoL", this->rhoL);
+        pp.get("vL", this->vL);
+        pp.get("pL", this->pL);
+        pp.get("rhoR", this->rhoR);
+        pp.get("vR", this->vR);
+        pp.get("pR", this->pR);
+
+        pp.get("diam", this->diam);
+        pp.get("theta", this->theta);
+        this->theta *= M_PI/180.0;
+#if (AMREX_SPACEDIM == 3)
+        pp.get("phi", this->phi);
+        this->phi *= M_PI/180.0;
+#endif
+    }
     // ================================================================
 
 
@@ -236,19 +216,13 @@ struct IBVP
     void eval_ICs(const amrex::Real * x, amrex::Real * U) const
     {
         // PARAMETERS
-        const amrex::Real g = this->problem_params.gamma;
-        const amrex::Real rhoL = this->problem_params.rhoL;
-        const amrex::Real vL = this->problem_params.vL;
-        const amrex::Real pL = this->problem_params.pL;
-        const amrex::Real rhoR = this->problem_params.rhoR;
-        const amrex::Real vR = this->problem_params.vR;
-        const amrex::Real pR = this->problem_params.pR;
-
-        const amrex::Real th = this->problem_params.theta;
+        const amrex::Real g = this->gamma;
+        
+        const amrex::Real th = this->theta;
         const amrex::Real cth = std::cos(th);
         const amrex::Real sth = std::sin(th);
 #if (AMREX_SPACEDIM == 3)
-        const amrex::Real ph = this->problem_params.phi;
+        const amrex::Real ph = this->phi;
         const amrex::Real cph = std::cos(ph);
         const amrex::Real sph = std::sin(ph);
 #endif
@@ -265,25 +239,25 @@ struct IBVP
 
         if (xi > 0.0)
         {
-            Uxi[RHO] = rhoR;
+            Uxi[RHO] = this->rhoR;
             AMREX_D_TERM
             (
-                Uxi[RHOV1] = rhoR*vR;,
+                Uxi[RHOV1] = this->rhoR*this->vR;,
                 Uxi[RHOV2] = 0.0;,
                 Uxi[RHOV3] = 0.0;
             )
-            Uxi[TE] = pR/(g-1.0)+0.5*rhoR*vR*vR;
+            Uxi[TE] = this->pR/(g-1.0)+0.5*this->rhoR*this->vR*this->vR;
         }
         else
         {
-            Uxi[RHO] = rhoL;
+            Uxi[RHO] = this->rhoL;
             AMREX_D_TERM
             (
-                Uxi[RHOV1] = rhoL*vL;,
+                Uxi[RHOV1] = this->rhoL*this->vL;,
                 Uxi[RHOV2] = 0.0;,
                 Uxi[RHOV3] = 0.0;
             )
-            Uxi[TE] = pL/(g-1.0)+0.5*rhoL*vL*vL;
+            Uxi[TE] = this->pL/(g-1.0)+0.5*this->rhoL*this->vL*this->vL;
         }
 
         ideal_gas::Un_to_U(xi_dir, Uxi, U);
@@ -316,7 +290,7 @@ struct IBVP
                         const amrex::Real /*t*/, const amrex::Real * /*x*/,
                         const amrex::Real * U) const
     {
-        const amrex::Real w = ideal_gas::eval_largest_wave_speed(this->problem_params.gamma, U);
+        const amrex::Real w = ideal_gas::eval_largest_wave_speed(this->gamma, U);
 #if (AMREX_SPACEDIM == 1)
         const amrex::Real h = dx[0];
 #endif
@@ -326,6 +300,12 @@ struct IBVP
 #if (AMREX_SPACEDIM == 3)
         const amrex::Real h = amrex::min(dx[0], amrex::min(dx[1], dx[2]));
 #endif
+if (w > 5.0)
+{
+amrex::Print() << "U: "; amrex::dG::io::print_reals(IDEAL_GAS_NU, U); amrex::Print() << std::endl;
+amrex::Print() << "w: " << w << std::endl;
+}
+
         return (h/w);
     }
     // ================================================================
@@ -346,7 +326,7 @@ struct IBVP
                 const amrex::Real /*t*/, const amrex::Real * /*x*/,
                 const amrex::Real * U, AMREX_D_DECL(amrex::Real * F1, amrex::Real * F2, amrex::Real * F3)) const
     {
-        ideal_gas::eval_F(this->problem_params.gamma, U, AMREX_D_DECL(F1, F2, F3));
+        ideal_gas::eval_F(this->gamma, U, AMREX_D_DECL(F1, F2, F3));
     }
     // ================================================================
 
@@ -370,7 +350,7 @@ struct IBVP
                              const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
                              const amrex::Real * m_U, const amrex::Real * p_U, amrex::Real * NFn) const
     {
-        ideal_gas::eval_NFn_Riemann_solver(this->problem_params.gamma, un, m_U, p_U, NFn);
+        ideal_gas::eval_NFn_Riemann_solver(this->gamma, un, m_U, p_U, NFn);
     }
 
     /**
@@ -397,7 +377,7 @@ struct IBVP
         // ------------------------------------------------------------
 
         // BOUNDARY FLUX ----------------------------------------------
-        ideal_gas::eval_NFn_Riemann_solver(this->problem_params.gamma, un, U, U_ghost, NFn);
+        ideal_gas::eval_NFn_Riemann_solver(this->gamma, un, U, U_ghost, NFn);
         // ------------------------------------------------------------
     }
 
@@ -416,7 +396,7 @@ struct IBVP
                       const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
                       const amrex::Real * U, amrex::Real * NFn) const
     {
-        ideal_gas::eval_NFn_wall(this->problem_params.gamma, un, U, NFn);
+        ideal_gas::eval_NFn_wall(this->gamma, un, U, NFn);
     }
     // ================================================================
 
@@ -438,7 +418,7 @@ struct IBVP
                         const amrex::MultiFab & X,
                         amrex::MultiFab & dX) const
     {
-        ideal_gas::eval_FV_slopes(this->problem_params.gamma, geom, mesh, solution, X, dX);
+        ideal_gas::eval_FV_slopes(this->gamma, geom, mesh, solution, X, dX);
     }
     // ================================================================
 
@@ -451,7 +431,7 @@ struct IBVP
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     int get_number_of_output_fields() const
     {
-        return IDEAL_GAS_NU+3+AMREX_SPACEDIM+1;
+        return IDEAL_GAS_NU+3+AMREX_SPACEDIM;
     }
     /**
      * \brief Return the parent domain of the u-th output field.
@@ -475,8 +455,7 @@ struct IBVP
                                "mach",
                                "total_energy",
                                "internal_energy",
-                               AMREX_D_DECL("velocity_xi", "velocity_eta", "velocity_zeta"),
-                               "level_set"};
+                               AMREX_D_DECL("velocity_xi", "velocity_eta", "velocity_zeta")};
     }
 
     /**
@@ -494,12 +473,12 @@ struct IBVP
                             amrex::Real * F) const
     {
         // PARAMETERS -------------------------------------------------
-        const amrex::Real g = this->problem_params.gamma;
-        const amrex::Real th = this->problem_params.theta;
+        const amrex::Real g = this->gamma;
+        const amrex::Real th = this->theta;
         const amrex::Real cth = std::cos(th);
         const amrex::Real sth = std::sin(th);
 #if (AMREX_SPACEDIM == 3)
-        const amrex::Real ph = this->problem_params.phi;
+        const amrex::Real ph = this->phi;
         const amrex::Real cph = std::cos(ph);
         const amrex::Real sph = std::sin(ph);
 #endif
@@ -513,7 +492,7 @@ struct IBVP
 
         // VARIABLES --------------------------------------------------
         amrex::Real rho, AMREX_D_DECL(v1, v2, v3), p, a, M;
-        amrex::Real phi, Uxi[IDEAL_GAS_NU];
+        amrex::Real Uxi[IDEAL_GAS_NU];
         // ------------------------------------------------------------
 
         // PRIMITIVE VARIABLES
@@ -525,9 +504,6 @@ struct IBVP
 
         // SOLUTION STATE IN THE TUBE'S REFERENCE SYSTEM
         ideal_gas::U_to_Un(xi_dir, U, Uxi);
-
-        // LEVEL SET
-        phi = this->level_set.eval(x);
 
         // OUTPUT FIELDS
         F[RHO] = rho;
@@ -547,7 +523,6 @@ struct IBVP
             F[TE+5] = Uxi[RHOV2]/rho;,
             F[TE+6] = Uxi[RHOV3]/rho;
         )
-        F[TE+4+AMREX_SPACEDIM] = phi;
     }
     // ================================================================
 };
@@ -561,13 +536,16 @@ struct AMR
 public amrex::dG::amr::SinglePatch
 {
     // DATA MEMBERS ===================================================
+    // LEVEL SET
+    LevelSet<AMREX_SPACEDIM> level_set;
+
     // IBVP
     IBVP ibvp;
 
     // SOLUTION MULTIFABS
     amrex::Vector<amrex::MultiFab> X;
 
-    // USED FOR THE AMR
+    // USED FOR AMR
     amrex::Vector<amrex::Real> thr;
 
     // USED FOR THE SHOCK SENSOR
@@ -690,7 +668,18 @@ exit(-1);
         // ------------------------------------------------------------
 
         // MESH -------------------------------------------------------
-        mesh.make_from_scratch(time, this->geom[lev], ba, dm, this->ibvp);
+        if (mesh.uses_level_set())
+        {
+            mesh.make_from_scratch_by_level_set(time, this->geom[lev], ba, dm, this->ibvp, this->level_set);
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: IBVP_EmbeddedSodsTube.H - AMR::MakeNewLevelFromScratch\n";
+            msg += "| Unexpected method used to define the embedded geometry.\n";
+            msg += "| Unexpected method: "+mesh.params.embedded_geometry_defined_by+".\n";
+        }
         this->SetBoxArray(lev, mesh.ba);
         this->SetDistributionMap(lev, mesh.dm);
         // ------------------------------------------------------------
@@ -777,11 +766,11 @@ exit(-1);
         // MANUALLY TRACK THE SHOCK AT t = 0 --------------------------
         {
             const int dom = 0;
-            const amrex::Real th = this->ibvp.problem_params.theta;
+            const amrex::Real th = this->level_set.theta;
             const amrex::Real cth = std::cos(th);
             const amrex::Real sth = std::sin(th);
 #if (AMREX_SPACEDIM == 3)
-            const amrex::Real ph = this->ibvp.problem_params.phi;
+            const amrex::Real ph = this->level_set.phi;
             const amrex::Real cph = std::cos(ph);
             const amrex::Real sph = std::sin(ph);
 #endif
@@ -863,7 +852,18 @@ exit(-1);
         else
         {
             // MESH ---------------------------------------------------
-            mesh.remake(time, this->geom[lev], ba, dm, this->ibvp);
+            if (mesh.uses_level_set())
+            {
+                mesh.remake_by_level_set(time, this->geom[lev], ba, dm, this->ibvp, this->level_set);
+            }
+            else
+            {
+                std::string msg;
+                msg  = "\n";
+                msg +=  "ERROR: IBVP_EmbeddedSodsTube.H - AMR::RemakeLevel\n";
+                msg += "| Unexpected method used to define the embedded geometry.\n";
+                msg += "| Unexpected method: "+mesh.params.embedded_geometry_defined_by+".\n";
+            }
             this->SetBoxArray(lev, mesh.ba);
             this->SetDistributionMap(lev, mesh.dm);
             // --------------------------------------------------------
@@ -897,15 +897,6 @@ exit(-1);
     // ================================================================
 
 
-    // REGRIDDING =====================================================
-    void regrid(const int n)
-    {
-        amrex::dG::amr::SinglePatch::regrid(0, n);
-        this->update_masks();
-    }
-    // ================================================================
-
-
     // ADVANCE IN TIME ================================================
     amrex::Real eval_dt(const amrex::Real t) const
     {
@@ -932,7 +923,39 @@ exit(-1);
 
     void export_solution(const int n, const std::string & filename_root, const amrex::Real t)
     {
-        this->export_solution_to_VTK(n, filename_root, t, this->X, this->ibvp);
+        for (int lev = 0; lev <= this->finest_level; ++lev)
+        {
+            const amrex::dG::Mesh & mesh = *this->meshes[lev];
+            const amrex::dG::Solution & solution = *this->solutions[lev];
+            const amrex::iMultiFab & mask = this->masks[lev];
+
+            const std::string level_folderpath = this->inputs.get_level_folderpath(lev);
+            const std::string level_step_folderpath = this->inputs.get_level_step_folderpath(lev, n);
+            const std::string step_string = this->inputs.get_step_string(n);
+
+            if (mesh.uses_level_set())
+            {
+                if ((solution.params.space_p == 0) && solution.params.FV_is_active)
+                {
+                    amrex::dG::solution_io::export_FV_using_level_set_to_VTK(level_folderpath, level_step_folderpath, step_string, filename_root,
+                                                                             t, this->geom[lev], mesh, solution, this->X[lev], mask, this->ibvp, this->level_set);
+                }
+                else
+                {
+                    amrex::dG::solution_io::export_using_level_set_to_VTK(level_folderpath, level_step_folderpath, step_string, filename_root,
+                                                                          t, this->geom[lev], solution, this->X[lev], mask, this->ibvp, this->level_set);
+                }
+            }
+            else
+            {
+                std::string msg;
+                msg  = "\n";
+                msg +=  "ERROR: IBVP_EmbeddedSodsTube.H - AMR::export_solution\n";
+                msg += "| Unexpected method used to define the embedded geometry.\n";
+                msg += "| Unexpected method: "+mesh.params.embedded_geometry_defined_by+".\n";
+                amrex::Abort(msg);
+            }
+        }
     }
     // ================================================================
 };

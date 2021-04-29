@@ -65,10 +65,10 @@ void main_main()
 
     // CHECK QUADRATURE
     {
-        const amrex::Real diam = amr.ibvp.problem_params.diam;
-        const amrex::Real th = amr.ibvp.problem_params.theta;
+        const amrex::Real diam = amr.level_set.diam;
+        const amrex::Real th = amr.level_set.theta;
 #if (AMREX_SPACEDIM == 3)
-        const amrex::Real ph = amr.ibvp.problem_params.phi;
+        const amrex::Real ph = amr.level_set.phi;
 #endif
 
         const amrex::Real cth = std::cos(th);
@@ -155,7 +155,8 @@ void main_main()
             // REGRID
             if (amr.inputs.regrid(n))
             {
-                amr.regrid(n);
+                amr.regrid(0, n);
+                amr.update_masks();
             }
 
             // TIME STEP TOC

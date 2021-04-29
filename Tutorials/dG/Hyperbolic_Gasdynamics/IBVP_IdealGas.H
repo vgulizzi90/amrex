@@ -35,8 +35,8 @@
 #define SMALL_rho 1.0e-19
 
 #define APPLY_LIMITER
-//#define APPLY_BJ_V1
-#define APPLY_BJ_V2
+#define APPLY_BJ_V1
+//#define APPLY_BJ_V2
 #define BJ_USES_P
 #define BJ_USES_ICS
 // ####################################################################
@@ -891,6 +891,8 @@ void eval_FV_slopes(const amrex::Real g,
 #endif
 
                 // CONSERVED VARIABLES
+#if defined(BJ_USES_P) && defined(APPLY_LIMITER)
+#else
                 U[RHO] = X_fab(i,j,k,RHO);
                 AMREX_D_TERM
                 (
@@ -899,6 +901,7 @@ void eval_FV_slopes(const amrex::Real g,
                     U[RHOV3] = X_fab(i,j,k,RHOV3);
                 )
                 U[TE] = X_fab(i,j,k,TE);
+#endif
 
                 // ELEMENT'S CENTROID AND PRIMITIVE VARIABLES
                 get_centroid_and_primitive_variables(g, i, j, k, dom, elm_centroid_fab, X_fab, xc, P);
@@ -1293,9 +1296,9 @@ amrex::dG::io::print_real_array_2d(IDEAL_GAS_NU, AMREX_SPACEDIM, rhs);
                     const short nbr_etype = elm_type_fab(nbr_i,nbr_j,nbr_k,amrex::dG::ELM_TYPE(dom));
                     const bool nbr_is_outside_domain = !domain.contains(nbr_i, nbr_j, nbr_k);
                     const bool nbr_is_empty = amrex::dG::ELM_IS_EMPTY(nbr_etype);
-                    const bool nbr_is_small = amrex::dG::ELM_IS_SMALL(nbr_etype);
+                    //const bool nbr_is_small = amrex::dG::ELM_IS_SMALL(nbr_etype);
                     //const bool cells_are_merged = amrex::dG::CELLS_ARE_MERGED(i, j, k, nbr_i, nbr_j, nbr_k, nbr_etype);
-                    const bool bad_nbr = ((nbr_is_outside_domain && (is_periodic[n/2] == 0)) || nbr_is_empty || nbr_is_small);
+                    const bool bad_nbr = ((nbr_is_outside_domain && (is_periodic[n/2] == 0)) || nbr_is_empty);
 
                     if (!bad_nbr)
                     {
@@ -1329,7 +1332,6 @@ amrex::dG::io::print_real_array_2d(IDEAL_GAS_NU, AMREX_SPACEDIM, rhs);
                     bounds_fab(i,j,k,u+IDEAL_GAS_NU) = max_U[u];
 #endif
                 }
-
             }
         });
         amrex::Gpu::synchronize();
@@ -1550,7 +1552,7 @@ amrex::dG::io::print_real_array_2d(IDEAL_GAS_NU, AMREX_SPACEDIM, rhs);
                     for (int q = 0; q < bou_Nq; ++q)
                     {
                         // QUADRATURE POINT AND WEIGHT
-                        const long x_pos = (AMREX_SPACEDIM+1)*q;
+                        const long x_pos = (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*q;
                         AMREX_D_TERM
                         (
                             x[0] = x_ptr[x_pos+0];,
@@ -1673,19 +1675,24 @@ amrex::dG::io::print_real_array_2d(IDEAL_GAS_NU, AMREX_SPACEDIM, rhs);
 /*
 if (i == __i__ && j == __j__ && k == __k__)
 {
-amrex::Print() << "min_U: " << std::endl;
-amrex::dG::io::print_real_array_2d(1, IDEAL_GAS_NU, min_U);
-amrex::Print() << "max_U: " << std::endl;
-amrex::dG::io::print_real_array_2d(1, IDEAL_GAS_NU, max_U);
+amrex::Print() << "xc: "; amrex::dG::io::print_reals(AMREX_SPACEDIM, xc); amrex::Print() << std::endl;
+amrex::Print() << "P: " << std::endl;
+amrex::dG::io::print_real_array_2d(1, IDEAL_GAS_NU, P);
+amrex::Print() << "min_P: " << std::endl;
+amrex::dG::io::print_real_array_2d(1, IDEAL_GAS_NU, min_P);
+amrex::Print() << "max_P: " << std::endl;
+amrex::dG::io::print_real_array_2d(1, IDEAL_GAS_NU, max_P);
+amrex::Print() << "alphas: " << std::endl;
+amrex::dG::io::print_real_array_2d(1, IDEAL_GAS_NU, alphas);
 //exit(-1);
 }
 */
 
-                for (int n = 0; n < __DG_EXTENDED_STENCIL_N_NBR__; ++n)
+                for (int n = 0; n < __DG_BASE_STENCIL_N_NBR__; ++n)
                 {
-                    const int nbr_i = i+amrex::dG::tables::extended_stencil_i[n];
-                    const int nbr_j = j+amrex::dG::tables::extended_stencil_j[n];
-                    const int nbr_k = k+amrex::dG::tables::extended_stencil_k[n];
+                    const int nbr_i = i+amrex::dG::tables::base_stencil_i[n];
+                    const int nbr_j = j+amrex::dG::tables::base_stencil_j[n];
+                    const int nbr_k = k+amrex::dG::tables::base_stencil_k[n];
                     const short nbr_etype = elm_type_fab(nbr_i,nbr_j,nbr_k,amrex::dG::ELM_TYPE(dom));
                     const bool nbr_is_outside_domain = !domain.contains(nbr_i, nbr_j, nbr_k);
                     const bool nbr_is_empty = amrex::dG::ELM_IS_EMPTY(nbr_etype);
@@ -1728,8 +1735,8 @@ amrex::dG::io::print_real_array_2d(1, IDEAL_GAS_NU, max_U);
 /*
 if (i == __i__ && j == __j__ && k == __k__)
 {
-amrex::Print() << "Ur: " << std::endl;
-amrex::dG::io::print_real_array_2d(1, IDEAL_GAS_NU, Ur);
+amrex::Print() << "xc: "; amrex::dG::io::print_reals(AMREX_SPACEDIM, x);
+amrex::Print() << " Pr(" << nbr_i << "," << nbr_j << "," << nbr_k << "): "; amrex::dG::io::print_reals(IDEAL_GAS_NU, Pr); amrex::Print() << std::endl;
 //exit(-1);
 }
 */
@@ -1980,7 +1987,7 @@ exit(-1);
                     for (int q = 0; q < bou_Nq; ++q)
                     {
                         // QUADRATURE POINT AND WEIGHT
-                        const long x_pos = (AMREX_SPACEDIM+1)*q;
+                        const long x_pos = (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*q;
                         AMREX_D_TERM
                         (
                             x[0] = x_ptr[x_pos+0];,
