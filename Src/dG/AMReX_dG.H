@@ -15,6 +15,7 @@
 #include <AMReX_dG_BasisFunctions.H>
 #include <AMReX_dG_LinAlg.H>
 #include <AMReX_dG_StandardElements.H>
+#include <AMReX_dG_Cell_BFX.H>
 #include <AMReX_dG_Mesh.H>
 #include <AMReX_dG_Mesh_Output.H>
 #include <AMReX_dG_BFX.H>

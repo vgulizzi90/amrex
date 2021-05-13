@@ -40,7 +40,15 @@ namespace dG
 
         pp.query("time_integration", this->params.time_integration);
         pp.query("time_integration_CFL", this->params.time_integration_CFL);
+
+        pp.query("post_processing_grid_order", this->params.post_processing_grid_order);
         // ------------------------------------------------------------
+    }
+
+    void Solution::read_input_file()
+    {
+        ParmParse pp("solution");
+        this->read_input_file(pp);
     }
     // ================================================================
 

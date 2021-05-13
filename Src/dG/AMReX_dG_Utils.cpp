@@ -90,6 +90,23 @@ std::string replace_input_keywords(const std::string & is)
 
 namespace io
 {
+// SIMPLE INPUT/OUTPUT ROUTINES #######################################
+void good_so_far(const int rank, const MPI_Comm comm, const int n, std::ostream & os)
+{
+    Print(rank, comm, os) << "good so far: " << n << std::endl;
+}
+void good_so_far(const int n, std::ostream & os)
+{
+    good_so_far(ParallelContext::IOProcessorNumberSub(), ParallelContext::CommunicatorSub(), n, os);
+}
+void good_so_far(std::ostream & os)
+{
+    good_so_far(0, os);
+}
+// ####################################################################
+
+
+
 // INPUT/OUTPUT ROUTINES FOR FOLDERS ##################################
 /**
  * \brief Build a path from a set of input strings.
@@ -133,6 +150,7 @@ std::string make_path(const std::initializer_list<std::string> list)
     return path;
 }
 // ####################################################################
+
 
 
 // INPUT/OUTPUT ROUTINES FOR ARRAYS ###################################

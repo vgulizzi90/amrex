@@ -1,5 +1,5 @@
 # SPACE ###############################################################
-geometry.prob_lo     = 0.5 0.5 0.5
+geometry.prob_lo     = 0.0 0.0 0.0
 geometry.prob_hi     = 1.0 1.0 1.0
 geometry.is_periodic = 0 0 0
 #######################################################################
@@ -8,25 +8,44 @@ geometry.is_periodic = 0 0 0
 
 # DISCRETIZATION ######################################################
 # GRIDS ===============================================================
-n_cell        = 1 1 1
-max_grid_size = 4 4 4
+n_cell        = 2 2 1
+max_grid_size = 2 2 1
 # =====================================================================
 
 
 # MESH ================================================================
+# USING ANALYTICAL LEVEL SET
+#mesh.embedded_geometry_is_active = 1
+#mesh.embedded_geometry_defined_by = level_set
+#mesh.box_pruning_is_active = 1
+#mesh.quadrature_order_regular_elements = 3
+#mesh.quadrature_order_cut_elements = 3
+#mesh.post_processing_grid_order = 15
+
+# USING PROJECTED LEVEL SET
 mesh.embedded_geometry_is_active = 1
-mesh.embedded_geometry_defined_by = level_set
+mesh.embedded_geometry_defined_by = projected_level_set
 mesh.box_pruning_is_active = 1
+mesh.projected_level_set_p = 8
+mesh.quadrature_order_projected_level_set = 9
 mesh.quadrature_order_regular_elements = 3
 mesh.quadrature_order_cut_elements = 3
 mesh.post_processing_grid_order = 15
+# =====================================================================
+
+
+# SOLUTION ============================================================
+solution.space_p = 3
+solution.cell_merging_is_active = 1
+solution.cell_merging_volume_fraction_threshold = 0.3
+solution.post_processing_grid_order = 15
 # =====================================================================
 #######################################################################
 
 
 
 # PROBLEM #############################################################
-use_two_phases = 0
+use_two_phases = 1
 
 which_embedded_geometry = custom
 
@@ -50,20 +69,20 @@ radius = 0.45
 #
 # The parameters of the embedded geometry are specified as follows:
 #
-# If ((mesh.embedded_geometry_defined_by == level_set) and (which_embedded_geometry == circle)):
+# If (which_embedded_geometry == circle):
 #     The input file must contain
 #         x_coord: x coordinate of the circle
 #         y_coord: y coordinate of the circle
 #         radius: radius of the circle
 #
-# If ((mesh.embedded_geometry_defined_by == level_set) and (which_embedded_geometry == sphere)):
+# If (which_embedded_geometry == sphere):
 #     The input file must contain
 #         x_coord: x coordinate of the sphere
 #         y_coord: y coordinate of the sphere
 #         z_coord: z coordinate of the sphere
 #         radius: radius of the sphere
 #
-# If ((mesh.embedded_geometry_defined_by == level_set) and (which_embedded_geometry == custom)):
+# If (which_embedded_geometry == custom):
 #     The level set must be manually coded in IBVP_QuadratureRules.H.
 #
 #######################################################################

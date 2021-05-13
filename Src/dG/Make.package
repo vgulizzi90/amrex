@@ -6,6 +6,7 @@ CEXE_headers += AMReX_dG_Utils.H
 CEXE_headers += AMReX_dG_BasisFunctions.H
 CEXE_headers += AMReX_dG_LinAlg.H
 CEXE_headers += AMReX_dG_StandardElements.H
+CEXE_headers += AMReX_dG_Cell_BFX.H
 CEXE_headers += AMReX_dG_Mesh.H
 CEXE_headers += AMReX_dG_Mesh_Output.H
 CEXE_headers += AMReX_dG_BFX.H

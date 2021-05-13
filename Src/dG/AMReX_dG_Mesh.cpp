@@ -38,6 +38,9 @@ namespace dG
         pp.query("box_pruning_is_active", tmp_int);
         this->params.box_pruning_is_active = (tmp_int > 0);
 
+        pp.query("projected_level_set_p", this->params.projected_level_set_p);
+        pp.query("quadrature_order_projected_level_set", this->params.quadrature_order_projected_level_set);
+
         pp.query("quadrature_order_regular_elements", this->params.quadrature_order_regular_elements);
         pp.query("quadrature_order_cut_elements", this->params.quadrature_order_cut_elements);
 
@@ -77,6 +80,17 @@ namespace dG
     bool Mesh::uses_level_set() const
     {
         return (this->params.embedded_geometry_defined_by.compare("level_set") == 0);
+    }
+
+    /**
+     * \brief Return true if the embedded geometries is defined by a projected level set function.
+     *
+     * \return true if params.embedded_geometry_defined_by == "projected_level_set", false otherwise.
+     *
+    */
+    bool Mesh::uses_projected_level_set() const
+    {
+        return (this->params.embedded_geometry_defined_by.compare("projected_level_set") == 0);
     }
 
     /**

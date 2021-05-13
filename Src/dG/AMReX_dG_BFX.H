@@ -9,18 +9,8 @@
 #ifndef AMREX_DG_BFX_H_
 #define AMREX_DG_BFX_H_
 
-#include <AMReX_dG_BasisFunctions.H>
-
-#define __DG_MAX_SPACE_p__ 3
-#if (AMREX_SPACEDIM == 1)
-#define __DG_MAX_SPACE_Np__ (1+__DG_MAX_SPACE_p__)
-#endif
-#if (AMREX_SPACEDIM == 2)
-#define __DG_MAX_SPACE_Np__ ((1+__DG_MAX_SPACE_p__)*(1+__DG_MAX_SPACE_p__))
-#endif
-#if (AMREX_SPACEDIM == 3)
-#define __DG_MAX_SPACE_Np__ ((1+__DG_MAX_SPACE_p__)*(1+__DG_MAX_SPACE_p__)*(1+__DG_MAX_SPACE_p__))
-#endif
+#include <AMReX_dG_Cell_BFX.H>
+#include <AMReX_dG_Mesh.H>
 
 namespace amrex
 {
@@ -28,7 +18,7 @@ namespace dG
 {
 
 template <int DG_MAX_p, int DG_MAX_Np>
-struct dG_space_bf_base
+struct space_elm_bf_base
 {
     // DATA MEMBERS ===================================================
     const int p, Np;
@@ -43,9 +33,9 @@ struct dG_space_bf_base
 
     // CONSTRUCTOR ====================================================
     AMREX_GPU_HOST_DEVICE
-    dG_space_bf_base(const Real * prob_lo, const Real * dx,
-                     const int i, const int j, const int k, const short etype,
-                     const int p_):
+    space_elm_bf_base(const Real * prob_lo, const Real * dx,
+                      const int i, const int j, const int k, const short etype,
+                      const int p_):
     p{p_},
     Np{AMREX_D_TERM((1+p_),*(1+p_),*(1+p_))}
     {
@@ -54,6 +44,13 @@ struct dG_space_bf_base
         this->self_check();
 #endif
     }
+
+    AMREX_GPU_HOST_DEVICE
+    space_elm_bf_base(const Real * prob_lo, const Real * dx,
+                      const int i, const int j, const int k,
+                      const int p_):
+    space_elm_bf_base(prob_lo, dx, i, j, k, __DG_CELL_TYPE_ENTIRE__, p_)
+    {}
     // ================================================================
 
 
@@ -68,7 +65,7 @@ struct dG_space_bf_base
 #else
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: AMReX_dG_BFX.H - dG_space_bf_base.self_check()\n";
+            msg +=  "ERROR: AMReX_dG_BFX.H - space_elm_bf_base.self_check()\n";
             msg += "| The order of the basis functions exceeds the maximum allowed number.\n";
             msg += "| p       : "+std::to_string(p)+".\n";
             msg += "| DG_MAX_p: "+std::to_string(DG_MAX_p)+".\n";
@@ -151,13 +148,13 @@ struct dG_space_bf_base
 
 };
 
-typedef dG_space_bf_base<__DG_MAX_SPACE_p__, __DG_MAX_SPACE_Np__> dG_space_bf;
+typedef space_elm_bf_base<__DG_MAX_SPACE_p__, __DG_MAX_SPACE_Np__> space_elm_bf;
 
 
 template <int DG_MAX_p, int DG_MAX_Np>
-struct dG_space_bfx_base
+struct space_elm_bfx_base
 :
-public dG_space_bf_base<DG_MAX_p, DG_MAX_Np>
+public space_elm_bf_base<DG_MAX_p, DG_MAX_Np>
 {
     // DATA MEMBERS ===================================================
     int i, j, k;
@@ -168,24 +165,24 @@ public dG_space_bf_base<DG_MAX_p, DG_MAX_Np>
 
     // CONSTRUCTORS ===================================================
     AMREX_GPU_HOST_DEVICE
-    dG_space_bfx_base(const Real * prob_lo, const Real * dx,
-                      const int i_, const int j_, const int k_, const short etype,
-                      const int p_,
-                      Array4<Real const> const & fab_)
+    space_elm_bfx_base(const Real * prob_lo, const Real * dx,
+                       const int i_, const int j_, const int k_, const short etype,
+                       const int p_,
+                       Array4<Real const> const & fab_)
     :
-    dG_space_bf_base<DG_MAX_p, DG_MAX_Np>(prob_lo, dx, i_, j_, k_, etype, p_),
+    space_elm_bf_base<DG_MAX_p, DG_MAX_Np>(prob_lo, dx, i_, j_, k_, etype, p_),
     i{i_}, j{j_}, k{k_},
     u{-1},
     fab{fab_}
     {}
 
     AMREX_GPU_HOST_DEVICE
-    dG_space_bfx_base(const Real * prob_lo, const Real * dx,
-                      const int i_, const int j_, const int k_,
-                      const int p_,
-                      Array4<Real const> const & fab_)
+    space_elm_bfx_base(const Real * prob_lo, const Real * dx,
+                       const int i_, const int j_, const int k_,
+                       const int p_,
+                       Array4<Real const> const & fab_)
     :
-    dG_space_bf_base<DG_MAX_p, DG_MAX_Np>(prob_lo, dx, i_, j_, k_, __DG_CELL_TYPE_ENTIRE__, p_),
+    space_elm_bf_base<DG_MAX_p, DG_MAX_Np>(prob_lo, dx, i_, j_, k_, __DG_CELL_TYPE_ENTIRE__, p_),
     i{i_}, j{j_}, k{k_},
     u{-1},
     fab{fab_}
@@ -248,11 +245,13 @@ public dG_space_bf_base<DG_MAX_p, DG_MAX_Np>
 
         for (int c = 0; c < (this->Np); ++c)
         {
+            const Real coeff = this->fab(this->i,this->j,this->k,c+(this->u)*(this->Np));
+
             AMREX_D_TERM
             (
-                res[0] += this->dBFdx1[c]*this->fab(this->i,this->j,this->k,c+(this->u)*(this->Np));,
-                res[1] += this->dBFdx2[c]*this->fab(this->i,this->j,this->k,c+(this->u)*(this->Np));,
-                res[2] += this->dBFdx3[c]*this->fab(this->i,this->j,this->k,c+(this->u)*(this->Np));
+                res[0] += this->dBFdx1[c]*coeff;,
+                res[1] += this->dBFdx2[c]*coeff;,
+                res[2] += this->dBFdx3[c]*coeff;
             )
         }
     }
@@ -306,10 +305,10 @@ public dG_space_bf_base<DG_MAX_p, DG_MAX_Np>
     // ================================================================
 };
 
-typedef dG_space_bfx_base<__DG_MAX_SPACE_p__, __DG_MAX_SPACE_Np__> dG_space_bfx;
+typedef space_elm_bfx_base<__DG_MAX_SPACE_p__, __DG_MAX_SPACE_Np__> space_elm_bfx;
 
 
-struct dG_space_rx
+struct space_elm_rx
 {
     // DATA MEMBERS ===================================================
     Real xc[AMREX_SPACEDIM];
@@ -322,9 +321,9 @@ struct dG_space_rx
 
     // CONSTRUCTORS ===================================================
     AMREX_GPU_HOST_DEVICE
-    dG_space_rx(const Real * xc_, const int i_, const int j_, const int k_,
-                Array4<Real const> const & fab_,
-                Array4<Real const> const & slopes_fab_)
+    space_elm_rx(const Real * xc_, const int i_, const int j_, const int k_,
+                 Array4<Real const> const & fab_,
+                 Array4<Real const> const & slopes_fab_)
     :
     xc{AMREX_D_DECL(xc_[0], xc_[1], xc_[2])},
     i{i_}, j{j_}, k{k_},
@@ -334,9 +333,9 @@ struct dG_space_rx
     {}
 
     AMREX_GPU_HOST_DEVICE
-    dG_space_rx(const int i_, const int j_, const int k_,
-                Array4<Real const> const & fab_,
-                Array4<Real const> const & slopes_fab_)
+    space_elm_rx(const int i_, const int j_, const int k_,
+                 Array4<Real const> const & fab_,
+                 Array4<Real const> const & slopes_fab_)
     :
     xc{AMREX_D_DECL(0.0, 0.0, 0.0)},
     i{i_}, j{j_}, k{k_},

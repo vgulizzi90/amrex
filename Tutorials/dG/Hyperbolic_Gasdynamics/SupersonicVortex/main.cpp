@@ -26,7 +26,7 @@ void main_main()
     amrex::dG::TimeKeeper time_keeper;
 
     // USER-DEFINED AMR
-    SupersonicVortex::AMR amr;
+    supersonic_vortex::AMR amr;
     
     // RESTART INFO
     int n0;

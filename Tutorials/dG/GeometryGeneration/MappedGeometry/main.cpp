@@ -5,11 +5,11 @@
 // SUMMARY:
 // In this tutorial, we test different libraries used to generate the
 // high-order quadrature rules for embedded-boundary discontinuous
-// Galerkin methods.
+// Galerkin methods with mapped geometries.
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
-#include "IBVP_QuadratureRules.H"
+#include "IBVP_MappedGeometry.H"
 // ====================================================================
 // ####################################################################
 
@@ -38,7 +38,7 @@ void main_main()
     amrex::DistributionMapping dm;
 
     // USER-DEFINED IBVP
-    QuadratureRules::IBVP ibvp;
+    MappedGeometry::IBVP ibvp;
 
     // MULTIFABS STORING THE SOLUTION AND THE LEVEL SET
     amrex::MultiFab X, L;
@@ -56,7 +56,7 @@ void main_main()
     amrex::Print() << "# SUMMARY:                                                             " << std::endl;
     amrex::Print() << "# In this tutorial, we test different libraries used to generate the   " << std::endl;
     amrex::Print() << "# high-order quadrature rules for embedded-boundary discontinuous      " << std::endl;
-    amrex::Print() << "# Galerkin methods.                                                    " << std::endl;
+    amrex::Print() << "# Galerkin methods with mapped geometries.                             " << std::endl;
     amrex::Print() << "#                                                                      " << std::endl;
     amrex::Print() << "#######################################################################" << std::endl;
     amrex::Print() << "# The selected space dimension at compile time is                      " << std::endl;
@@ -133,42 +133,15 @@ void main_main()
         mesh_has_been_generated = false;
         if (mesh.uses_embedded_geometries())
         {
-            if (mesh.uses_level_set() && (which_embedded_geometry.compare("custom") == 0))
-            {
-                QuadratureRules::CustomLevelSet level_set;
-                mesh.make_from_scratch_by_level_set(t, geom, ba, dm, ibvp, level_set);
-
-                mesh_has_been_generated = true;
-            }
-            
             if (mesh.uses_projected_level_set() && (which_embedded_geometry.compare("custom") == 0))
             {
-                QuadratureRules::CustomLevelSet level_set;
+                MappedGeometry::CustomLevelSet level_set;
                 mesh.project_space_level_set(t, geom, L, level_set);
                 mesh.make_from_scratch_by_projected_level_set(t, geom, ba, dm, L, ibvp);
 
                 mesh_has_been_generated = true;
             }
 
-#if (AMREX_SPACEDIM == 2)
-            if (mesh.uses_level_set() && (which_embedded_geometry.compare("circle") == 0))
-            {
-                QuadratureRules::Circle level_set;
-                mesh.make_from_scratch_by_level_set(t, geom, ba, dm, ibvp, level_set);
-
-                mesh_has_been_generated = true;
-            }
-#endif
-
-#if (AMREX_SPACEDIM == 3)
-            if (mesh.uses_level_set() && (which_embedded_geometry.compare("sphere") == 0))
-            {
-                QuadratureRules::Sphere level_set;
-                mesh.make_from_scratch_by_level_set(t, geom, ba, dm, ibvp, level_set);
-
-                mesh_has_been_generated = true;
-            }
-#endif
             if (!mesh_has_been_generated)
             {
                 std::string msg;
@@ -208,38 +181,7 @@ void main_main()
 
         if (mesh.uses_embedded_geometries())
         {
-#if (AMREX_SPACEDIM == 2)
-            if (mesh.uses_level_set() && (which_embedded_geometry.compare("circle") == 0))
-            {
-                QuadratureRules::Circle level_set;
-                //const amrex::Real * c = level_set.c;
-                const amrex::Real r = level_set.r;
-
-                volume[0] = M_PI*r*r;
-                surface[0] = 2.0*M_PI*r;
-
-                volume[1] = prob_volume-volume[0];
-                surface[1] = surface[0];
-
-                mesh.check_quadrature_rules(geom, n_domains, volume.data(), surface.data());
-            }
-#endif
-#if (AMREX_SPACEDIM == 3)
-            if (mesh.uses_level_set() && (which_embedded_geometry.compare("sphere") == 0))
-            {
-                QuadratureRules::Sphere level_set;
-                //const amrex::Real * c = level_set.c;
-                const amrex::Real r = level_set.r;
-
-                volume[0] = (4.0/3.0)*M_PI*r*r*r;
-                surface[0] = 4.0*M_PI*r*r;
-
-                volume[1] = prob_volume-volume[0];
-                surface[1] = surface[0];
-
-                mesh.check_quadrature_rules(geom, n_domains, volume.data(), surface.data());
-            }
-#endif
+            
         }
         else
         {
@@ -299,6 +241,29 @@ void main_main()
             }
         }
     }
+    // ================================================================
+
+
+    // AUXILIARY EVALUATION FOR MAPPED GEOMETRIES =====================
+    /*
+    {
+        const amrex::Real xi[2] = {0.08660254038, 0.15};
+        amrex::Real x0[3], un[3], x[3], gl[9];
+
+        ibvp.eval_shell_map_and_unit_normal(xi, x0, un);
+        x[0] = x0[0]+0.05*un[0];
+        x[1] = x0[1]+0.05*un[1];
+        x[2] = x0[2]+0.05*un[2];
+        ibvp.eval_map_covariant_basis(xi, gl);
+
+amrex::Print() << "xi: "; amrex::dG::io::print_real_array_2d(1, 2, xi);
+amrex::Print() << "x0: "; amrex::dG::io::print_real_array_2d(1, 3, x0);
+amrex::Print() << "un: "; amrex::dG::io::print_real_array_2d(1, 3, un);
+amrex::Print() << "x: "; amrex::dG::io::print_real_array_2d(1, 3, x);
+amrex::Print() << "gl: " << std::endl; amrex::dG::io::print_real_array_2d(3, 3, gl);
+
+    }
+    */
     // ================================================================
 
 

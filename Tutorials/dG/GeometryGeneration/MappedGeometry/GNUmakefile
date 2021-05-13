@@ -4,8 +4,6 @@ AMREX_HOME ?= ../../../../
 
 COMP = gnu
 CXXSTD = c++17
-LDFLAGS += -L/home/vgulizzi/intel/compilers_and_libraries/linux/mkl/lib/intel64
-LIBRARIES += -lblas -llapack
 
 DEBUG = TRUE
 TINY_PROFILE = TRUE

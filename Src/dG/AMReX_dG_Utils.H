@@ -29,10 +29,18 @@ std::string replace_input_keywords(const std::string & is);
 
 namespace io
 {
+// SIMPLE INPUT/OUTPUT ROUTINES #######################################
+void good_so_far(const int rank, const MPI_Comm comm, const int n, std::ostream & os = OutStream());
+void good_so_far(const int n, std::ostream & os = OutStream());
+void good_so_far(std::ostream & os = OutStream());
+// ####################################################################
+
+
 
 // INPUT/OUTPUT ROUTINES FOR FOLDERS ##################################
 std::string make_path(const std::initializer_list<std::string>);
 // ####################################################################
+
 
 
 // INPUT/OUTPUT ROUTINES FOR ARRAYS ###################################

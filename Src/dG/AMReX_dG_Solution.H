@@ -48,6 +48,8 @@ struct SolutionParameters
     
     std::string time_integration;
     Real time_integration_CFL;
+
+    int post_processing_grid_order;
     // ================================================================
 
 
@@ -60,7 +62,8 @@ struct SolutionParameters
     cell_merging_is_active{false},
     cell_merging_volume_fraction_threshold{-1.0},
     time_integration{""},
-    time_integration_CFL{0.0}
+    time_integration_CFL{0.0},
+    post_processing_grid_order{1}
     {}
     // ================================================================
 };
@@ -109,6 +112,7 @@ struct Solution
 
     // INITIALIZATION =================================================
     void read_input_file(const ParmParse & pp);
+    void read_input_file();
     // ================================================================
 
 
@@ -378,6 +382,8 @@ struct Solution
                 if (elm_is_partial)
                 {
                     const Real vf = cell_vf_fab(i,j,k,dom);
+                    
+                    //Print() << "vf(" << i << "," << j << ",k): " << vf << std::endl;
 
                     // CONDITION FOR A LARGE ELEMENT
                     if (vf >= vft)
@@ -756,24 +762,13 @@ struct Solution
     template <typename IBVP>
     void make_from_scratch(const Real t, const Geometry & geom, const Mesh & mesh, const IBVP & ibvp)
     {
-        if (this->time_integration_is_explicit_RKdG())
-        {
-            // ELEMENT / ELEMENT BOUNDARY TYPE
-            this->set_elm_and_elm_bou_type(geom, mesh, ibvp);
+        // ELEMENT / ELEMENT BOUNDARY TYPE
+        this->set_elm_and_elm_bou_type(geom, mesh, ibvp);
 
-            // CELL MERGING
-            if (this->uses_cell_merging())
-            {
-                this->set_cell_merging(geom, mesh, ibvp);
-            }
-        }
-        else
+        // CELL MERGING
+        if (this->uses_cell_merging())
         {
-            std::string msg;
-            msg  = "\n";
-            msg +=  "ERROR: AMReX_dG_Solution.H - Solution::make_from_scratch\n";
-            msg += "| Unexpected input parameters.\n";
-            Abort(msg);
+            this->set_cell_merging(geom, mesh, ibvp);
         }
 
         this->set_fields_parent_domains(ibvp);
@@ -795,24 +790,13 @@ struct Solution
     template <typename IBVP>
     void remake(const Real t, const Geometry & geom, const Mesh & mesh, const IBVP & ibvp)
     {
-        if (this->time_integration_is_explicit_RKdG())
-        {
-            // ELEMENT / ELEMENT BOUNDARY TYPE
-            this->set_elm_and_elm_bou_type(geom, mesh, ibvp);
+        // ELEMENT / ELEMENT BOUNDARY TYPE
+        this->set_elm_and_elm_bou_type(geom, mesh, ibvp);
 
-            // CELL MERGING
-            if (this->uses_cell_merging())
-            {
-                this->set_cell_merging(geom, mesh, ibvp);
-            }
-        }
-        else
+        // CELL MERGING
+        if (this->uses_cell_merging())
         {
-            std::string msg;
-            msg  = "\n";
-            msg +=  "ERROR: AMReX_dG_Solution.H - Solution::remake\n";
-            msg += "| Unexpected input parameters.\n";
-            Abort(msg);
+            this->set_cell_merging(geom, mesh, ibvp);
         }
     }
 
@@ -924,7 +908,7 @@ struct Solution
                 Real MM[__DG_MAX_SPACE_Np__*__DG_MAX_SPACE_Np__];
 
                 // BASIS FUNCTIONS
-                dG_space_bf bf(&prob_lo[0], &dx[0], i, j, k, etype, sp);
+                space_elm_bf bf(&prob_lo[0], &dx[0], i, j, k, etype, sp);
 
                 // EMPTY ELEMENT
                 if (ELM_IS_EMPTY(etype))
@@ -1288,11 +1272,12 @@ struct Solution
                 Real U[__DG_MAX_N_UNKNOWN_FIELDS__];
 
                 // BASIS FUNCTIONS
-                dG_space_bf bf(&prob_lo[0], &dx[0], i, j, k, etype, sp);
+                space_elm_bf bf(&prob_lo[0], &dx[0], i, j, k, etype, sp);
 
                 // EVAL THE INTEGRAL
                 for (int q = 0; q < dom_Nq; ++q)
                 {
+                    // Quadrature point and weight
                     const long x_pos = (AMREX_SPACEDIM+1)*q;
                     AMREX_D_TERM
                     (
@@ -1645,7 +1630,7 @@ struct Solution
                     Real U[__DG_MAX_N_UNKNOWN_FIELDS__];
 
                     // UNKNOWN FIELDS
-                    dG_space_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+                    space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
 
                     // INITIALIZATION
                     err_x = 0.0;
@@ -1769,7 +1754,7 @@ struct Solution
                     Real U[__DG_MAX_N_UNKNOWN_FIELDS__];
 
                     // UNKNOWN FIELDS
-                    dG_space_rx ru(i, j, k, X_fab, dX_fab);
+                    space_elm_rx ru(i, j, k, X_fab, dX_fab);
                     AMREX_D_TERM
                     (
                         ru.xc[0] = elm_centroid_fab(i,j,k,ELM_CENTROID_X1(dom));,
@@ -1906,7 +1891,7 @@ struct Solution
                     Real U[__DG_MAX_N_UNKNOWN_FIELDS__];
 
                     // UNKNOWN FIELDS
-                    dG_space_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+                    space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
 
                     // INITIALIZATION
                     dt_x = max_real;

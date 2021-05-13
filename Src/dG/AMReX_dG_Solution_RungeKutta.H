@@ -106,7 +106,7 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                 Real AMREX_D_DECL(F1[__DG_MAX_N_UNKNOWN_FIELDS__], F2[__DG_MAX_N_UNKNOWN_FIELDS__], F3[__DG_MAX_N_UNKNOWN_FIELDS__]);
 
                 // UNKNOWN FIELDS
-                dG_space_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+                space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
 
                 // EVAL THE INTEGRAL
                 for (int q = 0; q < dom_Nq; ++q)
@@ -158,7 +158,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void FX_BCS(const int n_unknown_fields,
             const int dom, const Real t,
             const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
-            dG_space_bfx & bfu,
+            space_elm_bfx & bfu,
             const int fi, const int fj, const int fk,
             Array4<Real> const & FX_fab, const int FX_offset,
             const IBVP & ibvp)
@@ -205,7 +205,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void FX_ICS(const int n_unknown_fields,
             const int dom, const Real t,
             const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
-            dG_space_bfx & m_bfu, dG_space_bfx & p_bfu,
+            space_elm_bfx & m_bfu, space_elm_bfx & p_bfu,
             const int fi, const int fj, const int fk,
             Array4<Real> const & FX_fab, const int FX_offset,
             const IBVP & ibvp)
@@ -356,8 +356,8 @@ void eval_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, con
                     p_etype = elm_type_fab(pi,pj,pk,ELM_TYPE(dom));
 
                     // UNKNOWN FIELDS
-                    dG_space_bfx m_bfu(&prob_lo[0], &dx[0], mi, mj, mk, m_etype, sp, X_fab);
-                    dG_space_bfx p_bfu(&prob_lo[0], &dx[0], pi, pj, pk, p_etype, sp, X_fab);
+                    space_elm_bfx m_bfu(&prob_lo[0], &dx[0], mi, mj, mk, m_etype, sp, X_fab);
+                    space_elm_bfx p_bfu(&prob_lo[0], &dx[0], pi, pj, pk, p_etype, sp, X_fab);
 
                     // BOUNDARY CONDITIONS
                     if ((ff == domain.smallEnd(dir)) && (is_periodic[dir] == 0))
@@ -481,7 +481,7 @@ void add_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                 if (nbr_dom == -1)
                 {
                     // UNKNOWN FIELDS
-                    dG_space_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+                    space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
 
                     // EVAL THE INTEGRAL
                     for (int q = 0; q < bou_Nq; ++q)
@@ -506,7 +506,7 @@ void add_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                         bfu.eval(x, 0, n_unknown_fields, U);
 
                         // Numerical flux as a functions of (t, x, un, U)
-                        ibvp.eval_NFn_ICs(dom, t, x, un, U, NFn);
+                        ibvp.eval_NFn_EB(dom, t, x, un, U, NFn);
 
                         // Integral contribution
                         for (int ru = 0; ru < n_unknown_fields; ++ru)
@@ -577,7 +577,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void FX_BCS(const int n_unknown_fields,
             const int dom, const Real t,
             const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
-            dG_space_rx & rx,
+            space_elm_rx & rx,
             const int fi, const int fj, const int fk,
             Array4<Real> const & FX_fab, const int FX_offset,
             const IBVP & ibvp)
@@ -620,7 +620,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void FX_ICS(const int n_unknown_fields,
             const int dom, const Real t,
             const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
-            dG_space_rx & m_ru, dG_space_rx & p_ru,
+            space_elm_rx & m_ru, space_elm_rx & p_ru,
             const int fi, const int fj, const int fk,
             Array4<Real> const & FX_fab, const int FX_offset,
             const IBVP & ibvp)
@@ -758,14 +758,14 @@ void eval_FV_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, 
                     FACE_TO_NBRS(fi, fj, fk, dir, mi, mj, mk, pi, pj, pk);
 
                     // UNKNOWN FIELDS (WITH RECONSTRUCTION)
-                    dG_space_rx m_ru(mi, mj, mk, X_fab, dX_fab);
+                    space_elm_rx m_ru(mi, mj, mk, X_fab, dX_fab);
                     AMREX_D_TERM
                     (
                         m_ru.xc[0] = elm_centroid_fab(mi,mj,mk,ELM_CENTROID_X1(dom));,
                         m_ru.xc[1] = elm_centroid_fab(mi,mj,mk,ELM_CENTROID_X2(dom));,
                         m_ru.xc[2] = elm_centroid_fab(mi,mj,mk,ELM_CENTROID_X3(dom));
                     )
-                    dG_space_rx p_ru(pi, pj, pk, X_fab, dX_fab);
+                    space_elm_rx p_ru(pi, pj, pk, X_fab, dX_fab);
                     AMREX_D_TERM
                     (
                         p_ru.xc[0] = elm_centroid_fab(pi,pj,pk,ELM_CENTROID_X1(dom));,
@@ -816,7 +816,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void FX_ICS(const int n_unknown_fields,
             const int dom, const Real t,
             const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
-            dG_space_bfx & m_bfu, dG_space_rx & p_ru,
+            space_elm_bfx & m_bfu, space_elm_rx & p_ru,
             const int fi, const int fj, const int fk,
             Array4<Real> const & FX_fab, const int FX_offset,
             const IBVP & ibvp)
@@ -868,7 +868,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void FX_ICS(const int n_unknown_fields,
             const int dom, const Real t,
             const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
-            dG_space_rx & m_ru, dG_space_bfx & p_bfu,
+            space_elm_rx & m_ru, space_elm_bfx & p_bfu,
             const int fi, const int fj, const int fk,
             Array4<Real> const & FX_fab, const int FX_offset,
             const IBVP & ibvp)
@@ -1081,7 +1081,7 @@ void eval_dG_FV_bou_fluxes(const Real t,
                     if ((ff == domain.smallEnd(dir)) && (is_periodic[dir] == 0))
                     {
                         // UNKNOWN FIELDS (WITH RECONSTRUCTION)
-                        dG_space_rx p_ru(pi, pj, pk, f_X_fab, f_dX_fab);
+                        space_elm_rx p_ru(pi, pj, pk, f_X_fab, f_dX_fab);
                         AMREX_D_TERM
                         (
                             p_ru.xc[0] = f_elm_centroid_fab(pi,pj,pk,ELM_CENTROID_X1(dom));,
@@ -1100,7 +1100,7 @@ void eval_dG_FV_bou_fluxes(const Real t,
                     else if ((ff == (domain.bigEnd(dir)+1)) && (is_periodic[dir] == 0))
                     {
                         // UNKNOWN FIELDS (WITH RECONSTRUCTION)
-                        dG_space_rx m_ru(mi, mj, mk, f_X_fab, f_dX_fab);
+                        space_elm_rx m_ru(mi, mj, mk, f_X_fab, f_dX_fab);
                         AMREX_D_TERM
                         (
                             m_ru.xc[0] = f_elm_centroid_fab(mi,mj,mk,ELM_CENTROID_X1(dom));,
@@ -1130,9 +1130,9 @@ void eval_dG_FV_bou_fluxes(const Real t,
                             FINE_TO_COARSE(mi, mj, mk, rr, c_i, c_j, c_k);
 
                             // UNKNOWN FIELDS
-                            dG_space_bfx m_bfu(&prob_lo[0], &c_dx[0], c_i, c_j, c_k, c_elm_type_fab(c_i,c_j,c_k,ELM_TYPE(dom)), c_sp, c_X_fab);
+                            space_elm_bfx m_bfu(&prob_lo[0], &c_dx[0], c_i, c_j, c_k, c_elm_type_fab(c_i,c_j,c_k,ELM_TYPE(dom)), c_sp, c_X_fab);
                             // UNKNOWN FIELDS (WITH RECONSTRUCTION)
-                            dG_space_rx p_ru(pi, pj, pk, f_X_fab, f_dX_fab);
+                            space_elm_rx p_ru(pi, pj, pk, f_X_fab, f_dX_fab);
                             AMREX_D_TERM
                             (
                                 p_ru.xc[0] = f_elm_centroid_fab(pi,pj,pk,ELM_CENTROID_X1(dom));,
@@ -1158,7 +1158,7 @@ void eval_dG_FV_bou_fluxes(const Real t,
                             FINE_TO_COARSE(pi, pj, pk, rr, c_i, c_j, c_k);
 
                             // UNKNOWN FIELDS (WITH RECONSTRUCTION)
-                            dG_space_rx m_ru(mi, mj, mk, f_X_fab, f_dX_fab);
+                            space_elm_rx m_ru(mi, mj, mk, f_X_fab, f_dX_fab);
                             AMREX_D_TERM
                             (
                                 m_ru.xc[0] = f_elm_centroid_fab(mi,mj,mk,ELM_CENTROID_X1(dom));,
@@ -1166,7 +1166,7 @@ void eval_dG_FV_bou_fluxes(const Real t,
                                 m_ru.xc[2] = f_elm_centroid_fab(mi,mj,mk,ELM_CENTROID_X3(dom));
                             )
                             // UNKNOWN FIELDS
-                            dG_space_bfx p_bfu(&prob_lo[0], &c_dx[0], c_i, c_j, c_k, c_elm_type_fab(c_i,c_j,c_k,ELM_TYPE(dom)), c_sp, c_X_fab);
+                            space_elm_bfx p_bfu(&prob_lo[0], &c_dx[0], c_i, c_j, c_k, c_elm_type_fab(c_i,c_j,c_k,ELM_TYPE(dom)), c_sp, c_X_fab);
 
                             // EVAL THE INTEGRAL
                             FX_ICS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, m_ru, p_bfu, fi, fj, fk, FX_fab, FX_offset, ibvp);
@@ -1182,14 +1182,14 @@ void eval_dG_FV_bou_fluxes(const Real t,
                         else
                         {
                             // UNKNOWN FIELDS (WITH RECONSTRUCTION)
-                            dG_space_rx m_ru(mi, mj, mk, f_X_fab, f_dX_fab);
+                            space_elm_rx m_ru(mi, mj, mk, f_X_fab, f_dX_fab);
                             AMREX_D_TERM
                             (
                                 m_ru.xc[0] = f_elm_centroid_fab(mi,mj,mk,ELM_CENTROID_X1(dom));,
                                 m_ru.xc[1] = f_elm_centroid_fab(mi,mj,mk,ELM_CENTROID_X2(dom));,
                                 m_ru.xc[2] = f_elm_centroid_fab(mi,mj,mk,ELM_CENTROID_X3(dom));
                             )
-                            dG_space_rx p_ru(pi, pj, pk, f_X_fab, f_dX_fab);
+                            space_elm_rx p_ru(pi, pj, pk, f_X_fab, f_dX_fab);
                             AMREX_D_TERM
                             (
                                 p_ru.xc[0] = f_elm_centroid_fab(pi,pj,pk,ELM_CENTROID_X1(dom));,
@@ -1288,7 +1288,7 @@ void add_FV_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh 
                 if (nbr_dom == -1)
                 {
                     // UNKNOWN FIELDS (WITH RECONSTRUCTION)
-                    dG_space_rx rx(i, j, k, X_fab, dX_fab);
+                    space_elm_rx rx(i, j, k, X_fab, dX_fab);
                     AMREX_D_TERM
                     (
                         rx.xc[0] = elm_centroid_fab(i,j,k,ELM_CENTROID_X1(dom));,
@@ -1319,7 +1319,7 @@ void add_FV_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh 
                         rx.eval(x, 0, n_unknown_fields, U);
 
                         // Numerical flux as a functions of (t, x, un, U)
-                        ibvp.eval_NFn_ICs(dom, t, x, un, U, NFn);
+                        ibvp.eval_NFn_EB(dom, t, x, un, U, NFn);
 
                         // Integral contribution
                         for (int ru = 0; ru < n_unknown_fields; ++ru)

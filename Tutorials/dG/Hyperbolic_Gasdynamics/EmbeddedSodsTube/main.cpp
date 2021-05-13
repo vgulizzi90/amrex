@@ -26,7 +26,7 @@ void main_main()
     amrex::dG::TimeKeeper time_keeper;
 
     // USER-DEFINED AMR
-    EmbeddedSodsTube::AMR amr;
+    embedded_Sods_tube::AMR amr;
     
     // RESTART INFO
     int n0;

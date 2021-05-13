@@ -9,7 +9,7 @@
 //
 // ####################################################################
 // SELECT SET OF PDES =================================================
-#include "IBVP_SingleDomain.H"
+#include "IBVP_SinglePhaseDomain.H"
 // ====================================================================
 // ####################################################################
 
@@ -18,30 +18,7 @@
 // ACTUAL MAIN PROGRAM ################################################
 void main_main()
 {
-    // PARAMETERS =====================================================
-    // ================================================================
-
-
-    // VARIABLES ======================================================
-    amrex::dG::TimeKeeper time_keeper;
-
-    // USER-DEFINED AMR
-    SingleDomain::AMR amr;
-    
-    // RESTART INFO
-    int n0;
-    amrex::Real t0;
-
-    // ERROR
-    amrex::Real err_old, err_new, err_norm;
-    // ================================================================
-
-
     // OPENING ========================================================
-    // TIC -----------
-    time_keeper.tic();
-    // ---------------
-
     amrex::Print() << "#######################################################################" << std::endl;
     amrex::Print() << "# AMREX & DG PROJECT                                                   " << std::endl;
     amrex::Print() << "# Author: Vincenzo Gulizzi (vgulizzi@lbl.gov)                          " << std::endl;
@@ -56,6 +33,111 @@ void main_main()
     amrex::Print() << "# AMREX_SPACEDIM = " << AMREX_SPACEDIM << std::endl;
     amrex::Print() << "#                                                                      " << std::endl;
     amrex::Print() << "#######################################################################" << std::endl;
+    // ================================================================
+
+
+    // PARAMETERS =====================================================
+    // ================================================================
+
+
+    // VARIABLES ======================================================
+    amrex::dG::TimeKeeper time_keeper;
+
+    // USER-DEFINED AMR
+    single_phase_domain::AMR amr;
+    
+    // RESTART INFO
+    int n0;
+    amrex::Real t0;
+
+    // ERROR
+    amrex::Real err, err_norm;
+    // ================================================================
+
+
+    // TIC ============================================================
+    time_keeper.tic();
+    // ================================================================
+
+
+    // TEST THE RIEMANN SOLVER ========================================
+    /*
+    {
+        const amrex::Real th = M_PI/3.0;
+        const amrex::Real ph = M_PI/6.0;
+        const amrex::Real cth = std::cos(th);
+        const amrex::Real sth = std::sin(th);
+        const amrex::Real cph = std::cos(ph);
+        const amrex::Real sph = std::sin(ph);
+        const amrex::Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(cth*sph, sth*sph, cph)};
+        //const amrex::Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(1.0, 0.0, 0.0)};
+        amrex::Real An[N_VS*N_VS], wAn[N_VS], vAn[N_VS*N_VS], m_U[N_VS], p_U[N_VS], NFn[N_VS];
+        amrex::Print() << "un: "; amrex::dG::io::print_reals(AMREX_SPACEDIM, un); amrex::Print() << std::endl;
+        elastic_solid::eval_An_compact_c(amr.ibvp.density, amr.ibvp.c, un, An);
+        amrex::Print() << "An: " << std::endl;
+        amrex::dG::io::print_real_array_2d(N_VS, N_VS, An);
+
+        // Evaluate eigenvalues of An
+        {
+            char jobvl = 'N';
+            char jobvr = 'V';
+            int n = N_VS;
+            amrex::Real An_copy[N_VS*N_VS];
+            amrex::Real wAn_im[N_VS];
+            amrex::Real work[N_VS*N_VS];
+            int lwork = N_VS*N_VS;
+            int info;
+
+            std::copy(An, An+N_VS*N_VS, An_copy);
+            
+            dgeev_(&jobvl, &jobvr, &n, An_copy, &n, wAn, wAn_im, nullptr, &n, vAn, &n, work, &lwork, &info);
+            if (info != 0)
+            {
+                std::string msg;
+                msg  = "\n";
+                msg +=  "ERROR: main.cpp\n";
+                msg += "| Something went wrong in the computation of the eigenvalues of An.\n";
+                amrex::Abort(msg);
+            }
+        }
+
+        amrex::Print() << "wAn: " << std::endl;
+        amrex::dG::io::print_real_array_2d(1, N_VS, wAn);
+        amrex::Print() << "vAn: " << std::endl;
+        amrex::dG::io::print_real_array_2d(N_VS, N_VS, vAn);
+
+#if (AMREX_SPACEDIM == 3)
+        m_U[V1] = 1.0;
+        m_U[V2] = 1.0;
+        m_U[V3] = 1.0;
+        m_U[S11] = 1.0;
+        m_U[S22] = 1.0;
+        m_U[S33] = 1.0;
+        m_U[S23] = 1.0;
+        m_U[S13] = 1.0;
+        m_U[S12] = 1.0;
+
+        p_U[V1] = 0.0;
+        p_U[V2] = 0.0;
+        p_U[V3] = 0.0;
+        p_U[S11] = 0.0;
+        p_U[S22] = 0.0;
+        p_U[S33] = 0.0;
+        p_U[S23] = 0.0;
+        p_U[S13] = 0.0;
+        p_U[S12] = 0.0;
+#endif
+        
+        amrex::Print() << "m_U: "; amrex::dG::io::print_reals(N_VS, m_U); amrex::Print() << std::endl;
+        amrex::Print() << "p_U: "; amrex::dG::io::print_reals(N_VS, p_U); amrex::Print() << std::endl;
+        
+        elastic_solid::eval_NFn_Riemann_solver(amr.ibvp.density, amr.ibvp.c, un, m_U, p_U, NFn);
+
+        amrex::Print() << "NFn    : "; amrex::dG::io::print_reals(N_VS, NFn); amrex::Print() << std::endl;
+
+        return;
+    }
+    */
     // ================================================================
 
 
@@ -74,30 +156,10 @@ void main_main()
                                                                    prob_hi[1]-prob_lo[1],
                                                                    prob_hi[2]-prob_lo[2])};
         const amrex::Real prob_volume = AMREX_D_TERM(prob_len[0],*prob_len[1],*prob_len[2]);
+        const amrex::Real r = amr.level_set.r;
 
-        amrex::Real volume;
-        amrex::Real surface;
-
-        if (amr.ibvp.problem_params.shape.compare("none") == 0)
-        {
-            surface = 0.0;
-            volume = prob_volume;
-        }
-        else if (amr.ibvp.problem_params.shape.compare("circle") == 0)
-        {
-            const amrex::Real r = amr.ibvp.level_set.params[AMREX_SPACEDIM];
-            surface = AMREX_D_PICK(0.0, 2.0*M_PI*r, 4.0*M_PI*r*r);
-            volume = prob_volume-(AMREX_D_PICK(2.0*r, M_PI*r*r, 4.0/3.0*M_PI*r*r*r));
-        }
-        else
-        {
-            std::string msg;
-            msg  = "\n";
-            msg +=  "ERROR: main.cpp\n";
-            msg += "| Unexpected geometry shape.\n";
-            msg += "| shape: "+amr.ibvp.problem_params.shape+".\n";
-            amrex::Abort(msg);
-        }
+        const amrex::Real volume = AMREX_D_PICK(prob_volume-2.0*M_PI*r, prob_volume-M_PI*r*r, (4.0/3.0)*M_PI*r*r*r);
+        const amrex::Real surface = AMREX_D_PICK(2.0, 2.0*M_PI*r, 4.0*M_PI*r*r);
 
         amr.check_quadrature_rules(volume, surface);
     }
@@ -118,15 +180,14 @@ void main_main()
     {
         const amrex::Real t = t0;
 
-        err_old = 0.0;
-        amr.eval_error(t, err_new, err_norm);
-        err_new = err_new/err_norm;
+        amr.eval_error(t, err, err_norm);
+        err = err/err_norm;
 
         amrex::Print() << "INITIAL ERROR REPORT:" << std::endl;
-        amrex::Print() << "| err(t = " << t << "): " << std::scientific << std::setprecision(5) << std::setw(12) << err_new << std::endl;
+        amrex::Print() << "| err(t = " << t << "): " << std::scientific << std::setprecision(5) << std::setw(12) << err << std::endl;
     }
     // ================================================================
-/*
+
 
     // ADVANCE IN TIME ================================================
     amrex::Print() << "# START OF THE ANALYSIS" << std::endl;
@@ -149,9 +210,6 @@ void main_main()
             // TIME STEP TIC
             time_keeper.tic();
 
-            // SWAP OLD AND NEW ERROR
-            std::swap(err_old, err_new);
-
             // COMPUTE TIME INCREMENT
             dt = amr.eval_dt(t);
             dt = amrex::min(t+dt, amr.inputs.time.T)-t;
@@ -171,8 +229,8 @@ void main_main()
             }
 
             // EVAL ERROR
-            amr.eval_error(t, err_new, err_norm);
-            err_new = err_new/err_norm;
+            amr.eval_error(t, err, err_norm);
+            err = err/err_norm;
 
             // TIME STEP TOC
             time_keeper.toc();
@@ -185,20 +243,21 @@ void main_main()
             // REPORT TO SCREEN
             amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
             amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
-                            << dt << ", t = " << t << ", err = " << err_new
+                            << dt << ", t = " << t << ", err = " << err
                             << ", ct [s] = " << ct_avg 
                             << ", eta = " << amrex::dG::seconds_to_hms(eta) << std::endl;
         }
     }
     amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
     // ================================================================
-*/
+
+
+    // TOC ============================================================
+    time_keeper.toc();
+    // ================================================================
+
 
     // CLOSING ========================================================
-    // TOC -----------
-    time_keeper.toc();
-    // ---------------
-
     amrex::Print() << "#######################################################################" << std::endl;
     amrex::Print() << "# END OF THE TUTORIAL                                                  " << std::endl;
     amrex::Print() << "# Elapsed time: " << time_keeper.get_elapsed_time_in_hms() << std::endl;

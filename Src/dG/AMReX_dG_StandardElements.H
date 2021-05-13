@@ -324,7 +324,7 @@ struct StandardRectangle
             Abort(msg);
         }
 
-        /*
+        /* DEBUG
         Print() << "Xq_1d: " << std::endl;
         io::print_real_array_2d(1, 1+q_, Xq_1d.data());
         Print() << "Wq_1d: " << std::endl;
@@ -337,7 +337,7 @@ struct StandardRectangle
         io::print_real_array_2d(1, this->dom_Nq, this->dom_XI2q.data());
         Print() << "dom_Wq: " << std::endl;
         io::print_real_array_2d(1, this->dom_Nq, this->dom_Wq.data());
-        exit(-1);
+        //exit(-1);
         */
         // ------------------------------------------------------------
     }

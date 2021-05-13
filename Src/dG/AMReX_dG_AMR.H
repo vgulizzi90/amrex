@@ -188,8 +188,8 @@ exit(-1);
             Real I[__DG_MAX_SPACE_Np__*__DG_MAX_SPACE_Np__];
 
             // BASIS FUNCTIONS
-            dG_space_bf f_bf(&prob_lo[0], &f_dx[0], i, j, k, f_etype, f_sp);
-            dG_space_bf c_bf(&prob_lo[0], &c_dx[0], c_i, c_j, c_k, c_etype, c_sp);
+            space_elm_bf f_bf(&prob_lo[0], &f_dx[0], i, j, k, f_etype, f_sp);
+            space_elm_bf c_bf(&prob_lo[0], &c_dx[0], c_i, c_j, c_k, c_etype, c_sp);
 
             // EMPTY ELEMENT
             if (ELM_IS_EMPTY(f_etype))

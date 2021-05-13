@@ -8,7 +8,7 @@
 
 #include "../IBVP_IdealGas.H"
 
-namespace EmbeddedSodsTube
+namespace embedded_Sods_tube
 {
 // EMBEDDED SOD'S TUBE: LEVEL SET #####################################
 template <int N>
@@ -382,7 +382,7 @@ amrex::Print() << "w: " << w << std::endl;
     }
 
     /**
-     * \brief Eval the numerical flux at the interfaces.
+     * \brief Eval the numerical flux at the embedded boundaries.
      *
      * \param[in] dom: index of the domain.
      * \param[in] t: time.
@@ -392,7 +392,7 @@ amrex::Print() << "w: " << w << std::endl;
      * \param[out] NFn: pointer to memory that will contain the numerical flux.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_NFn_ICs(const int /*dom*/,
+    void eval_NFn_EB(const int /*dom*/,
                       const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
                       const amrex::Real * U, amrex::Real * NFn) const
     {
@@ -734,7 +734,7 @@ exit(-1);
     virtual void ErrorEst(int lev, amrex::TagBoxArray & tags, amrex::Real time, int /*ngr*/) override
     {
         // PROFILING --------------------------------------------------
-        BL_PROFILE("EmbeddedSodsTube::AMR::ErrorEst(...)");
+        BL_PROFILE("embedded_Sods_tube::AMR::ErrorEst(...)");
         // ------------------------------------------------------------
 
         // PARAMETERS -------------------------------------------------
@@ -886,7 +886,7 @@ exit(-1);
                                                   ibvp,
                                                   level_uses_FV);
             // --------------------------------------------------------
-amrex::Print() << "EmbeddedSodsTube good so far " << std::endl;
+amrex::Print() << "embedded_Sods_tube good so far " << std::endl;
 exit(-1);
             // MASKS --------------------------------------------------
             this->masks[lev].define(mesh.ba, mesh.dm, 1, mask_n_grow);
@@ -961,4 +961,4 @@ exit(-1);
 };
 // ####################################################################
 
-} // EmbeddedSodsTube
+} // embedded_Sods_tube

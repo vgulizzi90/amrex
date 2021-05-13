@@ -478,10 +478,10 @@ void eval_F1(const amrex::Real g, const amrex::Real * U, amrex::Real * F1)
  *                  the state at the shock.
 */
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void exact_Riemann_solver(const amrex::Real gamma,
-                          const amrex::Real rl, AMREX_D_DECL(const amrex::Real ul, const amrex::Real ut1l, const amrex::Real ut2l), const amrex::Real pl,
-                          const amrex::Real rr, AMREX_D_DECL(const amrex::Real ur, const amrex::Real ut1r, const amrex::Real ut2r), const amrex::Real pr,
-                          amrex::Real * URP)
+void two_shock_Riemann_solver(const amrex::Real gamma,
+                              const amrex::Real rl, AMREX_D_DECL(const amrex::Real ul, const amrex::Real ut1l, const amrex::Real ut2l), const amrex::Real pl,
+                              const amrex::Real rr, AMREX_D_DECL(const amrex::Real ur, const amrex::Real ut1r, const amrex::Real ut2r), const amrex::Real pr,
+                              amrex::Real * URP)
 {
     const amrex::Real weakwv = 1.e-03, small = 1.e-6;
     const int itno = 3;
@@ -669,7 +669,7 @@ void eval_NFn_Riemann_solver(const amrex::Real g, const amrex::Real * un,
 
     // SOLVE RIEMANN PROBLEM ------------------------------------------
     // We use NFn as a temporary variable
-    exact_Riemann_solver(g, rl, AMREX_D_DECL(ul, ut1l, ut2l), pl, rr, AMREX_D_DECL(ur, ut1r, ut2r), pr, NFn);
+    two_shock_Riemann_solver(g, rl, AMREX_D_DECL(ul, ut1l, ut2l), pl, rr, AMREX_D_DECL(ur, ut1r, ut2r), pr, NFn);
     // ----------------------------------------------------------------
 
     // EVAL THE FLUX --------------------------------------------------
@@ -2325,8 +2325,8 @@ void shock_sensor(const amrex::Geometry & geom, const amrex::dG::Mesh & mesh, co
                 amrex::Real integrand_err, integrand_norm;
 
                 // UNKNOWN FIELDS
-                amrex::dG::dG_space_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
-                amrex::dG::dG_space_bfx bfu_low(&prob_lo[0], &dx[0], i, j, k, etype, sp_low, X_low_fab);
+                amrex::dG::space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+                amrex::dG::space_elm_bfx bfu_low(&prob_lo[0], &dx[0], i, j, k, etype, sp_low, X_low_fab);
 
                 // EVAL THE INTEGRAL
                 err = norm = 0.0;
