@@ -374,11 +374,26 @@ void take_time_step_using_explicit_RKdG(const amr::SinglePatch & amr, const Real
     // RK1 ------------------------------------------------------------
     if (RK_order == 1)
     {
-        std::string msg;
-        msg  = "\n";
-        msg += "ERROR: AMReX_dG_AMR_Utils.H - take_time_step_using_explicit_RKdG\n";
-        msg += "| Unexpected order: "+std::to_string(RK_order)+"\n";
-        Abort(msg);
+        // NEEDED MULTIFABS
+        Vector<MultiFab> dXdt(n_levels);
+
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            const MultiFab & X = X_old[lev];
+            
+            dXdt[lev].define(X.boxarray, X.distributionMap, X.n_comp, X.n_grow);
+        }
+
+        // RK1 STEP 1
+        // dXdt := dXdt(t, X_old)
+        eval_dXdt_explicit_RKdG(amr, t, X_old, dXdt, ibvp);
+
+        // X_new := X_old+dt*dXdt
+        for (int lev = 0; lev < n_levels; ++lev)
+        {
+            MultiFab::LinComb(X_new[lev], 1.0, X_old[lev], 0, dt, dXdt[lev], 0, 0, X_new[lev].n_comp, X_new[lev].n_grow);
+            amr.solutions[lev]->copy_solution_to_small_elements(amr.Geom(lev), X_new[lev], ibvp);
+        }
     }
     // ----------------------------------------------------------------
     // RK2 ------------------------------------------------------------

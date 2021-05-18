@@ -74,8 +74,8 @@
 #define __DG_ELM_BOU_TYPE_PARTIAL_INVALID__ 6
 
 // DEBUG
-#define __i__ 33
-#define __j__ 24
+#define __i__ 2
+#define __j__ 2
 #define __k__ 0
 
 namespace amrex

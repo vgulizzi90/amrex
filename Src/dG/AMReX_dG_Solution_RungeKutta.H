@@ -55,9 +55,8 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
     const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
 
-    // DOMAINS / UNKNOWN FIELDS
+    // DOMAINS
     const int n_domains = ibvp.get_number_of_domains();
-    const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
 
     // ORDER
     const int sp = solution.params.space_p;
@@ -66,9 +65,9 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
 
     // EVAL THE DOMAIN INTEGRALS --------------------------------------
 #ifdef AMREX_USE_GPU
-        const Real * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_dev_mem.data();
+    const Real * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_dev_mem.data();
 #else
-        const Real * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_host_mem.data();
+    const Real * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_host_mem.data();
 #endif
 
     for (MFIter mfi(X); mfi.isValid(); ++mfi)
@@ -107,6 +106,8 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
 
                 // UNKNOWN FIELDS
                 space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+                int u_lo, u_hi;
+                ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
 
                 // EVAL THE INTEGRAL
                 for (int q = 0; q < dom_Nq; ++q)
@@ -123,13 +124,13 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
 
                     // Solution at (t, x)
                     bfu.eval_bf_table(x);
-                    bfu.eval_unsafe(0, n_unknown_fields, U);
+                    bfu.eval_unsafe(u_lo, u_hi, U);
 
                     // Fluxes as functions of (t, x, U)
                     ibvp.eval_F(dom, t, x, U, AMREX_D_DECL(F1, F2, F3));
 
                     // Integral contribution
-                    for (int ru = 0; ru < n_unknown_fields; ++ru)
+                    for (int ru = u_lo; ru < u_hi; ++ru)
                     for (int rs = 0; rs < sNp; ++rs)
                     {
                         AMREX_D_TERM
@@ -155,10 +156,9 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
 // DG METHOD: BOUNDARY CONTRIBUTION ###################################
 template <typename IBVP>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void FX_BCS(const int n_unknown_fields,
-            const int dom, const Real t,
+void FX_BCS(const int dom, const Real t,
             const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
-            space_elm_bfx & bfu,
+            space_elm_bfx & bfu, const int u_lo, const int u_hi,
             const int fi, const int fj, const int fk,
             Array4<Real> const & FX_fab, const int FX_offset,
             const IBVP & ibvp)
@@ -185,13 +185,13 @@ void FX_BCS(const int n_unknown_fields,
         w = x_ptr[x_pos+AMREX_SPACEDIM];
 
         // Solution at (t, x)
-        bfu.eval(x, 0, n_unknown_fields, U);
+        bfu.eval(x, u_lo, u_hi, U);
 
         // Numerical flux as a functions of (t, x, un, U)
         ibvp.eval_NFn_BCs(dom, t, x, un, U, NFn);
 
         // Integral contribution
-        for (int ru = 0; ru < n_unknown_fields; ++ru)
+        for (int ru = u_lo; ru < u_hi; ++ru)
         for (int rs = 0; rs < sNp; ++rs)
         {
             integrand = bfu.BF[rs]*NFn[ru];
@@ -202,10 +202,9 @@ void FX_BCS(const int n_unknown_fields,
 
 template <typename IBVP>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void FX_ICS(const int n_unknown_fields,
-            const int dom, const Real t,
+void FX_ICS(const int dom, const Real t,
             const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
-            space_elm_bfx & m_bfu, space_elm_bfx & p_bfu,
+            space_elm_bfx & m_bfu, space_elm_bfx & p_bfu, const int u_lo, const int u_hi,
             const int fi, const int fj, const int fk,
             Array4<Real> const & FX_fab, const int FX_offset,
             const IBVP & ibvp)
@@ -233,14 +232,14 @@ void FX_ICS(const int n_unknown_fields,
         w = x_ptr[x_pos+AMREX_SPACEDIM];
 
         // Solution at (t, x)
-        m_bfu.eval(x, 0, n_unknown_fields, m_U);
-        p_bfu.eval(x, 0, n_unknown_fields, p_U);
+        m_bfu.eval(x, u_lo, u_hi, m_U);
+        p_bfu.eval(x, u_lo, u_hi, p_U);
 
         // Numerical flux as a functions of (t, x, un, U^-, U^+)
         ibvp.eval_NFn_intraphase(dom, t, x, un, m_U, p_U, NFn);
 
         // Integral contribution
-        for (int ru = 0; ru < n_unknown_fields; ++ru)
+        for (int ru = u_lo; ru < u_hi; ++ru)
         {
             for (int rs = 0; rs < m_sNp; ++rs)
             {
@@ -292,9 +291,8 @@ void eval_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, con
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
     const GpuArray<int, AMREX_SPACEDIM> is_periodic = geom.isPeriodicArray();
 
-    // DOMAINS / UNKNOWN FIELDS
+    // DOMAINS
     const int n_domains = ibvp.get_number_of_domains();
-    const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
 
     // ORDER
     const int sp = solution.params.space_p;
@@ -358,6 +356,8 @@ void eval_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, con
                     // UNKNOWN FIELDS
                     space_elm_bfx m_bfu(&prob_lo[0], &dx[0], mi, mj, mk, m_etype, sp, X_fab);
                     space_elm_bfx p_bfu(&prob_lo[0], &dx[0], pi, pj, pk, p_etype, sp, X_fab);
+                    int u_lo, u_hi;
+                    ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
 
                     // BOUNDARY CONDITIONS
                     if ((ff == domain.smallEnd(dir)) && (is_periodic[dir] == 0))
@@ -367,7 +367,7 @@ void eval_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, con
                         un[dir] = -1.0;
 
                         // EVAL THE INTEGRAL
-                        FX_BCS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, p_bfu, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                        FX_BCS(dom, t, face_lo, bou_Nq, x_ptr, un, p_bfu, u_lo, u_hi, fi, fj, fk, FX_fab, FX_offset, ibvp);
                     }
                     // BOUNDARY CONDITIONS
                     else if ((ff == (domain.bigEnd(dir)+1)) && (is_periodic[dir] == 0))
@@ -377,7 +377,7 @@ void eval_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, con
                         un[dir] = +1.0;
 
                         // EVAL THE INTEGRAL
-                        FX_BCS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, fi, fj, fk, FX_fab, 0, ibvp);
+                        FX_BCS(dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, u_lo, u_hi, fi, fj, fk, FX_fab, 0, ibvp);
                     }
                     // INTRAPHASE CONDITIONS
                     else
@@ -387,7 +387,7 @@ void eval_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, con
                         un[dir] = +1.0;
 
                         // EVAL THE INTEGRAL
-                        FX_ICS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, p_bfu, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                        FX_ICS(dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, p_bfu, u_lo, u_hi, fi, fj, fk, FX_fab, FX_offset, ibvp);
                     }
                 }
             });
@@ -413,7 +413,11 @@ void eval_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, con
  *
  *
  * In addition to summing the contribution from the intraphase boundaries, the following integral is
- * evaluated at the interfaces: 
+ * evaluated at the embedded interfaces: 
+ *
+ * int_{dV} BF(x)^T NF(t, x, un, U)
+ *
+ * or
  *
  * int_{dV} BF(x)^T NF(t, x, un, U^-, U^+)
  *
@@ -431,9 +435,8 @@ void add_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
     const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
 
-    // DOMAINS / UNKNOWN FIELDS
+    // DOMAINS
     const int n_domains = ibvp.get_number_of_domains();
-    const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
 
     // ORDER
     const int sp = solution.params.space_p;
@@ -482,6 +485,8 @@ void add_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                 {
                     // UNKNOWN FIELDS
                     space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+                    int u_lo, u_hi;
+                    ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
 
                     // EVAL THE INTEGRAL
                     for (int q = 0; q < bou_Nq; ++q)
@@ -503,13 +508,13 @@ void add_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                         )
 
                         // Solution at (t, x)
-                        bfu.eval(x, 0, n_unknown_fields, U);
+                        bfu.eval(x, u_lo, u_hi, U);
 
                         // Numerical flux as a functions of (t, x, un, U)
                         ibvp.eval_NFn_EB(dom, t, x, un, U, NFn);
 
                         // Integral contribution
-                        for (int ru = 0; ru < n_unknown_fields; ++ru)
+                        for (int ru = u_lo; ru < u_hi; ++ru)
                         for (int rs = 0; rs < sNp; ++rs)
                         {
                             integrand = bfu.BF[rs]*NFn[ru];
@@ -519,7 +524,53 @@ void add_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                 }
                 else
                 {
-Abort("dG::hyperbolic_pde::explicit_RK::add_bou_contrib_to_dXdt - nbr_dom != -1");
+                    // ELEMENT TYPE (NEIGHBORING DOMAIN)
+                    const short nbr_etype = elm_type_fab(i,j,k,ELM_TYPE(nbr_dom));
+
+                    // LOCAL VARIABLES (NEIGHBORING DOMAIN)
+                    Real nbr_U[__DG_MAX_N_UNKNOWN_FIELDS__];
+
+                    // UNKNOWN FIELDS
+                    space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+                    space_elm_bfx nbr_bfu(&prob_lo[0], &dx[0], i, j, k, nbr_etype, sp, X_fab);
+                    int u_lo, u_hi, nbr_u_lo, nbr_u_hi;
+                    ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+                    ibvp.domain_unknown_fields_index_bounds(nbr_dom, nbr_u_lo, nbr_u_hi);
+
+                    // EVAL THE INTEGRAL
+                    for (int q = 0; q < bou_Nq; ++q)
+                    {
+                        // Quadrature point, weight and unit normal
+                        const long x_pos = (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*q;
+                        AMREX_D_TERM
+                        (
+                            x[0] = x_ptr[x_pos+0];,
+                            x[1] = x_ptr[x_pos+1];,
+                            x[2] = x_ptr[x_pos+2];
+                        )
+                        w = x_ptr[x_pos+AMREX_SPACEDIM];
+                        AMREX_D_TERM
+                        (
+                            un[0] = x_ptr[x_pos+AMREX_SPACEDIM+1+0];,
+                            un[1] = x_ptr[x_pos+AMREX_SPACEDIM+1+1];,
+                            un[2] = x_ptr[x_pos+AMREX_SPACEDIM+1+2];
+                        )
+
+                        // Solution at (t, x)
+                        bfu.eval(x, u_lo, u_hi, U);
+                        nbr_bfu.eval(x, nbr_u_lo, nbr_u_hi, nbr_U);
+
+                        // Numerical flux as a functions of (t, x, un, U^-, U^+)
+                        ibvp.eval_NFn_EB(dom, nbr_dom, t, x, un, U, nbr_U, NFn);
+
+                        // Integral contribution
+                        for (int ru = u_lo; ru < u_hi; ++ru)
+                        for (int rs = 0; rs < sNp; ++rs)
+                        {
+                            integrand = bfu.BF[rs]*NFn[ru];
+                            dXdt_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+                        }
+                    }
                 }
             }
         });
@@ -552,9 +603,13 @@ Abort("dG::hyperbolic_pde::explicit_RK::add_bou_contrib_to_dXdt - nbr_dom != -1"
                     // LOCAL VARIABLES
                     int fi, fj, fk;
 
+                    // UKNOWN FIELDS
+                    int u_lo, u_hi;
+                    ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+
                     GRID_FACE(i, j, k, b+1, fi, fj, fk);
 
-                    for (int ru = 0; ru < n_unknown_fields; ++ru)
+                    for (int ru = u_lo; ru < u_hi; ++ru)
                     for (int rs = 0; rs < sNp; ++rs)
                     {
                         dXdt_fab(i,j,k,rs+ru*sNp) -= (FX_fab(fi,fj,fk,rs+ru*sNp)+FX_fab(i,j,k,FX_offset+rs+ru*sNp));
@@ -574,10 +629,9 @@ Abort("dG::hyperbolic_pde::explicit_RK::add_bou_contrib_to_dXdt - nbr_dom != -1"
 // FV METHOD: BOUNDARY CONTRIBUTION ###################################
 template <typename IBVP>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void FX_BCS(const int n_unknown_fields,
-            const int dom, const Real t,
+void FX_BCS(const int dom, const Real t,
             const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
-            space_elm_rx & rx,
+            space_elm_rx & rx, const int u_lo, const int u_hi,
             const int fi, const int fj, const int fk,
             Array4<Real> const & FX_fab, const int FX_offset,
             const IBVP & ibvp)
@@ -601,13 +655,13 @@ void FX_BCS(const int n_unknown_fields,
         w = x_ptr[x_pos+AMREX_SPACEDIM];
 
         // Solution at (t, x)
-        rx.eval(x, 0, n_unknown_fields, U);
+        rx.eval(x, u_lo, u_hi, U);
 
         // Numerical flux as a functions of (t, x, un, U)
         ibvp.eval_NFn_BCs(dom, t, x, un, U, NFn);
 
         // Integral contribution
-        for (int ru = 0; ru < n_unknown_fields; ++ru)
+        for (int ru = u_lo; ru < u_hi; ++ru)
         {
             integrand = NFn[ru];
             FX_fab(fi,fj,fk,FX_offset+ru) += integrand*w;
@@ -617,10 +671,9 @@ void FX_BCS(const int n_unknown_fields,
 
 template <typename IBVP>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void FX_ICS(const int n_unknown_fields,
-            const int dom, const Real t,
+void FX_ICS(const int dom, const Real t,
             const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
-            space_elm_rx & m_ru, space_elm_rx & p_ru,
+            space_elm_rx & m_ru, space_elm_rx & p_ru, const int u_lo, const int u_hi,
             const int fi, const int fj, const int fk,
             Array4<Real> const & FX_fab, const int FX_offset,
             const IBVP & ibvp)
@@ -644,14 +697,14 @@ void FX_ICS(const int n_unknown_fields,
         w = x_ptr[x_pos+AMREX_SPACEDIM];
 
         // Solution at (t, x)
-        m_ru.eval(x, 0, n_unknown_fields, m_U);
-        p_ru.eval(x, 0, n_unknown_fields, p_U);
+        m_ru.eval(x, u_lo, u_hi, m_U);
+        p_ru.eval(x, u_lo, u_hi, p_U);
 
         // Numerical flux as a functions of (t, x, un, U^-, U^+)
         ibvp.eval_NFn_intraphase(dom, t, x, un, m_U, p_U, NFn);
 
         // Integral contribution
-        for (int ru = 0; ru < n_unknown_fields; ++ru)
+        for (int ru = u_lo; ru < u_hi; ++ru)
         {
             integrand = NFn[ru];
             FX_fab(fi,fj,fk,ru) += integrand*w;
@@ -699,9 +752,8 @@ void eval_FV_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, 
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
     const GpuArray<int, AMREX_SPACEDIM> is_periodic = geom.isPeriodicArray();
 
-    // DOMAINS / UNKNOWN FIELDS
+    // DOMAINS
     const int n_domains = ibvp.get_number_of_domains();
-    const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
     // ----------------------------------------------------------------
 
     // INITIALIZATION -------------------------------------------------
@@ -772,6 +824,8 @@ void eval_FV_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, 
                         p_ru.xc[1] = elm_centroid_fab(pi,pj,pk,ELM_CENTROID_X2(dom));,
                         p_ru.xc[2] = elm_centroid_fab(pi,pj,pk,ELM_CENTROID_X3(dom));
                     )
+                    int u_lo, u_hi;
+                    ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
 
                     // BOUNDARY CONDITIONS
                     if ((ff == domain.smallEnd(dir)) && (is_periodic[dir] == 0))
@@ -781,7 +835,7 @@ void eval_FV_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, 
                         un[dir] = -1.0;
 
                         // EVAL THE INTEGRAL
-                        FX_BCS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, p_ru, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                        FX_BCS(dom, t, face_lo, bou_Nq, x_ptr, un, p_ru, u_lo, u_hi, fi, fj, fk, FX_fab, FX_offset, ibvp);
                     }
                     // BOUNDARY CONDITIONS
                     else if ((ff == (domain.bigEnd(dir)+1)) && (is_periodic[dir] == 0))
@@ -791,7 +845,7 @@ void eval_FV_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, 
                         un[dir] = +1.0;
 
                         // EVAL THE INTEGRAL
-                        FX_BCS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, m_ru, fi, fj, fk, FX_fab, 0, ibvp);
+                        FX_BCS(dom, t, face_lo, bou_Nq, x_ptr, un, m_ru, u_lo, u_hi, fi, fj, fk, FX_fab, 0, ibvp);
                     }
                     // INTRAPHASE CONDITIONS
                     else
@@ -801,7 +855,7 @@ void eval_FV_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, 
                         un[dir] = +1.0;
 
                         // EVAL THE INTEGRAL
-                        FX_ICS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, m_ru, p_ru, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                        FX_ICS(dom, t, face_lo, bou_Nq, x_ptr, un, m_ru, p_ru, u_lo, u_hi, fi, fj, fk, FX_fab, FX_offset, ibvp);
                     }
                 }
             });
@@ -813,10 +867,9 @@ void eval_FV_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, 
 
 template <typename IBVP>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void FX_ICS(const int n_unknown_fields,
-            const int dom, const Real t,
+void FX_ICS(const int dom, const Real t,
             const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
-            space_elm_bfx & m_bfu, space_elm_rx & p_ru,
+            space_elm_bfx & m_bfu, space_elm_rx & p_ru, const int u_lo, const int u_hi,
             const int fi, const int fj, const int fk,
             Array4<Real> const & FX_fab, const int FX_offset,
             const IBVP & ibvp)
@@ -843,14 +896,14 @@ void FX_ICS(const int n_unknown_fields,
         w = x_ptr[x_pos+AMREX_SPACEDIM];
 
         // Solution at (t, x)
-        m_bfu.eval(x, 0, n_unknown_fields, m_U);
-        p_ru.eval(x, 0, n_unknown_fields, p_U);
+        m_bfu.eval(x, u_lo, u_hi, m_U);
+        p_ru.eval(x, u_lo, u_hi, p_U);
 
         // Numerical flux as a functions of (t, x, un, U^-, U^+)
         ibvp.eval_NFn_intraphase(dom, t, x, un, m_U, p_U, NFn);
 
         // Integral contribution
-        for (int ru = 0; ru < n_unknown_fields; ++ru)
+        for (int ru = u_lo; ru < u_hi; ++ru)
         {
             for (int rs = 0; rs < m_sNp; ++rs)
             {
@@ -865,10 +918,9 @@ void FX_ICS(const int n_unknown_fields,
 
 template <typename IBVP>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void FX_ICS(const int n_unknown_fields,
-            const int dom, const Real t,
+void FX_ICS(const int dom, const Real t,
             const Real * face_lo, const int bou_Nq, const Real * x_ptr, const Real * un,
-            space_elm_rx & m_ru, space_elm_bfx & p_bfu,
+            space_elm_rx & m_ru, space_elm_bfx & p_bfu, const int u_lo, const int u_hi,
             const int fi, const int fj, const int fk,
             Array4<Real> const & FX_fab, const int FX_offset,
             const IBVP & ibvp)
@@ -895,14 +947,14 @@ void FX_ICS(const int n_unknown_fields,
         w = x_ptr[x_pos+AMREX_SPACEDIM];
 
         // Solution at (t, x)
-        m_ru.eval(x, 0, n_unknown_fields, m_U);
-        p_bfu.eval(x, 0, n_unknown_fields, p_U);
+        m_ru.eval(x, u_lo, u_hi, m_U);
+        p_bfu.eval(x, u_lo, u_hi, p_U);
 
         // Numerical flux as a functions of (t, x, un, U^-, U^+)
         ibvp.eval_NFn_intraphase(dom, t, x, un, m_U, p_U, NFn);
 
         // Integral contribution
-        for (int ru = 0; ru < n_unknown_fields; ++ru)
+        for (int ru = u_lo; ru < u_hi; ++ru)
         {
             integrand = NFn[ru];
             FX_fab(fi,fj,fk,ru) += integrand*w;
@@ -962,9 +1014,8 @@ void eval_dG_FV_bou_fluxes(const Real t,
     const GpuArray<Real, AMREX_SPACEDIM> prob_lo = f_geom.ProbLoArray();
     const GpuArray<int, AMREX_SPACEDIM> is_periodic = f_geom.isPeriodicArray();
 
-    // DOMAINS / UNKNOWN FIELDS
+    // DOMAINS
     const int n_domains = ibvp.get_number_of_domains();
-    const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
 
     // ORDER
     const int c_sp = c_solution.params.space_p;
@@ -1077,6 +1128,10 @@ void eval_dG_FV_bou_fluxes(const Real t,
                     const bool m_is_ghost = ELM_IS_GHOST(f_elm_type_fab(mi,mj,mk,ELM_TYPE(dom)));
                     const bool p_is_ghost = ELM_IS_GHOST(f_elm_type_fab(pi,pj,pk,ELM_TYPE(dom)));
 
+                    // UKNOWN FIELDS
+                    int u_lo, u_hi;
+                    ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+
                     // BOUNDARY CONDITIONS
                     if ((ff == domain.smallEnd(dir)) && (is_periodic[dir] == 0))
                     {
@@ -1094,7 +1149,7 @@ void eval_dG_FV_bou_fluxes(const Real t,
                         un[dir] = -1.0;
 
                         // EVAL THE INTEGRAL
-                        FX_BCS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, p_ru, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                        FX_BCS(dom, t, face_lo, bou_Nq, x_ptr, un, p_ru, u_lo, u_hi, fi, fj, fk, FX_fab, FX_offset, ibvp);
                     }
                     // BOUNDARY CONDITIONS
                     else if ((ff == (domain.bigEnd(dir)+1)) && (is_periodic[dir] == 0))
@@ -1113,7 +1168,7 @@ void eval_dG_FV_bou_fluxes(const Real t,
                         un[dir] = +1.0;
 
                         // EVAL THE INTEGRAL
-                        FX_BCS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, m_ru, fi, fj, fk, FX_fab, 0, ibvp);
+                        FX_BCS(dom, t, face_lo, bou_Nq, x_ptr, un, m_ru, u_lo, u_hi, fi, fj, fk, FX_fab, 0, ibvp);
                     }
                     // INTRAPHASE CONDITIONS
                     else
@@ -1141,10 +1196,10 @@ void eval_dG_FV_bou_fluxes(const Real t,
                             )
 
                             // EVAL THE INTEGRAL
-                            FX_ICS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, p_ru, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                            FX_ICS(dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, p_ru, u_lo, u_hi, fi, fj, fk, FX_fab, FX_offset, ibvp);
 
                             // NEEDED TO USE average_down_faces
-                            for (int ru = 0; ru < n_unknown_fields; ++ru)
+                            for (int ru = u_lo; ru < u_hi; ++ru)
                             for (int rs = 0; rs < c_sNp; ++rs)
                             {
                                 FX_fab(fi,fj,fk,rs+ru*c_sNp) *= fact;
@@ -1169,10 +1224,10 @@ void eval_dG_FV_bou_fluxes(const Real t,
                             space_elm_bfx p_bfu(&prob_lo[0], &c_dx[0], c_i, c_j, c_k, c_elm_type_fab(c_i,c_j,c_k,ELM_TYPE(dom)), c_sp, c_X_fab);
 
                             // EVAL THE INTEGRAL
-                            FX_ICS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, m_ru, p_bfu, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                            FX_ICS(dom, t, face_lo, bou_Nq, x_ptr, un, m_ru, p_bfu, u_lo, u_hi, fi, fj, fk, FX_fab, FX_offset, ibvp);
 
                             // NEEDED TO USE average_down_faces
-                            for (int ru = 0; ru < n_unknown_fields; ++ru)
+                            for (int ru = u_lo; ru < u_hi; ++ru)
                             for (int rs = 0; rs < c_sNp; ++rs)
                             {
                                 FX_fab(fi,fj,fk,FX_offset+rs+ru*c_sNp) *= fact;
@@ -1198,7 +1253,7 @@ void eval_dG_FV_bou_fluxes(const Real t,
                             )
 
                             // EVAL THE INTEGRAL
-                            FX_ICS(n_unknown_fields, dom, t, face_lo, bou_Nq, x_ptr, un, m_ru, p_ru, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                            FX_ICS(dom, t, face_lo, bou_Nq, x_ptr, un, m_ru, p_ru, u_lo, u_hi, fi, fj, fk, FX_fab, FX_offset, ibvp);
                         }
                     }
                 }
@@ -1240,9 +1295,8 @@ void add_FV_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh 
     // ----------------------------------------------------------------
 
     // PARAMETERS -----------------------------------------------------
-    // DOMAINS / UNKNOWN FIELDS
+    // DOMAINS
     const int n_domains = ibvp.get_number_of_domains();
-    const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
     // ----------------------------------------------------------------
 
     // EVAL THE INTERFACE BOUNDARY INTEGRALS --------------------------
@@ -1295,6 +1349,8 @@ void add_FV_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh 
                         rx.xc[1] = elm_centroid_fab(i,j,k,ELM_CENTROID_X2(dom));,
                         rx.xc[2] = elm_centroid_fab(i,j,k,ELM_CENTROID_X3(dom));
                     )
+                    int u_lo, u_hi;
+                    ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
 
                     // EVAL THE INTEGRAL
                     for (int q = 0; q < bou_Nq; ++q)
@@ -1316,13 +1372,13 @@ void add_FV_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh 
                         )
 
                         // Solution at (t, x)
-                        rx.eval(x, 0, n_unknown_fields, U);
+                        rx.eval(x, u_lo, u_hi, U);
 
                         // Numerical flux as a functions of (t, x, un, U)
                         ibvp.eval_NFn_EB(dom, t, x, un, U, NFn);
 
                         // Integral contribution
-                        for (int ru = 0; ru < n_unknown_fields; ++ru)
+                        for (int ru = u_lo; ru < u_hi; ++ru)
                         {
                             integrand = NFn[ru];
                             dXdt_fab(i,j,k,ru) -= integrand*w;
@@ -1364,9 +1420,13 @@ Abort("dG::hyperbolic_pde::explicit_RK::add_FV_bou_contrib_to_dXdt - nbr_dom != 
                     // LOCAL VARIABLES
                     int fi, fj, fk;
 
+                    // UKNOWN FIELDS
+                    int u_lo, u_hi;
+                    ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+
                     GRID_FACE(i, j, k, b+1, fi, fj, fk);
 
-                    for (int ru = 0; ru < n_unknown_fields; ++ru)
+                    for (int ru = u_lo; ru < u_hi; ++ru)
                     {
                         dXdt_fab(i,j,k,ru) -= (FX_fab(fi,fj,fk,ru)+FX_fab(i,j,k,FX_offset+ru));
                     }

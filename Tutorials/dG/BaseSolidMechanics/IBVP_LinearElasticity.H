@@ -23,12 +23,94 @@ namespace linear_elasticity
 {
 // CHANGE OF REFERENCE SYSTEM #########################################
 /**
+ * \brief Transform vector from global reference system to unit normal reference system.
+ * 
+ * \param[in] un: pointer to memory containing the unit normal.
+ * \param[in] v: pointer to memory containing the vector components in the global reference system.
+ *               system.
+ * \param[out] vn: pointer to memory that will contain the vector components in the unit normal
+ *                 reference system.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void v_to_vn(const amrex::Real * un, const amrex::Real * v, amrex::Real * vn)
+{
+#if (AMREX_SPACEDIM == 1)
+amrex::Print() << "linear_elasticity::v_to_vn - DIM = 1" << std::endl;
+exit(-1);
+#endif
+#if (AMREX_SPACEDIM == 2)
+        const amrex::Real c = un[0], s = un[1];
+
+        vn[0] =  c*v[0]+s*v[1];
+        vn[1] = -s*v[0]+c*v[1];
+        
+#endif
+#if (AMREX_SPACEDIM == 3)
+        // We assume un be written as
+        // un = n1 = cos(phi)*sin(theta)
+        //      n2   sin(phi)*sin(theta)
+        //      n3   cos(theta)
+        const amrex::Real theta = std::acos(un[2]);
+        const amrex::Real phi = std::atan2(un[1], un[0]);
+        const amrex::Real cth = std::cos(theta);
+        const amrex::Real sth = std::sin(theta);
+        const amrex::Real cph = std::cos(phi);
+        const amrex::Real sph = std::sin(phi);
+
+amrex::Print() << "linear_elasticity::v_to_vn - DIM = 3" << std::endl;
+exit(-1);
+        
+#endif
+}
+
+/**
+ * \brief Transform vector from unit normal reference system to global reference system.
+ * 
+ * \param[in] un: pointer to memory containing the unit normal.
+ * \param[in] vn: pointer to memory containing the vector components in the unit normal reference
+ *               system.
+ * \param[out] v: pointer to memory that will contain the vector components in the global reference
+ *                 system.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void vn_to_v(const amrex::Real * un, const amrex::Real * vn, amrex::Real * v)
+{
+#if (AMREX_SPACEDIM == 1)
+amrex::Print() << "linear_elasticity::vn_to_v - DIM = 1" << std::endl;
+exit(-1);
+#endif
+#if (AMREX_SPACEDIM == 2)
+        const amrex::Real c = un[0], s = un[1];
+
+        v[0] = c*vn[0]-s*vn[1];
+        v[1] = s*vn[0]+c*vn[1];
+        
+#endif
+#if (AMREX_SPACEDIM == 3)
+        // We assume un be written as
+        // un = n1 = cos(phi)*sin(theta)
+        //      n2   sin(phi)*sin(theta)
+        //      n3   cos(theta)
+        const amrex::Real theta = std::acos(un[2]);
+        const amrex::Real phi = std::atan2(un[1], un[0]);
+        const amrex::Real cth = std::cos(theta);
+        const amrex::Real sth = std::sin(theta);
+        const amrex::Real cph = std::cos(phi);
+        const amrex::Real sph = std::sin(phi);
+
+amrex::Print() << "linear_elasticity::vn_to_v - DIM = 3" << std::endl;
+exit(-1);
+        
+#endif
+}
+
+/**
  * \brief Transform stress from global reference system to unit normal reference system.
  * 
  * \param[in] un: pointer to memory containing the unit normal.
- * \param[in] S: pointer to memory containing the stress fields in the unit normal reference system.
- * \param[out] Sn: pointer to memory that will contain the stress fields in the global reference
- *                 system.
+ * \param[in] S: pointer to memory containing the stress components in the global reference system.
+ * \param[out] Sn: pointer to memory that will contain the stress components in the unit normal
+ *                 reference system.
 */
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void S_to_Sn(const amrex::Real * un, const amrex::Real * S, amrex::Real * Sn)
@@ -70,8 +152,9 @@ exit(-1);
  * \brief Transform stress from unit normal reference system to global reference system.
  * 
  * \param[in] un: pointer to memory containing the unit normal.
- * \param[in] Sn: pointer to memory containing the stress fields in the global reference system.
- * \param[out] S: pointer to memory that will contain the stress fields in the unit normal reference
+ * \param[in] Sn: pointer to memory containing the stress components in the unit normal reference
+ *                system.
+ * \param[out] S: pointer to memory that will contain the stress components in the global reference
  *                system.
 */
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

@@ -19,8 +19,8 @@
 #include <AMReX_dG_Mesh.H>
 #include <AMReX_dG_BFX.H>
 
-#define __DG_MAX_N_UNKNOWN_FIELDS__ 10
-#define __DG_MAX_N_OUTPUT_FIELDS__ 18
+#define __DG_MAX_N_UNKNOWN_FIELDS__ 20
+#define __DG_MAX_N_OUTPUT_FIELDS__ 22
 
 namespace amrex
 {

@@ -1,23 +1,23 @@
 # SPACE ###############################################################
 geometry.prob_lo     = 0.0 0.0 0.0
 geometry.prob_hi     = 1.0 1.0 1.0
-geometry.is_periodic = 0 0 0
+geometry.is_periodic = 1 1 1
 #######################################################################
 
 
 
 # TIME ################################################################
 # Sample isotropic material
-#time.T = 0.9539392014 # (2D)
-#time.T = 0.8618916074 # (3D)
+#time.T = 0.9539392014 # (2D) XXX
+#time.T = 0.8618916074 # (3D) XXX
 
 # Copper crystal
-#time.T = 0.206344544 # (2D)
-#time.T = 0.2045172801 # (3D)
+#time.T = 0.206344544 # (2D) XXX
+#time.T = 0.2045172801 # (3D) XXX
 
 # Anisotropic 
-time.T = 1.112340228 # (2D)
-#time.T = 0.06514944124 # (3D)
+#time.T = 1.434512456 # (2D)
+time.T = 0.072773376 # (3D)
 
 time.n_steps = 10000
 #######################################################################
@@ -37,7 +37,9 @@ amr.max_level = 0
 
 # MESH ================================================================
 mesh[0].embedded_geometry_is_active = 1
-mesh[0].embedded_geometry_defined_by = level_set
+mesh[0].embedded_geometry_defined_by = projected_level_set
+mesh[0].projected_level_set_p = 7
+mesh[0].quadrature_order_projected_level_set = 8
 mesh[0].box_pruning_is_active = 1
 mesh[0].quadrature_order_regular_elements = 4
 mesh[0].quadrature_order_cut_elements = 8
@@ -57,38 +59,36 @@ solution[0].post_processing_grid_order = 8
 
 
 # PROBLEM #############################################################
-x_coord = 0.5
-y_coord = 0.5
-z_coord = 0.5
-radius = 0.25 # (2D)
-#radius = 0.35 # (3D)
-
 # Sample isotropic material
-#material_type = isotropic
-#material_constants = 1.0 1.0 0.3
+#phase_a_material_type = isotropic
+#phase_b_material_type = isotropic
+#phase_a_material_constants = 1.0 1.0 0.3
+#phase_b_material_constants = 1.0 1.0 0.3
 
 # Copper crystal
-#material_type = orthotropic
-#material_constants = 8.92 168.0 168.0 121.0 75.0 # (2D)
-#material_constants = 8.92 168.0 168.0 168.0 121.0 121.0 121.0 75.0 75.0 75.0 # (3D)
+#phase_a_material_type = orthotropic
+#phase_b_material_type = orthotropic
+#phase_a_material_constants = 8.92 168.0 168.0 121.0 75.0 # (2D)
+#phase_b_material_constants = 8.92 168.0 168.0 121.0 75.0 # (2D)
+#phase_a_material_constants = 8.92 168.0 168.0 168.0 121.0 121.0 121.0 75.0 75.0 75.0 # (3D)
+#phase_b_material_constants = 8.92 168.0 168.0 168.0 121.0 121.0 121.0 75.0 75.0 75.0 # (3D)
 
 # Anisotropic
-material_type = anisotropic
-material_constants = 1.6 0.5637 0.2963 0.3158 0.5637 0.3158 0.3111 # (2D)
-#material_constants = 1.0 185.8 67.3 76.2  2.69 17.6 -5.44 170.0 62.67 4.62 -6.60 -6.53 219.8 3.08 30.48 -2.72 59.0 -1.905 2.83 79.2 2.12 57.0 # (3D)
+phase_a_material_type = anisotropic
+phase_b_material_type = anisotropic
+#phase_a_material_constants = 1.6 0.5637 0.2963 0.3158 0.5637 0.3158 0.3111 # (2D)
+#phase_b_material_constants = 1.6 0.5637 0.2963 0.3158 0.5637 0.3158 0.3111 # (2D)
+phase_a_material_constants = 1.0 185.8 67.3 76.2 2.69 17.6 -5.44 170.0 62.67 4.62 -6.60 -6.53 219.8 3.08 30.48 -2.72 59.0 -1.905 2.83 79.2 2.12 57.0 # (3D)
+phase_b_material_constants = 1.0 185.8 67.3 76.2 2.69 17.6 -5.44 170.0 62.67 4.62 -6.60 -6.53 219.8 3.08 30.48 -2.72 59.0 -1.905 2.83 79.2 2.12 57.0 # (3D)
 
 norm = L_inf
 #######################################################################
-# We consider an embedded circle in 2D or an embedded sphere in 3D.
-# Then:
-# x_coord, y_coord, z_coord: coordinates of the center of the embedded
-#                            circle (z_coord not used) or sphere
-# radius: radius of the embedded circle or sphere
+# The embedded geometry is defined inside IBVP_TwoPhaseDomain.H
 #
-#
-# material_type: type of the considered material; this string determines
-#                how material_constants is read.
-# material_constants: density + elastic constants
+# phase_a_type, phase_b_type: types of the considered phase; they
+#                             determine how phase_a_constants and
+#                             phase_b_constants are read.
+# phase_a_constants, phase_b_constants: density + elastic constants
 #
 # norm: norm to be used to evaluate the error.
 #######################################################################
@@ -99,7 +99,7 @@ norm = L_inf
 wall_time = 10.0
 wall_time_units = s
 
-output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_$(material_type)_p$(solution[0].space_p)_nc$(amr.n_cell)_gs$(amr.max_grid_size)
+output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_$(phase_a_material_type)_$(phase_b_material_type)_p$(solution[0].space_p)_nc$(amr.n_cell)_gs$(amr.max_grid_size)
 plot_int = 100
 output_overwrite = 1
 
