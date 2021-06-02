@@ -36,6 +36,9 @@ namespace amr
         }
 
         this->masks.resize(n_levels);
+
+        this->linear_direct_solver_finest_level = this->finest_level;
+        this->linear_direct_solver = "";
     }
     // ================================================================
 
@@ -92,6 +95,22 @@ namespace amr
         {
             ParmParse pp("solution["+std::to_string(lev)+"]");
             this->solutions[lev]->read_input_file(pp);
+        }
+        // ------------------------------------------------------------
+
+        // LINEAR SOLVER ----------------------------------------------
+        {
+            ParmParse pp;
+
+            pp.query("linear_direct_solver_finest_level", this->linear_direct_solver_finest_level);
+            pp.query("linear_direct_solver", this->linear_direct_solver);
+        }
+
+        if (this->linear_direct_solver_is_pardiso())
+        {
+            ParmParse pp("pardiso");
+
+            pp.get("mtype", this->pardiso.mtype);
         }
         // ------------------------------------------------------------
     }
@@ -240,6 +259,37 @@ namespace amr
     {
         const int n_domains = 1;
         this->check_quadrature_rules(n_domains, &exact_volume, &exact_surface);
+    }
+    // ================================================================
+
+
+    // LINEAR SOLVER ==================================================
+    bool SinglePatch::linear_direct_solver_is_pardiso() const
+    {
+        return (this->linear_direct_solver.compare("pardiso") == 0);
+    }
+
+    bool SinglePatch::linear_direct_solver_first_call() const
+    {
+        bool first_call;
+
+        first_call = true;
+
+        if (this->linear_direct_solver_is_pardiso())
+        {
+            first_call = this->pardiso.first_call;
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_AMR.cpp - SinglePatch::linear_direct_solver_first_call\n";
+            msg += "| Unexpected input parameters.\n";
+            msg += "| Linear solver: "+this->linear_direct_solver+".\n";
+            Abort(msg);
+        }
+
+        return first_call;
     }
     // ================================================================
 

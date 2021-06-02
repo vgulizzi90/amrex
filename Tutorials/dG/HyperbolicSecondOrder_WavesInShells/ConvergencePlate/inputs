@@ -1,0 +1,88 @@
+# SPACE ###############################################################
+geometry.prob_lo     = 0.0 0.0 0.0
+geometry.prob_hi     = 1.0 1.0 1.0
+geometry.is_periodic = 0 0 0
+#######################################################################
+
+
+
+# TIME ################################################################
+time.T = 200.0
+
+time.n_steps = 100
+#######################################################################
+
+
+
+# DISCRETIZATION ######################################################
+# AMR =================================================================
+amr.v = 1
+
+amr.n_cell        = 4 4 4
+amr.max_grid_size = 4 4 4
+
+amr.max_level = 0
+# =====================================================================
+
+
+# MESH ================================================================
+mesh[0].embedded_geometry_is_active = 1
+mesh[0].embedded_geometry_defined_by = level_set
+mesh[0].box_pruning_is_active = 1
+mesh[0].quadrature_order_regular_elements = 4
+mesh[0].quadrature_order_cut_elements = 8
+# =====================================================================
+
+
+# SOLUTION ============================================================
+solution[0].space_p = 3
+solution[0].cell_merging_is_active = 1
+solution[0].cell_merging_volume_fraction_threshold = 0.3
+solution[0].time_integration = implicit_Newmark
+solution[0].time_integration_CFL = 0.00001
+solution[0].post_processing_grid_order = 8
+# =====================================================================
+
+# LINEAR SOLVER =======================================================
+linear_direct_solver_finest_level = 0
+linear_direct_solver = pardiso
+pardiso.mtype = -2
+# =====================================================================
+#######################################################################
+
+
+
+# PROBLEM #############################################################
+n_materials = 2
+
+material[0].type = isotropic
+material[0].constants = 2700.0 70e9 0.33
+material[0].use_plane_stress = 1
+material[0].shear_factor = 0.833
+
+material[1].type = orthotropic_eng_constants
+material[1].constants = 1.0 25.0 1.0 1.0 0.25 0.25 0.25 0.2 0.5 0.5
+material[1].use_plane_stress = 1
+material[1].shear_factor = 0.833
+
+shell_n_layers = 8
+shell_layers_material = 0 0 0 0 0 0 0 0
+shell_layers_thickness = 0.00125 0.00125 0.00125 0.00125 0.00125 0.00125 0.00125 0.00125
+shell_layers_orientation = 0.0 90.0 0.0 90.0 0.0 90.0 0.0 90.0
+shell_theory = 1 1 0
+#######################################################################
+# [Description]
+#######################################################################
+
+
+
+# POST-PROCESSING INFO ################################################
+wall_time = 10.0
+wall_time_units = s
+
+output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_p$(solution[0].space_p)_nc$(amr.n_cell)_gs$(amr.max_grid_size)
+plot_int = 1000000
+output_overwrite = 1
+
+restart = -1
+#######################################################################

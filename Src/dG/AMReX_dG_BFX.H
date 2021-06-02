@@ -303,6 +303,59 @@ public space_elm_bf_base<DG_MAX_p, DG_MAX_Np>
         )
     }
     // ================================================================
+
+    // EVAL THE SOLUTION'S DERIVATIVES AT LOCATION x ==================
+    // Note: It is the same as the gradient but returns each
+    //       derivative separately.
+    // ================================================================
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_derivatives_unsafe(AMREX_D_DECL(Real * res_1, Real * res_2, Real * res_3))
+    {
+        AMREX_D_TERM
+        (
+            res_1[0] = 0.0;,
+            res_2[0] = 0.0;,
+            res_3[0] = 0.0;
+        )
+
+        for (int c = 0; c < (this->Np); ++c)
+        {
+            const Real coeff = this->fab(this->i,this->j,this->k,c+(this->u)*(this->Np));
+
+            AMREX_D_TERM
+            (
+                res_1[0] += this->dBFdx1[c]*coeff;,
+                res_2[0] += this->dBFdx2[c]*coeff;,
+                res_3[0] += this->dBFdx3[c]*coeff;
+            )
+        }
+    }
+
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_derivatives(const Real * x, AMREX_D_DECL(Real * res_1, Real * res_2, Real * res_3))
+    {
+        this->eval_bf_table(x);
+
+        this->eval_grad_unsafe(AMREX_D_DECL(res_1, res_2, res_3));
+    }
+
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_derivatives_unsafe(const int u_lo, const int u_hi, AMREX_D_DECL(Real * U_1, Real * U_2, Real * U_3))
+    {
+        for (this->u = u_lo; this->u < u_hi; ++this->u)
+        {
+            this->eval_derivatives_unsafe(AMREX_D_DECL(&U_1[this->u], &U_2[this->u], &U_3[this->u]));
+        }
+    }
+
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_grad(const Real * x, const int u_lo, const int u_hi, AMREX_D_DECL(Real * U_1, Real * U_2, Real * U_3))
+    {
+        this->eval_bf_table(x);
+
+        this->eval_derivatives_unsafe(u_lo, u_hi, AMREX_D_DECL(U_1, U_2, U_3));
+    }
+    // ================================================================
 };
 
 typedef space_elm_bfx_base<__DG_MAX_SPACE_p__, __DG_MAX_SPACE_Np__> space_elm_bfx;

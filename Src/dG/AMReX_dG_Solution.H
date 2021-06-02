@@ -19,7 +19,7 @@
 #include <AMReX_dG_Mesh.H>
 #include <AMReX_dG_BFX.H>
 
-#define __DG_MAX_N_UNKNOWN_FIELDS__ 20
+#define __DG_MAX_N_UNKNOWN_FIELDS__ 5
 #define __DG_MAX_N_OUTPUT_FIELDS__ 22
 
 namespace amrex
@@ -89,6 +89,7 @@ struct Solution
     // ELEMENT TYPE / ELEMENT BOUNDARY TYPE
     sMultiFab elm_type;
     Array<sMultiFab, AMREX_SPACEDIM> elm_bou_type;
+    iMultiFab elm_id, elm_color;
 
     // ELEMENT CENTROID
     MultiFab elm_centroid;
@@ -119,6 +120,8 @@ struct Solution
     // READERS ========================================================
     bool uses_cell_merging() const;
     bool time_integration_is_explicit_RKdG() const;
+    bool time_integration_is_explicit_central_difference() const;
+    bool time_integration_is_implicit_Newmark() const;
 
     /**
      * \brief Make sure the problem can be handled.
@@ -196,6 +199,29 @@ struct Solution
                                      this->output_field_parent_domain_dev_mem.begin());
 #endif
     }
+
+    /**
+     * \brief Get the max number of unknown fields per domain.
+     *
+     * \param[in] ibvp: initial boundary value problem object.
+     *
+    */
+    template <typename IBVP>
+    int get_max_number_of_unknown_fields_per_domain(const IBVP & ibvp) const
+    {
+        const int n_domains = ibvp.get_number_of_domains();
+
+        int u_lo, u_hi, Nu;
+
+        Nu = 0;
+        for (int dom = 0; dom < n_domains; ++dom)
+        {
+            ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+            Nu = amrex::max(Nu, u_hi-u_lo);
+        }
+
+        return Nu;
+    }
     // ================================================================
 
 
@@ -209,7 +235,7 @@ struct Solution
      *
     */
     template <typename IBVP>
-    void init_space_solution_multifabs(const Mesh & mesh, MultiFab & X, const IBVP & ibvp)
+    void init_space_solution_multifabs(const Mesh & mesh, MultiFab & X, const IBVP & ibvp) const
     {
         // UNKNOWN FIELDS
         const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
@@ -222,6 +248,31 @@ struct Solution
         // INITIALIZATION
         X.define(mesh.ba, mesh.dm, X_n_comp, this->dom_data_n_grow);
         X = 0.0;
+    }
+
+    /**
+     * \brief Initialize the multifab that will contain the pde mass matrix.
+     *
+     * \param[in] mesh: Mesh object; contains information about embedded geometries.
+     * \param[inout] M: a MultiFab object that will be initialized to contain the pde mass matrix.
+     * \param[in] ibvp: initial boundary value problem object.
+     *
+    */
+    template <typename IBVP>
+    void init_pde_mass_matrix_multifab(const Mesh & mesh, MultiFab & M, const IBVP & ibvp) const
+    {
+        // DOMAINS / UNKNOWN FIELDS
+        const int n_domains = ibvp.get_number_of_domains();
+        const int max_Nu = this->get_max_number_of_unknown_fields_per_domain(ibvp);
+
+        // ORDER
+        const int sp = this->params.space_p;
+        const int sNp = AMREX_D_TERM((1+sp),*(1+sp),*(1+sp));
+        const int M_n_comp = sNp*max_Nu*sNp*max_Nu*n_domains;
+
+        // INITIALIZATION
+        M.define(mesh.ba, mesh.dm, M_n_comp, this->dom_data_n_grow);
+        M = 0.0;
     }
     // ================================================================
 
@@ -358,6 +409,10 @@ struct Solution
     void set_cell_merging(const Geometry & geom, const Mesh & mesh, const IBVP & ibvp)
     {
         // PARAMETERS -------------------------------------------------
+        // GRID
+        const Box domain = geom.Domain();
+        const GpuArray<int, AMREX_SPACEDIM> is_periodic = geom.isPeriodicArray();
+        
         // DOMAINS
         const int n_domains = ibvp.get_number_of_domains();
 
@@ -597,19 +652,713 @@ struct Solution
                 [=] AMREX_GPU_DEVICE (int fi, int fj, int fk, int dom) noexcept
                 {
                     int i, j, k, nbr_i, nbr_j, nbr_k;
-                    short etype, nbr_etype;
+                    short etype, nbr_etype, ebtype;
 
                     FACE_TO_NBRS(fi, fj, fk, dir, i, j, k, nbr_i, nbr_j, nbr_k);
 
                     etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
                     nbr_etype = elm_type_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                    ebtype = elm_bou_type_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
 
-                    if (CELLS_ARE_MERGED(i, j, k, etype, nbr_i, nbr_j, nbr_k, nbr_etype))
+                    if (CELLS_ARE_MERGED(i, j, k, etype, nbr_i, nbr_j, nbr_k, nbr_etype) || ELM_BOU_IS_EMPTY(ebtype))
                     {
                         elm_bou_type_fab(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_PARTIAL_INVALID__;
                     }
                 });
                 Gpu::synchronize();
+            }
+        }
+        // ------------------------------------------------------------
+
+        // LABEL WALL BOUNDARIES --------------------------------------
+        for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+        {
+            for (MFIter mfi(mesh.cell_bou_type[dir]); mfi.isValid(); ++mfi)
+            {
+                const Box & bx = mfi.validbox();
+
+                Array4<short> const & elm_bou_type_fab = this->elm_bou_type[dir].array(mfi);
+
+                ParallelFor(bx, n_domains,
+                [=] AMREX_GPU_DEVICE (int fi, int fj, int fk, int dom) noexcept
+                {
+                    const short ebtype = elm_bou_type_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
+                    const int ff = (dir == 0) ? fi : ((dir == 1) ? fj : fk);
+                    
+                    if (ELM_BOU_IS_VALID(ebtype))
+                    {
+                        if ((ff == domain.smallEnd(dir)) && (is_periodic[dir] == 0))
+                        {
+                            elm_bou_type_fab(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_NEG_WALL__;
+                        }
+                        else if ((ff == (domain.bigEnd(dir)+1)) && (is_periodic[dir] == 0))
+                        {
+                            elm_bou_type_fab(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_POS_WALL__;
+                        }
+                    }
+                });
+                Gpu::synchronize();
+            }
+        }
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Order elements for the implicit solver.
+     *
+     * \param[in] geom: amrex Geometry object; contains the problem periodicity.
+     * \param[in] mesh: Mesh object; contains information about embedded geometries.
+     * \param[in] mask: a iMultiFab object that contains a single value for each cell.
+     * \param[inout] id: id offset.
+     * \param[in] ibvp: initial boundary value problem object.
+     *
+    */
+    template <typename IBVP>
+    void set_elm_ordering(const Geometry & geom, const Mesh & mesh, const iMultiFab & mask, int & id, const IBVP & ibvp)
+    {
+        // PARAMETERS -------------------------------------------------
+        // DOMAINS
+        const int n_domains = ibvp.get_number_of_domains();
+
+        const int elm_id_n_comp = n_domains;
+        // ------------------------------------------------------------
+
+        // INITIALIZATION ---------------------------------------------
+        this->elm_id.define(mesh.ba, mesh.dm, elm_id_n_comp, this->dom_data_n_grow);
+        this->elm_id = __DG_ELM_ID_UNDEFINED__;
+        // ------------------------------------------------------------
+
+        // ASSIGN AN ID TO EACH ELEMENT -------------------------------
+        for (MFIter mfi(this->elm_id); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+            const Dim3 lo = lbound(bx);
+            const Dim3 hi = ubound(bx);
+
+            Array4<int const> const & mask_fab = mask.array(mfi);
+            Array4<short const> const & elm_type_fab = this->elm_type.array(mfi);
+            
+            Array4<int> const & elm_id_fab = this->elm_id.array(mfi);
+
+            for (int dom = 0; dom < n_domains; ++dom)
+            for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i)
+            {
+                const bool cell_is_not_masked = CELL_IS_NOT_MASKED(mask_fab(i,j,k));
+                const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_valid = ELM_IS_VALID(etype);
+
+                if (cell_is_not_masked && elm_is_valid)
+                {
+                    elm_id_fab(i,j,k,dom) = id;
+                    id += 1;
+                }
+                
+                /* DEBUG
+                Print() << "1 - etype(" << i << "," << j << "," << k << ") " << etype << ", id: " << elm_id_fab(i,j,k,dom) << std::endl;
+                */
+
+            }
+        }
+        this->elm_id.FillBoundary(geom.periodicity());
+        // ------------------------------------------------------------
+
+        // COPY ID INFORMATION TO SMALL ELEMENTS FROM EXTENDED ELEMENTS
+        for (MFIter mfi(this->elm_id); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & elm_type_fab = this->elm_type.array(mfi);
+            
+            Array4<int> const & elm_id_fab = this->elm_id.array(mfi);
+
+            ParallelFor(bx, n_domains,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // LOCAL PARAMETERS
+                const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_small = ELM_IS_SMALL(etype);
+
+                if (elm_is_small)
+                {
+                    int bf_i, bf_j, bf_k;
+                    BF_CELL(i, j, k, etype, bf_i, bf_j, bf_k);
+
+                    elm_id_fab(i,j,k,dom) = elm_id_fab(bf_i,bf_j,bf_k,dom);
+                }
+                
+                /* DEBUG
+                Print() << "2 - etype(" << i << "," << j << "," << k << ") " << etype << ", id: " << elm_id_fab(i,j,k,dom) << std::endl;
+                */
+
+            });
+            Gpu::synchronize();
+        }
+        this->elm_id.FillBoundary(geom.periodicity());
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Order elements' degrees of freedom for the implicit solver.
+     *
+     * \param[in] geom: amrex Geometry object; contains the problem periodicity.
+     * \param[in] mesh: Mesh object; contains information about embedded geometries.
+     * \param[in] mask: a iMultiFab object that contains a single value for each cell.
+     * \param[out] csr_dom_info: a iMultiFab where the dof position offset will be stored.
+     * \param[inout] elm_posX: dof position offset.
+     * \param[in] ibvp: initial boundary value problem object.
+     *
+    */
+    template <typename IBVP>
+    void set_elm_dof_ordering(const Geometry & geom, const Mesh & mesh, const iMultiFab & mask, iMultiFab & csr_dom_info, int & elm_posX, const IBVP & ibvp) const
+    {
+        // PARAMETERS -------------------------------------------------
+        // DOMAINS
+        const int n_domains = ibvp.get_number_of_domains();
+
+        // ORDER
+        const int sp = this->params.space_p;
+        const int sNp = AMREX_D_TERM((1+sp),*(1+sp),*(1+sp));
+        // ------------------------------------------------------------
+
+        // INITIALIZATION ---------------------------------------------
+        csr_dom_info = -1;
+        // ------------------------------------------------------------
+
+        // ASSIGN THE DOF LOCATION TO EACH ELEMENT --------------------
+        for (MFIter mfi(csr_dom_info); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+            const Dim3 lo = lbound(bx);
+            const Dim3 hi = ubound(bx);
+
+            Array4<int const> const & mask_fab = mask.array(mfi);
+            Array4<short const> const & elm_type_fab = this->elm_type.array(mfi);
+            
+            Array4<int> const & csr_dom_info_fab = csr_dom_info.array(mfi);
+
+            for (int dom = 0; dom < n_domains; ++dom)
+            for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i)
+            {
+                // LOCAL PARAMETERS
+                const bool cell_is_not_masked = CELL_IS_NOT_MASKED(mask_fab(i,j,k));
+                const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_valid = ELM_IS_VALID(etype);
+
+                // UNKNOWN FIELDS
+                int u_lo, u_hi;
+                ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+                const int Nu = u_hi-u_lo;
+                const int elm_n_dof = Nu*sNp;
+
+                if (cell_is_not_masked && elm_is_valid)
+                {
+                    csr_dom_info_fab(i,j,k,CSR_DOM_INFO_POS_X(dom)) = elm_posX;
+                    csr_dom_info_fab(i,j,k,CSR_DOM_INFO_N_DOF(dom)) = elm_n_dof;
+                    elm_posX += elm_n_dof;
+                }
+            }
+        }
+        csr_dom_info.FillBoundary(geom.periodicity());
+        // ------------------------------------------------------------
+
+        // COPY INFORMATION TO SMALL ELEMENTS FROM EXTENDED ELEMENTS --
+        for (MFIter mfi(csr_dom_info); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & elm_type_fab = this->elm_type.array(mfi);
+            
+            Array4<int> const & csr_dom_info_fab = csr_dom_info.array(mfi);
+
+            ParallelFor(bx, n_domains,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // LOCAL PARAMETERS
+                const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_small = ELM_IS_SMALL(etype);
+
+                if (elm_is_small)
+                {
+                    int bf_i, bf_j, bf_k;
+                    BF_CELL(i, j, k, etype, bf_i, bf_j, bf_k);
+
+                    csr_dom_info_fab(i,j,k,CSR_DOM_INFO_POS_X(dom)) = csr_dom_info_fab(bf_i,bf_j,bf_k,CSR_DOM_INFO_POS_X(dom));
+                    csr_dom_info_fab(i,j,k,CSR_DOM_INFO_N_DOF(dom)) = csr_dom_info_fab(bf_i,bf_j,bf_k,CSR_DOM_INFO_N_DOF(dom));
+                }
+            });
+            Gpu::synchronize();
+        }
+        csr_dom_info.FillBoundary(geom.periodicity());
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Construct an iMultiFab with the posX and the dof number of the neighbors of each element.
+     *
+     * \param[in] geom: amrex Geometry object; contains the problem periodicity.
+     * \param[in] mesh: Mesh object; contains information about embedded geometries.
+     * \param[in] csr_dom_info: a iMultiFab containing the dof position offset.
+     * \param[out] elm_nbr_info: a iMultiFab that will contain the output information.
+     * \param[in] ibvp: initial boundary value problem object.
+     *
+     * This routine is intended for a single-level application.
+     *
+    */
+    template <typename IBVP>
+    void get_elm_nbr_info(const Geometry & geom, const Mesh & mesh, const iMultiFab & csr_dom_info, iMultiFab & elm_nbr_info, const IBVP & ibvp) const
+    {
+        // PARAMETERS -------------------------------------------------
+        const int n_domains = ibvp.get_number_of_domains();
+
+        // ORDER
+        const int sp = this->params.space_p;
+        const int sNp = AMREX_D_TERM((1+sp),*(1+sp),*(1+sp));
+
+        const int cell_nbr_info_n_comp = n_domains*__DG_CELL_NBR_INFO_N_COMP_PER_DOM__;
+        const int elm_nbr_info_n_comp = n_domains*__DG_ELM_NBR_INFO_N_COMP_PER_DOM__;
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        iMultiFab cell_nbr_info;
+        // ------------------------------------------------------------
+
+        // INITIALIZATION ---------------------------------------------
+        cell_nbr_info.define(mesh.ba, mesh.dm, cell_nbr_info_n_comp, mesh.dom_data_n_grow);
+        cell_nbr_info = -1;
+        elm_nbr_info.define(mesh.ba, mesh.dm, elm_nbr_info_n_comp, mesh.dom_data_n_grow);
+        elm_nbr_info = -1;
+        // ------------------------------------------------------------
+
+        // GATHER INFORMATION AT THE CELLS' LEVEL ---------------------
+        for (MFIter mfi(cell_nbr_info); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<int const> const & csr_dom_info_fab = csr_dom_info.array(mfi);
+            
+            Array4<int> const & cell_nbr_info_fab = cell_nbr_info.array(mfi);
+
+            for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+            {
+                Array4<short const> const & elm_bou_type_fab = this->elm_bou_type[dir].array(mfi);
+
+                ParallelFor(bx, n_domains,
+                [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+                {
+                    for (int b = 2*dir; b < 2*(dir+1); ++b)
+                    {
+                        // NEIGHBOR CELL
+                        int nbr_i, nbr_j, nbr_k, nbr_b;
+                        NBR_CELL(i, j, k, b, nbr_i, nbr_j, nbr_k, nbr_b);
+
+                        // GRID FACE
+                        int fi, fj, fk;
+                        GRID_FACE(i, j, k, b, fi, fj, fk);
+                        
+                        // ELEMENT BOUNDARY TYPE
+                        const short ebtype = elm_bou_type_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
+
+                        if (ELM_BOU_IS_VALID(ebtype))
+                        {
+                            cell_nbr_info_fab(i,j,k,CELL_NBR_POS_X(dom, b)) = csr_dom_info_fab(nbr_i,nbr_j,nbr_k,CSR_DOM_INFO_POS_X(dom));
+                        }
+                    }
+                });
+                Gpu::synchronize();
+            }
+        }
+        cell_nbr_info.FillBoundary(geom.periodicity());
+        // ------------------------------------------------------------
+
+        // GATHER INFORMATION AT THE ELEMENTS' LEVEL ------------------
+        for (MFIter mfi(elm_nbr_info); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & elm_type_fab = this->elm_type.array(mfi);
+            Array4<int const> const & csr_dom_info_fab = csr_dom_info.array(mfi);
+            Array4<int const> const & cell_nbr_info_fab = cell_nbr_info.array(mfi);
+
+            Array4<int> const & elm_nbr_info_fab = elm_nbr_info.array(mfi);
+
+            ParallelFor(bx, n_domains,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // LOCAL PARAMETERS
+                const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_valid = ELM_IS_VALID(etype);
+                const bool elm_is_extended = ELM_IS_EXTENDED(etype);
+                const int elm_posX = csr_dom_info_fab(i,j,k,CSR_DOM_INFO_POS_X(dom));
+
+                // LOCAL VARIABLES
+                bool add_nbr;
+                int elm_n_nbrs;
+                int elm_nbrs_posX[__DG_ELM_MAX_N_NBR_PER_DOM__];
+
+                // UNKNOWN FIELDS
+                int u_lo, u_hi;
+                ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+                const int Nu = u_hi-u_lo;
+                const int elm_n_dof = Nu*sNp;
+
+                // INITIALIZATION
+                elm_n_nbrs = 0;
+                std::fill(elm_nbrs_posX, elm_nbrs_posX+__DG_ELM_MAX_N_NBR_PER_DOM__, 0);
+
+                if (elm_is_valid)
+                {
+                    // DIRECT NEIGHBORS
+                    for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                    {
+                        const int nbr_posX = cell_nbr_info_fab(i,j,k,CELL_NBR_POS_X(dom, b));
+
+                        add_nbr =            ((nbr_posX != elm_posX) && (nbr_posX >= 0));
+                        add_nbr = add_nbr && (std::find(elm_nbrs_posX, elm_nbrs_posX+elm_n_nbrs, nbr_posX) == (elm_nbrs_posX+elm_n_nbrs));
+
+                        if (add_nbr)
+                        {
+                            elm_nbrs_posX[elm_n_nbrs] = nbr_posX;
+                            elm_n_nbrs += 1;
+                        }
+                    }
+
+                    // MERGING CELLS NBRS
+                    if (elm_is_extended)
+                    {
+                        for (int n = 0; n < __DG_EXTENDED_STENCIL_N_NBR__; ++n)
+                        {
+                            const int nbr_i = i+tables::extended_stencil_i[n];
+                            const int nbr_j = j+tables::extended_stencil_j[n];
+                            const int nbr_k = k+tables::extended_stencil_k[n];
+                            const short nbr_etype = elm_type_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                            
+                            if (CELLS_ARE_MERGED(i, j, k, nbr_i, nbr_j, nbr_k, nbr_etype))
+                            {
+                                for (int b = 0; b < __DG_STD_ELEM_N_SPACE_BOUNDARIES__; ++b)
+                                {
+                                    const int nbr_posX = cell_nbr_info_fab(nbr_i,nbr_j,nbr_k,CELL_NBR_POS_X(dom, b));
+
+                                    add_nbr =            ((nbr_posX != elm_posX) && (nbr_posX >= 0));
+                                    add_nbr = add_nbr && (std::find(elm_nbrs_posX, elm_nbrs_posX+elm_n_nbrs, nbr_posX) == (elm_nbrs_posX+elm_n_nbrs));
+
+                                    if (add_nbr)
+                                    {
+                                        elm_nbrs_posX[elm_n_nbrs] = nbr_posX;
+                                        elm_n_nbrs += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // NEIGHBOR ON OTHER PHASE
+                    //...
+
+                    // SORT THE NEIGHBORS
+                    // Here we assume all elements have the same number
+                    // of degrees of freedom. See also below. When we
+                    // deal with AMR, elements of finer levels will
+                    // have greater id than elements of coarser levels.
+                    // Therefore, we can sort them in groups.
+                    std::sort(elm_nbrs_posX, elm_nbrs_posX+elm_n_nbrs);
+
+                    /* DEBUG
+                    Print() << "elm_nbrs_posX(" << i << "," << j << "," << k << ") (elm_n_nbrs = " << elm_n_nbrs << "): "; io::print_int_array_2d(1, elm_n_nbrs, elm_nbrs_posX);
+                    */
+
+                    // STORE INFO
+                    elm_nbr_info_fab(i,j,k,ELM_N_NBRS(dom)) = elm_n_nbrs;
+                    for (int n = 0; n < elm_n_nbrs; ++n)
+                    {
+                        elm_nbr_info_fab(i,j,k,ELM_NBR_POS_X(dom, n)) = elm_nbrs_posX[n];
+                        
+                        // We assume all neighbors have the same number
+                        // of degrees of freedom.
+                        elm_nbr_info_fab(i,j,k,ELM_NBR_N_DOF(dom, n)) = elm_n_dof;
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+        elm_nbr_info.FillBoundary(geom.periodicity());
+        // ------------------------------------------------------------
+
+        // COPY INFORMATION TO SMALL ELEMENTS -------------------------
+        for (MFIter mfi(elm_nbr_info); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & elm_type_fab = this->elm_type.array(mfi);
+
+            Array4<int> const & elm_nbr_info_fab = elm_nbr_info.array(mfi);
+
+            ParallelFor(bx, n_domains,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // LOCAL PARAMETERS
+                const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_small = ELM_IS_SMALL(etype);
+
+                if (elm_is_small)
+                {
+                    int bf_i, bf_j, bf_k, bf_n_nbrs;
+                    BF_CELL(i, j, k, etype, bf_i, bf_j, bf_k);
+
+                    bf_n_nbrs = elm_nbr_info_fab(bf_i,bf_j,bf_k,ELM_N_NBRS(dom));
+                    elm_nbr_info_fab(i,j,k,ELM_N_NBRS(dom)) = bf_n_nbrs;
+                    for (int n = 0; n < bf_n_nbrs; ++n)
+                    {
+                        elm_nbr_info_fab(i,j,k,ELM_NBR_POS_X(dom, n)) = elm_nbr_info_fab(bf_i,bf_j,bf_k,ELM_NBR_POS_X(dom, n));
+                        elm_nbr_info_fab(i,j,k,ELM_NBR_N_DOF(dom, n)) = elm_nbr_info_fab(bf_i,bf_j,bf_k,ELM_NBR_N_DOF(dom, n));
+                    }
+                    
+                }
+            });
+            Gpu::synchronize();
+        }
+        elm_nbr_info.FillBoundary(geom.periodicity());
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Add the non-zeros to a real symmetric matrix stored in CSR format.
+     *
+     * \param[in] geom: amrex Geometry object; contains the problem periodicity.
+     * \param[in] mesh: Mesh object; contains information about embedded geometries.
+     * \param[in] mask: a iMultiFab object that contains a single value for each cell.
+     * \param[inout] csr: object containing the data structures for the matrix representation in CSR
+                          format.
+     * \param[in] elm_nbr_info: a iMultiFab containing information about element's neighbors.
+     * \param[inout] csr_dom_info: a iMultiFab that will be updated with information about the
+     *                             sparse data structures.
+     * \param[inout] csr_bou_info: a vector of iMultiFab that will be updated with information about
+     *                             the sparse data structures.
+     * \param[in] ibvp: initial boundary value problem object.
+     *
+    */
+    template <typename CSR, typename IBVP>
+    void add_nnz_to_real_sym_csr_matrix(const Geometry & geom, const Mesh & mesh, const iMultiFab & mask,
+                                        CSR & csr, const iMultiFab & elm_nbr_info, iMultiFab & csr_dom_info, Array<iMultiFab, AMREX_SPACEDIM> & csr_bou_info,
+                                        const IBVP & ibvp) const
+    {
+        // PARAMETERS -------------------------------------------------
+        // DOMAINS
+        const int n_domains = ibvp.get_number_of_domains();
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        int rA;
+        // ------------------------------------------------------------
+
+        // LAST ROW INFO ----------------------------------------------
+        rA = csr.ia.size()-1;
+        // ------------------------------------------------------------
+
+        // ADD THE NON-ZEROS AND UPDATE THE CSR DOMAIN INFO -----------
+        for (MFIter mfi(csr_dom_info); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+            const Dim3 lo = lbound(bx);
+            const Dim3 hi = ubound(bx);
+
+            Array4<int const> const & mask_fab = mask.array(mfi);
+            Array4<short const> const & elm_type_fab = this->elm_type.array(mfi);
+            Array4<int const> const & elm_nbr_info_fab = elm_nbr_info.array(mfi);
+
+            Array4<int> const & csr_dom_info_fab = csr_dom_info.array(mfi);
+
+            for (int dom = 0; dom < n_domains; ++dom)
+            for (int k = lo.z; k <= hi.z; ++k)
+            for (int j = lo.y; j <= hi.y; ++j)
+            for (int i = lo.x; i <= hi.x; ++i)
+            {
+                // LOCAL PARAMETERS
+                const bool cell_is_not_masked = CELL_IS_NOT_MASKED(mask_fab(i,j,k));
+                const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_valid = ELM_IS_VALID(etype);
+                const int elm_n_nbrs = elm_nbr_info_fab(i,j,k,ELM_N_NBRS(dom));
+                const int elm_n_dof = csr_dom_info_fab(i,j,k,CSR_DOM_INFO_N_DOF(dom));
+                const int elm_posX = csr_dom_info_fab(i,j,k,CSR_DOM_INFO_POS_X(dom));
+
+                if (cell_is_not_masked && elm_is_valid)
+                {
+                    // LOCAL VARIABLES
+                    int nbr_n_dof, nbr_posX;
+                    bool found;
+                    int row_nnz;
+
+                    // UPDATE CSR INFO
+                    csr_dom_info_fab(i,j,k,CSR_DOM_INFO_NNZ_OFFSET(dom)) = csr.ia[rA];
+
+                    for (int r = 0; r < elm_n_dof; ++r)
+                    {
+                        row_nnz = csr.ia[rA];
+
+                        // Because of symmetry, we subtract r
+                        csr.ja.resize(row_nnz+elm_n_dof-r);
+                        csr.A.resize(row_nnz+elm_n_dof-r);
+                        for (int c = r; c < elm_n_dof; ++c)
+                        {
+                            csr.ja[row_nnz+c-r] = elm_posX+c;
+                            csr.A[row_nnz+c-r] = 0.0;
+                        }
+                        row_nnz += elm_n_dof-r;
+
+                        // Because of symmetry, we consider neighbors
+                        // with id greater than current element
+                        for (int n = 0; n < elm_n_nbrs; ++n)
+                        {
+                            nbr_n_dof = elm_nbr_info_fab(i,j,k,ELM_NBR_N_DOF(dom, n));
+                            nbr_posX = elm_nbr_info_fab(i,j,k,ELM_NBR_POS_X(dom, n));
+
+                            if (nbr_posX > elm_posX)
+                            {
+                                csr.ja.resize(row_nnz+nbr_n_dof);
+                                csr.A.resize(row_nnz+nbr_n_dof);
+                                for (int c = 0; c < nbr_n_dof; ++c)
+                                {
+                                    csr.ja[row_nnz+c] = nbr_posX+c;
+                                    csr.A[row_nnz+c] = 0.0;
+                                }
+                                row_nnz += nbr_n_dof;
+                            }
+                        }
+
+                        csr.ia.push_back(row_nnz);
+
+                        // NEXT ROW
+                        rA += 1;
+                    }
+                }
+            }
+        }
+        csr_dom_info.FillBoundary(geom.periodicity());
+        // ------------------------------------------------------------
+
+        // UPDATE THE CSR BOUNDARY INFO -------------------------------
+        for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+        {
+            for (MFIter mfi(csr_bou_info[dir]); mfi.isValid(); ++mfi)
+            {
+                const Box & bx = mfi.validbox();
+                const Dim3 lo = lbound(bx);
+                const Dim3 hi = ubound(bx);
+
+                Array4<int const> const & mask_fab = mask.array(mfi);
+                Array4<short const> const & elm_bou_type_fab = this->elm_bou_type[dir].array(mfi);
+
+                Array4<int const> const & elm_nbr_info_fab = elm_nbr_info.array(mfi);
+                Array4<int const> const & csr_dom_info_fab = csr_dom_info.array(mfi);
+
+                Array4<int> const & csr_bou_info_fab = csr_bou_info[dir].array(mfi);
+
+                for (int dom = 0; dom < n_domains; ++dom)
+                for (int fk = lo.z; fk <= hi.z; ++fk)
+                for (int fj = lo.y; fj <= hi.y; ++fj)
+                for (int fi = lo.x; fi <= hi.x; ++fi)
+                {
+                    // ELEMENT BOUNDARY TYPE
+                    const short ebtype = elm_bou_type_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
+
+                    if (ELM_BOU_IS_VALID(ebtype) && ELM_BOU_IS_NOT_WALL(ebtype))
+                    {
+                        // LOCAL VARIABLES
+                        int mi, mj, mk, pi, pj, pk;
+                        bool m_cell_is_masked, p_cell_is_masked;
+                        int m_posX, p_posX;
+                        int i, j, k;
+                        //int elm_n_dof, elm_posX;
+                        int /*nbr_n_dof,*/ nbr_posX;
+                        int elm_n_nbrs;
+                        int n, nnz_offset;
+                        bool found;
+
+                        // NEIGHBOR CELLS SHARING THE FACE fi,fj,fk
+                        FACE_TO_NBRS(fi, fj, fk, dir, mi, mj, mk, pi, pj, pk);
+                        m_cell_is_masked = CELL_IS_MASKED(mask_fab(mi,mj,mk));
+                        p_cell_is_masked = CELL_IS_MASKED(mask_fab(pi,pj,pk));
+                        m_posX = csr_dom_info_fab(mi,mj,mk,CSR_DOM_INFO_POS_X(dom));
+                        p_posX = csr_dom_info_fab(pi,pj,pk,CSR_DOM_INFO_POS_X(dom));
+
+                        if (m_cell_is_masked || p_cell_is_masked)
+                        {
+                            std::string msg;
+                            msg  = "\n";
+                            msg +=  "ERROR: AMReX_dG_Solution.H - add_nnz_to_real_sym_csr_matrix\n";
+                            msg += "| Masked cells are currently not supported.\n";
+                            Abort(msg);
+                        }
+
+                        if (m_posX < p_posX)
+                        {
+                            i = mi;
+                            j = mj;
+                            k = mk;
+                            //elm_n_dof = csr_dom_info_fab(i,j,k,CSR_DOM_INFO_N_DOF(dom));
+                            //elm_posX = csr_dom_info_fab(i,j,k,CSR_DOM_INFO_POS_X(dom));
+                            //nbr_n_dof = csr_dom_info_fab(pi,pj,pk,CSR_DOM_INFO_N_DOF(dom));
+                            nbr_posX = csr_dom_info_fab(pi,pj,pk,CSR_DOM_INFO_POS_X(dom));
+                        }
+                        else if (m_posX > p_posX)
+                        {
+                            i = pi;
+                            j = pj;
+                            k = pk;
+                            //elm_n_dof = csr_dom_info_fab(i,j,k,CSR_DOM_INFO_N_DOF(dom));
+                            //elm_posX = csr_dom_info_fab(i,j,k,CSR_DOM_INFO_POS_X(dom));
+                            //nbr_n_dof = csr_dom_info_fab(mi,mj,mk,CSR_DOM_INFO_N_DOF(dom));
+                            nbr_posX = csr_dom_info_fab(mi,mj,mk,CSR_DOM_INFO_POS_X(dom));
+                        }
+                        else
+                        {
+                            std::string msg;
+                            msg  = "\n";
+                            msg +=  "ERROR: AMReX_dG_Solution.H - add_nnz_to_real_sym_csr_matrix\n";
+                            msg += "| Elements that are neighbor with themselves are currently not supported.\n";
+                            Abort(msg);
+                        }
+
+                        nnz_offset = csr_dom_info_fab(i,j,k,CSR_DOM_INFO_NNZ_OFFSET(dom));
+
+                        elm_n_nbrs = elm_nbr_info_fab(i,j,k,ELM_N_NBRS(dom));
+                        n = 0;
+                        found = false;
+                        while ((n < elm_n_nbrs) && (!found))
+                        {
+                            if (nbr_posX == elm_nbr_info_fab(i,j,k,ELM_NBR_POS_X(dom, n)))
+                            {
+                                found = true;
+                            }
+                            else
+                            {
+                                n += 1;
+                                nnz_offset += elm_nbr_info_fab(i,j,k,ELM_NBR_N_DOF(dom, n));
+                            }
+                        }
+
+                        if (!found)
+                        {
+                            /* DEBUG */
+                            int elm_nbrs_id[__DG_ELM_MAX_N_NBR_PER_DOM__];
+                            for (int nn = 0; nn < elm_n_nbrs; ++nn)
+                            {
+                                elm_nbrs_id[nn] = elm_nbr_info_fab(i,j,k,ELM_NBR_POS_X(dom, nn));
+                            }
+                            Print() << "elm_nbrs_id(" << i << "," << j << "," << k << "): "; io::print_int_array_2d(1, elm_n_nbrs, elm_nbrs_id);
+                            /**/
+
+                            std::string msg;
+                            msg  = "\n";
+                            msg +=  "ERROR: AMReX_dG_Solution.H - add_nnz_to_real_sym_csr_matrix\n";
+                            msg += "| Inconsistent neighbors information along direction: "+std::to_string(dir)+" for face: "+std::to_string(fi)+", "+std::to_string(fj)+", "+std::to_string(fk)+".\n";
+                            Abort(msg);
+                        }
+                    }
+                }
             }
         }
         // ------------------------------------------------------------
@@ -760,7 +1509,7 @@ struct Solution
      *
     */
     template <typename IBVP>
-    void make_from_scratch(const Real t, const Geometry & geom, const Mesh & mesh, const IBVP & ibvp)
+    void make_from_scratch(const Real /*t*/, const Geometry & geom, const Mesh & mesh, const IBVP & ibvp)
     {
         // ELEMENT / ELEMENT BOUNDARY TYPE
         this->set_elm_and_elm_bou_type(geom, mesh, ibvp);
@@ -798,22 +1547,6 @@ struct Solution
         {
             this->set_cell_merging(geom, mesh, ibvp);
         }
-    }
-
-    /**
-     * \brief Remake the data structures that will store the solution info.
-     *
-     * \param[in] t: time.
-     * \param[in] geom: amrex Geometry object; contains dx and background domain lower end.
-     * \param[in] mesh: Mesh object; contains information about embedded geometries.
-     * \param[inout] X: Multi object containing the dG coefficients.
-     * \param[in] ibvp: initial boundary value problem object.
-     *
-    */
-    template <typename IBVP>
-    void remake_solution(const Real t, const Geometry & geom, const Mesh & mesh, MultiFab & X, const IBVP & ibvp)
-    {
-        
     }
     // ================================================================
 
@@ -1199,6 +1932,309 @@ struct Solution
         X.FillBoundary(geom.periodicity());
         // ------------------------------------------------------------
     }
+
+    /**
+     * \brief Eval and store the Cholesky decomposition of the basis functions mass matrix
+     *        Kronecker-multiplied with the mass matrix appearing in the considered PDEs.
+     *        This matrix is referred to as pde mass matrix.
+     *
+     * \param[in] t: time.
+     * \param[in] geom: amrex Geometry object; contains dx and background domain lower end.
+     * \param[in] mesh: Mesh object; contains information about embedded geometries.
+     * \param[out] M: a MultiFab object that will contain the Cholesky decomposition of the pde mass
+     *                matrix.
+     * \param[in] ibvp: initial boundary value problem object.
+     *
+    */
+    template <typename IBVP>
+    void eval_pde_mass_matrix(const Real t, const Geometry & geom, const Mesh & mesh, MultiFab & M, const IBVP & ibvp)
+    {
+        // PARAMETERS -------------------------------------------------
+        // GRID
+        const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
+
+        // DOMAINS
+        const int n_domains = ibvp.get_number_of_domains();
+        const int max_Nu = this->get_max_number_of_unknown_fields_per_domain(ibvp);
+
+        // ORDER
+        const int sp = this->params.space_p;
+        const int sNp = AMREX_D_TERM((1+sp),*(1+sp),*(1+sp));
+        const int M_n_comp_per_dom = sNp*max_Nu*sNp*max_Nu;
+
+        // QUADRATURE
+        const int qo_reg = mesh.params.quadrature_order_regular_elements;
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        StandardRectangle<AMREX_SPACEDIM> std_elm;
+        // ------------------------------------------------------------
+
+        // INIT THE MULTIFAB ------------------------------------------
+        M = 0.0;
+        // ------------------------------------------------------------
+
+        // INITIALIZE THE STANDARD ELEMENT ----------------------------
+        std_elm.set_quadrature(&dx[0], qo_reg);
+        std_elm.set_mass_matrix(sp);
+        // ------------------------------------------------------------
+
+        // EVAL (AND TEMPORARILY STORE) THE PDE MASS MATRIX -----------
+#ifdef AMREX_USE_GPU
+        const Real * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_dev_mem.data();
+#else
+        const Real * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_host_mem.data();
+#endif
+
+        for (MFIter mfi(M); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.fabbox();
+
+            Array4<long const> const & cell_dom_quad_info_fab = mesh.cell_dom_quad_info.array(mfi);
+            Array4<short const> const & elm_type_fab = this->elm_type.array(mfi);
+            
+            Array4<Real> const & M_fab = M.array(mfi);
+
+            ParallelFor(bx, n_domains,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // LOCAL PARAMETERS
+                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                   prob_lo[1]+j*dx[1],
+                                                                   prob_lo[2]+k*dx[2])};
+                const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+
+                // QUADRATURE INFO
+                const int dom_Nq = cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_NQ(dom));
+                const long pos = cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_POS(dom));
+                const Real * x_ptr = &cell_dom_quad_mem_ptr[pos];
+
+                // LOCAL VARIABLES
+                Real x[AMREX_SPACEDIM], w;
+                Real mm[__DG_MAX_N_UNKNOWN_FIELDS__*__DG_MAX_N_UNKNOWN_FIELDS__];
+                Real MB[__DG_MAX_SPACE_Np__*__DG_MAX_N_UNKNOWN_FIELDS__*__DG_MAX_SPACE_Np__*__DG_MAX_N_UNKNOWN_FIELDS__];
+
+                // BASIS FUNCTIONS
+                space_elm_bf bf(&prob_lo[0], &dx[0], i, j, k, etype, sp);
+
+                // UNKNOWN FIELDS
+                int u_lo, u_hi;
+                ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+                const int Nu = u_hi-u_lo;
+                const int Nup = Nu*sNp;
+
+                // EVAL THE INTEGRAL
+                std::fill(MB, MB+Nup*Nup, 0.0);
+                for (int q = 0; q < dom_Nq; ++q)
+                {
+                    // Quadrature point and weight
+                    const long x_pos = (AMREX_SPACEDIM+1)*q;
+                    AMREX_D_TERM
+                    (
+                        x[0] = x_ptr[x_pos+0]+cell_lo[0];,
+                        x[1] = x_ptr[x_pos+1]+cell_lo[1];,
+                        x[2] = x_ptr[x_pos+2]+cell_lo[2];
+                    )
+                    w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+                    // Initial conditions at x
+                    ibvp.eval_M(dom, t, x, mm);
+
+                    // Basis functions at x
+                    bf.eval_bf_only_table(x);
+
+                    for (int ru = 0; ru < Nu; ++ru)
+                    for (int cu = 0; cu < Nu; ++cu)
+                    for (int rs = 0; rs < sNp; ++rs)
+                    for (int cs = 0; cs < sNp; ++cs)
+                    {
+                        const int rm = sNp*ru+rs;
+                        const int cm = sNp*cu+cs;
+                        MB[rm+cm*Nup] += bf.BF[rs]*mm[ru+cu*Nu]*bf.BF[cs]*w;
+                    }
+                }
+
+                // STORE THE MATRIX
+                for (int rm = 0; rm < (Nup*Nup); ++rm)
+                {
+                    M_fab(i,j,k,M_n_comp_per_dom*dom+rm) = MB[rm];
+                }
+            });
+            Gpu::synchronize();
+        }
+        M.FillBoundary(geom.periodicity());
+        // ------------------------------------------------------------
+
+        // EVAL THE CHOLESKY DECOMPOSITION ----------------------------
+        //if (eval_Cholesky_decomposition)
+        {
+            for (MFIter mfi(M); mfi.isValid(); ++mfi)
+            {
+                const Box & bx = mfi.validbox();
+
+                Array4<short const> const & elm_type_fab = this->elm_type.array(mfi);
+                
+                Array4<Real> const & M_fab = M.array(mfi);
+
+                ParallelFor(bx, n_domains,
+                [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+                {
+                    // LOCAL PARAMETERS
+                    const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                    const bool elm_is_entire = ELM_IS_ENTIRE(etype);
+                    const bool elm_is_large = ELM_IS_LARGE(etype);
+                    const bool elm_is_extended = ELM_IS_EXTENDED(etype);
+
+                    // LOCAL VARIABLES
+                    Real MB[__DG_MAX_SPACE_Np__*__DG_MAX_N_UNKNOWN_FIELDS__*__DG_MAX_SPACE_Np__*__DG_MAX_N_UNKNOWN_FIELDS__];
+                    int info;
+
+                    // UNKNOWN FIELDS
+                    int u_lo, u_hi;
+                    ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+                    const int Nu = u_hi-u_lo;
+                    const int Nup = Nu*sNp;
+
+                    // RETRIEVE THE MATRIX
+                    for (int rm = 0; rm < (Nup*Nup); ++rm)
+                    {
+                        MB[rm] = M_fab(i,j,k,M_n_comp_per_dom*dom+rm);
+                    }
+
+                    if (elm_is_extended)
+                    {
+                        for (int n = 0; n < __DG_EXTENDED_STENCIL_N_NBR__; ++n)
+                        {
+                            const int nbr_i = i+tables::extended_stencil_i[n];
+                            const int nbr_j = j+tables::extended_stencil_j[n];
+                            const int nbr_k = k+tables::extended_stencil_k[n];
+                            const short nbr_etype = elm_type_fab(nbr_i,nbr_j,nbr_k,ELM_TYPE(dom));
+                            
+//Print() << "adding (" << i << "," << j << "," << k << ") <- (" << nbr_i << "," << nbr_j << "," << nbr_k << ") ? " << (CELLS_ARE_MERGED(i, j, k, nbr_i, nbr_j, nbr_k, nbr_etype) ? "yes" : "no") << std::endl;
+
+                            if (CELLS_ARE_MERGED(i, j, k, nbr_i, nbr_j, nbr_k, nbr_etype))
+                            {
+                                for (int rm = 0; rm < (Nup*Nup); ++rm)
+                                {
+                                    MB[rm] += M_fab(nbr_i,nbr_j,nbr_k,M_n_comp_per_dom*dom+rm);
+                                }
+                            }
+                        }
+                    }
+
+                    if (elm_is_entire || elm_is_large)
+                    {
+                        linalg::dpotf2('U', Nup, MB, Nup, info);
+
+                        if (info != 0)
+                        {
+#ifdef AMREX_USE_GPU
+                            Abort("\nERROR: AMReX_dG_Solution.H - Solution::eval_pde_mass_matrix\n");
+#else
+                            std::string msg;
+                            msg  = "\n";
+                            msg +=  "ERROR: AMReX_dG_Solution.H - Solution::eval_pde_mass_matrix\n";
+                            msg += "| Something went wrong during the evaluation of the Cholesky decomposition of the mass matrix:\n";
+                            msg += "| Domain: "+std::to_string(dom)+"\n";
+                            msg += "| cell indices: "+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"\n";
+                            Abort(msg);
+#endif
+                        }
+                    }
+
+                    // STORE THE CHOLESKY DECOMPOSITION
+                    for (int rm = 0; rm < (Nup*Nup); ++rm)
+                    {
+                        M_fab(i,j,k,M_n_comp_per_dom*dom+rm) = MB[rm];
+                    }
+                });
+                Gpu::synchronize();
+            }
+            M.FillBoundary(geom.periodicity());
+        }
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Multiply dG coefficients by the inverse of the pde mass matrices.
+     *
+     * \param[in] geom: amrex Geometry object; contains the problem periodicity.
+     * \param[in] M: a MultiFab object containing the pde mass matrix.
+     * \param[inout] X: the MultiFab object whose coefficients are multiplied by the inverse of the pde
+     *                  mass matrix.
+     * \param[in] ibvp: initial boundary value problem object.
+     *
+    */
+    template <typename IBVP>
+    void multiply_by_inverse_pde_mass_matrix(const Geometry & geom, const MultiFab & M, MultiFab & X, const IBVP & ibvp) const
+    {
+        // PARAMETERS -------------------------------------------------
+        // DOMAINS
+        const int n_domains = ibvp.get_number_of_domains();
+        const int max_Nu = this->get_max_number_of_unknown_fields_per_domain(ibvp);
+
+        // ORDER
+        const int sp = this->params.space_p;
+        const int sNp = AMREX_D_TERM((1+sp),*(1+sp),*(1+sp));
+        const int M_n_comp_per_dom = sNp*max_Nu*sNp*max_Nu;
+        // ------------------------------------------------------------
+
+        // PERFORM THE MULTIPLICATION ---------------------------------
+        for (MFIter mfi(X); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<short const> const & elm_type_fab = this->elm_type.array(mfi);
+            Array4<const Real> const & M_fab = M.array(mfi);
+            Array4<Real> const & X_fab = X.array(mfi);
+
+            ParallelFor(bx, n_domains,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // LOCAL PARAMETERS
+                const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                const bool elm_is_entire = ELM_IS_ENTIRE(etype);
+                const bool elm_is_large = ELM_IS_LARGE(etype);
+
+                // LOCAL VARIABLES
+                int info;
+                Real MB[__DG_MAX_SPACE_Np__*__DG_MAX_N_UNKNOWN_FIELDS__*__DG_MAX_SPACE_Np__*__DG_MAX_N_UNKNOWN_FIELDS__];
+                Real x[__DG_MAX_SPACE_Np__*__DG_MAX_N_UNKNOWN_FIELDS__];
+
+                // UNKNOWN FIELDS
+                int u_lo, u_hi;
+                ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+                const int Nu = u_hi-u_lo;
+                const int Nup = Nu*sNp;
+
+                if (elm_is_entire || elm_is_large)
+                {
+                    // COPY FROM MEMORY
+                    for (int rm = 0; rm < (Nup*Nup); ++rm)
+                    {
+                        MB[rm] = M_fab(i,j,k,M_n_comp_per_dom*dom+rm);
+                    }
+                    for (int rs = 0; rs < Nup; ++rs)
+                    {
+                        x[rs] = X_fab(i,j,k,u_lo*sNp+rs);
+                    }
+
+                    // USE CHOLESKY DECOMPOSITION
+                    linalg::dpotrs('U', Nup, 1, MB, Nup, x, Nup, info);
+
+                    // COPY BACK TO MEMORY
+                    for (int rs = 0; rs < Nup; ++rs)
+                    {
+                        X_fab(i,j,k,u_lo*sNp+rs) = x[rs];
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+        X.FillBoundary(geom.periodicity());
+        // ------------------------------------------------------------
+    }
     // ================================================================
 
 
@@ -1289,6 +2325,115 @@ struct Solution
 
                     // Initial conditions at x
                     ibvp.eval_ICs(x, U);
+
+                    // Basis functions at x
+                    bf.eval_bf_only_table(x);
+
+                    for (int rs = 0; rs < sNp; ++rs)
+                    {
+                        integrand = bf.BF[rs]*U[ru];
+                        X_fab(i,j,k,rs+ru*sNp) += integrand*w;
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+        X.FillBoundary(geom.periodicity());
+        // ------------------------------------------------------------
+
+        // EXTENDED ELEMENTS AND MULTIPLICATION BY INVERSE MASS MATRIX
+        this->add_small_elements_contribution(geom, X, ibvp);
+        this->multiply_by_inverse_space_mass_matrix(geom, X, ibvp, use_fabbox);
+        this->copy_solution_to_small_elements(geom, X, ibvp);
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Project initial conditions over the mesh.
+     *
+     * \param[in] geom: amrex Geometry object; contains dx and background domain lower end.
+     * \param[in] mesh: Mesh object; contains information about embedded geometries.
+     * \param[inout] X: a MultiFab object that will contain the dG coefficients of the projected initial
+     *                  conditions.
+     * \param[in] ibvp: initial boundary value problem object.
+     * \param[in] use_fabbox: if true, the loops will include the ghost cells.
+     *
+    */
+    template <typename IBVP>
+    void project_initial_conditions_derivative(const Geometry & geom, const Mesh & mesh, MultiFab & X, const IBVP & ibvp, const bool use_fabbox = false)
+    {
+        // PARAMETERS -------------------------------------------------
+        // GRID
+        const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
+
+        // NUMBER OF UNKNOWN FIELDS
+        const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
+
+        // ORDER
+        const int sp = this->params.space_p;
+        const int sNp = AMREX_D_TERM((1+sp),*(1+sp),*(1+sp));
+        // ------------------------------------------------------------
+
+        // INITIALIZATION ---------------------------------------------
+        X = 0.0;
+        // ------------------------------------------------------------
+
+        // EVAL THE PROJECTION ----------------------------------------
+#ifdef AMREX_USE_GPU
+        const Real * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_dev_mem.data();
+        const int * parent_dom_mem_ptr = this->unknown_field_parent_domain_dev_mem.data();
+#else
+        const Real * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_host_mem.data();
+        const int * parent_dom_mem_ptr = this->unknown_field_parent_domain_host_mem.data();
+#endif
+        for (MFIter mfi(X); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = use_fabbox ? mfi.fabbox() : mfi.validbox();
+
+            Array4<long const> const & cell_dom_quad_info_fab = mesh.cell_dom_quad_info.array(mfi);
+            Array4<short const> const & elm_type_fab = this->elm_type.array(mfi);
+            
+            Array4<Real> const & X_fab = X.array(mfi);
+
+            ParallelFor(bx, n_unknown_fields,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int ru) noexcept
+            {
+                // LOCAL PARAMETERS
+                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                   prob_lo[1]+j*dx[1],
+                                                                   prob_lo[2]+k*dx[2])};
+                const int dom = parent_dom_mem_ptr[ru];
+                const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+
+                // QUADRATURE INFO
+                const int dom_Nq = cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_NQ(dom));
+                const long pos = cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_POS(dom));
+                const Real * x_ptr = &cell_dom_quad_mem_ptr[pos];
+
+                // LOCAL VARIABLES
+                Real x[AMREX_SPACEDIM], w;
+                Real integrand;
+                Real U[__DG_MAX_N_UNKNOWN_FIELDS__];
+
+                // BASIS FUNCTIONS
+                space_elm_bf bf(&prob_lo[0], &dx[0], i, j, k, etype, sp);
+
+                // EVAL THE INTEGRAL
+                for (int q = 0; q < dom_Nq; ++q)
+                {
+                    // Quadrature point and weight
+                    const long x_pos = (AMREX_SPACEDIM+1)*q;
+                    AMREX_D_TERM
+                    (
+                        x[0] = x_ptr[x_pos+0]+cell_lo[0];,
+                        x[1] = x_ptr[x_pos+1]+cell_lo[1];,
+                        x[2] = x_ptr[x_pos+2]+cell_lo[2];
+                    )
+                    w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+                    // Initial conditions at x
+                    ibvp.eval_ICs_der(x, U);
 
                     // Basis functions at x
                     bf.eval_bf_only_table(x);
@@ -1836,9 +2981,6 @@ struct Solution
         // ORDER
         const int sp = this->params.space_p;
 
-        // CFL
-        const Real CFL = this->params.time_integration_CFL;
-
         // MAX REAL
         const Real max_real = std::numeric_limits<Real>::max();
         // ------------------------------------------------------------
@@ -1928,7 +3070,7 @@ struct Solution
         {
             dt = amrex::min(dt, elm_dt.min(dom));
         }
-        dt *= CFL/(1.0+2.0*sp);
+        //dt *= CFL/(1.0+2.0*sp);
         // ------------------------------------------------------------
         return dt;
     }
@@ -1948,11 +3090,32 @@ struct Solution
     template <typename IBVP>
     Real eval_dt(const Real t, const Geometry & geom, const Mesh & mesh, const MultiFab & X, const iMultiFab & mask, const IBVP & ibvp) const
     {
+        // PARAMETERS -------------------------------------------------
+        // ORDER
+        const int sp = this->params.space_p;
+
+        // CFL
+        const Real CFL = this->params.time_integration_CFL;
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
         Real dt;
+        // ------------------------------------------------------------
 
         if (this->time_integration_is_explicit_RKdG())
         {
             dt = this->eval_dt_for_explicit_RKdG(t, geom, mesh, X, mask, ibvp);
+            dt *= CFL/(1.0+2.0*sp);
+        }
+        else if (this->time_integration_is_explicit_central_difference())
+        {
+            dt = this->eval_dt_for_explicit_RKdG(t, geom, mesh, X, mask, ibvp);
+            dt *= CFL/(sp*sp);
+        }
+        else if (this->time_integration_is_implicit_Newmark())
+        {
+            dt = this->eval_dt_for_explicit_RKdG(t, geom, mesh, X, mask, ibvp);
+            dt *= CFL/(sp*sp);
         }
         else
         {

@@ -14,6 +14,7 @@
 #include <AMReX_PlotFileUtil.H>
 
 #include <AMReX_dG_Utils.H>
+#include <AMReX_dG_Pardiso.H>
 #include <AMReX_dG_Mesh.H>
 #include <AMReX_dG_Mesh_Output.H>
 #include <AMReX_dG_Solution.H>
@@ -32,6 +33,212 @@ namespace amr_utils
 
 
 // INTERPOLATION OPERATIONS ###########################################
+/**
+ * \brief Interpolate from a coarse level set to a fine level set.
+ *
+ * \param[in] c_geom: coarse amrex Geometry object.
+ * \param[in] c_mesh: coarse Mesh object.
+ * \param[in] c_X: MultiFab containing coarse solution.
+ * \param[in] rr: refinement ratio.
+ * \param[in] f_geom: fine amrex Geometry object.
+ * \param[in] f_mesh: fine Mesh object.
+ * \param[out] f_X: MultiFab that will contain the fine solution.
+ * \param[in] ibvp: initial boundary value problem object.
+*/
+template <typename IBVP>
+void interpolate_level_set(const Geometry & c_geom, const Mesh & c_mesh, const MultiFab & c_L,
+                           const IntVect rr,
+                           const Geometry & f_geom, const Mesh & f_mesh, MultiFab & f_L,
+                           const IBVP & ibvp)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("amrex::dG::amr_utils::interpolate_level_set(...)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS -----------------------------------------------------
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> c_dx = c_geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> f_dx = f_geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = f_geom.ProbLoArray();
+
+    // ORDER
+    const int c_p = c_mesh.params.projected_level_set_p;
+    const int f_p = f_mesh.params.projected_level_set_p;
+    const int c_Np = AMREX_D_TERM((1+c_p),*(1+c_p),*(1+c_p));
+    const int f_Np = AMREX_D_TERM((1+f_p),*(1+f_p),*(1+f_p));
+
+    // QUADRATURE
+    const int c_qo_reg = c_mesh.params.quadrature_order_projected_level_set;
+    const int f_qo_reg = f_mesh.params.quadrature_order_projected_level_set;
+    const int qo_reg = amrex::max(c_qo_reg, f_qo_reg);
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    StandardRectangle<AMREX_SPACEDIM> f_std_elm;
+
+    MultiFab safe_c_L;
+    const MultiFab * safe_c_L_ptr;
+    // ----------------------------------------------------------------
+
+    // PARALLEL COPY --------------------------------------------------
+    if (isMFIterSafe(c_L, f_L))
+    {
+        safe_c_L_ptr = &c_L;
+    }
+    else
+    {
+        const BoxArray safe_c_ba = coarsen(f_L.boxarray, rr);
+        const DistributionMapping & f_dm = f_L.distributionMap;
+        const int c_L_n_comp = c_L.n_comp;
+        const IntVect c_L_n_grow = c_L.n_grow;
+
+        safe_c_L.define(safe_c_ba, f_dm, c_L_n_comp, c_L_n_grow);
+        safe_c_L.ParallelCopy(c_L, 0, 0, c_L_n_comp, c_L_n_grow, c_L_n_grow, c_geom.periodicity());
+
+        safe_c_L_ptr = &safe_c_L;
+    }
+    // ----------------------------------------------------------------
+
+    // INITIALIZATION -------------------------------------------------
+    f_L = 0.0;
+    // ----------------------------------------------------------------
+
+    // INITIALIZE THE STANDARD ELEMENT --------------------------------
+    f_std_elm.set_quadrature(&f_dx[0], qo_reg);
+    f_std_elm.set_mass_matrix(f_p);
+    f_std_elm.set_interpolation_operator(c_p, rr, f_p);
+    // ----------------------------------------------------------------
+
+    // LOOP OVER THE FINE MESH' ELEMENTS ------------------------------
+    // Note: Currently f_std_elm.iMM and f_std_elm.I are
+    //       Gpu::ManagedVector.
+#ifdef AMREX_USE_GPU
+    const Real * std_elm_I_mem_ptr = f_std_elm.I.data();
+    const Real * iMM_ptr = f_std_elm.iMM.data();
+#else
+    const Real * std_elm_I_mem_ptr = f_std_elm.I.data();
+    const Real * iMM_ptr = f_std_elm.iMM.data();
+#endif
+
+    for (MFIter mfi(f_L); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.fabbox();
+
+        // Coarse mesh
+        Array4<Real const> const & c_L_fab = safe_c_L_ptr->array(mfi);
+
+        // Fine mesh
+        Array4<Real> const & f_L_fab = f_L.array(mfi);
+
+        ParallelFor(bx,
+        [=] AMREX_GPU_DEVICE (int f_i, int f_j, int f_k) noexcept
+        {
+            // If anything changes here, the same changes must be
+            // applied to
+            // FINE_TO_COARSE(f_i, f_j, f_k, rr, c_i, c_j, c_k);
+
+            // LOCAL PARAMETERS
+#if (AMREX_SPACEDIM == 1)
+            const int ti = (f_i%rr[0] >= 0) ? f_i%rr[0] : (f_i%rr[0]+rr[0]);
+            const int c_i = (f_i-ti)/rr[0];
+            const int c_j = f_j;
+            const int c_k = f_k;
+            const int pos = (ti)*f_Np*c_Np;
+#endif
+#if (AMREX_SPACEDIM == 2)
+            const int ti = (f_i%rr[0] >= 0) ? f_i%rr[0] : (f_i%rr[0]+rr[0]);
+            const int tj = (f_j%rr[1] >= 0) ? f_j%rr[1] : (f_j%rr[1]+rr[1]);
+            const int c_i = (f_i-ti)/rr[0];
+            const int c_j = (f_j-tj)/rr[1];
+            const int c_k = f_k;
+            const int pos = (ti+tj*rr[0])*f_Np*c_Np;
+#endif
+#if (AMREX_SPACEDIM == 3)
+            const int ti = (f_i%rr[0] >= 0) ? f_i%rr[0] : (f_i%rr[0]+rr[0]);
+            const int tj = (f_j%rr[1] >= 0) ? f_j%rr[1] : (f_j%rr[1]+rr[1]);
+            const int tk = (f_k%rr[2] >= 0) ? f_k%rr[2] : (f_k%rr[2]+rr[2]);
+            const int c_i = (f_i-ti)/rr[0];
+            const int c_j = (f_j-tj)/rr[1];
+            const int c_k = (f_k-tk)/rr[2];
+            const int pos = (ti+tj*rr[0]+tk*rr[0]*rr[1])*f_Np*c_Np;
+#endif
+            const Real * I_ptr = &std_elm_I_mem_ptr[pos];
+
+            // LOCAL VARIABLES
+            Real PHI[__DG_MAX_SPACE_Np_LEVEL_SET__];
+
+            // INITIALIZATION
+            for (int rs = 0; rs < f_Np; ++rs)
+            {
+                PHI[rs] = 0.0;
+            }
+
+            // APPLY INTERPOLATION OPERATOR
+            for (int cs = 0; cs < c_Np; ++cs)
+            for (int rs = 0; rs < f_Np; ++rs)
+            {
+                PHI[rs] += I_ptr[rs+cs*f_Np]*c_L_fab(c_i,c_j,c_k,cs);
+            }
+
+            // MULTIPLY BY INVERSE MASS MATRIX AND STORE
+            for (int cs = 0; cs < f_Np; ++cs)
+            for (int rs = 0; rs < f_Np; ++rs)
+            {
+                f_L_fab(f_i,f_j,f_k,rs) += iMM_ptr[rs+cs*f_Np]*PHI[cs];
+            }
+        });
+        Gpu::synchronize();
+    }
+    // ----------------------------------------------------------------
+}
+
+/**
+ * \brief Remake an existing level set using information from a coarse level set.
+ *
+ * \param[in] t: time.
+ * \param[in] ba: amrex BoxArray object; contains the block-structured grids.
+ * \param[in] dm: amrex DistributionMapping object; contains the distribution of the grids among the
+ *                processors.
+ * \param[in] c_geom: coarse amrex Geometry object.
+ * \param[in] c_mesh: coarse Mesh object.
+ * \param[in] c_L: MultiFab containing coarse level set.
+ * \param[in] rr: refinement ratio.
+ * \param[in] f_geom: fine amrex Geometry object.
+ * \param[in] f_mesh: fine Mesh object.
+ * \param[inout] f_L: MultiFab that will contain the fine level set.
+ * \param[in] ibvp: initial boundary value problem object.
+*/
+template <typename IBVP>
+void remake_level_set(const Real /*t*/, const BoxArray & ba, const DistributionMapping & dm,
+                      const Geometry & c_geom, const Mesh & c_mesh, const MultiFab & c_L,
+                      const IntVect rr,
+                      const Geometry & f_geom, const Mesh & f_mesh, MultiFab & f_L,
+                      const IBVP & ibvp,
+                      const bool include_ghost_cells = false)
+{
+
+    // VARIABLES ------------------------------------------------------
+    MultiFab f_L_new(ba, dm, f_L.n_comp, f_L.n_grow);
+    // ----------------------------------------------------------------
+
+    // INITIALIZATION -------------------------------------------------
+    f_L_new = 0.0;
+    // ----------------------------------------------------------------
+
+    // INTERPOLATE FROM COARSE ----------------------------------------
+    interpolate_level_set(c_geom, c_mesh, c_L, rr, f_geom, f_mesh, f_L_new, ibvp);
+    // ----------------------------------------------------------------
+
+    // OVERWRITE WITH OLD LEVEL SET -----------------------------------
+    f_L_new.ParallelCopy(f_L, 0, 0, f_L.n_comp, f_L.n_grow, f_L.n_grow, f_geom.periodicity());
+    f_L_new.FillBoundary(f_geom.periodicity());
+    // ----------------------------------------------------------------
+
+    // SWAP NEW AND OLD -----------------------------------------------
+    std::swap(f_L, f_L_new);
+    // ----------------------------------------------------------------
+}
+
 /**
  * \brief Eval and store the interpolation operator between a fine and a coarse mesh.
  *
@@ -360,7 +567,7 @@ void interpolate(const Geometry & c_geom, const Solution & c_solution, const Mul
                 // INDICES OF THE COARSE CELL
                 FINE_TO_COARSE(f_i, f_j, f_k, rr, c_i, c_j, c_k);
 
-                // INTERPOLATE
+                // APPLY INTERPOLATION OPERATOR
                 for (int cs = 0; cs < c_sNp; ++cs)
                 for (int rs = 0; rs < f_sNp; ++rs)
                 {
@@ -394,8 +601,8 @@ void interpolate(const Geometry & c_geom, const Solution & c_solution, const Mul
  * \param[in] ibvp: initial boundary value problem object.
 */
 template <typename IBVP>
-void remake_solution(const Real t,
-                     const Geometry & c_geom, const Solution & c_solution, const Mesh & c_mesh, const MultiFab & c_X,
+void remake_solution(const Real /*t*/,
+                     const Geometry & c_geom, const Solution & c_solution, const Mesh & /*c_mesh*/, const MultiFab & c_X,
                      const IntVect rr,
                      const Geometry & f_geom, const Solution & f_solution, const Mesh & f_mesh, MultiFab & f_X,
                      const IBVP & ibvp,
@@ -606,6 +813,11 @@ public AmrCore
     Vector<Solution *> solutions;
     
     Vector<iMultiFab> masks;
+
+    // LINEAR SOLVER
+    int linear_direct_solver_finest_level;
+    std::string linear_direct_solver;
+    LinearSolverPardiso pardiso;
     // ================================================================
 
 
@@ -656,6 +868,98 @@ exit(-1);
                                               __DG_CELL_NOT_MASKED__, __DG_CELL_MASKED__);
         }
     }
+
+    /**
+     * \brief Update the elements ordering.
+     *
+     * \param[in] ibvp: initial boundary value problem object.
+     *
+    */
+    template <typename IBVP>
+    void update_ordering(const IBVP & ibvp)
+    {
+        // PARAMETERS -------------------------------------------------
+        const int n_ranks = ParallelDescriptor::NProcs();
+        const int rank = ParallelDescriptor::MyProc();
+
+        // DOMAINS
+        const int n_domains = ibvp.get_number_of_domains();
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        int id;
+        Vector<int> id_offset(n_ranks);
+        // ------------------------------------------------------------
+
+        // ELEMENT ORDERING LOCAL TO EACH PROCESSOR -------------------
+        // Each element will be given an id starting from zero.
+        // ------------------------------------------------------------
+        id = 0;
+        for (int lev = 0; lev <= this->linear_direct_solver_finest_level; ++lev)
+        {
+            this->solutions[lev]->set_elm_ordering(this->geom[lev], *this->meshes[lev], this->masks[lev], id, ibvp);
+        }
+        // ------------------------------------------------------------
+
+        // APPLY OFFSET AMONG PROCESSORS ------------------------------
+        {
+            const int lev = this->linear_direct_solver_finest_level;
+            const int dom = n_domains-1;
+            const bool local = true;
+            
+            id_offset[rank] = this->solutions[lev]->elm_id.max(dom, 0, local);
+            ParallelDescriptor::ReduceIntMax(id_offset.dataPtr(), n_ranks);
+            for (int r = 1; r < n_ranks; ++r)
+            {
+                id_offset[r] += id_offset[r-1];
+            }
+
+            /* DEBUG
+            Print(rank) << "id_offset[" << rank << "]: " << id_offset[rank] << std::endl;
+            */
+        }
+
+        if (rank > 0)
+        {
+            id = id_offset[rank-1];
+
+            for (int lev = 0; lev <= this->linear_direct_solver_finest_level; ++lev)
+            {
+                const iMultiFab & mask = this->masks[lev];
+                Solution & solution = *this->solutions[lev];
+
+                for (MFIter mfi(solution.elm_id); mfi.isValid(); ++mfi)
+                {
+                    const Box & bx = mfi.validbox();
+
+                    Array4<int const> const & mask_fab = mask.array(mfi);
+                    Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+                    
+                    Array4<int> const & elm_id_fab = solution.elm_id.array(mfi);
+
+                    ParallelFor(bx, n_domains,
+                    [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+                    {
+                        const bool cell_is_not_masked = CELL_IS_NOT_MASKED(mask_fab(i,j,k));
+                        const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                        const bool elm_is_valid = ELM_IS_VALID(etype);
+
+                        if (cell_is_not_masked && elm_is_valid)
+                        {
+                            elm_id_fab(i,j,k,dom) += id;
+                        }
+                    });
+                    Gpu::synchronize();
+                }
+                solution.elm_id.FillBoundary(this->geom[lev].periodicity());
+            }
+        }
+        // ------------------------------------------------------------
+
+        // ELEMENT COLORING -------------------------------------------
+        // ...
+        // ------------------------------------------------------------
+    }
     // ================================================================
 
 
@@ -666,7 +970,7 @@ Print() << "amrex::dG::amr::SinglePatch.ErrorEst" << std::endl;
 exit(-1);
     }
 
-    virtual void ManualTagsPlacement(int lev, TagBoxArray & tags, const Vector<IntVect> & bf_lev) override
+    virtual void ManualTagsPlacement(int lev, TagBoxArray & tags, const Vector<IntVect> & /*bf_lev*/) override
     {
         // PARAMETERS -------------------------------------------------
         const Solution & solution = *this->solutions[lev];
@@ -819,6 +1123,337 @@ exit(-1);
                                             f_geom, f_mesh, f_solution,
                                             ibvp);
     }
+    // ================================================================
+
+
+    // LINEAR SOLVER ==================================================
+    /**
+     * \brief Update the element position within the linear system to be solved.
+    */
+    template <typename IBVP>
+    void init_csr_info_multifabs(Vector<iMultiFab> & csr_dom_info, Vector<Array<iMultiFab, AMREX_SPACEDIM>> & csr_bou_info, const IBVP & ibvp)
+    {
+        // PARAMETERS -------------------------------------------------
+        // DOMAINS
+        const int n_domains = ibvp.get_number_of_domains();
+
+        const int csr_dom_info_n_comp = __DG_CSR_DOM_INFO_N_COMP_PER_DOM__*n_domains;
+        const int csr_bou_info_n_comp = __DG_CSR_BOU_INFO_N_COMP_PER_DOM__*n_domains;
+        // ------------------------------------------------------------
+
+        csr_dom_info.resize(this->linear_direct_solver_finest_level+1);
+        csr_bou_info.resize(this->linear_direct_solver_finest_level+1);
+
+        for (int lev = 0; lev <= this->linear_direct_solver_finest_level; ++lev)
+        {
+            const Mesh & mesh = *this->meshes[lev];
+            const Solution & solution = *this->solutions[lev];
+
+#if (AMREX_SPACEDIM == 1)
+            const BoxArray fc_ba[1] = {convert(mesh.ba, IntVect(1))};
+#endif
+#if (AMREX_SPACEDIM == 2)
+            const BoxArray fc_ba[2] = {convert(mesh.ba, IntVect(1,0)),
+                                       convert(mesh.ba, IntVect(0,1))};
+#endif
+#if (AMREX_SPACEDIM == 3)
+            const BoxArray fc_ba[3] = {convert(mesh.ba, IntVect(1,0,0)),
+                                       convert(mesh.ba, IntVect(0,1,0)),
+                                       convert(mesh.ba, IntVect(0,0,1))};
+#endif
+
+            csr_dom_info[lev].define(mesh.ba, mesh.dm, csr_dom_info_n_comp, mesh.dom_data_n_grow);
+            csr_dom_info[lev] = -1;
+            for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+            {
+                csr_bou_info[lev][dir].define(fc_ba[dir], mesh.dm, csr_bou_info_n_comp, mesh.bou_data_n_grow);
+                csr_bou_info[lev][dir] = -1;
+            }
+        }
+    }
+
+    /**
+     * \brief Update the element position within the linear system to be solved.
+    */
+    template <typename IBVP>
+    void update_linear_system_ordering(Vector<iMultiFab> & csr_dom_info, const IBVP & ibvp)
+    {
+        // PARAMETERS -------------------------------------------------
+        const int n_ranks = ParallelDescriptor::NProcs();
+        const int rank = ParallelDescriptor::MyProc();
+
+        // DOMAINS
+        const int n_domains = ibvp.get_number_of_domains();
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        int posX;
+        Vector<int> posX_offset(n_ranks);
+        // ------------------------------------------------------------
+
+        // ELEMENT DOF ORDERING LOCAL TO EACH PROCESSOR ---------------
+        // Each element will be given a position posX within the system
+        // starting from zero.
+        // ------------------------------------------------------------
+        posX = 0;
+        for (int lev = 0; lev <= this->linear_direct_solver_finest_level; ++lev)
+        {
+            this->solutions[lev]->set_elm_dof_ordering(this->geom[lev], *this->meshes[lev], this->masks[lev], csr_dom_info[lev], posX, ibvp);
+        }
+        // ------------------------------------------------------------
+
+        // APPLY OFFSET AMONG PROCESSORS ------------------------------
+        {
+            const int lev = this->linear_direct_solver_finest_level;
+            const int dom = n_domains-1;
+            const bool local = true;
+            
+            posX_offset[rank] = this->solutions[lev]->elm_id.max(dom, 0, local);
+            ParallelDescriptor::ReduceIntMax(posX_offset.dataPtr(), n_ranks);
+            for (int r = 1; r < n_ranks; ++r)
+            {
+                posX_offset[r] += posX_offset[r-1];
+            }
+
+            /* DEBUG
+            Print(rank) << "posX_offset[" << rank << "]: " << posX_offset[rank] << std::endl;
+            */
+        }
+
+        if (rank > 0)
+        {
+            posX = posX_offset[rank-1];
+
+            for (int lev = 0; lev <= this->linear_direct_solver_finest_level; ++lev)
+            {
+                const iMultiFab & mask = this->masks[lev];
+                Solution & solution = *this->solutions[lev];
+
+                for (MFIter mfi(solution.elm_id); mfi.isValid(); ++mfi)
+                {
+                    const Box & bx = mfi.validbox();
+
+                    Array4<int const> const & mask_fab = mask.array(mfi);
+                    Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+                    
+                    Array4<int> const & csr_dom_info_fab = csr_dom_info[lev].array(mfi);
+
+                    ParallelFor(bx, n_domains,
+                    [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+                    {
+                        const bool cell_is_not_masked = CELL_IS_NOT_MASKED(mask_fab(i,j,k));
+                        const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                        const bool elm_is_valid = ELM_IS_VALID(etype);
+
+                        if (cell_is_not_masked && elm_is_valid)
+                        {
+                            csr_dom_info_fab(i,j,k,CSR_DOM_INFO_POS_X(dom)) += posX;
+                        }
+                    });
+                    Gpu::synchronize();
+                }
+                csr_dom_info[lev].FillBoundary(this->geom[lev].periodicity());
+            }
+        }
+        // ------------------------------------------------------------
+    }
+    
+    bool linear_direct_solver_is_pardiso() const;
+
+    /**
+     * \brief Init pardiso linear solver.
+    */
+    template <typename IBVP>
+    void init_linear_solver_pardiso(const IBVP & ibvp)
+    {
+        // PARAMETERS -------------------------------------------------
+        const int n_procs = ParallelDescriptor::NProcs();
+        const int n_levels = this->max_level+1;
+
+        // DOMAINS
+        const int n_domains = ibvp.get_number_of_domains();
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        Vector<iMultiFab> elm_nbr_info(this->linear_direct_solver_finest_level+1);
+        // ------------------------------------------------------------
+
+        // AT THE MOMENT WE ALLOW ONE PROCESSOR ONLY ------------------
+        if (n_procs != 1)
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver_pardiso\n";
+            msg += "| At the moment, pardiso can only be called with 1 MPI rank.\n";
+            msg += "| n_procs: "+std::to_string(n_procs)+".\n";
+            Abort(msg);
+        }
+        // ------------------------------------------------------------
+
+        // AT THE MOMENT WE ALLOW ONE AMR LEVEL ONLY ------------------
+        if (this->max_level != 0)
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver_pardiso\n";
+            msg += "| At the moment, pardiso can only be called with 1 AMR level.\n";
+            msg += "| max_level: "+std::to_string(this->max_level)+".\n";
+            Abort(msg);
+        }
+        // ------------------------------------------------------------
+
+        // INIT PARDISO MULTIFABS STORING THE NNZ OFFSET --------------
+        this->init_csr_info_multifabs(this->pardiso.dom_info, this->pardiso.bou_info, ibvp);
+        // ------------------------------------------------------------
+
+        // PARDISO BASE CONTROL PARAMETERS ----------------------------
+        this->pardiso.init();
+        // ------------------------------------------------------------
+
+        // SET POSITION OF THE ELEMENT DOFS WITHIN THE SYSTEM ---------
+        this->update_linear_system_ordering(this->pardiso.dom_info, ibvp);
+        // ------------------------------------------------------------
+
+        // GATHER NEIGHBOR INFORMATION --------------------------------
+        if (this->linear_direct_solver_finest_level == 0)
+        {
+            const int lev = 0;
+            this->solutions[lev]->get_elm_nbr_info(this->geom[lev], *this->meshes[lev],
+                                                   this->pardiso.dom_info[lev], elm_nbr_info[lev],
+                                                   ibvp);
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver_pardiso\n";
+            msg += "| Gathering neighbors information with multilevel AMR is not supported at the moment.\n";
+            msg += "| linear_direct_solver_finest_level: "+std::to_string(this->linear_direct_solver_finest_level)+".\n";
+            Abort(msg);
+        }
+        // ------------------------------------------------------------
+
+        // BUILD CSR MATRIX VECTORS -----------------------------------
+        this->pardiso.ia.resize(1);
+        this->pardiso.ia[0] = 0;
+
+        if (this->pardiso.matrix_is_real_symmetric())
+        {
+            for (int lev = 0; lev <= this->linear_direct_solver_finest_level; ++lev)
+            {
+                this->solutions[lev]->add_nnz_to_real_sym_csr_matrix(this->geom[lev],
+                                                                     *this->meshes[lev],
+                                                                     this->masks[lev],
+                                                                     this->pardiso,
+                                                                     elm_nbr_info[lev],
+                                                                     this->pardiso.dom_info[lev],
+                                                                     this->pardiso.bou_info[lev],
+                                                                     ibvp);
+            }
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver_pardiso\n";
+            msg += "| Unexpected pardiso matrix type.\n";
+            msg += "| mtype: "+std::to_string(this->pardiso.mtype)+".\n";
+            Abort(msg);
+        }
+        // ------------------------------------------------------------
+
+        // SYSTEM ORDER, RIGHT-HAND SIDE AND NON-ZEROS ----------------
+        this->pardiso.n = this->pardiso.ia.size()-1;
+        
+        this->pardiso.n_rhs = 1;
+        this->pardiso.B.resize(this->pardiso.n);
+
+        this->pardiso.X.resize(this->pardiso.n);
+        
+        this->pardiso.nnz = this->pardiso.ia[this->pardiso.n];
+
+        /* DEBUG
+        Print() << "SinglePatch::init_linear_solver_pardiso: " << std::endl;
+        Print() << " System order: " << this->pardiso.n << std::endl;
+        Print() << " Number of non-zero entries: " << this->pardiso.nnz << std::endl;
+        */
+        // ------------------------------------------------------------
+
+        // CONVERT FROM 0-BASED C NOTATION TO 1-BASED FORTRAN NOTATION
+        for (int i = 0; i < this->pardiso.n+1; i++)
+        {
+            this->pardiso.ia[i] += 1;
+        }
+        for (int i = 0; i < this->pardiso.nnz; i++)
+        {
+            this->pardiso.ja[i] += 1;
+        }
+        // ------------------------------------------------------------
+
+        // CHECK MATRIX -----------------------------------------------
+        pardiso_chkmatrix(&this->pardiso.mtype,
+                          &this->pardiso.n,
+                          this->pardiso.A.data(),
+                          this->pardiso.ia.data(),
+                          this->pardiso.ja.data(),
+                          &this->pardiso.error);
+        if (this->pardiso.error != 0)
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver_pardiso\n";
+            msg += "| Error in consistency of the matrix.\n";
+            msg += "| Error: "+std::to_string(this->pardiso.error)+".\n";
+            Abort(msg);
+        }
+        // ------------------------------------------------------------
+
+        // PRINT STATISTICS -------------------------------------------
+        /* DEBUG
+        pardiso_printstats(&this->pardiso.mtype,
+                           &this->pardiso.n,
+                           this->pardiso.A.data(),
+                           this->pardiso.ia.data(),
+                           this->pardiso.ja.data(),
+                           &this->pardiso.n_rhs,
+                           this->pardiso.B.data(),
+                           &this->pardiso.error);
+        if (this->pardiso.error != 0)
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver_pardiso\n";
+            msg += "| Error during pardiso_printstats.\n";
+            msg += "| Error: "+std::to_string(this->pardiso.error)+".\n";
+            Abort(msg);
+        }
+        */
+        // ------------------------------------------------------------
+    }
+    
+    /**
+     * \brief Init the selected linear solver.
+    */
+    template <typename IBVP>
+    void init_linear_solver(const IBVP & ibvp)
+    {
+
+        if (this->linear_direct_solver_is_pardiso())
+        {
+            this->init_linear_solver_pardiso(ibvp);
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver\n";
+            msg += "| Unexpected input parameters.\n";
+            msg += "| Linear solver: "+this->linear_direct_solver+".\n";
+            Abort(msg);
+        }
+    }
+
+    bool linear_direct_solver_first_call() const;
     // ================================================================
 
 

@@ -9,7 +9,7 @@
 // BLAS/LAPACK ROUTINES ###############################################
 extern "C"
 {
-    
+    int dgemm_(char *, char *, int *, int *, int *, double *, double *, int *,  double *, int *, double *, double *, int *);
     int dpotrf_(char *, int *, double *, int *, int *);
     int dpotri_(char *, int *, double *, int *, int *);
     int dgetrf_(int *, int *, double *, int *, int *, int *);
@@ -252,6 +252,29 @@ void get_stiffness_matrix_2d_isotropic(const amrex::Real E, const amrex::Real nu
 /**
  * \brief Fill memory pointed to by c with coefficients of the elasticity stiffness matrix.
  *
+ * \param[in] rho: density.
+ * \param[in] cP: P wave velocity.
+ * \param[in] cS: S wave velocity.
+ * \param[out] c: pointer to memory that will contain the coefficients of the elasticity stiffness
+ *                matrix.
+ *
+*/
+AMREX_FORCE_INLINE
+void get_stiffness_matrix_2d_isotropic_wave_velocities(const amrex::Real rho, const amrex::Real cP, const amrex::Real cS, amrex::Real * c)
+{
+    const amrex::Real mu = rho*cS*cS;
+    const amrex::Real c11 = rho*cP*cP;
+    const amrex::Real lam = c11-2.0*mu;
+
+    std::fill(c, c+3*3, 0.0);
+    c[0+0*3] = c11; c[0+1*3] = lam;
+    c[1+0*3] = lam; c[1+1*3] = c11;
+    c[2+2*3] = mu;
+}
+
+/**
+ * \brief Fill memory pointed to by c with coefficients of the elasticity stiffness matrix.
+ *
  * \param[in] (c11, c22, c12, c66): Elastic constants
  * \param[out] c: pointer to memory that will contain the coefficients of the elasticity stiffness
  *                matrix.
@@ -293,8 +316,10 @@ void get_compliance_matrix_3d_isotropic(const amrex::Real E, const amrex::Real n
     s[4+4*6] = invG;
     s[5+5*6] = invG;
 
+    /*
     amrex::Print() << "get_compliance_matrix_3d_isotropic - s: " << std::endl;
     amrex::dG::io::print_real_array_2d(6, 6, s);
+    */
 }
 
 /**
@@ -322,6 +347,9 @@ void get_stiffness_matrix_3d_isotropic(const amrex::Real E, const amrex::Real nu
     {
         c[i+j*6] = c[j+i*6];
     }
+
+    amrex::Print() << "get_stiffness_matrix_3d_isotropic - c: " << std::endl;
+    amrex::dG::io::print_real_array_2d(6, 6, c);
 }
 
 /**
@@ -345,6 +373,44 @@ void get_stiffness_matrix_3d_orthotropic(const amrex::Real c11, const amrex::Rea
     c[3+3*6] = c44;
     c[4+4*6] = c55;
     c[5+5*6] = c66;
+}
+
+/**
+ * \brief Fill memory pointed to by c with coefficients of the elasticity stiffness matrix.
+ *
+ * \param[in] (E1, E2, E3, nu23, nu13, nu12, G23, G13, G12): Elastic constants
+ * \param[out] c: pointer to memory that will contain the coefficients of the elasticity stiffness
+ *                matrix.
+ *
+*/
+AMREX_FORCE_INLINE
+void get_stiffness_matrix_3d_orthotropic_eng_constants(const amrex::Real E1, const amrex::Real E2, const amrex::Real E3,
+                                                       const amrex::Real nu23, const amrex::Real nu13, const amrex::Real nu12,
+                                                       const amrex::Real G23, const amrex::Real G13, const amrex::Real G12,
+                                                       amrex::Real * c)
+{
+    char uplo = 'U';
+    int n = 6;
+    int info;
+
+    std::fill(c, c+6*6, 0.0);
+    c[0+0*6] =   1.0/E1; c[0+1*6] = -nu12/E1; c[0+2*6] = -nu13/E1;
+    c[1+0*6] = -nu12/E1; c[1+1*6] =   1.0/E2; c[1+2*6] = -nu23/E2;
+    c[2+0*6] = -nu13/E1; c[2+1*6] = -nu23/E2; c[2+2*6] =   1.0/E3;
+    c[3+3*6] = 1.0/G23;
+    c[4+4*6] = 1.0/G13;
+    c[5+5*6] = 1.0/G12;
+
+    dpotrf_(&uplo, &n, c, &n, &info);
+    dpotri_(&uplo, &n, c, &n, &info);
+    for (int i = 1; i < 6; ++i)
+    for (int j = 0; j < i; ++j)
+    {
+        c[i+j*6] = c[j+i*6];
+    }
+
+    amrex::Print() << "get_stiffness_matrix_3d_orthotropic_eng_constants - c: " << std::endl;
+    amrex::dG::io::print_real_array_2d(6, 6, c);
 }
 
 /**
@@ -411,6 +477,86 @@ void get_stiffness_matrix_2d_isotropic_plane_stress(const amrex::Real E, const a
 
 
 // WAVE SPEED #########################################################
+/**
+ * \brief Eval the matrix (1/rho)*InT*cSE*In.
+ *
+ * \param[in] rho: density.
+ * \param[in] c: pointer to memory containing the coefficients of the stiffness matrix stored in a
+ *               compact fashion.
+ * \param[in] un: pointer to memory containing the unit normal vector.
+ * \param[out] InTcIn: pointer to memory that will be filled with the computed matrix.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void eval_InTcIn_3d_compact_c(const amrex::Real rho, const amrex::Real * c, const amrex::Real * un,
+                              amrex::Real * InTcIn)
+{
+    // PARAMETERS
+    const amrex::Real inv_rho = 1.0/rho;
+    const amrex::Real un11 = un[0]*un[0]*inv_rho;
+    const amrex::Real un12 = un[0]*un[1]*inv_rho;
+    const amrex::Real un22 = un[1]*un[1]*inv_rho;
+    const amrex::Real un23 = un[1]*un[2]*inv_rho;
+    const amrex::Real un13 = un[0]*un[2]*inv_rho;
+    const amrex::Real un33 = un[2]*un[2]*inv_rho;
+
+    InTcIn[0+0*3] = c[ 0]*un11+c[20]*un22+c[18]*un33+(c[ 5]+c[ 5])*un12+(c[ 4]+c[ 4])*un13+(c[19]+c[19])*un23;
+    InTcIn[1+0*3] = c[ 5]*un11+c[10]*un22+c[16]*un33+(c[ 1]+c[20])*un12+(c[ 3]+c[19])*un13+(c[ 9]+c[17])*un23;
+    InTcIn[2+0*3] = c[ 4]*un11+c[17]*un22+c[13]*un33+(c[ 3]+c[19])*un12+(c[ 2]+c[18])*un13+(c[14]+c[16])*un23;
+    InTcIn[1+1*3] = c[20]*un11+c[ 6]*un22+c[15]*un33+(c[10]+c[10])*un12+(c[17]+c[17])*un13+(c[ 8]+c[ 8])*un23;
+    InTcIn[2+1*3] = c[19]*un11+c[ 8]*un22+c[12]*un33+(c[ 9]+c[17])*un12+(c[14]+c[16])*un13+(c[ 7]+c[15])*un23;
+    InTcIn[2+2*3] = c[18]*un11+c[15]*un22+c[11]*un33+(c[16]+c[16])*un12+(c[13]+c[13])*un13+(c[12]+c[12])*un23;
+
+    // Symmetric components
+    InTcIn[0+1*3] = InTcIn[1+0*3];
+    InTcIn[0+2*3] = InTcIn[2+0*3];
+    InTcIn[1+2*3] = InTcIn[2+1*3];
+}
+
+/**
+ * \brief Eval the maximum wave speed for a bulk 3d material.
+ *
+ * \param[in] rho: density.
+ * \param[in] c: pointer to memory containing the coefficients of the stiffness matrix stored in a
+ *               compact fashion.
+ *
+ * \return: the maximum wave speed.
+ *
+*/
+AMREX_FORCE_INLINE
+amrex::Real eval_max_wave_speed_3d_compact_c(const amrex::Real rho, const amrex::Real * c)
+{
+    const int n_th = 360;
+    const amrex::Real dth = 2.0*M_PI/n_th;
+    const int n_ph = n_th/2;
+    const amrex::Real dph = M_PI/n_ph;
+
+    amrex::Real th;
+    amrex::Real ph;
+    amrex::Real un[3];
+    amrex::Real w2[3], v[3*3];
+    amrex::Real InTcIn[3*3];
+
+    amrex::Real w;
+
+    w = 0.0;
+    for (int j = 0; j < n_ph; ++j)
+    for (int i = 0; i < n_th; ++i)
+    {
+        th = i*dth;
+        ph = j*dph;
+        un[0] = std::cos(th)*std::sin(ph);
+        un[1] = std::sin(th)*std::sin(ph);
+        un[2] = std::cos(ph);
+        
+        eval_InTcIn_3d_compact_c(rho, c, un, InTcIn);
+        
+        amrex::dG::linalg::dsy3ev(InTcIn, w2, v);
+
+        w = amrex::max(w, std::sqrt(*std::max_element(w2, w2+3)));
+    }
+
+    return w;
+}
 // ####################################################################
 
 } // namespace linear_elasticity

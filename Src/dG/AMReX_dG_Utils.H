@@ -44,6 +44,13 @@ std::string make_path(const std::initializer_list<std::string>);
 
 
 // INPUT/OUTPUT ROUTINES FOR ARRAYS ###################################
+void print_ints(const int rank, const MPI_Comm comm, const int n, const int * src, std::ostream & os = OutStream());
+void print_ints(const int rank, const int n, const int * src, std::ostream & os = OutStream());
+void print_ints(const int n, const int * src, std::ostream & os = OutStream());
+void print_int_array_2d(const int rank, const MPI_Comm comm, const int Nr, const int Nc, const int * src, std::ostream & os = OutStream());
+void print_int_array_2d(const int rank, const int Nr, const int Nc, const int * src, std::ostream & os = OutStream());
+void print_int_array_2d(const int Nr, const int Nc, const int * src, std::ostream & os = OutStream());
+
 void print_reals(const int rank, const MPI_Comm comm, const int n, const Real * src, std::ostream & os = OutStream());
 void print_reals(const int rank, const int n, const Real * src, std::ostream & os = OutStream());
 void print_reals(const int n, const Real * src, std::ostream & os = OutStream());

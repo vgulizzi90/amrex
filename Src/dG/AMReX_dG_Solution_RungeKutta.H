@@ -148,6 +148,80 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
         Gpu::synchronize();
     }
     // ----------------------------------------------------------------
+
+    // CONCENTRATED SOURCE TERM ---------------------------------------
+    const Real th = 10.0*M_PI/180.0;
+    const Real tth = std::tan(th);
+    const amrex::Real x1S = 1720.0;
+    const GpuArray<Real, AMREX_SPACEDIM> xs = {AMREX_D_DECL(x1S, 2000.0+tth*x1S, 0.0)};
+    const Real alpha = 1.0;
+
+    for (MFIter mfi(X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+        Array4<Real const> const & X_fab = X.array(mfi);
+
+        Array4<Real> const & dXdt_fab = dXdt.array(mfi);
+
+        ParallelFor(bx, n_domains,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+
+            if (ELM_IS_NOT_EMPTY(etype))
+            {
+                // LOCAL PARAMETERS
+                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                   prob_lo[1]+j*dx[1],
+                                                                   prob_lo[2]+k*dx[2])};
+                const Real cell_hi[AMREX_SPACEDIM] = {AMREX_D_DECL(cell_lo[0]+dx[0],
+                                                                   cell_lo[1]+dx[1],
+                                                                   cell_lo[2]+dx[2])};
+
+                // FLAG TO CHECK WHETHER WE ADD THE CONTRIBUTION
+                Real cond;
+                AMREX_D_TERM
+                (
+                    cond =         ((cell_lo[0]-1.0e-5*dx[0]) <= xs[0]) && (xs[0] <= (cell_hi[0]+1.0e-5*dx[0]));,
+                    cond = cond && ((cell_lo[1]-1.0e-5*dx[1]) <= xs[1]) && (xs[1] <= (cell_hi[1]+1.0e-5*dx[1]));,
+                    cond = cond && ((cell_lo[2]-1.0e-5*dx[2]) <= xs[2]) && (xs[2] <= (cell_hi[2]+1.0e-5*dx[2]));
+                )
+
+                if (cond)
+                {
+//Print(ParallelDescriptor::MyProc()) << "Verifying cond: " << i << " " << j << std::endl;
+
+                    // LOCAL VARIABLES
+                    Real U[__DG_MAX_N_UNKNOWN_FIELDS__];
+                    Real S[__DG_MAX_N_UNKNOWN_FIELDS__];
+
+                    // UNKNOWN FIELDS
+                    space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+                    int u_lo, u_hi;
+                    ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+
+                    // Solution at (t, xs)
+                    bfu.eval(&xs[0], u_lo, u_hi, U);
+
+                    // Source as a function of (t, xs, U)
+                    ibvp.eval_S(dom, t, &xs[0], U, S);
+
+                    // Contribution
+                    for (int ru = u_lo; ru < u_hi; ++ru)
+                    for (int rs = 0; rs < sNp; ++rs)
+                    {
+                        dXdt_fab(i,j,k,rs+ru*sNp) += bfu.BF[rs]*alpha*S[ru];
+                    }   
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+//exit(-1);
+    // ----------------------------------------------------------------
 }
 // ####################################################################
 
@@ -270,7 +344,7 @@ void FX_ICS(const int dom, const Real t,
  *
  * The following integral is evaluated: 
  *
- * int_{dV} BF(x)^T NF(t, x, un, U^-, U^+)
+ * int_{dV} BF(x)^T NFn(t, x, un, U^-, U^+)
  *
  * This routine is intended to be used for single-level applications
  * or for the coarsest level in a multi-level applications.
@@ -398,6 +472,265 @@ void eval_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, con
 }
 
 /**
+ * \brief Eval the boundary fluxes at the intraphase between two dG levels.
+ *
+ * \param[in] t: time.
+ * \param[in] c_geom: coarse geometry.
+ * \param[in] c_mesh: coarse mesh.
+ * \param[in] c_solution: coarse solution.
+ * \param[in] c_X: MultiFab object containing the dG coefficients at the coarse level.
+ * \param[in] rr: refinement ratio.
+ * \param[in] f_geom: fine geometry.
+ * \param[in] f_mesh: fine mesh.
+ * \param[in] f_solution: fine solution.
+ * \param[in] f_X: MultiFab object containing the dG coefficients at the fine level.
+ * \param[out] FX: an array of MultiFab objects that will contain the fluxes.
+ * \param[in] FX_offset: an integer used for accessing the FX components.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ *
+ * The following integral is evaluated: 
+ *
+ * int_{dV} BF(x)^T NFn(t, x, un, U^-, U^+)
+ *
+ * This routine is intended to be used in multi-level applications.
+ *
+*/
+template <typename IBVP>
+void eval_dG_dG_bou_fluxes(const Real t,
+                           const Geometry & c_geom, const Mesh & c_mesh, const Solution & c_solution, const MultiFab & c_X,
+                           const IntVect rr,
+                           const Geometry & f_geom, const Mesh & f_mesh, const Solution & f_solution, const MultiFab & f_X,
+                           Array<MultiFab, AMREX_SPACEDIM> & FX, const int FX_offset, const IBVP & ibvp)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("dG::hyperbolic_pde::explicit_RK::eval_dG_dG_bou_fluxes(...)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS -----------------------------------------------------
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> c_dx = c_geom.CellSizeArray();
+    
+    const Box domain = f_geom.Domain();
+    const GpuArray<Real, AMREX_SPACEDIM> f_dx = f_geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = f_geom.ProbLoArray();
+    const GpuArray<int, AMREX_SPACEDIM> is_periodic = f_geom.isPeriodicArray();
+
+    // DOMAINS
+    const int n_domains = ibvp.get_number_of_domains();
+
+    // ORDER
+    const int f_sp = f_solution.params.space_p;
+    const int f_sNp = AMREX_D_TERM((1+f_sp),*(1+f_sp),*(1+f_sp));
+    const int c_sp = c_solution.params.space_p;
+    const int c_sNp = AMREX_D_TERM((1+c_sp),*(1+c_sp),*(1+c_sp));
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    sMultiFab safe_c_elm_type;
+    const sMultiFab * safe_c_elm_type_ptr;
+    MultiFab safe_c_X;
+    const MultiFab * safe_c_X_ptr;
+    // ----------------------------------------------------------------
+
+    // PARALLEL COPY --------------------------------------------------
+    if (isMFIterSafe(f_X, c_X))
+    {
+        safe_c_elm_type_ptr = &c_solution.elm_type;
+        safe_c_X_ptr = &c_X;
+    }
+    else
+    {
+        const BoxArray safe_c_ba = coarsen(f_mesh.ba, rr);
+        const DistributionMapping & f_dm = f_mesh.dm;
+        const int c_elm_type_n_comp = c_solution.elm_type.n_comp;
+        const IntVect c_elm_type_n_grow = c_solution.elm_type.n_grow;
+        const int c_X_n_comp = c_X.n_comp;
+        const IntVect c_X_n_grow = c_X.n_grow;
+
+        safe_c_elm_type.define(safe_c_ba, f_dm, c_elm_type_n_comp, c_elm_type_n_grow);
+        safe_c_elm_type.ParallelCopy(c_solution.elm_type, 0, 0, c_elm_type_n_comp, c_elm_type_n_grow, c_elm_type_n_grow, c_geom.periodicity());
+        
+        safe_c_X.define(safe_c_ba, f_dm, c_X_n_comp, c_X_n_grow, MFInfo(), FArrayBoxFactory());
+        safe_c_X.ParallelCopy(c_X, 0, 0, c_X_n_comp, c_X_n_grow, c_X_n_grow, c_geom.periodicity());
+
+        safe_c_elm_type_ptr = &safe_c_elm_type;
+        safe_c_X_ptr = &safe_c_X;
+    }
+    // ----------------------------------------------------------------
+
+    // INITIALIZATION -------------------------------------------------
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+        FX[dir] = 0.0;
+    }
+    // ----------------------------------------------------------------
+
+    // EVAL THE BOUNDARY INTEGRALS ------------------------------------
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+#if (AMREX_SPACEDIM == 1)
+        const Real fact = 1.0;
+#endif
+#if (AMREX_SPACEDIM == 2)
+        const Real fact = Real(rr[1-dir]);
+#endif
+#if (AMREX_SPACEDIM == 3)
+        const int d1 = (dir*(dir-1))/2;
+        const int d2 = 1+((3-dir)*dir)/2;
+        const Real fact = Real(rr[d1]*rr[d2]);
+#endif
+
+#ifdef AMREX_USE_GPU
+        Real const * f_cell_bou_quad_mem_ptr = f_mesh.cell_bou_quad_dev_mem[dir].data();
+#else
+        Real const * f_cell_bou_quad_mem_ptr = f_mesh.cell_bou_quad_host_mem[dir].data();
+#endif
+
+        for (MFIter mfi(FX[dir]); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            // Coarse mesh
+            Array4<short const> const & c_elm_type_fab = safe_c_elm_type_ptr->array(mfi);
+            Array4<Real const> const & c_X_fab = safe_c_X_ptr->array(mfi);
+            
+            // Fine mesh
+            Array4<long const> const & f_cell_bou_quad_info_fab = f_mesh.cell_bou_quad_info[dir].array(mfi);
+            Array4<short const> const & f_elm_type_fab = f_solution.elm_type.array(mfi);
+            Array4<short const> const & f_elm_bou_type_fab = f_solution.elm_bou_type[dir].array(mfi);
+            Array4<Real const> const & f_X_fab = f_X.array(mfi);
+
+            Array4<Real> const & FX_fab = FX[dir].array(mfi);
+
+            ParallelFor(bx, n_domains,
+            [=] AMREX_GPU_DEVICE (int fi, int fj, int fk, int dom) noexcept
+            {
+                // ELEMENT BOUNDARY TYPE
+                const short f_ebtype = f_elm_bou_type_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
+
+                if (ELM_BOU_IS_VALID(f_ebtype))
+                {
+                    // LOCAL PARAMETERS
+                    const int ff = (dir == 0) ? fi : ((dir == 1) ? fj : fk);
+                    const Real face_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+fi*f_dx[0],
+                                                                       prob_lo[1]+fj*f_dx[1],
+                                                                       prob_lo[2]+fk*f_dx[2])};
+
+                    // QUADRATURE INFO
+                    const int bou_Nq = f_cell_bou_quad_info_fab(fi,fj,fk,CELL_BOU_QUAD_NQ(dom));
+                    const long pos = f_cell_bou_quad_info_fab(fi,fj,fk,CELL_BOU_QUAD_POS(dom));
+                    const Real * x_ptr = &f_cell_bou_quad_mem_ptr[pos];
+
+                    // LOCAL VARIABLES
+                    int mi, mj, mk, pi, pj, pk;
+
+                    // NEIGHBOR CELLS SHARING THE FACE fi,fj,fk
+                    FACE_TO_NBRS(fi, fj, fk, dir, mi, mj, mk, pi, pj, pk);
+                    const short m_etype = f_elm_type_fab(mi,mj,mk,ELM_TYPE(dom));
+                    const short p_etype = f_elm_type_fab(pi,pj,pk,ELM_TYPE(dom));
+                    const bool m_is_ghost = ELM_IS_GHOST(f_elm_type_fab(mi,mj,mk,ELM_TYPE(dom)));
+                    const bool p_is_ghost = ELM_IS_GHOST(f_elm_type_fab(pi,pj,pk,ELM_TYPE(dom)));
+
+                    // UKNOWN FIELDS
+                    int u_lo, u_hi;
+                    ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+
+                    // BOUNDARY CONDITIONS
+                    if ((ff == domain.smallEnd(dir)) && (is_periodic[dir] == 0))
+                    {
+                        // UNKNOWN FIELDS
+                        space_elm_bfx p_bfu(&prob_lo[0], &f_dx[0], pi, pj, pk, p_etype, f_sp, f_X_fab);
+
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = -1.0;
+
+                        // EVAL THE INTEGRAL
+                        FX_BCS(dom, t, face_lo, bou_Nq, x_ptr, un, p_bfu, u_lo, u_hi, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                    }
+                    // BOUNDARY CONDITIONS
+                    else if ((ff == (domain.bigEnd(dir)+1)) && (is_periodic[dir] == 0))
+                    {
+                        // UNKNOWN FIELDS
+                        space_elm_bfx m_bfu(&prob_lo[0], &f_dx[0], mi, mj, mk, m_etype, f_sp, f_X_fab);
+
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // EVAL THE INTEGRAL
+                        FX_BCS(dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, u_lo, u_hi, fi, fj, fk, FX_fab, 0, ibvp);
+                    }
+                    // INTRAPHASE CONDITIONS
+                    else
+                    {
+                        // UNIT NORMAL
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // INTRAPHASE BETWEEN LEVEL AND COARSER LEVEL
+                        if (m_is_ghost)
+                        {
+                            // CELL OF THE COARSER LEVEL
+                            int c_i, c_j, c_k;
+                            FINE_TO_COARSE(mi, mj, mk, rr, c_i, c_j, c_k);
+
+                            // UNKNOWN FIELDS
+                            space_elm_bfx m_bfu(&prob_lo[0], &c_dx[0], c_i, c_j, c_k, c_elm_type_fab(c_i,c_j,c_k,ELM_TYPE(dom)), c_sp, c_X_fab);
+                            space_elm_bfx p_bfu(&prob_lo[0], &f_dx[0], pi, pj, pk, p_etype, f_sp, f_X_fab);
+
+                            // EVAL THE INTEGRAL
+                            FX_ICS(dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, p_bfu, u_lo, u_hi, fi, fj, fk, FX_fab, FX_offset, ibvp);
+
+                            // NEEDED TO USE average_down_faces
+                            for (int ru = u_lo; ru < u_hi; ++ru)
+                            for (int rs = 0; rs < c_sNp; ++rs)
+                            {
+                                FX_fab(fi,fj,fk,rs+ru*c_sNp) *= fact;
+                            }
+                        }
+                        // INTRAPHASE BETWEEN LEVEL AND COARSER LEVEL
+                        else if (p_is_ghost)
+                        {
+                            // CELL OF THE COARSER LEVEL
+                            int c_i, c_j, c_k;
+                            FINE_TO_COARSE(pi, pj, pk, rr, c_i, c_j, c_k);
+
+                            // UNKNOWN FIELDS
+                            space_elm_bfx m_bfu(&prob_lo[0], &f_dx[0], mi, mj, mk, m_etype, f_sp, f_X_fab);
+                            space_elm_bfx p_bfu(&prob_lo[0], &c_dx[0], c_i, c_j, c_k, c_elm_type_fab(c_i,c_j,c_k,ELM_TYPE(dom)), c_sp, c_X_fab);
+
+                            // EVAL THE INTEGRAL
+                            FX_ICS(dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, p_bfu, u_lo, u_hi, fi, fj, fk, FX_fab, FX_offset, ibvp);
+
+                            // NEEDED TO USE average_down_faces
+                            for (int ru = u_lo; ru < u_hi; ++ru)
+                            for (int rs = 0; rs < c_sNp; ++rs)
+                            {
+                                FX_fab(fi,fj,fk,FX_offset+rs+ru*c_sNp) *= fact;
+                            }
+                        }
+                        // INTRAPHASE WITHIN LEVEL
+                        else
+                        {
+                            // UNKNOWN FIELDS
+                            space_elm_bfx m_bfu(&prob_lo[0], &f_dx[0], mi, mj, mk, m_etype, f_sp, f_X_fab);
+                            space_elm_bfx p_bfu(&prob_lo[0], &f_dx[0], pi, pj, pk, p_etype, f_sp, f_X_fab);
+
+                            // EVAL THE INTEGRAL
+                            FX_ICS(dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, p_bfu, u_lo, u_hi, fi, fj, fk, FX_fab, FX_offset, ibvp);
+                        }
+                    }
+                }
+            });
+            Gpu::synchronize();
+        }
+    }
+    // ----------------------------------------------------------------
+}
+
+/**
  * \brief Add the boundary contribution to the time derivative of the dG coefficients.
  *
  * \param[in] t: time.
@@ -415,11 +748,11 @@ void eval_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, con
  * In addition to summing the contribution from the intraphase boundaries, the following integral is
  * evaluated at the embedded interfaces: 
  *
- * int_{dV} BF(x)^T NF(t, x, un, U)
+ * int_{dV} BF(x)^T NFn(t, x, un, U)
  *
  * or
  *
- * int_{dV} BF(x)^T NF(t, x, un, U^-, U^+)
+ * int_{dV} BF(x)^T NFn(t, x, un, U^-, U^+)
  *
 */
 template <typename IBVP>
@@ -1003,7 +1336,6 @@ void eval_dG_FV_bou_fluxes(const Real t,
     // PROFILING ------------------------------------------------------
     BL_PROFILE("dG::hyperbolic_pde::explicit_RK::eval_dG_FV_bou_fluxes(...)");
     // ----------------------------------------------------------------
-
 
     // PARAMETERS -----------------------------------------------------
     // GRID

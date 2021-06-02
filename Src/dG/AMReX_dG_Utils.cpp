@@ -71,6 +71,7 @@ std::string replace_input_keywords(const std::string & is)
         }
         else
         {
+            input_key.clear();
             pp.getarr(key.c_str(), input_key);
 
             std::string ns = input_key[0];
@@ -154,6 +155,106 @@ std::string make_path(const std::initializer_list<std::string> list)
 
 
 // INPUT/OUTPUT ROUTINES FOR ARRAYS ###################################
+/**
+ * \brief Print a list of n space-separated ints on process rank of communicator comm.
+ *
+ * \param[in] rank: process identifier;
+ * \param[in] comm: communicator identifier;
+ * \param[in] n: number of ints to be printed;
+ * \param[in] src: pointer to memory;
+ * \param[inout] os: output stream;
+ *
+*/
+void print_ints(const int rank, const MPI_Comm comm, const int n, const int * src, std::ostream & os)
+{
+    for (int i = 0; i < (n-1); ++i)
+    {
+        Print(rank, comm, os) << src[i] << " ";
+    }
+    Print(rank, comm, os) << src[n-1];
+}
+
+/**
+ * \brief Print a list of n space-separated ints on process rank of the default communicator.
+ *
+ * \param[in] rank: process identifier;
+ * \param[in] n: number of ints to be printed;
+ * \param[in] src pointer to memory;
+ * \param[inout] os: output stream;
+ *
+*/
+void print_ints(const int rank, const int n, const int * src, std::ostream & os)
+{
+    print_ints(rank, ParallelContext::CommunicatorSub(), n, src, os);
+}
+
+/**
+ * \brief Print a list of n space-separated ints on I/O process of the default communicator.
+ *
+ * \param[in] n: number of ints to be printed;
+ * \param[in] src: pointer to memory;
+ * \param[inout] os: output stream;
+ *
+*/
+void print_ints(const int n, const int * src, std::ostream & os)
+{
+    print_ints(ParallelContext::IOProcessorNumberSub(), ParallelContext::CommunicatorSub(), n, src, os);
+}
+
+/**
+ * \brief Print an array of ints with column-major order on process rank of communicator comm.
+ *
+ * \param[in] rank: process identifier;
+ * \param[in] comm: communicator identifier;
+ * \param[in] Nr: number of rows;
+ * \param[in] Nc: number of columns;
+ * \param[in] src: pointer to memory;
+ * \param[inout] os: output stream;
+ *
+*/
+void print_int_array_2d(const int rank, const MPI_Comm comm, const int Nr, const int Nc, const int * src, std::ostream & os)
+{
+    for (int r = 0; r < Nr; ++r)
+    {
+        for (int c = 0; c < Nc; ++c)
+        {
+            Print(rank, comm, os) << src[r+c*Nr] << " ";
+        }
+        Print(rank, comm, os) << std::endl;
+    }
+}
+
+/**
+ * \brief Print an array of ints with column-major order on process rank of the default
+ *        communicator.
+ *
+ * \param[in] rank: process identifier;
+ * \param[in] Nr: number of rows;
+ * \param[in] Nc: number of columns;
+ * \param[in] src: pointer to memory;
+ * \param[inout] os: output stream;
+ *
+*/
+void print_int_array_2d(const int rank, const int Nr, const int Nc, const int * src, std::ostream & os)
+{
+    print_int_array_2d(rank, ParallelContext::CommunicatorSub(), Nr, Nc, src, os);
+}
+
+/**
+ * \brief Print an array of ints with column-major order on I/O process of the default
+ *        communicator.
+ *
+ * \param[in] Nr: number of rows;
+ * \param[in] Nc: number of columns;
+ * \param[in] src: pointer to memory;
+ * \param[inout] os: output stream;
+ *
+*/
+void print_int_array_2d(const int Nr, const int Nc, const int * src, std::ostream & os)
+{
+    print_int_array_2d(ParallelContext::IOProcessorNumberSub(), ParallelContext::CommunicatorSub(), Nr, Nc, src, os);
+}
+
 /**
  * \brief Print a list of n space-separated reals on process rank of communicator comm.
  *

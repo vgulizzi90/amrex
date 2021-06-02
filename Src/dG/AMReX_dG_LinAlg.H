@@ -1818,6 +1818,35 @@ void dsy2ev(const Real * a, Real * lam, Real * ev)
 // ROUTINES FOR 3x3 MATRICES ##########################################
 // ####################################################################
 /**
+ * \brief Determinant of a 3x3 matrix.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+Real det3(const Real * a)
+{
+    const Real a11 = a[0+0*3];
+    const Real a21 = a[1+0*3];
+    const Real a31 = a[2+0*3];
+    const Real a12 = a[0+1*3];
+    const Real a22 = a[1+1*3];
+    const Real a32 = a[2+1*3];
+    const Real a13 = a[0+2*3];
+    const Real a23 = a[1+2*3];
+    const Real a33 = a[2+2*3];
+    return (-a13*a22*a31+a12*a23*a31+a13*a21*a32-a11*a23*a32-a12*a21*a33+a11*a22*a33);
+}
+
+/**
+ * \brief Transpose a 3x3 matrix.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void dge3t(const Real * a, Real * at)
+{
+    at[0+0*3] = a[0+0*3]; at[1+0*3] = a[0+1*3]; at[2+0*3] = a[0+2*3];
+    at[0+1*3] = a[1+0*3]; at[1+1*3] = a[1+1*3]; at[2+1*3] = a[1+2*3];
+    at[0+2*3] = a[2+0*3]; at[1+2*3] = a[2+1*3]; at[2+2*3] = a[2+2*3];
+}
+
+/**
  * \brief Solve a 3x3 symmetric linear system with n right-hand sides.
 */
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -1869,6 +1898,28 @@ void dge3i(const Real * a, Real * ia)
     ia[0+0*3] = (-a23*a32+a22*a33)*id; ia[0+1*3] = ( a13*a32-a12*a33)*id; ia[0+2*3] = (-a13*a22+a12*a23)*id;
     ia[1+0*3] = ( a23*a31-a21*a33)*id; ia[1+1*3] = (-a13*a31+a11*a33)*id; ia[1+2*3] = ( a13*a21-a11*a23)*id;
     ia[2+0*3] = (-a22*a31+a21*a32)*id; ia[2+1*3] = ( a12*a31-a11*a32)*id; ia[2+2*3] = (-a12*a21+a11*a22)*id;
+}
+
+/**
+ * \brief Invert and transpose a 3x3 matrix.
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void dge3it(const Real * a, Real * ia)
+{
+    const Real a11 = a[0+0*3];
+    const Real a21 = a[1+0*3];
+    const Real a31 = a[2+0*3];
+    const Real a12 = a[0+1*3];
+    const Real a22 = a[1+1*3];
+    const Real a32 = a[2+1*3];
+    const Real a13 = a[0+2*3];
+    const Real a23 = a[1+2*3];
+    const Real a33 = a[2+2*3];
+    const Real id = 1.0/(-a13*a22*a31+a12*a23*a31+a13*a21*a32-a11*a23*a32-a12*a21*a33+a11*a22*a33);
+
+    ia[0+0*3] = (-a23*a32+a22*a33)*id; ia[1+0*3] = ( a13*a32-a12*a33)*id; ia[2+0*3] = (-a13*a22+a12*a23)*id;
+    ia[0+1*3] = ( a23*a31-a21*a33)*id; ia[1+1*3] = (-a13*a31+a11*a33)*id; ia[2+1*3] = ( a13*a21-a11*a23)*id;
+    ia[0+2*3] = (-a22*a31+a21*a32)*id; ia[1+2*3] = ( a12*a31-a11*a32)*id; ia[2+2*3] = (-a12*a21+a11*a22)*id;
 }
 
 /**

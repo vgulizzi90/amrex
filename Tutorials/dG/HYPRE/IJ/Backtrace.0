@@ -1,0 +1,52 @@
+=== If no file names and line numbers are shown below, one can run
+            addr2line -Cpfie my_exefile my_line_address
+    to convert `my_line_address` (e.g., 0x4a6b) into file name and line number.
+    Or one can use amrex/Tools/Backtrace/parse_bt.py.
+
+=== Please note that the line number reported by addr2line may not be accurate.
+    One can use
+            readelf -wl my_exefile | grep my_line_address'
+    to find out the offset for that line.
+
+ 0: ./main2d.gnu.DEBUG.TPROF.MPI.ex(+0x25c42a) [0x55e1aea8542a]
+    amrex::BLBackTrace::print_backtrace_info(_IO_FILE*) at /home/vgulizzi/RACE/Projects/2021/amrex/Tutorials/dG/HYPRE/IJ/../../../..//Src/Base/AMReX_BLBackTrace.cpp:175
+
+ 1: ./main2d.gnu.DEBUG.TPROF.MPI.ex(+0x25be4f) [0x55e1aea84e4f]
+    amrex::BLBackTrace::handler(int) at /home/vgulizzi/RACE/Projects/2021/amrex/Tutorials/dG/HYPRE/IJ/../../../..//Src/Base/AMReX_BLBackTrace.cpp:85
+
+ 2: ./main2d.gnu.DEBUG.TPROF.MPI.ex(+0xe22ae) [0x55e1ae90b2ae]
+    amrex::ParallelDescriptor::Abort(int, bool) at /home/vgulizzi/RACE/Projects/2021/amrex/Tutorials/dG/HYPRE/IJ/../../../..//Src/Base/AMReX_ParallelDescriptor.cpp:206
+
+ 3: ./main2d.gnu.DEBUG.TPROF.MPI.ex(+0x8b117) [0x55e1ae8b4117]
+    amrex::Error_host(char const*) at /home/vgulizzi/RACE/Projects/2021/amrex/Tutorials/dG/HYPRE/IJ/../../../..//Src/Base/AMReX.cpp:217
+
+ 4: ./main2d.gnu.DEBUG.TPROF.MPI.ex(+0xaf450) [0x55e1ae8d8450]
+    amrex::Error(char const*) at /home/vgulizzi/RACE/Projects/2021/amrex/Tutorials/dG/HYPRE/IJ/../../../..//Src/Base/AMReX.H:120
+ (inlined by) amrex::FileOpenFailed(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) at /home/vgulizzi/RACE/Projects/2021/amrex/Tutorials/dG/HYPRE/IJ/../../../..//Src/Base/AMReX_Utility.cpp:169
+
+ 5: ./main2d.gnu.DEBUG.TPROF.MPI.ex(+0xe58f1) [0x55e1ae90e8f1]
+    amrex::ParallelDescriptor::ReadAndBcastFile(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, amrex::Vector<char, std::allocator<char> >&, bool, ompi_communicator_t* const&) at /home/vgulizzi/RACE/Projects/2021/amrex/Tutorials/dG/HYPRE/IJ/../../../..//Src/Base/AMReX_ParallelDescriptor.cpp:1415
+
+ 6: ./main2d.gnu.DEBUG.TPROF.MPI.ex(+0x921c7) [0x55e1ae8bb1c7]
+    amrex::(anonymous namespace)::read_file(char const*, std::__cxx11::list<amrex::ParmParse::PP_entry, std::allocator<amrex::ParmParse::PP_entry> >&) at /home/vgulizzi/RACE/Projects/2021/amrex/Tutorials/dG/HYPRE/IJ/../../../..//Src/Base/AMReX_ParmParse.cpp:473 (discriminator 2)
+
+ 7: ./main2d.gnu.DEBUG.TPROF.MPI.ex(+0x9302a) [0x55e1ae8bc02a]
+    amrex::(anonymous namespace)::ppinit(int, char**, char const*, std::__cxx11::list<amrex::ParmParse::PP_entry, std::allocator<amrex::ParmParse::PP_entry> >&) at /home/vgulizzi/RACE/Projects/2021/amrex/Tutorials/dG/HYPRE/IJ/../../../..//Src/Base/AMReX_ParmParse.cpp:889
+
+ 8: ./main2d.gnu.DEBUG.TPROF.MPI.ex(+0x93ebf) [0x55e1ae8bcebf]
+    amrex::ParmParse::Initialize(int, char**, char const*) at /home/vgulizzi/RACE/Projects/2021/amrex/Tutorials/dG/HYPRE/IJ/../../../..//Src/Base/AMReX_ParmParse.cpp:1090
+
+ 9: ./main2d.gnu.DEBUG.TPROF.MPI.ex(+0x8b9fd) [0x55e1ae8b49fd]
+    amrex::Initialize(int&, char**&, bool, ompi_communicator_t*, std::function<void ()> const&, std::ostream&, std::ostream&, void (*)(char const*)) at /home/vgulizzi/RACE/Projects/2021/amrex/Tutorials/dG/HYPRE/IJ/../../../..//Src/Base/AMReX.cpp:449
+
+10: ./main2d.gnu.DEBUG.TPROF.MPI.ex(+0x17d14) [0x55e1ae840d14]
+    main at /home/vgulizzi/RACE/Projects/2021/amrex/Tutorials/dG/HYPRE/IJ/main.cpp:356
+
+11: /lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0xf3) [0x7f7bf2d0c0b3]
+
+12: ./main2d.gnu.DEBUG.TPROF.MPI.ex(+0x1678e) [0x55e1ae83f78e]
+    ?? ??:0
+
+
+===== TinyProfilers ======
+

@@ -72,6 +72,23 @@
 #define __DG_ELM_BOU_TYPE_ENTIRE__ 1
 #define __DG_ELM_BOU_TYPE_PARTIAL__ 5
 #define __DG_ELM_BOU_TYPE_PARTIAL_INVALID__ 6
+#define __DG_ELM_BOU_TYPE_POS_WALL__ 7
+#define __DG_ELM_BOU_TYPE_NEG_WALL__ 8
+
+// ELEMENT ID / COLOR
+#define __DG_ELM_ID_UNDEFINED__ -1
+
+#define __DG_CELL_NBR_INFO_N_COMP_PER_DOM__ AMREX_D_PICK(2, 4, 6)
+#define __DG_ELM_MAX_N_NBR_PER_DOM__ AMREX_D_PICK(2, 16, 64)
+#define __DG_ELM_NBR_INFO_N_COMP_PER_DOM__ (1+2*__DG_ELM_MAX_N_NBR_PER_DOM__)
+
+#define __DG_ELM_COLOR_N_COMP_PER_DOM__ 1
+#define __DG_NBR_COLOR_N_COMP_PER_DOM__ AMREX_D_PICK(2, 4, 6)
+#define __DG_ELM_COLOR_UNDEFINED__ -99999
+
+// CSR MATRIX FORMAT
+#define __DG_CSR_DOM_INFO_N_COMP_PER_DOM__ 3
+#define __DG_CSR_BOU_INFO_N_COMP_PER_DOM__ 1
 
 // DEBUG
 #define __i__ 2
@@ -676,6 +693,65 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 bool ELM_BOU_IS_VALID(const short ebtype)
 {
     return (ebtype != __DG_ELM_BOU_TYPE_PARTIAL_INVALID__);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_BOU_IS_EMPTY(const short ebtype)
+{
+    return (ebtype == __DG_ELM_BOU_TYPE_EMPTY__);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_BOU_IS_NOT_WALL(const short ebtype)
+{
+    return ((ebtype != __DG_ELM_BOU_TYPE_POS_WALL__) && (ebtype != __DG_ELM_BOU_TYPE_NEG_WALL__));
+}
+// ====================================================================
+
+
+// ELEMENT ID =========================================================
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int CELL_NBR_POS_X(const int dom, const int b)
+{
+    return (dom*__DG_CELL_NBR_INFO_N_COMP_PER_DOM__+b);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_N_NBRS(const int dom)
+{
+    return (dom*__DG_ELM_NBR_INFO_N_COMP_PER_DOM__+0);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_NBR_POS_X(const int dom, const int n)
+{
+    return (dom*__DG_ELM_NBR_INFO_N_COMP_PER_DOM__+2*n+1);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int ELM_NBR_N_DOF(const int dom, const int n)
+{
+    return (dom*__DG_ELM_NBR_INFO_N_COMP_PER_DOM__+2*n+2);
+}
+// ====================================================================
+
+
+// CSR MATRIX FORMAT ==================================================
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int CSR_DOM_INFO_POS_X(const int dom)
+{
+    return (dom*__DG_CSR_DOM_INFO_N_COMP_PER_DOM__+0);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int CSR_DOM_INFO_N_DOF(const int dom)
+{
+    return (dom*__DG_CSR_DOM_INFO_N_COMP_PER_DOM__+1);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int CSR_DOM_INFO_NNZ_OFFSET(const int dom)
+{
+    return (dom*__DG_CSR_DOM_INFO_N_COMP_PER_DOM__+2);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int CSR_BOU_INFO_NNZ_OFFSET(const int dom)
+{
+    return (dom*__DG_CSR_BOU_INFO_N_COMP_PER_DOM__);
 }
 // ====================================================================
 

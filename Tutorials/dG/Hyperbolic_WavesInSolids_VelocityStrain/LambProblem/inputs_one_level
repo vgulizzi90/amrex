@@ -1,0 +1,72 @@
+# SPACE ###############################################################
+geometry.prob_lo     = 0.0 0.0
+geometry.prob_hi     = 4000.0 3000.0
+geometry.is_periodic = 0 0 0
+#######################################################################
+
+
+
+# TIME ################################################################
+# Sample isotropic material
+time.T = 1.0 # (2D)
+
+time.n_steps = 10000
+#######################################################################
+
+
+
+# DISCRETIZATION ######################################################
+# AMR =================================================================
+amr.v = 1
+
+amr.n_cell        = 256 192
+amr.max_grid_size = 16 16
+
+amr.max_level = 0
+# =====================================================================
+
+
+# MESH ================================================================
+mesh[0].embedded_geometry_is_active = 1
+mesh[0].embedded_geometry_defined_by = projected_level_set
+mesh[0].projected_level_set_p = 1
+mesh[0].quadrature_order_projected_level_set = 2
+mesh[0].quadrature_order_regular_elements = 4
+mesh[0].quadrature_order_cut_elements = 8
+# =====================================================================
+
+
+# SOLUTION ============================================================
+solution[0].space_p = 3
+solution[0].cell_merging_is_active = 1
+solution[0].cell_merging_volume_fraction_threshold = 0.3
+solution[0].time_integration = explicit_RKdG
+solution[0].time_integration_CFL = 0.3
+solution[0].post_processing_grid_order = 4
+# =====================================================================
+#######################################################################
+
+
+
+# PROBLEM #############################################################
+# Sample isotropic material
+material_type = isotropic_wave_velocities
+material_constants = 2200.0 3200.0 1847.5
+#######################################################################
+# material_type: type of the considered material; this string determines
+#                how material_constants is read.
+# material_constants: density + elastic constants
+#######################################################################
+
+
+
+# POST-PROCESSING INFO ################################################
+wall_time = 10.0
+wall_time_units = s
+
+output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_$(material_type)_p$(solution[0].space_p)_nc$(amr.n_cell)_CFL$(solution[0].time_integration_CFL)
+plot_int = 400
+output_overwrite = 1
+
+restart = -1
+#######################################################################

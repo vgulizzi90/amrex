@@ -35,6 +35,7 @@ namespace dG
             pp.get("embedded_geometry_defined_by", this->params.embedded_geometry_defined_by);
         }
 
+        tmp_int = 0;
         pp.query("box_pruning_is_active", tmp_int);
         this->params.box_pruning_is_active = (tmp_int > 0);
 
@@ -134,12 +135,6 @@ namespace dG
             [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
             {
                 ghostbuster_fab(i,j,k) = 0;
-
-if (bx.contains(135,96,0))
-{
-Print() << "bx.contains " << i << "," << j << "," << k << "? " << ((bx.contains(135,96,0)) ? "yes" : "no") << std::endl;
-}
-
             });
             Gpu::synchronize();
         }

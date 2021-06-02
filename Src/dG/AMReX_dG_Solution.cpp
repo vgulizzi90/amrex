@@ -75,6 +75,28 @@ namespace dG
     {
         return (this->params.time_integration.compare("explicit_RKdG") == 0);
     }
+
+    /**
+     * \brief Return true if time integration is performed via a central difference.
+     *
+     * \return true if params.time_integration == "explicit_central_difference".
+     *
+    */
+    bool Solution::time_integration_is_explicit_central_difference() const
+    {
+        return (this->params.time_integration.compare("explicit_central_difference") == 0);
+    }
+
+    /**
+     * \brief Return true if time integration is performed via a Newmark method.
+     *
+     * \return true if params.time_integration == "implicit_Newmark".
+     *
+    */
+    bool Solution::time_integration_is_implicit_Newmark() const
+    {
+        return (this->params.time_integration.compare("implicit_Newmark") == 0);
+    }
     // ================================================================
 // ####################################################################
 

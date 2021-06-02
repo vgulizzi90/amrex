@@ -195,15 +195,19 @@ void eval_dXdt_explicit_RKdG(const amr::SinglePatch & amr, const Real t, const V
     // DOMAIN INTEGRAL CONTRIBUTION TO THE TIME DERIVATIVES -----------
     for (int lev = 0; lev < n_levels; ++lev)
     {
-        // FIRST-ORDER METHODS
-        if (amr.solutions[lev]->params.space_p == 0)
+        const Geometry & geom = amr.Geom(lev);
+        const Mesh & mesh = *amr.meshes[lev];
+        const Solution & solution = *amr.solutions[lev];
+
+        // FINITE VOLUME SCHEME
+        if ((solution.params.space_p == 0) && solution.params.FV_is_active)
         {
             // ...
         }
         // HIGH-ORDER METHODS
         else
         {
-            explicit_RK::add_dom_contrib_to_dXdt(t, amr.Geom(lev), *amr.meshes[lev], *amr.solutions[lev], X[lev], dXdt[lev], ibvp);
+            explicit_RK::add_dom_contrib_to_dXdt(t, geom, mesh, solution, X[lev], dXdt[lev], ibvp);
         }
     }
     // ----------------------------------------------------------------
@@ -255,19 +259,17 @@ void eval_dXdt_explicit_RKdG(const amr::SinglePatch & amr, const Real t, const V
         // DISCONTINUOUS GALERKIN SCHEME
         else
         {
-Print() << "COMPUTE BOUNDARY FLUXES: LEVEL > 0 - DISCONTINUOUS GALERKIN SCHEME" << std::endl;
-exit(-1);
-            //explicit_RK::eval_dG_dG_bou_fluxes(t,
-            //                                   c_geom, c_mesh, c_solution, c_X,
-            //                                   rr,
-            //                                   f_geom, f_mesh, f_solution, f_X,
-            //                                   FX[lev], FX_offset,
-            //                                   ibvp);
+            explicit_RK::eval_dG_dG_bou_fluxes(t,
+                                               c_geom, c_mesh, c_solution, c_X,
+                                               rr,
+                                               f_geom, f_mesh, f_solution, f_X,
+                                               FX[lev], FX_offset,
+                                               ibvp);
         }
     }
 
 #ifdef AMREX_DG_CHECK_FOR_NAN
-    // CHECK FOR NAN --------------------------------------------------
+    // CHECK FOR NAN
     for (int lev = 0; lev < n_levels; ++lev)
     {
         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
@@ -282,7 +284,6 @@ exit(-1);
             }
         }
     }
-    // ----------------------------------------------------------------
 #endif
 
     // COPY FLUXES FROM FINE TO COARSE LEVEL
@@ -294,17 +295,19 @@ exit(-1);
     // ACTUALLY ADD THE BOUNDARY INTEGRAL CONTRIBUTION
     for (int lev = 0; lev < n_levels; ++lev)
     {
+        const Geometry & geom = amr.Geom(lev);
+        const Mesh & mesh = *amr.meshes[lev];
         const Solution & solution = *amr.solutions[lev];
 
         // FINITE VOLUME SCHEME
         if ((solution.params.space_p == 0) && solution.params.FV_is_active)
         {
-            explicit_RK::add_FV_bou_contrib_to_dXdt(t, amr.Geom(lev), *amr.meshes[lev], *amr.solutions[lev], X[lev], dX[lev], FX[lev], FX_offset, dXdt[lev], ibvp);
+            explicit_RK::add_FV_bou_contrib_to_dXdt(t, geom, mesh, solution, X[lev], dX[lev], FX[lev], FX_offset, dXdt[lev], ibvp);
         }
         // DISCONTINUOUS GALERKIN SCHEME
         else
         {
-            explicit_RK::add_bou_contrib_to_dXdt(t, amr.Geom(lev), *amr.meshes[lev], *amr.solutions[lev], X[lev], FX[lev], FX_offset, dXdt[lev], ibvp);
+            explicit_RK::add_bou_contrib_to_dXdt(t, geom, mesh, solution, X[lev], FX[lev], FX_offset, dXdt[lev], ibvp);
         }
     }
     // ----------------------------------------------------------------
@@ -614,18 +617,18 @@ void take_time_step_using_explicit_RKdG(const amr::SinglePatch & amr, const Real
 template <typename IBVP>
 void take_time_step(const amr::SinglePatch & amr, const Real t, const Real dt, Vector<MultiFab> & X, const IBVP & ibvp)
 {
-    // PARAMETERS -------------------------------------------------
+    // PARAMETERS -----------------------------------------------------
     const int finest_level = amr.finestLevel();
-    // ------------------------------------------------------------
+    // ----------------------------------------------------------------
 
-    // VARIABLES --------------------------------------------------
+    // VARIABLES ------------------------------------------------------
     std::string time_integration;
-    // ------------------------------------------------------------
+    // ----------------------------------------------------------------
 
-    // TIME INTEGRATION -------------------------------------------
+    // TIME INTEGRATION -----------------------------------------------
     // At this moment, all AMR levels must use the same time
     // integration algorithm.
-    // ------------------------------------------------------------
+    // ----------------------------------------------------------------
     {
         const int lev = 0;
         const Solution & solution = *amr.solutions[lev];
@@ -645,9 +648,9 @@ void take_time_step(const amr::SinglePatch & amr, const Real t, const Real dt, V
             Abort(msg);
         }
     }
-    // ------------------------------------------------------------
+    // ----------------------------------------------------------------
 
-    // SELECT TIME INTEGRATION ALGORITHM --------------------------
+    // SELECT TIME INTEGRATION ALGORITHM ------------------------------
     {
         const int lev = 0;
         const Solution & solution = *amr.solutions[lev];
@@ -656,12 +659,442 @@ void take_time_step(const amr::SinglePatch & amr, const Real t, const Real dt, V
         {
             take_time_step_using_explicit_RKdG(amr, t, dt, X, ibvp);
         }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_AMR_Utils.H - take_time_step\n";
+            msg += "| Unexpected time integration algorithm: "+solution.params.time_integration+".\n";
+            Abort(msg);
+        }
     }
-    // ------------------------------------------------------------
+    // ----------------------------------------------------------------
 }
 // ====================================================================
 // #################################################################### 
 } // namespace hyperbolic_pde
+
+
+
+namespace hyperbolic_2nd_order_pde
+{
+// ADVANCE IN TIME ####################################################
+// TIME INCREMENT =====================================================
+/**
+ * \brief Compute the time increment.
+ *
+ * \param[in] amr: SinglePath AMR object.
+ * \param[in] t: time.
+ * \param[in] X: a vector of MultiFabs containing the solution coefficients.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ * \return the time increment.
+*/
+template <typename IBVP>
+Real eval_dt(const amr::SinglePatch & amr, const Real t, const Vector<MultiFab> & X, const IBVP & ibvp)
+{
+    const int finest_level = amr.finestLevel();
+    Real dt;
+
+    dt = std::numeric_limits<Real>::max();
+    for (int lev = 0; lev <= finest_level; ++lev)
+    {
+        const Mesh & mesh = *amr.meshes[lev];
+        const Solution & solution = *amr.solutions[lev];
+        const iMultiFab & mask = amr.masks[lev];
+        const Real dt_lev = solution.eval_dt(t, amr.Geom(lev), mesh, X[lev], mask, ibvp);
+
+        dt = amrex::min(dt, dt_lev);
+    }
+
+    return dt;
+}
+// ====================================================================
+
+
+// TAKE TIME STEP USING EXPLICIT CENTRAL DIFFERENCE ===================
+/**
+ * \brief Eval the time derivatives of the dG coefficients
+ *
+ * \param[in] amr: SinglePath AMR object.
+ * \param[in] t: time.
+ * \param[in] X: a vector of MultiFab objects containing the dG coefficients.
+ * \param[in] MCh: a vector of MultiFab objects containing the Cholesky decomposition of the pde
+ *                 mass matrices.
+ * \param[in] d2Xdt2: a vector of MultiFab objects that will contain the time derivatives of the dG coefficients.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ * \return the time increment.
+*/
+template <typename IBVP>
+void eval_d2Xdt2_explicit_central_difference(const amr::SinglePatch & amr, const Real t, const Vector<MultiFab> & MCh, const Vector<MultiFab> & X, Vector<MultiFab> & d2Xdt2, const IBVP & ibvp)
+{
+    // PARAMETERS -----------------------------------------------------
+    const int finest_level = amr.finestLevel();
+    const int n_levels = finest_level+1;
+
+    // UNKNOWN FIELDS
+    const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
+
+    // DG ORDER / FX OFFSET
+    const int largest_sp = amr.get_largest_dG_space_p();
+    const int largest_sNp = AMREX_D_TERM((1+largest_sp),*(1+largest_sp),*(1+largest_sp));
+    const int FX_offset = largest_sNp*n_unknown_fields;
+    const int FX_n_comp = 2*FX_offset;
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    Vector<Array<MultiFab, AMREX_SPACEDIM>> FX(n_levels);
+    // ----------------------------------------------------------------
+
+    // INITIALIZE FLUX MULTIFABS --------------------------------------
+    // FLUXES
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        const BoxArray ba = X[lev].boxarray;
+#if (AMREX_SPACEDIM == 1)
+        const BoxArray fc_ba[1] = {convert(ba, IntVect(1))};
+#endif
+#if (AMREX_SPACEDIM == 2)
+        const BoxArray fc_ba[2] = {convert(ba, IntVect(1,0)),
+                                   convert(ba, IntVect(0,1))};
+#endif
+#if (AMREX_SPACEDIM == 3)
+        const BoxArray fc_ba[3] = {convert(ba, IntVect(1,0,0)),
+                                   convert(ba, IntVect(0,1,0)),
+                                   convert(ba, IntVect(0,0,1))};
+#endif
+        for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+        {
+            FX[lev][dir].define(fc_ba[dir], X[lev].distributionMap, FX_n_comp, 0);
+            FX[lev][dir] = 0.0;
+        }
+    }
+
+    // TIME DERIVATIVES
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        d2Xdt2[lev] = 0.0;
+    }
+    // ----------------------------------------------------------------
+
+    // DOMAIN INTEGRAL CONTRIBUTION TO THE TIME DERIVATIVES -----------
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        const Geometry & geom = amr.Geom(lev);
+        const Mesh & mesh = *amr.meshes[lev];
+        const Solution & solution = *amr.solutions[lev];
+
+        explicit_central_difference::add_dom_contrib_to_dXdt(t, geom, mesh, solution, X[lev], d2Xdt2[lev], ibvp);
+    }
+    // ----------------------------------------------------------------
+
+    // BOUNDARY INTEGRAL CONTRIBUTION TO THE TIME DERIVATIVES ---------
+    // COMPUTE BOUNDARY FLUXES: LEVEL 0
+    {
+        const int lev = 0;
+        const Geometry & geom = amr.Geom(lev);
+        const Mesh & mesh = *amr.meshes[lev];
+        const Solution & solution = *amr.solutions[lev];
+        
+        explicit_central_difference::eval_bou_fluxes(t, geom, mesh, solution, X[lev], FX[lev], FX_offset, ibvp);
+    }
+
+    // COMPUTE BOUNDARY FLUXES: LEVEL > 0
+    for (int lev = 1; lev < n_levels; ++lev)
+    {
+        //const Geometry & c_geom = amr.Geom(lev-1);
+        //const Mesh & c_mesh = *amr.meshes[lev-1];
+        //const Solution & c_solution = *amr.solutions[lev-1];
+        //const MultiFab & c_X = X[lev-1];
+        //const IntVect rr = amr.refRatio(lev-1);
+        //const Geometry & f_geom = amr.Geom(lev);
+        //const Mesh & f_mesh = *amr.meshes[lev];
+        //const Solution & f_solution = *amr.solutions[lev];
+        //const MultiFab & f_X = X[lev];
+        
+Print() << "COMPUTE BOUNDARY FLUXES: LEVEL > 0" << std::endl;
+exit(-1);
+    }
+
+#ifdef AMREX_DG_CHECK_FOR_NAN
+    // CHECK FOR NAN
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+        {
+            if (FX[lev][dir].contains_nan())
+            {
+                std::string msg;
+                msg  = "\n";
+                msg += "ERROR: AMReX_dG_AMR_Utils.H - eval_d2Xdt2_explicit_central_difference\n";
+                msg += "| Fluxes in direction "+std::to_string(dir)+" contains nans at level "+std::to_string(lev)+".\n";
+                Abort(msg);
+            }
+        }
+    }
+#endif
+
+    // COPY FLUXES FROM FINE TO COARSE LEVEL
+    for (int lev = (n_levels-1); lev > 0; --lev)
+    {
+        average_down_faces(GetArrOfConstPtrs(FX[lev]), GetArrOfPtrs(FX[lev-1]), amr.refRatio(lev-1), amr.Geom(lev-1));
+    }
+
+    // ACTUALLY ADD THE BOUNDARY INTEGRAL CONTRIBUTION
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        const Geometry & geom = amr.Geom(lev);
+        const Mesh & mesh = *amr.meshes[lev];
+        const Solution & solution = *amr.solutions[lev];
+
+        explicit_central_difference::add_bou_contrib_to_dXdt(t, geom, mesh, solution, X[lev], FX[lev], FX_offset, d2Xdt2[lev], ibvp);
+    }
+    // ----------------------------------------------------------------
+
+    // EXTENDED ELEMENTS AND MULTIPLICATION BY INVERSE MASS MATRIX ----
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        const Geometry & geom = amr.Geom(lev);
+        Solution & solution = *amr.solutions[lev];
+        
+        solution.add_small_elements_contribution(geom, d2Xdt2[lev], ibvp);
+        solution.multiply_by_inverse_pde_mass_matrix(geom, MCh[lev], d2Xdt2[lev], ibvp);
+    }
+    // ----------------------------------------------------------------
+}
+
+/**
+ * \brief Advance in time using explicit central-difference algorithm.
+ *
+ * \param[in] amr: SinglePath AMR object.
+ * \param[in] t: time.
+ * \param[in] dt: time increment.
+ * \param[in] MCh: a vector of MultiFab objects containing the Cholesky decomposition of the pde
+ *                 mass matrices.
+ * \param[inout] X_prev: a vector of MultiFabs that will contain X_new.
+ * \param[inout] X_new: a vector of MultiFabs that will contain the updated solution coefficients.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ * \return the time increment.
+*/
+template <typename IBVP>
+void take_time_step_using_explicit_central_difference(const amr::SinglePatch & amr, const Real t, const Real dt,
+                                                      const Vector<MultiFab> & MCh, Vector<MultiFab> & X_prev, Vector<MultiFab> & X_new,
+                                                      const IBVP & ibvp)
+{
+    // PARAMETERS -----------------------------------------------------
+    const int finest_level = amr.finestLevel();
+    const int n_levels = finest_level+1;
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    Vector<MultiFab> X_old(n_levels), d2Xdt2(n_levels);
+    // ----------------------------------------------------------------
+
+    // INIT MULTIFABS AND SWAP NEW AND OLD ----------------------------
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        d2Xdt2[lev].define(X_new[lev].boxarray, X_new[lev].distributionMap, X_new[lev].n_comp, X_new[lev].n_grow);
+
+        X_old[lev].define(X_new[lev].boxarray, X_new[lev].distributionMap, X_new[lev].n_comp, X_new[lev].n_grow);
+        std::swap(X_old[lev], X_new[lev]);
+    }
+    // ----------------------------------------------------------------
+
+    // APPLY CENTRAL DIFFERENCE IN TIME -------------------------------
+    eval_d2Xdt2_explicit_central_difference(amr, t, MCh, X_old, d2Xdt2, ibvp);
+
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        // X_new := 2*X_old-X_prev+dt*dt*d2Xdt2
+        MultiFab::LinComb(X_new[lev], 2.0, X_old[lev], 0, -1.0, X_prev[lev], 0, 0, X_new[lev].n_comp, X_new[lev].n_grow);
+        MultiFab::Saxpy(X_new[lev], dt*dt, d2Xdt2[lev], 0, 0, X_new[lev].n_comp, X_new[lev].n_grow);
+        amr.solutions[lev]->copy_solution_to_small_elements(amr.Geom(lev), X_new[lev], ibvp);
+        
+        // X_prev := X_old
+        std::swap(X_prev[lev], X_old[lev]);
+    }
+    // ----------------------------------------------------------------
+}
+// ====================================================================
+
+
+// TAKE TIME STEP USING IMPLICIT NEWMARK ==============================
+/**
+ * \brief Eval the Jacobian for the implicit Newmark algorithm.
+ *
+ * \param[in] amr: SinglePath AMR object.
+ * \param[in] t: time.
+ * \param[in] dt: time increment.
+ * \param[in] X_new: a vector of MultiFabs that will contain the updated dG coefficients.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ * \return the time increment.
+*/
+template <typename IBVP>
+void eval_Jacobian_implicit_Newmark(const amr::SinglePatch & amr, const Real t, const Real dt,
+                                    const Vector<MultiFab> & X,
+                                    const IBVP & ibvp)
+{
+
+}
+
+/**
+ * \brief Advance in time using the implicit Newmark algorithm.
+ *
+ * \param[in] amr: SinglePath AMR object.
+ * \param[in] t: time.
+ * \param[in] dt: time increment.
+ * \param[in] MCh: a vector of MultiFab objects containing the Cholesky decomposition of the pde
+ *                 mass matrices.
+ * \param[inout] X_new: a vector of MultiFabs that will contain the updated dG coefficients.
+ * \param[inout] Xd_new: a vector of MultiFabs that will contain the updated dG coefficients'
+ *                       time derivatives.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ * \return the time increment.
+*/
+template <typename IBVP>
+void take_time_step_using_implicit_Newmark(const amr::SinglePatch & amr, const Real t, const Real dt,
+                                           const Vector<MultiFab> & MCh, Vector<MultiFab> & X_new, Vector<MultiFab> & Xd_new,
+                                           const IBVP & ibvp)
+{
+    // NOTE -----------------------------------------------------------
+    // We are solving a time dependent equation of the form:
+    // 
+    // M*X_{,tt} = F(t,X)
+    //
+    // using the implicit Newmark scheme. To do so, we solve implicitly
+    // the following equation
+    //
+    // R(X) := M*X-M*(X_old+dt*Xd)-(1/2-beta)*dt^2*F(X_old)-beta*dt^2*F(X)
+    //
+    // Using the Jacobian matrix
+    //
+    // J(X) := M-beta*dt^2*F_{,X}
+    //
+    // Once the solution is obtained, we update Xd using
+    //
+    // Xd := Xd_old+M^{-1}*((1-gamma)*dt*F(X_old)+gamma*dt*F(X))
+    //
+    // ----------------------------------------------------------------
+
+    // PARAMETERS -----------------------------------------------------
+    const int finest_level = amr.finestLevel();
+    const int n_levels = finest_level+1;
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    Vector<MultiFab> X_old(n_levels), Xd_old(n_levels);
+    // ----------------------------------------------------------------
+
+    // INIT MULTIFABS AND SWAP NEW AND OLD ----------------------------
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        std::swap(X_old[lev], X_new[lev]);
+        std::swap(Xd_old[lev], Xd_new[lev]);
+    }
+    // ----------------------------------------------------------------
+
+    // EVALUATE JACOBIAN IF IT HAS NEVER BEEN EVALUATED ---------------
+    if (amr.linear_direct_solver_first_call())
+    {
+        eval_Jacobian_implicit_Newmark(amr, t, dt, X_old, ibvp);
+    }
+    // ----------------------------------------------------------------
+    
+    // EVALUATE CONSTANT TERM -----------------------------------------
+    // ----------------------------------------------------------------
+
+Print() << "take_time_step_using_implicit_Newmark" << std::endl;
+exit(-1);
+}
+// ====================================================================
+
+
+// TAKE TIME STEP (GENERAL) ===========================================
+/**
+ * \brief Advance in time.
+ *
+ * \param[in] amr: SinglePath AMR object.
+ * \param[in] t: time.
+ * \param[in] dt: time increment.
+ * \param[in] MCh: a vector of MultiFab objects containing the Cholesky decomposition of the pde
+ *                 mass matrices.
+ * \param[inout] X1: a vector of MultiFabs that will contain the updated solution according to the
+ *                   selected time integration scheme.
+ * \param[inout] X2: a vector of MultiFabs that will contain the updated solution according to the
+ *                   selected time integration scheme.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ * \return the time increment.
+*/
+template <typename IBVP>
+void take_time_step(const amr::SinglePatch & amr, const Real t, const Real dt,
+                    const Vector<MultiFab> & MCh, Vector<MultiFab> & X1, Vector<MultiFab> & X2,
+                    const IBVP & ibvp)
+{
+    // PARAMETERS -----------------------------------------------------
+    const int finest_level = amr.finestLevel();
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    std::string time_integration;
+    // ----------------------------------------------------------------
+
+    // TIME INTEGRATION -----------------------------------------------
+    // At this moment, all AMR levels must use the same time
+    // integration algorithm.
+    // ----------------------------------------------------------------
+    {
+        const int lev = 0;
+        const Solution & solution = *amr.solutions[lev];
+
+        time_integration = solution.params.time_integration;
+    }
+    for (int lev = 1; lev <= finest_level; ++lev)
+    {
+        const Solution & solution = *amr.solutions[lev];
+
+        if (time_integration.compare(solution.params.time_integration) != 0)
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_AMR_Utils.H - take_time_step\n";
+            msg += "| At this moment all AMR levels must use the same time integration algorithm.\n";
+            Abort(msg);
+        }
+    }
+    // ----------------------------------------------------------------
+
+    // SELECT TIME INTEGRATION ALGORITHM ------------------------------
+    {
+        const int lev = 0;
+        const Solution & solution = *amr.solutions[lev];
+
+        if (solution.time_integration_is_explicit_central_difference())
+        {
+            take_time_step_using_explicit_central_difference(amr, t, dt, MCh, X1, X2, ibvp);
+        }
+        else if (solution.time_integration_is_implicit_Newmark())
+        {
+            take_time_step_using_implicit_Newmark(amr, t, dt, MCh, X1, X2, ibvp);
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_AMR_Utils.H - take_time_step\n";
+            msg += "| Unexpected time integration algorithm: "+solution.params.time_integration+".\n";
+            Abort(msg);
+        }
+    }
+    // ----------------------------------------------------------------
+}
+// ====================================================================
+// #################################################################### 
+} // hyperbolic_2nd_order_pde
 
 } // namespace dG
 } // namespace amrex
