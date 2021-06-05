@@ -61,7 +61,7 @@ void main_main()
     amr.init();
     if (amr.solutions[0]->time_integration_is_implicit_Newmark())
     {
-        amr.init_linear_solver(amr.ibvp);
+        amr.init_linear_solver();
     }
 
     // RESTART INFO
@@ -126,7 +126,7 @@ void main_main()
             time_keeper.tic();
 
             // COMPUTE TIME INCREMENT
-            dt = amr.eval_dt(t);
+            dt = amr.eval_dt(t); dt = 0.01;
             dt = amrex::min(t+dt, amr.inputs.time.T)-t;
 
             // TAKE TIME STEP
@@ -166,6 +166,14 @@ void main_main()
         }
     }
     amrex::Print() << "# END OF THE ANALYSIS" << std::endl;
+    // ================================================================
+
+
+    // RELEASE LINEAR SOLVER MEMORY ===================================
+    if (amr.solutions[0]->time_integration_is_implicit_Newmark())
+    {
+        amr.terminate_linear_solver();
+    }
     // ================================================================
 
 

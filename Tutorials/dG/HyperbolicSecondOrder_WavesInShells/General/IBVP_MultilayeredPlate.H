@@ -40,8 +40,10 @@
 
 #define C66 20
 
+/*
 #define INSERT_HOLE
-#define HOLE_RADIUS 0.3
+#define HOLE_RADIUS 0.11
+*/
 // ####################################################################
 
 
@@ -351,6 +353,8 @@ struct IBVP
             
             this->muD = this->mu0*ws2/h;
             this->muI = this->mu0*ws2/h;
+            this->muD = 10.0;
+            this->muI = 10.0;
 
             /* DEBUG */
             amrex::Print() << "Max wave speed: " << this->max_wave_speed << std::endl;
@@ -1496,6 +1500,53 @@ exit(-1);
         }
         */
     }
+
+    /**
+     * \brief Eval the gradients of diffusive/reactive terms for the considered IBVP.
+     *
+     * \param[in] dom: index of the domain.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[in] U_1, U_2, U_3: pointer to memory containing the derivatives of the conserved
+     *            variables.
+     * \param[out] dDidU_j: pointer to memory that will contain the derivative of the diffusive term
+     *                      Di with respect to U_j.
+     * \param[out] dDidU: pointer to memory that will contain the derivative of the diffusive term Di
+     *                    with respect to U.
+     * \param[out] dRdU_j: pointer to memory that will contain the derivative of the reactive term R
+     *                     with respect to U_j.
+     * \param[out] dRdU: pointer to memory that will contain the derivative of the reactive term R
+     *                   with respect to U.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_dDRdU(const int /*dom*/,
+                    const amrex::Real /*t*/, const amrex::Real * x,
+                    const amrex::Real * /*U*/, AMREX_D_DECL(const amrex::Real * /*U_1*/, const amrex::Real * /*U_2*/, const amrex::Real * /*U_3*/),
+                    amrex::Real * dD1dU_1, amrex::Real * dD1dU_2, amrex::Real * dD2dU_1, amrex::Real * dD2dU_2, amrex::Real * dD1dU, amrex::Real * dD2dU,
+                    amrex::Real * dRdU_1, amrex::Real * dRdU_2, amrex::Real * dRdU) const
+    {
+        amrex::Real Q11[SHELL_NU*SHELL_NU], Q22[SHELL_NU*SHELL_NU], Q12[SHELL_NU*SHELL_NU], R1[SHELL_NU*SHELL_NU], R2[SHELL_NU*SHELL_NU], S[SHELL_NU*SHELL_NU];
+        
+        this->shell_theory_eval_stiffness_matrices(x, Q11, Q22, Q12, R1, R2, S);
+
+        for (int v = 0; v < SHELL_NU; ++v)
+        for (int u = 0; u < SHELL_NU; ++u)
+        {
+            dD1dU_1[u+v*SHELL_NU] = Q11[u+v*SHELL_NU];
+            dD1dU_2[u+v*SHELL_NU] = Q12[u+v*SHELL_NU];
+            dD2dU_1[u+v*SHELL_NU] = Q12[v+u*SHELL_NU];
+            dD2dU_2[u+v*SHELL_NU] = Q22[u+v*SHELL_NU];
+
+            dD1dU[u+v*SHELL_NU] = R1[u+v*SHELL_NU];
+            dD2dU[u+v*SHELL_NU] = R2[u+v*SHELL_NU];
+
+            dRdU_1[u+v*SHELL_NU] = R1[v+u*SHELL_NU];
+            dRdU_2[u+v*SHELL_NU] = R2[v+u*SHELL_NU];
+
+            dRdU[u+v*SHELL_NU] = S[u+v*SHELL_NU];
+        }
+    }
     // ================================================================
 
 
@@ -1649,6 +1700,282 @@ exit(-1);
     }
 
     /**
+     * \brief Eval the numerical flux at the intraphase boundary.
+     *
+     * \param[in] dom: index of the domain.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] U: pointer to memory containing the conserved variables on the negative side of the
+     *               unit normal.
+     * \param[in] U_1, U_2, U_3: pointer to memory containing the derivatives of the conserved
+     *                           variables on the negative side of the unit normal.
+     * \param[in] Up: pointer to memory containing the conserved variables on the positive side of the
+     *                unit normal.
+     * \param[in] Up_1, Up_2, Up_3: pointer to memory containing the derivatives of the conserved
+     *                              variables on the positive side of the unit normal.
+     * \param[out] ND1, ND2, ND3: pointer to memory that will contain the numerical fluxes.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_NF_intraphase(const int /*dom*/,
+                            const amrex::Real /*t*/, const amrex::Real * x, const amrex::Real * un,
+                            const amrex::Real * U, AMREX_D_DECL(const amrex::Real * U_1, const amrex::Real * U_2, const amrex::Real * U_3),
+                            const amrex::Real * Up, AMREX_D_DECL(const amrex::Real * Up_1, const amrex::Real * Up_2, const amrex::Real * Up_3),
+                            AMREX_D_DECL(amrex::Real * ND1, amrex::Real * ND2, amrex::Real * ND3), amrex::Real * NFn) const
+    {
+        // PARAMETERS
+        const amrex::Real mu = this->muI;
+
+        // VARIABLES
+        amrex::Real dU[SHELL_NU];
+        amrex::Real T[SHELL_NU];
+        amrex::Real Q11[SHELL_NU*SHELL_NU], Q22[SHELL_NU*SHELL_NU], Q12[SHELL_NU*SHELL_NU], R1[SHELL_NU*SHELL_NU], R2[SHELL_NU*SHELL_NU], S[SHELL_NU*SHELL_NU];
+
+        // GENERALIZED STIFFNESS MATRICES
+        this->shell_theory_eval_stiffness_matrices(x, Q11, Q22, Q12, R1, R2, S);
+
+        // GENERALIZED DISPLACEMENT JUMP
+        for (int u = 0; u < SHELL_NU; ++u)
+        {
+            dU[u] = U[u]-Up[u];
+        }
+
+        if (std::abs(un[0]) > 0.5)
+        {
+            // GENERALIZED TRACTIONS AVERAGE
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[0], Q11, SHELL_NU, U_1, 1, 0.0, T, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[0], Q12, SHELL_NU, U_2, 1, 1.0, T, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[0], R1, SHELL_NU, U, 1, 1.0, T, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[0], Q11, SHELL_NU, Up_1, 1, 1.0, T, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[0], Q12, SHELL_NU, Up_2, 1, 1.0, T, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[0], R1, SHELL_NU, Up, 1, 1.0, T, 1);
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                T[u] *= 0.5;
+            }
+
+            // -
+            amrex::dG::linalg::dgemv('T', SHELL_NU, SHELL_NU, 0.5*un[0], R1, SHELL_NU, dU, 1, 0.0, NFn, 1);
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                NFn[u] += -mu*dU[u]+T[u];
+            }
+
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, 0.5*un[0], Q11, SHELL_NU, dU, 1, 0.0, ND1, 1);
+            amrex::dG::linalg::dgemv('T', SHELL_NU, SHELL_NU, 0.5*un[0], Q12, SHELL_NU, dU, 1, 0.0, ND2, 1);
+        }
+        else
+        {
+            // GENERALIZED TRACTIONS AVERAGE
+            amrex::dG::linalg::dgemv('T', SHELL_NU, SHELL_NU, un[1], Q12, SHELL_NU, U_1, 1, 0.0, T, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[1], Q22, SHELL_NU, U_2, 1, 1.0, T, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[1], R2, SHELL_NU, U, 1, 1.0, T, 1);
+            amrex::dG::linalg::dgemv('T', SHELL_NU, SHELL_NU, un[1], Q12, SHELL_NU, Up_1, 1, 1.0, T, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[1], Q22, SHELL_NU, Up_2, 1, 1.0, T, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[1], R2, SHELL_NU, Up, 1, 1.0, T, 1);
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                T[u] *= 0.5;
+            }
+
+            // -
+            amrex::dG::linalg::dgemv('T', SHELL_NU, SHELL_NU, 0.5*un[1], R2, SHELL_NU, dU, 1, 0.0, NFn, 1);
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                NFn[u] += -mu*dU[u]+T[u];
+            }
+
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, 0.5*un[1], Q12, SHELL_NU, dU, 1, 0.0, ND1, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, 0.5*un[1], Q22, SHELL_NU, dU, 1, 0.0, ND2, 1);
+        }
+
+        /* DEBUG
+        amrex::Print() << "Q11: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q11);
+        amrex::Print() << "Q22: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q22);
+        amrex::Print() << "Q12: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q12);
+        amrex::Print() << "R1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, R1);
+        amrex::Print() << "R2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, R2);
+        amrex::Print() << "S: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, S);
+
+        amrex::Print() << "U: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U);
+        amrex::Print() << "U_1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U_1);
+        amrex::Print() << "U_2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U_2);
+
+        amrex::Print() << "Up: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, Up);
+        amrex::Print() << "Up_1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, Up_1);
+        amrex::Print() << "Up_2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, Up_2);
+        
+        amrex::Print() << "T: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, T);
+        exit(-1);
+        */
+    }
+    
+    /**
+     * \brief Eval the gradient of the numerical flux at the intraphase boundary.
+     *
+     * \param[in] dom: index of the domain.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] U: pointer to memory containing the conserved variables on the negative side of the
+     *               unit normal.
+     * \param[in] U_1, U_2, U_3: pointer to memory containing the derivatives of the conserved
+     *                           variables on the negative side of the unit normal.
+     * \param[in] Up: pointer to memory containing the conserved variables on the positive side of the
+     *                unit normal.
+     * \param[in] Up_1, Up_2, Up_3: pointer to memory containing the derivatives of the conserved
+     *                              variables on the positive side of the unit normal.
+     * \param[out] dNDidU: pointer to memory that will contain the derivative of the numerical flux
+     *                     NDi with respect to m_U.
+     * \param[out] dNDidUp: pointer to memory that will contain the derivative of the numerical flux
+     *                      NDi with respect to p_U.
+     * \param[out] dNFndU_j: pointer to memory that will contain the derivative of the numerical flux
+     *                       NFn with respect to U_j.
+     * \param[out] dNFndU: pointer to memory that will contain the derivative of the numerical flux
+     *                     NFn with respect to U.
+     * \param[out] dNFndUp_j: pointer to memory that will contain the derivative of the numerical flux
+     *                        NFn with respect to Up_j.
+     * \param[out] dNFndUp: pointer to memory that will contain the derivative of the numerical flux
+     *                      NFn with respect to Up.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_dNFdU_intraphase(const int /*dom*/,
+                               const amrex::Real /*t*/, const amrex::Real * x, const amrex::Real * un,
+                               const amrex::Real * /*U*/, AMREX_D_DECL(const amrex::Real * /*U_1*/, const amrex::Real * /*U_2*/, const amrex::Real * /*U_3*/),
+                               const amrex::Real * /*Up*/, AMREX_D_DECL(const amrex::Real * /*Up_1*/, const amrex::Real * /*Up_2*/, const amrex::Real * /*Up_3*/),
+                               AMREX_D_DECL(amrex::Real * dND1dU, amrex::Real * dND2dU, amrex::Real * dND3dU),
+                               AMREX_D_DECL(amrex::Real * dND1dUp, amrex::Real * dND2dUp, amrex::Real * dND3dUp),
+                               AMREX_D_DECL(amrex::Real * dNFndU_1, amrex::Real * dNFndU_2, amrex::Real * dNFndU_3),
+                               amrex::Real * dNFndU,
+                               AMREX_D_DECL(amrex::Real * dNFndUp_1, amrex::Real * dNFndUp_2, amrex::Real * dNFndUp_3),
+                               amrex::Real * dNFndUp) const
+    {
+        // PARAMETERS
+        const amrex::Real mu = this->muI;
+
+        // VARIABLES
+        amrex::Real Q11[SHELL_NU*SHELL_NU], Q22[SHELL_NU*SHELL_NU], Q12[SHELL_NU*SHELL_NU], R1[SHELL_NU*SHELL_NU], R2[SHELL_NU*SHELL_NU], S[SHELL_NU*SHELL_NU];
+
+        // GENERALIZED STIFFNESS MATRICES
+        this->shell_theory_eval_stiffness_matrices(x, Q11, Q22, Q12, R1, R2, S);
+
+        if (std::abs(un[0]) > 0.5)
+        {
+            for (int v = 0; v < SHELL_NU; ++v)
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                // U
+                dND1dU[u+v*SHELL_NU] = 0.5*Q11[u+v*SHELL_NU]*un[0];
+                dND2dU[u+v*SHELL_NU] = 0.5*Q12[v+u*SHELL_NU]*un[0];
+
+                dNFndU_1[u+v*SHELL_NU] = 0.5*Q11[u+v*SHELL_NU]*un[0];
+                dNFndU_2[u+v*SHELL_NU] = 0.5*Q12[u+v*SHELL_NU]*un[0];
+
+                dNFndU[u+v*SHELL_NU]  = 0.5*R1[u+v*SHELL_NU]*un[0];
+                dNFndU[u+v*SHELL_NU] += 0.5*R1[v+u*SHELL_NU]*un[0];
+
+                // U'
+                dND1dUp[u+v*SHELL_NU] = -0.5*Q11[u+v*SHELL_NU]*un[0];
+                dND2dUp[u+v*SHELL_NU] = -0.5*Q12[v+u*SHELL_NU]*un[0];
+
+                dNFndUp_1[u+v*SHELL_NU] = 0.5*Q11[u+v*SHELL_NU]*un[0];
+                dNFndUp_2[u+v*SHELL_NU] = 0.5*Q12[u+v*SHELL_NU]*un[0];
+
+                dNFndUp[u+v*SHELL_NU]  = 0.5*R1[u+v*SHELL_NU]*un[0];
+                dNFndUp[u+v*SHELL_NU] -= 0.5*R1[v+u*SHELL_NU]*un[0];
+            }
+
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                // U
+                dNFndU[u+u*SHELL_NU] -= mu;
+
+                // U'
+                dNFndUp[u+u*SHELL_NU] += mu;
+            }
+        }
+        else
+        {
+            for (int v = 0; v < SHELL_NU; ++v)
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                // U
+                dND1dU[u+v*SHELL_NU] = 0.5*Q12[u+v*SHELL_NU]*un[1];
+                dND2dU[u+v*SHELL_NU] = 0.5*Q22[u+v*SHELL_NU]*un[1];
+
+                dNFndU_1[u+v*SHELL_NU] = 0.5*Q12[v+u*SHELL_NU]*un[1];
+                dNFndU_2[u+v*SHELL_NU] = 0.5*Q22[u+v*SHELL_NU]*un[1];
+
+                dNFndU[u+v*SHELL_NU]  = 0.5*R2[u+v*SHELL_NU]*un[1];
+                dNFndU[u+v*SHELL_NU] += 0.5*R2[v+u*SHELL_NU]*un[1];
+
+                // U'
+                dND1dUp[u+v*SHELL_NU] = -0.5*Q12[u+v*SHELL_NU]*un[1];
+                dND2dUp[u+v*SHELL_NU] = -0.5*Q22[u+v*SHELL_NU]*un[1];
+
+                dNFndUp_1[u+v*SHELL_NU] = 0.5*Q12[v+u*SHELL_NU]*un[1];
+                dNFndUp_2[u+v*SHELL_NU] = 0.5*Q22[u+v*SHELL_NU]*un[1];
+
+                dNFndUp[u+v*SHELL_NU]  = 0.5*R2[u+v*SHELL_NU]*un[1];
+                dNFndUp[u+v*SHELL_NU] -= 0.5*R2[v+u*SHELL_NU]*un[1];
+            }
+
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                // U
+                dNFndU[u+u*SHELL_NU] -= mu;
+
+                // U'
+                dNFndUp[u+u*SHELL_NU] += mu;
+            }
+        }
+
+        /* DEBUG
+        amrex::Print() << "Q11: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q11);
+        amrex::Print() << "Q22: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q22);
+        amrex::Print() << "Q12: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q12);
+        amrex::Print() << "R1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, R1);
+        amrex::Print() << "R2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, R2);
+        amrex::Print() << "S: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, S);
+
+        amrex::Print() << "U: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U);
+        amrex::Print() << "U_1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U_1);
+        amrex::Print() << "U_2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U_2);
+
+        amrex::Print() << "Up: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, Up);
+        amrex::Print() << "Up_1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, Up_1);
+        amrex::Print() << "Up_2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, Up_2);
+        exit(-1);
+        */
+    }
+
+    /**
      * \brief Eval the numerical flux at a grid's boundary.
      *
      * \param[in] dom: index of the domain.
@@ -1679,9 +2006,9 @@ exit(-1);
         // GENERALIZED STIFFNESS MATRICES
         this->shell_theory_eval_stiffness_matrices(x, Q11, Q22, Q12, R1, R2, S);
 
-        // SIMPLY SUPPORTED BCS
         if (std::abs(un[0]) > 0.5)
         {
+            // SIMPLY SUPPORTED BCS
             amrex::Real cU[3] = {0.0, 1.0, 1.0};
 
             // GENERALIZED DISPLACEMENT JUMP
@@ -1710,6 +2037,7 @@ exit(-1);
         }
         else
         {
+            // SIMPLY SUPPORTED BCS
             amrex::Real cU[3] = {1.0, 0.0, 1.0};
 
             // GENERALIZED DISPLACEMENT JUMP
@@ -1770,6 +2098,115 @@ exit(-1);
         amrex::dG::io::print_real_array_2d(SHELL_NU, 1, ND1);
         amrex::Print() << "ND2: " << std::endl;
         amrex::dG::io::print_real_array_2d(SHELL_NU, 1, ND2);
+        exit(-1);
+        */
+    }
+
+    /**
+     * \brief Eval the gradient of the numerical flux at a grid's boundary.
+     *
+     * \param[in] dom: index of the domain.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[in] U_1, U_2, U_3: pointer to memory containing the derivatives of the conserved
+     *            variables.
+     * \param[out] dNDidU: pointer to memory that will contain the derivative of the numerical flux
+     *                     NDi with respect to U.
+     * \param[out] dNFndU_j: pointer to memory that will contain the derivative of the numerical flux
+     *                       NFn with respect to U_j.
+     * \param[out] dNFndU: pointer to memory that will contain the derivative of the numerical flux
+     *                     NFn with respect to U.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_dNFdU_BCs(const int /*dom*/,
+                        const amrex::Real /*t*/, const amrex::Real * x, const amrex::Real * un,
+                        const amrex::Real * /*U*/, AMREX_D_DECL(const amrex::Real * /*U_1*/, const amrex::Real * /*U_2*/, const amrex::Real * /*U_3*/),
+                        AMREX_D_DECL(amrex::Real * dND1dU, amrex::Real * dND2dU, amrex::Real * dND3dU), 
+                        AMREX_D_DECL(amrex::Real * dNFndU_1, amrex::Real * dNFndU_2, amrex::Real * dNFndU_3),
+                        amrex::Real * dNFndU) const
+    {
+        // PARAMETERS
+        const amrex::Real mu = this->muD;
+
+        // VARIABLES
+        amrex::Real Q11[SHELL_NU*SHELL_NU], Q22[SHELL_NU*SHELL_NU], Q12[SHELL_NU*SHELL_NU], R1[SHELL_NU*SHELL_NU], R2[SHELL_NU*SHELL_NU], S[SHELL_NU*SHELL_NU];
+
+        // GENERALIZED STIFFNESS MATRICES
+        this->shell_theory_eval_stiffness_matrices(x, Q11, Q22, Q12, R1, R2, S);
+
+        if (std::abs(un[0]) > 0.5)
+        {
+            // SIMPLY SUPPORTED BCS
+            amrex::Real cU[3] = {0.0, 1.0, 1.0};
+
+            for (int v = 0; v < SHELL_NU; ++v)
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                dND1dU[u+v*SHELL_NU] = Q11[u+v*SHELL_NU]*cU[v%3]*un[0];
+                dND2dU[u+v*SHELL_NU] = Q12[v+u*SHELL_NU]*cU[v%3]*un[0];
+
+                dNFndU_1[u+v*SHELL_NU] = cU[u%3]*Q11[u+v*SHELL_NU]*un[0];
+                dNFndU_2[u+v*SHELL_NU] = cU[u%3]*Q12[u+v*SHELL_NU]*un[0];
+
+                dNFndU[u+v*SHELL_NU]  = cU[u%3]*R1[u+v*SHELL_NU]*un[0];
+                dNFndU[u+v*SHELL_NU] += R1[v+u*SHELL_NU]*cU[v%3]*un[0];
+            }
+
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                dNFndU[u+u*SHELL_NU] -= cU[u%3]*mu;
+            }
+        }
+        else
+        {
+            // SIMPLY SUPPORTED BCS
+            amrex::Real cU[3] = {1.0, 0.0, 1.0};
+
+            for (int v = 0; v < SHELL_NU; ++v)
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                dND1dU[u+v*SHELL_NU] = Q12[u+v*SHELL_NU]*cU[v%3]*un[1];
+                dND2dU[u+v*SHELL_NU] = Q22[u+v*SHELL_NU]*cU[v%3]*un[1];
+
+                dNFndU_1[u+v*SHELL_NU] = cU[u%3]*Q12[v+u*SHELL_NU]*un[1];
+                dNFndU_2[u+v*SHELL_NU] = cU[u%3]*Q22[u+v*SHELL_NU]*un[1];
+
+                dNFndU[u+v*SHELL_NU]  = cU[u%3]*R2[u+v*SHELL_NU]*un[1];
+                dNFndU[u+v*SHELL_NU] += R2[v+u*SHELL_NU]*cU[v%3]*un[1];
+            }
+
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                dNFndU[u+u*SHELL_NU] -= cU[u%3]*mu;
+            }
+        }
+
+        /* DEBUG
+        amrex::Print() << "un: " << std::endl;
+        amrex::dG::io::print_real_array_2d(1, AMREX_SPACEDIM, un);
+        
+        amrex::Print() << "Q11: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q11);
+        amrex::Print() << "Q22: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q22);
+        amrex::Print() << "Q12: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q12);
+        amrex::Print() << "R1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, R1);
+        amrex::Print() << "R2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, R2);
+        
+        amrex::Print() << "U: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U);
+        amrex::Print() << "U_1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U_1);
+        amrex::Print() << "U_2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U_2);
+
+        amrex::Print() << "dNFndU: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, dNFndU);
         exit(-1);
         */
     }
@@ -1996,6 +2433,9 @@ public amrex::dG::amr::SinglePatch
 
     // SOLUTION MULTIFABS: IMPLICIT NEWMARK SCHEME
     amrex::Vector<amrex::MultiFab> Xd;
+
+    // LINEAR DIRECT SOLVER
+    amrex::dG::LinearSolverPardiso pardiso;
     // ================================================================
 
 
@@ -2189,11 +2629,22 @@ exit(-1);
         
         if (solution.time_integration_is_explicit_central_difference())
         {
-            amrex::dG::hyperbolic_2nd_order_pde::take_time_step(*this, t_, dt, this->MCh, this->X_prev, this->X, this->ibvp);
+            amrex::dG::hyperbolic_2nd_order_pde::take_time_step_using_explicit_central_difference(*this,
+                                                                                                  t_, dt,
+                                                                                                  this->MCh,
+                                                                                                  this->X_prev,
+                                                                                                  this->X,
+                                                                                                  this->ibvp);
         }
         else if (solution.time_integration_is_implicit_Newmark())
         {
-            amrex::dG::hyperbolic_2nd_order_pde::take_time_step(*this, t_, dt, this->MCh, this->X, this->Xd, this->ibvp);
+            amrex::dG::hyperbolic_2nd_order_pde::take_time_step_using_implicit_Newmark(*this,
+                                                                                       t_, dt,
+                                                                                       this->MCh,
+                                                                                       this->X,
+                                                                                       this->Xd,
+                                                                                       this->pardiso,
+                                                                                       this->ibvp);
         }
         else
         {
@@ -2203,6 +2654,26 @@ exit(-1);
             msg += "| Unexpected time integration method: "+solution.params.time_integration+".\n";
             amrex::Abort(msg);
         }
+    }
+    // ================================================================
+
+
+    // LINEAR SOLVER ==================================================
+    void init_linear_solver()
+    {
+        // INPUT FILE
+        this->pardiso.read_input_file();
+
+        // PARDISO BASE CONTROL PARAMETERS
+        this->pardiso.init();
+        
+        // INIT DATA STRUCTURES
+        amrex::dG::amr::SinglePatch::init_linear_solver(this->pardiso, this->ibvp);
+    }
+
+    void terminate_linear_solver()
+    {
+        this->pardiso.terminate();
     }
     // ================================================================
 

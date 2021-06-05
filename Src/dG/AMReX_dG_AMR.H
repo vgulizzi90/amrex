@@ -816,8 +816,6 @@ public AmrCore
 
     // LINEAR SOLVER
     int linear_direct_solver_finest_level;
-    std::string linear_direct_solver;
-    LinearSolverPardiso pardiso;
     // ================================================================
 
 
@@ -1147,7 +1145,6 @@ exit(-1);
         for (int lev = 0; lev <= this->linear_direct_solver_finest_level; ++lev)
         {
             const Mesh & mesh = *this->meshes[lev];
-            const Solution & solution = *this->solutions[lev];
 
 #if (AMREX_SPACEDIM == 1)
             const BoxArray fc_ba[1] = {convert(mesh.ba, IntVect(1))};
@@ -1258,20 +1255,14 @@ exit(-1);
         // ------------------------------------------------------------
     }
     
-    bool linear_direct_solver_is_pardiso() const;
-
     /**
-     * \brief Init pardiso linear solver.
+     * \brief Init the selected linear solver.
     */
-    template <typename IBVP>
-    void init_linear_solver_pardiso(const IBVP & ibvp)
+    template <typename LS, typename IBVP>
+    void init_linear_solver(LS & ls, const IBVP & ibvp)
     {
         // PARAMETERS -------------------------------------------------
         const int n_procs = ParallelDescriptor::NProcs();
-        const int n_levels = this->max_level+1;
-
-        // DOMAINS
-        const int n_domains = ibvp.get_number_of_domains();
         // ------------------------------------------------------------
 
         // VARIABLES --------------------------------------------------
@@ -1302,16 +1293,12 @@ exit(-1);
         }
         // ------------------------------------------------------------
 
-        // INIT PARDISO MULTIFABS STORING THE NNZ OFFSET --------------
-        this->init_csr_info_multifabs(this->pardiso.dom_info, this->pardiso.bou_info, ibvp);
-        // ------------------------------------------------------------
-
-        // PARDISO BASE CONTROL PARAMETERS ----------------------------
-        this->pardiso.init();
+        // INIT DATA STRUCTURES FOR CSR MATRIX FORMAT -----------------
+        this->init_csr_info_multifabs(ls.dom_info, ls.bou_info, ibvp);
         // ------------------------------------------------------------
 
         // SET POSITION OF THE ELEMENT DOFS WITHIN THE SYSTEM ---------
-        this->update_linear_system_ordering(this->pardiso.dom_info, ibvp);
+        this->update_linear_system_ordering(ls.dom_info, ibvp);
         // ------------------------------------------------------------
 
         // GATHER NEIGHBOR INFORMATION --------------------------------
@@ -1319,7 +1306,7 @@ exit(-1);
         {
             const int lev = 0;
             this->solutions[lev]->get_elm_nbr_info(this->geom[lev], *this->meshes[lev],
-                                                   this->pardiso.dom_info[lev], elm_nbr_info[lev],
+                                                   ls.dom_info[lev], elm_nbr_info[lev],
                                                    ibvp);
         }
         else
@@ -1334,20 +1321,20 @@ exit(-1);
         // ------------------------------------------------------------
 
         // BUILD CSR MATRIX VECTORS -----------------------------------
-        this->pardiso.ia.resize(1);
-        this->pardiso.ia[0] = 0;
+        ls.ia.resize(1);
+        ls.ia[0] = 0;
 
-        if (this->pardiso.matrix_is_real_symmetric())
+        if (ls.matrix_is_real_symmetric())
         {
             for (int lev = 0; lev <= this->linear_direct_solver_finest_level; ++lev)
             {
                 this->solutions[lev]->add_nnz_to_real_sym_csr_matrix(this->geom[lev],
                                                                      *this->meshes[lev],
                                                                      this->masks[lev],
-                                                                     this->pardiso,
+                                                                     ls,
                                                                      elm_nbr_info[lev],
-                                                                     this->pardiso.dom_info[lev],
-                                                                     this->pardiso.bou_info[lev],
+                                                                     ls.dom_info[lev],
+                                                                     ls.bou_info[lev],
                                                                      ibvp);
             }
         }
@@ -1355,105 +1342,160 @@ exit(-1);
         {
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver_pardiso\n";
-            msg += "| Unexpected pardiso matrix type.\n";
-            msg += "| mtype: "+std::to_string(this->pardiso.mtype)+".\n";
-            Abort(msg);
-        }
-        // ------------------------------------------------------------
-
-        // SYSTEM ORDER, RIGHT-HAND SIDE AND NON-ZEROS ----------------
-        this->pardiso.n = this->pardiso.ia.size()-1;
-        
-        this->pardiso.n_rhs = 1;
-        this->pardiso.B.resize(this->pardiso.n);
-
-        this->pardiso.X.resize(this->pardiso.n);
-        
-        this->pardiso.nnz = this->pardiso.ia[this->pardiso.n];
-
-        /* DEBUG
-        Print() << "SinglePatch::init_linear_solver_pardiso: " << std::endl;
-        Print() << " System order: " << this->pardiso.n << std::endl;
-        Print() << " Number of non-zero entries: " << this->pardiso.nnz << std::endl;
-        */
-        // ------------------------------------------------------------
-
-        // CONVERT FROM 0-BASED C NOTATION TO 1-BASED FORTRAN NOTATION
-        for (int i = 0; i < this->pardiso.n+1; i++)
-        {
-            this->pardiso.ia[i] += 1;
-        }
-        for (int i = 0; i < this->pardiso.nnz; i++)
-        {
-            this->pardiso.ja[i] += 1;
-        }
-        // ------------------------------------------------------------
-
-        // CHECK MATRIX -----------------------------------------------
-        pardiso_chkmatrix(&this->pardiso.mtype,
-                          &this->pardiso.n,
-                          this->pardiso.A.data(),
-                          this->pardiso.ia.data(),
-                          this->pardiso.ja.data(),
-                          &this->pardiso.error);
-        if (this->pardiso.error != 0)
-        {
-            std::string msg;
-            msg  = "\n";
-            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver_pardiso\n";
-            msg += "| Error in consistency of the matrix.\n";
-            msg += "| Error: "+std::to_string(this->pardiso.error)+".\n";
-            Abort(msg);
-        }
-        // ------------------------------------------------------------
-
-        // PRINT STATISTICS -------------------------------------------
-        /* DEBUG
-        pardiso_printstats(&this->pardiso.mtype,
-                           &this->pardiso.n,
-                           this->pardiso.A.data(),
-                           this->pardiso.ia.data(),
-                           this->pardiso.ja.data(),
-                           &this->pardiso.n_rhs,
-                           this->pardiso.B.data(),
-                           &this->pardiso.error);
-        if (this->pardiso.error != 0)
-        {
-            std::string msg;
-            msg  = "\n";
-            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver_pardiso\n";
-            msg += "| Error during pardiso_printstats.\n";
-            msg += "| Error: "+std::to_string(this->pardiso.error)+".\n";
-            Abort(msg);
-        }
-        */
-        // ------------------------------------------------------------
-    }
-    
-    /**
-     * \brief Init the selected linear solver.
-    */
-    template <typename IBVP>
-    void init_linear_solver(const IBVP & ibvp)
-    {
-
-        if (this->linear_direct_solver_is_pardiso())
-        {
-            this->init_linear_solver_pardiso(ibvp);
-        }
-        else
-        {
-            std::string msg;
-            msg  = "\n";
             msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver\n";
-            msg += "| Unexpected input parameters.\n";
-            msg += "| Linear solver: "+this->linear_direct_solver+".\n";
+            msg += "| At the moment, we support symmetric matrix type only.\n";
             Abort(msg);
+        }
+        // ------------------------------------------------------------
+
+        // SYSTEM ORDER, RIGHT-HAND SIDE, UNKNOWNS AND NON-ZEROS ------
+        ls.n = ls.ia.size()-1;
+        ls.B.resize(ls.n*ls.n_rhs);
+        ls.X.resize(ls.n*ls.n_rhs);
+        ls.nnz = ls.ia[ls.n];
+
+        /* DEBUG
+        Print() << "SinglePatch::init_linear_solver: " << std::endl;
+        Print() << " System order: " << ls.n << std::endl;
+        Print() << " Number of non-zero entries: " << ls.nnz << std::endl;
+        */
+        // ------------------------------------------------------------
+
+        // MATRIX CHECK -----------------------------------------------
+        ls.matrix_check();
+        /* DEBUG
+        ls.print_stats();
+        */
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Add solution of the linear solver data structure to the multifab.
+    */
+    template <typename LS, typename IBVP>
+    void add_solution_of_linear_solver(const LS & ls, Vector<MultiFab> & X, const IBVP & ibvp) const
+    {
+        // DOMAINS
+        const int n_domains = ibvp.get_number_of_domains();
+
+#ifdef AMREX_USE_GPU
+        const Real * ls_X_mem_ptr = ls.X.data();
+#else
+        const Real * ls_X_mem_ptr = ls.X.data();
+#endif
+
+        for (int lev = 0; lev <= this->linear_direct_solver_finest_level; ++lev)
+        {
+            const iMultiFab & mask = this->masks[lev];
+            const Solution & solution = *this->solutions[lev];
+            const int sp = solution.params.space_p;
+            const int sNp = AMREX_D_TERM((1+sp),*(1+sp),*(1+sp));
+
+            for (MFIter mfi(X[lev]); mfi.isValid(); ++mfi)
+            {
+                const Box & bx = mfi.validbox();
+
+                Array4<int const> const & mask_fab = mask.array(mfi);
+                Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+                Array4<int const> const & csr_dom_info_fab = ls.dom_info[lev].array(mfi);
+                Array4<Real> const & X_fab = X[lev].array(mfi);
+
+                ParallelFor(bx, n_domains,
+                [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+                {
+                    // ELEMENT TYPE
+                    const bool cell_is_not_masked = CELL_IS_NOT_MASKED(mask_fab(i,j,k));
+                    const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                    const bool elm_is_valid = ELM_IS_VALID(etype);
+
+                    if (cell_is_not_masked && elm_is_valid)
+                    {
+                        // LOCAL PARAMETERS
+                        const int posX = csr_dom_info_fab(i,j,k,CSR_DOM_INFO_POS_X(dom));
+
+                        // UNKNOWN FIELDS
+                        int u_lo, u_hi;
+                        ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+                        const int Nu = u_hi-u_lo;
+                        const int Nup = Nu*sNp;
+
+                        for (int r = 0; r < Nup; ++r)
+                        {
+                            X_fab(i,j,k,u_lo*sNp+r) += ls_X_mem_ptr[posX+r];
+                        }
+                    }
+                });
+                Gpu::synchronize();
+            }
+            X[lev].FillBoundary(this->geom[lev].periodicity());
+
+            solution.copy_solution_to_small_elements(this->geom[lev], X[lev], ibvp);
         }
     }
 
-    bool linear_direct_solver_first_call() const;
+    /**
+     * \brief Subtract solution of the linear solver data structure from the multifab.
+    */
+    template <typename LS, typename IBVP>
+    void subtract_solution_of_linear_solver(const LS & ls, Vector<MultiFab> & X, const IBVP & ibvp) const
+    {
+        // DOMAINS
+        const int n_domains = ibvp.get_number_of_domains();
+
+#ifdef AMREX_USE_GPU
+        const Real * ls_X_mem_ptr = ls.X.data();
+#else
+        const Real * ls_X_mem_ptr = ls.X.data();
+#endif
+
+        for (int lev = 0; lev <= this->linear_direct_solver_finest_level; ++lev)
+        {
+            const iMultiFab & mask = this->masks[lev];
+            const Solution & solution = *this->solutions[lev];
+            const int sp = solution.params.space_p;
+            const int sNp = AMREX_D_TERM((1+sp),*(1+sp),*(1+sp));
+
+            for (MFIter mfi(X[lev]); mfi.isValid(); ++mfi)
+            {
+                const Box & bx = mfi.validbox();
+
+                Array4<int const> const & mask_fab = mask.array(mfi);
+                Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+                Array4<int const> const & csr_dom_info_fab = ls.dom_info[lev].array(mfi);
+                Array4<Real> const & X_fab = X[lev].array(mfi);
+
+                ParallelFor(bx, n_domains,
+                [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+                {
+                    // ELEMENT TYPE
+                    const bool cell_is_not_masked = CELL_IS_NOT_MASKED(mask_fab(i,j,k));
+                    const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+                    const bool elm_is_valid = ELM_IS_VALID(etype);
+
+                    if (cell_is_not_masked && elm_is_valid)
+                    {
+                        // LOCAL PARAMETERS
+                        const int posX = csr_dom_info_fab(i,j,k,CSR_DOM_INFO_POS_X(dom));
+
+                        // UNKNOWN FIELDS
+                        int u_lo, u_hi;
+                        ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+                        const int Nu = u_hi-u_lo;
+                        const int Nup = Nu*sNp;
+
+                        for (int r = 0; r < Nup; ++r)
+                        {
+                            X_fab(i,j,k,u_lo*sNp+r) -= ls_X_mem_ptr[posX+r];
+                        }
+                    }
+                });
+                Gpu::synchronize();
+            }
+            X[lev].FillBoundary(this->geom[lev].periodicity());
+
+            solution.copy_solution_to_small_elements(this->geom[lev], X[lev], ibvp);
+        }
+    }
     // ================================================================
 
 

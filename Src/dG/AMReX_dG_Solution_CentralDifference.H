@@ -2,7 +2,7 @@
 // Author : Vincenzo Gulizzi (LBL)
 // Contact: vgulizzi@lbl.gov
 //
-/** \file AMReX_dG_Solution_RungeKutta.H
+/** \file AMReX_dG_Solution_CentralDifference.H
  * \brief Functions to advance solutions in time using central difference.
 */
 
@@ -199,7 +199,7 @@ void FX_BCS(const int dom, const Real t,
         bfu.eval_unsafe(u_lo, u_hi, U);
         bfu.eval_derivatives_unsafe(u_lo, u_hi, AMREX_D_DECL(U_1, U_2, U_3));
 
-        // Numerical flux as a functions of (t, x, un, U, U_{,k})
+        // Numerical flux as functions of (t, x, un, U, U_{,k})
         ibvp.eval_NF_BCs(dom, t, x, un, U, AMREX_D_DECL(U_1, U_2, U_3), AMREX_D_DECL(ND1, ND2, ND3), NFn);
 
         // Integral contribution
@@ -264,7 +264,7 @@ void FX_ICS(const int dom, const Real t,
         p_bfu.eval_unsafe(u_lo, u_hi, p_U);
         p_bfu.eval_derivatives_unsafe(u_lo, u_hi, AMREX_D_DECL(p_U_1, p_U_2, p_U_3));
 
-        // Numerical flux as a functions of (t, x, un, U^-, U_{,k}^-, U^+, U_{,k}^+)
+        // Numerical flux as functions of (t, x, un, U^-, U_{,k}^-, U^+, U_{,k}^+)
         ibvp.eval_NF_intraphase(dom, t, x, un, m_U, AMREX_D_DECL(m_U_1, m_U_2, m_U_3),
                                                p_U, AMREX_D_DECL(p_U_1, p_U_2, p_U_3),
                                                AMREX_D_DECL(m_ND1, m_ND2, m_ND3), m_NFn,
@@ -562,7 +562,7 @@ void add_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                         for (int rs = 0; rs < sNp; ++rs)
                         {
                             integrand = bfu.BF[rs]*NFn[ru];
-                            d2Xdt2_fab(i,j,k,rs+ru*sNp) -= integrand*w;
+                            //d2Xdt2_fab(i,j,k,rs+ru*sNp) -= integrand*w;
                         }
                     }
                 }

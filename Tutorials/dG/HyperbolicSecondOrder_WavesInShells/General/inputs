@@ -9,7 +9,7 @@ geometry.is_periodic = 0 0 0
 # TIME ################################################################
 time.T = 200.0
 
-time.n_steps = 100
+time.n_steps = 3
 #######################################################################
 
 
@@ -18,8 +18,8 @@ time.n_steps = 100
 # AMR =================================================================
 amr.v = 1
 
-amr.n_cell        = 4 4 4
-amr.max_grid_size = 4 4 4
+amr.n_cell        = 2 2 2
+amr.max_grid_size = 2 2 2
 
 amr.max_level = 0
 # =====================================================================
@@ -29,24 +29,26 @@ amr.max_level = 0
 mesh[0].embedded_geometry_is_active = 1
 mesh[0].embedded_geometry_defined_by = level_set
 mesh[0].box_pruning_is_active = 1
-mesh[0].quadrature_order_regular_elements = 4
+mesh[0].quadrature_order_regular_elements = 8
 mesh[0].quadrature_order_cut_elements = 8
 # =====================================================================
 
 
 # SOLUTION ============================================================
-solution[0].space_p = 3
+solution[0].space_p = 4
 solution[0].cell_merging_is_active = 1
 solution[0].cell_merging_volume_fraction_threshold = 0.3
 solution[0].time_integration = implicit_Newmark
-solution[0].time_integration_CFL = 0.00001
+solution[0].time_integration_CFL = 0.01
 solution[0].post_processing_grid_order = 8
 # =====================================================================
 
 # LINEAR SOLVER =======================================================
-linear_direct_solver_finest_level = 0
-linear_direct_solver = pardiso
 pardiso.mtype = -2
+pardiso.n_rhs = 1
+pardiso.msglvl = 0
+
+amr.linear_direct_solver_finest_level = 0
 # =====================================================================
 #######################################################################
 
@@ -56,7 +58,7 @@ pardiso.mtype = -2
 n_materials = 2
 
 material[0].type = isotropic
-material[0].constants = 2700.0 70e9 0.33
+material[0].constants = 1.0 1.0 0.33
 material[0].use_plane_stress = 1
 material[0].shear_factor = 0.833
 
@@ -81,7 +83,7 @@ wall_time = 10.0
 wall_time_units = s
 
 output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_p$(solution[0].space_p)_nc$(amr.n_cell)_gs$(amr.max_grid_size)
-plot_int = 1000000
+plot_int = 1
 output_overwrite = 1
 
 restart = -1

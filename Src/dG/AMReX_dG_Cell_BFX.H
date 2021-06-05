@@ -11,7 +11,7 @@
 
 #include <AMReX_dG_BasisFunctions.H>
 
-#define __DG_MAX_SPACE_p__ 3
+#define __DG_MAX_SPACE_p__ 6
 #if (AMREX_SPACEDIM == 1)
 #define __DG_MAX_SPACE_Np__ (1+__DG_MAX_SPACE_p__)
 #endif

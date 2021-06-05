@@ -1209,3 +1209,109 @@ exit(-1);
         nbr_info.FillBoundary(geom.periodicity());
         // ------------------------------------------------------------
     }
+
+
+
+
+
+
+    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+    {
+#ifdef AMREX_USE_GPU
+        Real const * cell_bou_quad_mem_ptr = mesh.cell_bou_quad_dev_mem[dir].data();
+        int const * ia_mem_ptr = ia.data();
+        Real * J_mem_ptr = J.data();
+#else
+        Real const * cell_bou_quad_mem_ptr = mesh.cell_bou_quad_host_mem[dir].data();
+        int const * ia_mem_ptr = ia.data();
+        Real * J_mem_ptr = J.data();
+#endif
+
+        for (MFIter mfi(csr_bou_info[dir]); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+            const Dim3 lo = lbound(bx);
+            const Dim3 hi = ubound(bx);
+
+            Array4<long const> const & cell_bou_quad_info_fab = mesh.cell_bou_quad_info[dir].array(mfi);
+            Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+            Array4<short const> const & elm_bou_type_fab = solution.elm_bou_type[dir].array(mfi);
+            Array4<int const> const & csr_dom_info_fab = csr_dom_info.array(mfi);
+            Array4<int const> const & csr_bou_info_fab = csr_bou_info[dir].array(mfi);
+            Array4<Real const> const & X_fab = X.array(mfi);
+
+            for (int dom = 0; dom < n_domains; ++dom)
+            for (int fk = lo.z; fk <= hi.z; ++fk)
+            for (int fj = lo.y; fj <= hi.y; ++fj)
+            for (int fi = lo.x; fi <= hi.x; ++fi)
+            {
+                // ELEMENT BOUNDARY TYPE
+                const short ebtype = elm_bou_type_fab(fi,fj,fk,ELM_BOU_TYPE(dom));
+
+                if (ELM_BOU_IS_VALID(ebtype))
+                {
+                    // LOCAL PARAMETERS
+                    const int ff = (dir == 0) ? fi : ((dir == 1) ? fj : fk);
+                    const Real face_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+fi*dx[0],
+                                                                       prob_lo[1]+fj*dx[1],
+                                                                       prob_lo[2]+fk*dx[2])};
+
+                    // QUADRATURE INFO
+                    const int bou_Nq = cell_bou_quad_info_fab(fi,fj,fk,CELL_BOU_QUAD_NQ(dom));
+                    const long pos = cell_bou_quad_info_fab(fi,fj,fk,CELL_BOU_QUAD_POS(dom));
+                    const Real * x_ptr = &cell_bou_quad_mem_ptr[pos];
+
+                    // LOCAL VARIABLES
+                    int mi, mj, mk, pi, pj, pk;
+                    short m_etype, p_etype;
+                    int m_posX, p_posX;
+
+                    // NEIGHBOR CELLS SHARING THE FACE fi,fj,fk
+                    FACE_TO_NBRS(fi, fj, fk, dir, mi, mj, mk, pi, pj, pk);
+                    m_etype = elm_type_fab(mi,mj,mk,ELM_TYPE(dom));
+                    p_etype = elm_type_fab(pi,pj,pk,ELM_TYPE(dom));
+                    m_posX = csr_dom_info_fab(mi,mj,mk,CSR_DOM_INFO_POS_X(dom));
+                    p_posX = csr_dom_info_fab(pi,pj,pk,CSR_DOM_INFO_POS_X(dom));
+
+                    // UNKNOWN FIELDS
+                    space_elm_bfx m_bfu(&prob_lo[0], &dx[0], mi, mj, mk, m_etype, sp, X_fab);
+                    space_elm_bfx p_bfu(&prob_lo[0], &dx[0], pi, pj, pk, p_etype, sp, X_fab);
+                    int u_lo, u_hi;
+                    ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+
+                    // BOUNDARY CONDITIONS
+                    if (ELM_BOU_IS_NEG_WALL(ebtype))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = -1.0;
+
+                        // EVAL THE INTEGRAL
+                        JAC_BCS(dom, t, face_lo, bou_Nq, x_ptr, un, p_bfu, u_lo, u_hi, fi, fj, fk, ia_mem_ptr, idx, J_mem_ptr, p_posX, ibvp);
+                    }
+                    // BOUNDARY CONDITIONS
+                    else if (ELM_BOU_IS_POS_WALL(ebtype))
+                    {
+                        // OUTER UNIT NORMAL (Note the sign)
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+                        // EVAL THE INTEGRAL
+                        JAC_BCS(dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, u_lo, u_hi, fi, fj, fk, ia_mem_ptr, idx, J_mem_ptr, m_posX, ibvp);
+                    }
+                    // INTRAPHASE CONDITIONS
+                    else
+                    {
+                        // UNIT NORMAL
+                        Real un[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
+                        un[dir] = +1.0;
+
+Print() << "fi, fj, fk: " << fi << "," << fj << "," << fk << ", m_posX, p_posX: " << m_posX << ", " << p_posX << std::endl;
+
+                        // EVAL THE INTEGRAL
+                        JAC_ICS(dom, t, face_lo, bou_Nq, x_ptr, un, m_bfu, p_bfu, u_lo, u_hi, fi, fj, fk, ia_mem_ptr, idx, J_mem_ptr, m_posX, p_posX, ibvp);
+                    }
+                }
+            }
+        }
+    }

@@ -13,7 +13,7 @@
 #include <AMReX_dG_Utils.H>
 #include <AMReX_VTK_Utils.H>
 #include <AMReX_dG_Pardiso.H>
-#include <AMReX_dG_LinearSolver.H>
+#include <AMReX_dG_LinearDirectSolver.H>
 #include <AMReX_dG_BasisFunctions.H>
 #include <AMReX_dG_LinAlg.H>
 #include <AMReX_dG_StandardElements.H>
@@ -25,6 +25,7 @@
 #include <AMReX_dG_Solution_Utils.H>
 #include <AMReX_dG_Solution_RungeKutta.H>
 #include <AMReX_dG_Solution_CentralDifference.H>
+#include <AMReX_dG_Solution_Newmark.H>
 #include <AMReX_dG_Solution_Output.H>
 #include <AMReX_dG_AMR.H>
 #include <AMReX_dG_AMR_Utils.H>

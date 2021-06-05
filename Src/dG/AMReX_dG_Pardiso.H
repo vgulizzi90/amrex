@@ -9,6 +9,7 @@
 #ifndef AMREX_DG_PARDISO_H_
 #define AMREX_DG_PARDISO_H_
 
+#include <AMReX_ParmParse.H>
 #include <AMReX_Vector.H>
 #include <AMReX_iMultiFab.H>
 
@@ -16,6 +17,7 @@
 extern "C" void pardisoinit(void *, int *, int *, int *, double *, int *);
 extern "C" void pardiso_chkmatrix(int *, int *, double *, int *, int *, int *);
 extern "C" void pardiso_printstats (int *, int *, double *, int *, int *, int *, double *, int *);
+extern "C" void pardiso(void *, int *, int *, int *, int *, int *, double *, int *, int *, int *, int *, int *, int *, double *, double *, int *, double *);
 
 #define __DG_PARDISO_REAL_STRUCTURAL_SYMMETRIC_MATRIX__ 1
 #define __DG_PARDISO_REAL_SYMMETRIC_POS_DEFINITE_MATRIX__ 2
@@ -65,11 +67,33 @@ struct LinearSolverPardiso
     // READERS ========================================================
     bool matrix_is_real_symmetric() const;
     bool matrix_is_real_nonsymmetric() const;
+    void print_stats();
     // ================================================================
 
 
     // INITIALIZATION =================================================
+    void read_input_file();
     void init();
+    // ================================================================
+
+
+    // CHECKS =========================================================
+    void matrix_check();
+    // ================================================================
+
+
+    // SOLUTION =======================================================
+    void solve(const bool actually_solve = true);
+    // ================================================================
+
+
+    // OUTPUT =========================================================
+    void print_to_file_sparse(const std::string & filename_root);
+    // ================================================================
+
+
+    // TERMINATION ====================================================
+    void terminate();
     // ================================================================
 };
 // ####################################################################

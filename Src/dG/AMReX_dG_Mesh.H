@@ -88,7 +88,7 @@
 
 // CSR MATRIX FORMAT
 #define __DG_CSR_DOM_INFO_N_COMP_PER_DOM__ 3
-#define __DG_CSR_BOU_INFO_N_COMP_PER_DOM__ 1
+#define __DG_CSR_BOU_INFO_N_COMP_PER_DOM__ 2
 
 // DEBUG
 #define __i__ 2
@@ -700,9 +700,32 @@ bool ELM_BOU_IS_EMPTY(const short ebtype)
     return (ebtype == __DG_ELM_BOU_TYPE_EMPTY__);
 }
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_BOU_IS_POS_WALL(const short ebtype)
+{
+    return (ebtype == __DG_ELM_BOU_TYPE_POS_WALL__);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_BOU_IS_NEG_WALL(const short ebtype)
+{
+    return (ebtype == __DG_ELM_BOU_TYPE_NEG_WALL__);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_BOU_IS_WALL(const short ebtype)
+{
+    return ((ebtype == __DG_ELM_BOU_TYPE_POS_WALL__) || (ebtype == __DG_ELM_BOU_TYPE_NEG_WALL__));
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 bool ELM_BOU_IS_NOT_WALL(const short ebtype)
 {
     return ((ebtype != __DG_ELM_BOU_TYPE_POS_WALL__) && (ebtype != __DG_ELM_BOU_TYPE_NEG_WALL__));
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool ELM_BOU_IS_INTERNAL(const short ebtype)
+{
+    const bool eb_is_valid = ELM_BOU_IS_VALID(ebtype);
+    const bool eb_is_not_wall = ELM_BOU_IS_NOT_WALL(ebtype);
+
+    return (eb_is_valid && eb_is_not_wall);
 }
 // ====================================================================
 
@@ -749,9 +772,9 @@ int CSR_DOM_INFO_NNZ_OFFSET(const int dom)
     return (dom*__DG_CSR_DOM_INFO_N_COMP_PER_DOM__+2);
 }
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-int CSR_BOU_INFO_NNZ_OFFSET(const int dom)
+int CSR_BOU_INFO_NNZ_OFFSET(const int dom, const int mp)
 {
-    return (dom*__DG_CSR_BOU_INFO_N_COMP_PER_DOM__);
+    return (dom*__DG_CSR_BOU_INFO_N_COMP_PER_DOM__+mp);
 }
 // ====================================================================
 

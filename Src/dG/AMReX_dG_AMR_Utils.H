@@ -922,22 +922,73 @@ void take_time_step_using_explicit_central_difference(const amr::SinglePatch & a
 
 // TAKE TIME STEP USING IMPLICIT NEWMARK ==============================
 /**
- * \brief Eval the Jacobian for the implicit Newmark algorithm.
+ * \brief Eval the residuals (and Jacobian) for the implicit Newmark algorithm.
  *
+ * \param[in] gamma, beta: parameters of the Newmark algorithm.
  * \param[in] amr: SinglePath AMR object.
  * \param[in] t: time.
  * \param[in] dt: time increment.
- * \param[in] X_new: a vector of MultiFabs that will contain the updated dG coefficients.
+ * \param[in] MCh: a vector of MultiFab objects containing the Cholesky decomposition of the pde
+ *                 mass matrices.
+ * \param[in] X_old a vector of MultiFabs containing the old dG coefficients.
+ * \param[in] Xd_old a vector of MultiFabs containing the old dG coefficients time derivatives.
+ * \param[in] X a vector of MultiFabs containing the current dG coefficients.
+ * \param[in] Xd a vector of MultiFabs containing the current dG coefficients time derivatives.
+ * \param[in] ls: object containing the data structures used by the linear solver.
  * \param[in] ibvp: initial boundary value problem object.
  *
  * \return the time increment.
 */
-template <typename IBVP>
-void eval_Jacobian_implicit_Newmark(const amr::SinglePatch & amr, const Real t, const Real dt,
-                                    const Vector<MultiFab> & X,
-                                    const IBVP & ibvp)
+template <typename LS, typename IBVP>
+void eval_residuals_implicit_Newmark(const Real gamma, const Real beta,
+                                     const amr::SinglePatch & amr, const Real t, const Real dt,
+                                     const Vector<MultiFab> & MCh, const Vector<MultiFab> & X_old, const Vector<MultiFab> & Xd_old, const Vector<MultiFab> & X, const Vector<MultiFab> & Xd,
+                                     LS & ls, const IBVP & ibvp,
+                                     const bool update_Jacobian = false)
 {
+    // INITIALIZATION -------------------------------------------------
+    std::fill(ls.B.begin(), ls.B.end(), 0.0);
+    if (update_Jacobian)
+    {
+        std::fill(ls.A.begin(), ls.A.end(), 0.0);
+    }
+    // ----------------------------------------------------------------
 
+    if (amr.linear_direct_solver_finest_level == 0)
+    {
+        const int lev = 0;
+        const Geometry & geom = amr.Geom(lev);
+        const Mesh & mesh = *amr.meshes[lev];
+        const Solution & solution = *amr.solutions[lev];
+
+        if (ls.matrix_is_real_symmetric())
+        {
+            implicit_Newmark::eval_residuals_sym(gamma, beta, t, dt,
+                                                 geom, mesh, solution, amr.masks[lev],
+                                                 MCh[lev], X_old[lev], Xd_old[lev], X[lev], Xd[lev],
+                                                 ls.B, ls.ia, ls.A,
+                                                 ls.dom_info[lev], ls.bou_info[lev],
+                                                 ibvp,
+                                                 update_Jacobian);
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_AMR_Utils.H - hyperbolic_2nd_order_pde::eval_residuals_implicit_Newmark\n";
+            msg += "| At the moment, we support symmetric matrix type only.\n";
+            Abort(msg);
+        }
+    }
+    else
+    {
+        std::string msg;
+        msg  = "\n";
+        msg +=  "ERROR: AMReX_dG_AMR_Utils.H - hyperbolic_2nd_order_pde::eval_residuals_implicit_Newmark\n";
+        msg += "| Evaluating the Jacobian for multilevel AMR is not supported at the moment.\n";
+        msg += "| linear_direct_solver_finest_level: "+std::to_string(amr.linear_direct_solver_finest_level)+".\n";
+        Abort(msg);
+    }
 }
 
 /**
@@ -955,140 +1006,108 @@ void eval_Jacobian_implicit_Newmark(const amr::SinglePatch & amr, const Real t, 
  *
  * \return the time increment.
 */
-template <typename IBVP>
+template <typename LS, typename IBVP>
 void take_time_step_using_implicit_Newmark(const amr::SinglePatch & amr, const Real t, const Real dt,
                                            const Vector<MultiFab> & MCh, Vector<MultiFab> & X_new, Vector<MultiFab> & Xd_new,
-                                           const IBVP & ibvp)
+                                           LS & ls, const IBVP & ibvp)
 {
-    // NOTE -----------------------------------------------------------
-    // We are solving a time dependent equation of the form:
-    // 
-    // M*X_{,tt} = F(t,X)
-    //
-    // using the implicit Newmark scheme. To do so, we solve implicitly
-    // the following equation
-    //
-    // R(X) := M*X-M*(X_old+dt*Xd)-(1/2-beta)*dt^2*F(X_old)-beta*dt^2*F(X)
-    //
-    // Using the Jacobian matrix
-    //
-    // J(X) := M-beta*dt^2*F_{,X}
-    //
-    // Once the solution is obtained, we update Xd using
-    //
-    // Xd := Xd_old+M^{-1}*((1-gamma)*dt*F(X_old)+gamma*dt*F(X))
-    //
-    // ----------------------------------------------------------------
-
     // PARAMETERS -----------------------------------------------------
     const int finest_level = amr.finestLevel();
     const int n_levels = finest_level+1;
+
+    // NEWMARK ALGORITHM PARAMETERS
+    const Real gamma = 0.5;
+    const Real beta = 0.25;
+
+    // NEWTON-RAPHSON
+    const Real tol = 1.0e-8;
+    const int it_max = 10;
     // ----------------------------------------------------------------
 
     // VARIABLES ------------------------------------------------------
     Vector<MultiFab> X_old(n_levels), Xd_old(n_levels);
+    Real err;
+    int it;
+    Vector<Real> X(ls.n);
     // ----------------------------------------------------------------
 
     // INIT MULTIFABS AND SWAP NEW AND OLD ----------------------------
     for (int lev = 0; lev < n_levels; ++lev)
     {
-        std::swap(X_old[lev], X_new[lev]);
-        std::swap(Xd_old[lev], Xd_new[lev]);
+        X_old[lev].define(X_new[lev].boxarray, X_new[lev].distributionMap, X_new[lev].n_comp, X_new[lev].n_grow);
+        Xd_old[lev].define(Xd_new[lev].boxarray, Xd_new[lev].distributionMap, Xd_new[lev].n_comp, Xd_new[lev].n_grow);
+
+        MultiFab::Copy(X_old[lev], X_new[lev], 0, 0, X_new[lev].n_comp, X_new[lev].n_grow);
+        MultiFab::Copy(Xd_old[lev], Xd_new[lev], 0, 0, Xd_new[lev].n_comp, Xd_new[lev].n_grow);
     }
     // ----------------------------------------------------------------
 
-    // EVALUATE JACOBIAN IF IT HAS NEVER BEEN EVALUATED ---------------
-    if (amr.linear_direct_solver_first_call())
+    // LINEAR SOLVER FIRST CALL ---------------------------------------
+    if (ls.first_call)
     {
-        eval_Jacobian_implicit_Newmark(amr, t, dt, X_old, ibvp);
+        eval_residuals_implicit_Newmark(gamma, beta, amr, t, dt, MCh, X_old, Xd_old, X_new, Xd_new, ls, ibvp, true);
+
+        /* DEBUG
+        ls.print_to_file_sparse("system");
+        exit(-1);
+        */
+    }
+    else
+    {
+        eval_residuals_implicit_Newmark(gamma, beta, amr, t, dt, MCh, X_old, Xd_old, X_new, Xd_new, ls, ibvp, false);
     }
     // ----------------------------------------------------------------
-    
-    // EVALUATE CONSTANT TERM -----------------------------------------
-    // ----------------------------------------------------------------
 
-Print() << "take_time_step_using_implicit_Newmark" << std::endl;
-exit(-1);
-}
-// ====================================================================
-
-
-// TAKE TIME STEP (GENERAL) ===========================================
-/**
- * \brief Advance in time.
- *
- * \param[in] amr: SinglePath AMR object.
- * \param[in] t: time.
- * \param[in] dt: time increment.
- * \param[in] MCh: a vector of MultiFab objects containing the Cholesky decomposition of the pde
- *                 mass matrices.
- * \param[inout] X1: a vector of MultiFabs that will contain the updated solution according to the
- *                   selected time integration scheme.
- * \param[inout] X2: a vector of MultiFabs that will contain the updated solution according to the
- *                   selected time integration scheme.
- * \param[in] ibvp: initial boundary value problem object.
- *
- * \return the time increment.
-*/
-template <typename IBVP>
-void take_time_step(const amr::SinglePatch & amr, const Real t, const Real dt,
-                    const Vector<MultiFab> & MCh, Vector<MultiFab> & X1, Vector<MultiFab> & X2,
-                    const IBVP & ibvp)
-{
-    // PARAMETERS -----------------------------------------------------
-    const int finest_level = amr.finestLevel();
-    // ----------------------------------------------------------------
-
-    // VARIABLES ------------------------------------------------------
-    std::string time_integration;
-    // ----------------------------------------------------------------
-
-    // TIME INTEGRATION -----------------------------------------------
-    // At this moment, all AMR levels must use the same time
-    // integration algorithm.
-    // ----------------------------------------------------------------
+    // APPLY NEWTON-RAPHSON -------------------------------------------
+    err = 1.0;
+    it = 0;
+    while ((it < it_max) && (err > tol))
     {
-        const int lev = 0;
+        // CALL SOLVER
+        // Compute: dX := J^{-1}*R
+        ls.solve();
+
+        // X := X-dX
+        amr.subtract_solution_of_linear_solver(ls, X_new, ibvp);
+
+        eval_residuals_implicit_Newmark(gamma, beta, amr, t, dt, MCh, X_old, Xd_old, X_new, Xd_new, ls, ibvp, false);
+        
+        err = linalg::norm2(ls.B.size(), ls.B.data());
+
+Print() << "err: " << err << std::endl;
+
+        it += 1;
+    }
+    // ----------------------------------------------------------------
+
+    // SEND A WARNING IF MAXIMUM NUMBER OF ITERATIONS IS REACHED ------
+    if (it == it_max)
+    {
+        std::string msg;
+        msg  = "\n";
+        msg +=  "WARNING: AMReX_dG_AMR_Utils.H - hyperbolic_2nd_order_pde::eval_residuals_implicit_Newmark\n";
+        msg += "| Reached maximum number of iterations.\n";
+        msg += "| it_max: "+std::to_string(it_max)+".\n";
+        msg += "| residuals norm: "+std::to_string(err)+".\n";
+        Abort(msg);
+    }
+    // ----------------------------------------------------------------
+
+    // UPDATE VELOCITY ------------------------------------------------
+    std::fill(ls.B.begin(), ls.B.end(), 0.0);
+
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        const Geometry & geom = amr.Geom(lev);
+        const Mesh & mesh = *amr.meshes[lev];
         const Solution & solution = *amr.solutions[lev];
 
-        time_integration = solution.params.time_integration;
-    }
-    for (int lev = 1; lev <= finest_level; ++lev)
-    {
-        const Solution & solution = *amr.solutions[lev];
-
-        if (time_integration.compare(solution.params.time_integration) != 0)
-        {
-            std::string msg;
-            msg  = "\n";
-            msg +=  "ERROR: AMReX_dG_AMR_Utils.H - take_time_step\n";
-            msg += "| At this moment all AMR levels must use the same time integration algorithm.\n";
-            Abort(msg);
-        }
-    }
-    // ----------------------------------------------------------------
-
-    // SELECT TIME INTEGRATION ALGORITHM ------------------------------
-    {
-        const int lev = 0;
-        const Solution & solution = *amr.solutions[lev];
-
-        if (solution.time_integration_is_explicit_central_difference())
-        {
-            take_time_step_using_explicit_central_difference(amr, t, dt, MCh, X1, X2, ibvp);
-        }
-        else if (solution.time_integration_is_implicit_Newmark())
-        {
-            take_time_step_using_implicit_Newmark(amr, t, dt, MCh, X1, X2, ibvp);
-        }
-        else
-        {
-            std::string msg;
-            msg  = "\n";
-            msg +=  "ERROR: AMReX_dG_AMR_Utils.H - take_time_step\n";
-            msg += "| Unexpected time integration algorithm: "+solution.params.time_integration+".\n";
-            Abort(msg);
-        }
+        implicit_Newmark::eval_Xd_sym(gamma, t, dt,
+                                      geom, mesh, solution, amr.masks[lev],
+                                      MCh[lev], X_old[lev], Xd_old[lev], X_new[lev], Xd_new[lev],
+                                      ls.B,
+                                      ls.dom_info[lev], ls.bou_info[lev],
+                                      ibvp);
     }
     // ----------------------------------------------------------------
 }

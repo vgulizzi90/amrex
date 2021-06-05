@@ -1595,6 +1595,27 @@ void dpotrs(const char uplo, const int n, const int nrhs,
 // ####################################################################
 // AUXILIARY ROUTINES #################################################
 // ####################################################################
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+Real norm2(const int m, const Real * a)
+{
+    Real res = a[0]*a[0];
+    for (int i = 1; i < m; ++i)
+    {
+        res += a[i]*a[i];
+    }
+    return std::sqrt(res);
+}
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+Real norm_inf(const int m, const Real * a)
+{
+    Real res = std::abs(a[0]);
+    for (int i = 1; i < m; ++i)
+    {
+        res = amrex::max(res, std::abs(a[i]));
+    }
+    return res;
+}
+
 /**
  * \brief Fill a buffer with zeros.
  *
