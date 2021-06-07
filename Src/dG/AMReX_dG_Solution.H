@@ -52,6 +52,7 @@ struct SolutionParameters
     Real time_integration_CFL;
 
     int post_processing_grid_order;
+    int post_processing_shell_thickness_grid_order;
     // ================================================================
 
 
@@ -65,7 +66,8 @@ struct SolutionParameters
     cell_merging_volume_fraction_threshold{-1.0},
     time_integration{""},
     time_integration_CFL{0.0},
-    post_processing_grid_order{1}
+    post_processing_grid_order{1},
+    post_processing_shell_thickness_grid_order{1}
     {}
     // ================================================================
 };

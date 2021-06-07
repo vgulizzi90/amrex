@@ -1551,8 +1551,12 @@ struct Mesh
                             AlgoimQuadRule quad = AlgoimQuadGen(level_set, cell_lo, cell_hi, dir, 0, qo_cut);
 
                             // Compute the surface fraction
+#if (AMREX_SPACEDIM == 1)
+                            surface_fraction = (level_set.eval(cell_lo) < 0.0) ? 1.0 : 0.0;
+#else
                             boundary_surface = quad([](const auto & /*x*/) {return 1.0;});
                             surface_fraction = boundary_surface/entire_boundary_surface;
+#endif
 
                             // EMPTY CELL BOUNDARY
                             if (surface_fraction < atol)
@@ -2076,8 +2080,15 @@ struct Mesh
                             AlgoimQuadRule quad = AlgoimQuadGen(phi, cell_lo, cell_hi, dir, 0, qo_cut);
 
                             // Compute the surface fraction
+#if (AMREX_SPACEDIM == 1)
+                            {
+                                const GpuArray<Real, AMREX_SPACEDIM> & tmp = {cell_lo[0]};
+                                surface_fraction = (phi(tmp) < 0.0) ? 1.0 : 0.0;
+                            }
+#else
                             boundary_surface = quad([](const auto & x) {return 1.0;});
                             surface_fraction = boundary_surface/entire_boundary_surface;
+#endif
 
                             // EMPTY CELL BOUNDARY
                             if (surface_fraction < atol)

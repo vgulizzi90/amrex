@@ -1016,12 +1016,16 @@ void take_time_step_using_implicit_Newmark(const amr::SinglePatch & amr, const R
     const int n_levels = finest_level+1;
 
     // NEWMARK ALGORITHM PARAMETERS
-    const Real gamma = 0.5;
-    const Real beta = 0.25;
+    // Second-order accurate scheme but no numerical dissipation
+    //const Real gamma = 0.5;
+    //const Real beta = 0.25;
+    // First-order accurate scheme with numerical dissipation
+    const Real gamma = 5.0/6.0;
+    const Real beta = 0.25*(gamma+0.5)*(gamma+0.5);
 
     // NEWTON-RAPHSON
-    const Real tol = 1.0e-8;
-    const int it_max = 10;
+    const Real tol = 1.0e-12;
+    const int it_max = 100;
     // ----------------------------------------------------------------
 
     // VARIABLES ------------------------------------------------------
@@ -1046,6 +1050,7 @@ void take_time_step_using_implicit_Newmark(const amr::SinglePatch & amr, const R
     if (ls.first_call)
     {
         eval_residuals_implicit_Newmark(gamma, beta, amr, t, dt, MCh, X_old, Xd_old, X_new, Xd_new, ls, ibvp, true);
+        ls.factorize();
 
         /* DEBUG
         ls.print_to_file_sparse("system");
@@ -1058,7 +1063,18 @@ void take_time_step_using_implicit_Newmark(const amr::SinglePatch & amr, const R
     }
     // ----------------------------------------------------------------
 
+    // LINEAR SOLVE ---------------------------------------------------
+    {
+        // Compute: dX := J^{-1}*R
+        ls.solve();
+
+        // X := X-dX
+        amr.subtract_solution_of_linear_solver(ls, X_new, ibvp);
+    }
+    // ----------------------------------------------------------------
+
     // APPLY NEWTON-RAPHSON -------------------------------------------
+    /*
     err = 1.0;
     it = 0;
     while ((it < it_max) && (err > tol))
@@ -1074,10 +1090,11 @@ void take_time_step_using_implicit_Newmark(const amr::SinglePatch & amr, const R
         
         err = linalg::norm2(ls.B.size(), ls.B.data());
 
-Print() << "err: " << err << std::endl;
+        //Print() << "| Residuals (it = " << it << "): " << err << std::endl;
 
         it += 1;
     }
+    */
     // ----------------------------------------------------------------
 
     // SEND A WARNING IF MAXIMUM NUMBER OF ITERATIONS IS REACHED ------

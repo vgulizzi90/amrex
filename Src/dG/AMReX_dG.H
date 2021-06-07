@@ -12,7 +12,9 @@
 #include <AMReX_dG_Tables.H>
 #include <AMReX_dG_Utils.H>
 #include <AMReX_VTK_Utils.H>
+#ifdef AMREX_USE_PARDISO
 #include <AMReX_dG_Pardiso.H>
+#endif
 #include <AMReX_dG_LinearDirectSolver.H>
 #include <AMReX_dG_BasisFunctions.H>
 #include <AMReX_dG_LinAlg.H>

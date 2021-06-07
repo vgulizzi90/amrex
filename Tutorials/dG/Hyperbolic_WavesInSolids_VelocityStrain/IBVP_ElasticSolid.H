@@ -49,6 +49,9 @@
 #endif
 
 // ORDERING OF THE ELASTIC COEFFICIENTS STORED IN COMPACT FORM
+#if (AMREX_SPACEDIM == 1)
+#define C11 0
+#endif
 #if (AMREX_SPACEDIM == 2)
 #define C11 0
 #define C21 1
@@ -123,6 +126,11 @@ void eval_An_compact_c(const amrex::Real rho, const amrex::Real * c, const amrex
     const amrex::Real inv_rho = 1.0/rho;
 
     std::fill(An, An+N_VS*N_VS, 0.0);
+#if (AMREX_SPACEDIM == 1)
+    An[E11+V1*N_VS] = -inv_rho*un[0];
+    
+    An[V1+E11*N_VS] = -c[C11]*un[0];
+#endif
 #if (AMREX_SPACEDIM == 2)
     An[E11+V1*N_VS] = -inv_rho*un[0]; An[E12+V1*N_VS] = -inv_rho*un[1];
     An[E22+V2*N_VS] = -inv_rho*un[1]; An[E12+V2*N_VS] = -inv_rho*un[0];
@@ -167,6 +175,10 @@ void eval_AnU_compact_c(const amrex::Real rho, const amrex::Real * c, const amre
         const amrex::Real n3 = un[2];
     )
 
+#if (AMREX_SPACEDIM == 1)
+    AnU[V1] = -(n1*c[C11])*U[E11];
+    AnU[E11] = -n1*inv_rho*U[V1];
+#endif
 #if (AMREX_SPACEDIM == 2)
     AnU[V1] = -(n1*c[C11]+n2*c[C61])*U[E11]-(n1*c[C61]+n2*c[C66])*U[E12]-(n1*c[C21]+n2*c[C62])*U[E22];
     AnU[V2] = -(n2*c[C21]+n1*c[C61])*U[E11]-(n2*c[C62]+n1*c[C66])*U[E12]-(n2*c[C22]+n1*c[C62])*U[E22];
@@ -201,7 +213,7 @@ void eval_F1_compact_c(const amrex::Real rho, const amrex::Real * c, const amrex
 {
     // PARAMETERS
     const amrex::Real inv_rho = 1.0/rho;
-
+amrex::Print() << "eval_F1_compact_c" << std::endl; exit(-1);
 #if (AMREX_SPACEDIM == 2)
     F1[V1] = -c[C11]*U[E11]-c[C21]*U[E22]-c[C61]*U[E12];
     F1[V2] = -c[C61]*U[E11]-c[C62]*U[E22]-c[C66]*U[E12];
@@ -237,6 +249,11 @@ void eval_F_compact_c(const amrex::Real rho, const amrex::Real * c, const amrex:
 {
     // PARAMETERS
     const amrex::Real inv_rho = 1.0/rho;
+
+#if (AMREX_SPACEDIM == 1)
+    F1[V1] = -c[C11]*U[E11];
+    F1[E11] = -inv_rho*U[V1];
+#endif
 
 #if (AMREX_SPACEDIM == 2)
     F1[V1] = -c[C11]*U[E11]-c[C21]*U[E22]-c[C61]*U[E12];
@@ -311,6 +328,9 @@ void eval_InTcIn_compact_c(const amrex::Real rho, const amrex::Real * c, const a
     const amrex::Real un33 = un[2]*un[2]*inv_rho;
 #endif
 
+#if (AMREX_SPACEDIM == 1)
+    InTcIn[0] = c[C11]*un11;
+#endif
 #if (AMREX_SPACEDIM == 2)
     InTcIn[0+0*AMREX_SPACEDIM] = c[C11]*un11+(c[C61]+c[C61])*un12+c[C66]*un22;
     InTcIn[1+0*AMREX_SPACEDIM] = c[C61]*un11+(c[C21]+c[C66])*un12+c[C62]*un22;
@@ -351,7 +371,10 @@ void eval_eig_InTcIn_compact_c(const amrex::Real rho, const amrex::Real * c, con
     amrex::Real InTcIn[AMREX_SPACEDIM*AMREX_SPACEDIM];
 
     eval_InTcIn_compact_c(rho, c, un, InTcIn);
-
+#if (AMREX_SPACEDIM == 1)
+    w[0] = InTcIn[0];
+    v[0] = 1.0;
+#endif
 #if (AMREX_SPACEDIM == 2)
     amrex::dG::linalg::dsy2ev(InTcIn, w, v);
 #endif
@@ -376,6 +399,7 @@ void eval_eig_InTcIn_compact_c(const amrex::Real rho, const amrex::Real * c, con
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void eval_stress_compact_c(const amrex::Real * c, const amrex::Real * U, amrex::Real * S)
 {
+amrex::Print() << "eval_stress_compact_c" << std::endl; exit(-1);
 #if (AMREX_SPACEDIM == 2)
     S[0] = c[C11]*U[E11]+c[C21]*U[E22]+c[C61]*U[E12];
     S[1] = c[C21]*U[E11]+c[C22]*U[E22]+c[C62]*U[E12];
@@ -410,6 +434,10 @@ amrex::Real eval_total_energy_compact_c(const amrex::Real rho, const amrex::Real
 
     eval_stress_compact_c(c, U, S);
 
+#if (AMREX_SPACEDIM == 1)
+    res  = (m[0]*m[0])/rho;
+    res += E[0]*S[0];
+#endif
 #if (AMREX_SPACEDIM == 2)
     res  = (m[0]*m[0]+m[1]*m[1])/rho;
     res += E[0]*S[0]+E[1]*S[1]+E[2]*S[2];
@@ -464,6 +492,9 @@ void eval_NFn_Riemann_solver(const amrex::Real rho, const amrex::Real * c, const
 
     // EIGENVALUES AND VECTORS OF THE TRANSFORMED CHRISTOFFEL SYMBOL --
     eval_eig_InTcIn_compact_c(rho, c, un, w, v);
+#if (AMREX_SPACEDIM == 1)
+    iv[0] = 1.0/v[0];
+#endif
 #if (AMREX_SPACEDIM == 2)
     amrex::dG::linalg::dge2i(v, iv);
 #endif
@@ -473,6 +504,17 @@ void eval_NFn_Riemann_solver(const amrex::Real rho, const amrex::Real * c, const
     // ----------------------------------------------------------------
 
     // IMPEDANCE MATRIX -----------------------------------------------
+#if (AMREX_SPACEDIM == 1)
+    {
+        const amrex::Real w1 = std::sqrt(w[0]);
+        const amrex::Real v11 = v[0];
+        const amrex::Real iv11 = iv[0];
+
+        Z[0] = rho*(iv11*v11*w1);
+        
+        iZ[0] = 1.0/Z[0];
+    }
+#endif
 #if (AMREX_SPACEDIM == 2)
     {
         const amrex::Real w1 = std::sqrt(w[0]);
@@ -542,6 +584,10 @@ void eval_NFn_Riemann_solver(const amrex::Real rho, const amrex::Real * c, const
 
     // AUXILIARY MATRIX Iun.T*Iun -------------------------------------
     // We use v and iv as temporary variables
+#if (AMREX_SPACEDIM == 1)
+    v[0] = 1.0;
+    iv[0] = 1.0;
+#endif
 #if (AMREX_SPACEDIM == 2)
     v[0+0*2] = 1.0;   v[0+1*2] = n1*n2;
     v[1+0*2] = n1*n2; v[1+1*2] = 1.0;
@@ -577,6 +623,14 @@ void eval_NFn_Riemann_solver(const amrex::Real rho, const amrex::Real * c, const
     amrex::dG::io::print_real_array_2d(1, N_VS, dFn);
     */
 
+#if (AMREX_SPACEDIM == 1)
+    // Jump in the flux
+    dFn[V1] -= NFn[V1];
+    dFn[E11] -= NFn[E11];
+
+    // Use w as a temporary variable
+    w[V1] = n1*dFn[E11];
+#endif
 #if (AMREX_SPACEDIM == 2)
     // Jump in the flux
     dFn[V1] -= NFn[V1];
@@ -614,6 +668,17 @@ void eval_NFn_Riemann_solver(const amrex::Real rho, const amrex::Real * c, const
     // ----------------------------------------------------------------
 
     // NUMERICAL FLUX -------------------------------------------------
+#if (AMREX_SPACEDIM == 1)
+    {
+        const amrex::Real w1 = w[V1];
+        const amrex::Real z11 = Z[0];
+        const amrex::Real iv11 = iv[0];
+        const amrex::Real iz11 = iZ[0];
+
+        NFn[V1] += 0.5*(dFn[V1]+w1*(iv11*z11));
+        NFn[E11] += 0.5*(iz11*n1*dFn[V1]+iv11*n1*w1);
+    }
+#endif
 #if (AMREX_SPACEDIM == 2)
     {
         const amrex::Real w1 = w[V1];
@@ -726,6 +791,9 @@ void eval_NFn_Riemann_solver_prescribed_tractions(const amrex::Real rho, const a
 
     // EIGENVALUES AND VECTORS OF THE TRANSFORMED CHRISTOFFEL SYMBOL --
     eval_eig_InTcIn_compact_c(rho, c, un, w, v);
+#if (AMREX_SPACEDIM == 1)
+    iv[0] = 1.0/v[0];
+#endif
 #if (AMREX_SPACEDIM == 2)
     amrex::dG::linalg::dge2i(v, iv);
 #endif
@@ -735,6 +803,16 @@ void eval_NFn_Riemann_solver_prescribed_tractions(const amrex::Real rho, const a
     // ----------------------------------------------------------------
 
     // IMPEDANCE MATRIX -----------------------------------------------
+#if (AMREX_SPACEDIM == 1)
+    {
+        const amrex::Real w1 = std::sqrt(w[0]);
+        const amrex::Real v11 = v[0];
+        const amrex::Real iv11 = iv[0];
+
+        Z[0] = rho*(iv11*v11*w1);
+        iZ[0] = 1.0/Z[0];
+    }
+#endif
 #if (AMREX_SPACEDIM == 2)
     {
         const amrex::Real w1 = std::sqrt(w[0]);
@@ -806,6 +884,10 @@ void eval_NFn_Riemann_solver_prescribed_tractions(const amrex::Real rho, const a
     // FLUXES ---------------------------------------------------------
     eval_AnU_compact_c(rho, c, un, U, dFn);
 
+#if (AMREX_SPACEDIM == 1)
+    // Jump in the flux
+    dFn[V1] -= (-T[V1]);
+#endif
 #if (AMREX_SPACEDIM == 2)
     // Jump in the flux
     dFn[V1] -= (-T[V1]);
@@ -825,6 +907,14 @@ void eval_NFn_Riemann_solver_prescribed_tractions(const amrex::Real rho, const a
     // ----------------------------------------------------------------
 
     // NUMERICAL FLUX -------------------------------------------------
+#if (AMREX_SPACEDIM == 1)
+    {
+        const amrex::Real iz11 = iZ[0];
+
+        NFn[V1] = -T[V1];
+        NFn[E11] = dFn[E11]-(iz11*n1*dFn[V1]);
+    }
+#endif
 #if (AMREX_SPACEDIM == 2)
     {
         const amrex::Real iz11 = iZ[0+0*2];
@@ -901,7 +991,7 @@ void eval_NFn_Riemann_solver_absorbing_boundary(const amrex::Real rho, const amr
     amrex::Real Z[AMREX_SPACEDIM*AMREX_SPACEDIM], iZ[AMREX_SPACEDIM*AMREX_SPACEDIM];
     amrex::Real dFn[N_VS];
     // ----------------------------------------------------------------
-
+amrex::Print() << "eval_NFn_Riemann_solver_absorbing_boundary" << std::endl; exit(-1);
     // EIGENVALUES AND VECTORS OF THE TRANSFORMED CHRISTOFFEL SYMBOL --
     eval_eig_InTcIn_compact_c(rho, c, un, w, v);
 #if (AMREX_SPACEDIM == 2)

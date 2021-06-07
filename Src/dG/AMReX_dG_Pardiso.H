@@ -83,7 +83,8 @@ struct LinearSolverPardiso
 
 
     // SOLUTION =======================================================
-    void solve(const bool actually_solve = true);
+    void factorize();
+    void solve();
     // ================================================================
 
 

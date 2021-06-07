@@ -1,0 +1,109 @@
+# SPACE ###############################################################
+geometry.prob_lo     = 0.0 0.0 0.0
+geometry.prob_hi     = 1.0 1.0 1.0
+geometry.is_periodic = 0 0 0
+#######################################################################
+
+
+
+# TIME ################################################################
+#time.T = 63.85008518 # Isotropic plate
+#time.T = 8.273010482 # Orthotropic plate
+#time.T = 4.136505241
+time.T = 8.426996044 # Multilayered plate
+time.T = 4.213498022
+
+time.n_steps = 10000
+#######################################################################
+
+
+
+# DISCRETIZATION ######################################################
+# AMR =================================================================
+amr.v = 1
+
+amr.n_cell        = 2 2 2
+amr.max_grid_size = 2 2 2
+
+amr.max_level = 0
+# =====================================================================
+
+
+# MESH ================================================================
+mesh[0].embedded_geometry_is_active = 1
+mesh[0].embedded_geometry_defined_by = level_set
+mesh[0].box_pruning_is_active = 1
+mesh[0].quadrature_order_regular_elements = 8
+mesh[0].quadrature_order_cut_elements = 8
+# =====================================================================
+
+
+# SOLUTION ============================================================
+solution[0].space_p = 6
+solution[0].cell_merging_is_active = 1
+solution[0].cell_merging_volume_fraction_threshold = 0.3
+solution[0].time_integration = implicit_Newmark
+#solution[0].time_integration_CFL = 2.5 # Isotropic
+#solution[0].time_integration_CFL = 50.0 # Orthotropic
+solution[0].time_integration_CFL = 50.0 # Multilayered
+solution[0].post_processing_grid_order = 8
+solution[0].post_processing_shell_thickness_grid_order = 1
+# =====================================================================
+
+# LINEAR SOLVER =======================================================
+pardiso.mtype = -2
+pardiso.n_rhs = 1
+pardiso.msglvl = 0
+
+amr.linear_direct_solver_finest_level = 0
+# =====================================================================
+#######################################################################
+
+
+
+# PROBLEM #############################################################
+n_materials = 1
+
+# Isotropic material
+#material[0].type = isotropic
+#material[0].constants = 0.376 1.0 0.33
+#material[0].use_plane_stress = 1
+#material[0].shear_factor = 0.8333333
+
+# Orthotropic material
+material[0].type = orthotropic_eng_constants
+material[0].constants = 0.04 25.0 1.0 1.0 0.25 0.25 0.25 0.2 0.5 0.5
+material[0].use_plane_stress = 1
+material[0].shear_factor = 0.8333333
+
+# Isotropic / Orthotropic
+#shell_n_layers = 1
+#shell_layers_material = 0
+#shell_layers_thickness = 0.01
+#shell_layers_orientation = 0.0
+#shell_theory = 1 1 0
+
+# Multilayered
+shell_n_layers = 8
+shell_layers_material = 0 0 0 0 0 0 0 0
+shell_layers_thickness = 0.00125 0.00125 0.00125 0.00125 0.00125 0.00125 0.00125 0.00125
+shell_layers_orientation = 90.0 0.0 90.0 0.0 90.0 0.0 90.0 0.0
+shell_theory = 1 1 0
+
+norm = L_inf
+#######################################################################
+# [Description]
+#######################################################################
+
+
+
+# POST-PROCESSING INFO ################################################
+wall_time = 10.0
+wall_time_units = s
+
+output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_$(material[0].type)_p$(solution[0].space_p)_nc$(amr.n_cell)_gs$(amr.max_grid_size)
+plot_int = 500
+output_overwrite = 1
+
+restart = -1
+#######################################################################

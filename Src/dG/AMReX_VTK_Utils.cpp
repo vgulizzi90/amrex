@@ -116,6 +116,47 @@ Gpu::ManagedVector<int> GriddedHexahedron_Connectivity(const int ne)
 
     return conn;
 }
+
+/**
+ * \brief Return the connectivity of a VTK hexahedron divided using a ne x ne x ne3 grid.
+ *
+ * \param[in] ne: grid size.
+ * 
+ * \return the connectivity of the ne x ne x ne3 grid.
+*/
+Gpu::ManagedVector<int> GriddedHexahedron_Connectivity(const int ne, const int ne3)
+{
+    // PARAMETERS -----------------------------------------------------
+    const int nn = ne+1;
+    const int nn3 = ne3+1;
+    const int n_hexs = ne*ne*ne3;
+    const int conn_len = 8*n_hexs;
+    // ----------------------------------------------------------------
+    
+    // VARIABLES ------------------------------------------------------
+    int c;
+    Gpu::ManagedVector<int> conn(conn_len);
+    // ----------------------------------------------------------------
+
+    // EVAL CONNECTIVITY ----------------------------------------------
+    for (int k = 0; k < ne3; ++k)
+    for (int j = 0; j < ne; ++j)
+    for (int i = 0; i < ne; ++i)
+    {
+        c = i+j*ne+k*ne*ne;
+        conn[8*c+0] = i+j*nn+k*nn*nn;
+        conn[8*c+1] = (i+1)+j*nn+k*nn*nn;
+        conn[8*c+2] = (i+1)+(j+1)*nn+k*nn*nn;
+        conn[8*c+3] = i+(j+1)*nn+k*nn*nn;
+        conn[8*c+4] = i+j*nn+(k+1)*nn*nn;
+        conn[8*c+5] = (i+1)+j*nn+(k+1)*nn*nn;
+        conn[8*c+6] = (i+1)+(j+1)*nn+(k+1)*nn*nn;
+        conn[8*c+7] = i+(j+1)*nn+(k+1)*nn*nn;
+    }
+    // ----------------------------------------------------------------
+
+    return conn;
+}
 // ####################################################################
 
 

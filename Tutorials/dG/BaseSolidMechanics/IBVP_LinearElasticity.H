@@ -355,6 +355,40 @@ void get_stiffness_matrix_3d_isotropic(const amrex::Real E, const amrex::Real nu
 /**
  * \brief Fill memory pointed to by c with coefficients of the elasticity stiffness matrix.
  *
+ * \param[in] E: Young's modulus.
+ * \param[in] nu: Poisson's ratio.
+ * \param[out] c: pointer to memory that will contain the coefficients of the elasticity stiffness
+ *                matrix.
+ *
+*/
+AMREX_FORCE_INLINE
+void get_stiffness_matrix_3d_isotropic_plane_stress(const amrex::Real E, const amrex::Real nu, amrex::Real * c,
+                                                    const amrex::Real shear_factor = 1.0)
+{
+    char uplo = 'U';
+    int n = 6;
+    int info;
+
+    get_compliance_matrix_3d_isotropic(E, nu, c);
+    c[0+2*6] = 0.0;
+    c[1+2*6] = 0.0;
+    c[2+0*6] = 0.0;
+    c[2+1*6] = 0.0;
+    c[3+3*6] /= shear_factor;
+    c[4+4*6] /= shear_factor;
+
+    dpotrf_(&uplo, &n, c, &n, &info);
+    dpotri_(&uplo, &n, c, &n, &info);
+    for (int i = 1; i < 6; ++i)
+    for (int j = 0; j < i; ++j)
+    {
+        c[i+j*6] = c[j+i*6];
+    }
+}
+
+/**
+ * \brief Fill memory pointed to by c with coefficients of the elasticity stiffness matrix.
+ *
  * \param[in] (c11, c22, c33, c23, c13, c12, c44, c55, c66): Elastic constants
  * \param[out] c: pointer to memory that will contain the coefficients of the elasticity stiffness
  *                matrix.
@@ -399,6 +433,45 @@ void get_stiffness_matrix_3d_orthotropic_eng_constants(const amrex::Real E1, con
     c[2+0*6] = -nu13/E1; c[2+1*6] = -nu23/E2; c[2+2*6] =   1.0/E3;
     c[3+3*6] = 1.0/G23;
     c[4+4*6] = 1.0/G13;
+    c[5+5*6] = 1.0/G12;
+
+    dpotrf_(&uplo, &n, c, &n, &info);
+    dpotri_(&uplo, &n, c, &n, &info);
+    for (int i = 1; i < 6; ++i)
+    for (int j = 0; j < i; ++j)
+    {
+        c[i+j*6] = c[j+i*6];
+    }
+
+    amrex::Print() << "get_stiffness_matrix_3d_orthotropic_eng_constants - c: " << std::endl;
+    amrex::dG::io::print_real_array_2d(6, 6, c);
+}
+
+/**
+ * \brief Fill memory pointed to by c with coefficients of the elasticity stiffness matrix.
+ *
+ * \param[in] (E1, E2, E3, nu23, nu13, nu12, G23, G13, G12): Elastic constants
+ * \param[out] c: pointer to memory that will contain the coefficients of the elasticity stiffness
+ *                matrix.
+ *
+*/
+AMREX_FORCE_INLINE
+void get_stiffness_matrix_3d_orthotropic_eng_constants_plane_stress(const amrex::Real E1, const amrex::Real E2, const amrex::Real E3,
+                                                                    const amrex::Real nu23, const amrex::Real nu13, const amrex::Real nu12,
+                                                                    const amrex::Real G23, const amrex::Real G13, const amrex::Real G12,
+                                                                    amrex::Real * c,
+                                                                    const amrex::Real shear_factor = 1.0)
+{
+    char uplo = 'U';
+    int n = 6;
+    int info;
+
+    std::fill(c, c+6*6, 0.0);
+    c[0+0*6] =   1.0/E1; c[0+1*6] = -nu12/E1; c[0+2*6] = 0.0;
+    c[1+0*6] = -nu12/E1; c[1+1*6] =   1.0/E2; c[1+2*6] = 0.0;
+    c[2+0*6] = 0.0;      c[2+1*6] = 0.0;      c[2+2*6] = 1.0/E3;
+    c[3+3*6] = 1.0/(G23*shear_factor);
+    c[4+4*6] = 1.0/(G13*shear_factor);
     c[5+5*6] = 1.0/G12;
 
     dpotrf_(&uplo, &n, c, &n, &info);

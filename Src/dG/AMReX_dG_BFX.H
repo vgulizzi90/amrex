@@ -349,7 +349,7 @@ public space_elm_bf_base<DG_MAX_p, DG_MAX_Np>
     }
 
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_grad(const Real * x, const int u_lo, const int u_hi, AMREX_D_DECL(Real * U_1, Real * U_2, Real * U_3))
+    void eval_derivatives(const Real * x, const int u_lo, const int u_hi, AMREX_D_DECL(Real * U_1, Real * U_2, Real * U_3))
     {
         this->eval_bf_table(x);
 

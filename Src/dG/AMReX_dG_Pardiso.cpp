@@ -213,7 +213,7 @@ namespace dG
 
 
     // SOLUTION =======================================================
-    void LinearSolverPardiso::solve(const bool actually_solve)
+    void LinearSolverPardiso::factorize()
     {
         // PARAMETERS -------------------------------------------------
         Real d_dum;
@@ -244,16 +244,62 @@ namespace dG
         {
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: AMReX_dG_Pardiso.cpp - LinearSolverPardiso::matrix_check\n";
+            msg +=  "ERROR: AMReX_dG_Pardiso.cpp - LinearSolverPardiso::factorize\n";
             msg += "| Error in phase 22: Numerical factorization.\n";
             msg += "| Error: "+std::to_string(this->error)+".\n";
             Abort(msg);
         }
         // ------------------------------------------------------------
+    }
+    
+    void LinearSolverPardiso::solve()
+    {
+        // PARAMETERS -------------------------------------------------
+        int i_dum;
+        // ------------------------------------------------------------
 
-        // BACK SUBSTITUTION AND ITERATIVE REFINEMENT -----------------
-        if (actually_solve)
+        // TRY ITERATIVE SOLUTION FIRST -------------------------------
+        this->i_params[3] = 61;
+        this->phase = 33;
+
+        pardiso(this->pt,
+                &this->maxfct,
+                &this->mnum,
+                &this->mtype,
+                &this->phase,
+                &this->n,
+                this->A.data(),
+                this->ia.data(),
+                this->ja.data(),
+                &i_dum,
+                &this->n_rhs,
+                this->i_params,
+                &this->msglvl,
+                this->B.data(),
+                this->X.data(),
+                &this->error,
+                this->d_params);
+
+        if (this->error != 0)
         {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: AMReX_dG_Pardiso.cpp - LinearSolverPardiso::solve\n";
+            msg += "| Error in phase 33: Back substitution and iterative refinement - 1.\n";
+            msg += "| Error: "+std::to_string(this->error)+".\n";
+            Abort(msg);
+        }
+        // ------------------------------------------------------------
+
+        if (this->i_params[19] < 0)
+        {
+            this->i_params[3] = 0;
+
+            // NUMERICAL FACTORIZATION --------------------------------
+            this->factorize();
+            // --------------------------------------------------------
+
+            // BACK SUBSTITUTION AND ITERATIVE REFINEMENT -------------
             this->phase = 33;
 
             pardiso(this->pt,
@@ -278,13 +324,13 @@ namespace dG
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: AMReX_dG_Pardiso.cpp - LinearSolverPardiso::matrix_check\n";
-                msg += "| Error in phase 33: Back substitution and iterative refinement.\n";
+                msg +=  "ERROR: AMReX_dG_Pardiso.cpp - LinearSolverPardiso::solve\n";
+                msg += "| Error in phase 33: Back substitution and iterative refinement - 2.\n";
                 msg += "| Error: "+std::to_string(this->error)+".\n";
                 Abort(msg);
             }
+            // --------------------------------------------------------
         }
-        // ------------------------------------------------------------
 
         this->first_call = false;
     }

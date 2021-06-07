@@ -180,8 +180,8 @@ void add_dom_contrib_to_residuals_sym(const Real cb, const Real t,
                         AMREX_D_TERM
                         (
                             integrand  = bfu.dBFdx1[rs]*D1[ru];,
-                            integrand += bfu.dBFdx1[rs]*D2[ru];,
-                            integrand += bfu.dBFdx1[rs]*D3[ru];
+                            integrand += bfu.dBFdx2[rs]*D2[ru];,
+                            integrand += bfu.dBFdx3[rs]*D3[ru];
                         )
                         integrand += bfu.BF[rs]*R[ru];
 
@@ -393,8 +393,8 @@ void add_dom_contrib_to_residuals_sym(const Real cb, const Real t,
                         AMREX_D_TERM
                         (
                             integrand  = bfu.dBFdx1[rs]*D1[ru];,
-                            integrand += bfu.dBFdx1[rs]*D2[ru];,
-                            integrand += bfu.dBFdx1[rs]*D3[ru];
+                            integrand += bfu.dBFdx2[rs]*D2[ru];,
+                            integrand += bfu.dBFdx3[rs]*D3[ru];
                         )
                         integrand += bfu.BF[rs]*R[ru];
 
@@ -562,8 +562,8 @@ void RES_BCS(const Real cb, const int dom, const Real t,
             AMREX_D_TERM
             (
                 integrand  = bfu.dBFdx1[rs]*ND1[ru];,
-                integrand += bfu.dBFdx1[rs]*ND2[ru];,
-                integrand += bfu.dBFdx1[rs]*ND3[ru];
+                integrand += bfu.dBFdx2[rs]*ND2[ru];,
+                integrand += bfu.dBFdx3[rs]*ND3[ru];
             )
             integrand += bfu.BF[rs]*NFn[ru];
 
@@ -711,8 +711,8 @@ void RES_ICS(const Real cb, const int dom, const Real t,
             AMREX_D_TERM
             (
                 integrand  = bfu.dBFdx1[rs]*ND1[ru];,
-                integrand += bfu.dBFdx1[rs]*ND2[ru];,
-                integrand += bfu.dBFdx1[rs]*ND3[ru];
+                integrand += bfu.dBFdx2[rs]*ND2[ru];,
+                integrand += bfu.dBFdx3[rs]*ND3[ru];
             )
             integrand += bfu.BF[rs]*NFn[ru];
 

@@ -53,6 +53,7 @@ const std::string Cell_type_t_description = "UInt"+std::to_string(sizeof(Cell_ty
 Gpu::ManagedVector<int> GriddedLine_Connectivity(const int ne);
 Gpu::ManagedVector<int> GriddedQuad_Connectivity(const int ne);
 Gpu::ManagedVector<int> GriddedHexahedron_Connectivity(const int ne);
+Gpu::ManagedVector<int> GriddedHexahedron_Connectivity(const int ne, const int ne3);
 // ####################################################################
 
 

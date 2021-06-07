@@ -149,6 +149,7 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
     }
     // ----------------------------------------------------------------
 
+/*
     // CONCENTRATED SOURCE TERM ---------------------------------------
     const Real th = 10.0*M_PI/180.0;
     const Real tth = std::tan(th);
@@ -222,6 +223,7 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
     }
 //exit(-1);
     // ----------------------------------------------------------------
+*/
 }
 // ####################################################################
 

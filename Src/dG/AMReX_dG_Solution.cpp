@@ -42,6 +42,7 @@ namespace dG
         pp.query("time_integration_CFL", this->params.time_integration_CFL);
 
         pp.query("post_processing_grid_order", this->params.post_processing_grid_order);
+        pp.query("post_processing_shell_thickness_grid_order", this->params.post_processing_shell_thickness_grid_order);
         // ------------------------------------------------------------
     }
 

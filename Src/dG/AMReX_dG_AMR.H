@@ -362,8 +362,11 @@ void eval_space_interpolation(const Geometry & c_geom, const Mesh & c_mesh, cons
         {
             // INDICES OF THE COARSE CELL
 #if (AMREX_SPACEDIM == 1)
-Print() << "eval_space_interpolation_unsafe: AMREX_SPACEDIM == 1" << std::endl;
-exit(-1);
+            const int pi = (i%rr[0] >= 0) ? i%rr[0] : (i%rr[0]+rr[0]);
+            const int c_i = (i-pi)/rr[0];
+            const int c_j = j;
+            const int c_k = k;
+            const int I_pos = pi*f_sNp*c_sNp;
 #endif
 #if (AMREX_SPACEDIM == 2)
             const int pi = (i%rr[0] >= 0) ? i%rr[0] : (i%rr[0]+rr[0]);
