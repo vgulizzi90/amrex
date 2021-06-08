@@ -908,7 +908,12 @@ exit(-1);
             const int dom = n_domains-1;
             const bool local = true;
             
-            id_offset[rank] = this->solutions[lev]->elm_id.max(dom, 0, local);
+            id_offset[rank] = this->solutions[lev]->elm_id.max(dom, 0, local)+1;
+
+            /* DEBUG
+            Print(rank) << "1 id_offset[" << rank << "]: " << id_offset[rank] << std::endl;
+            */
+            
             ParallelDescriptor::ReduceIntMax(id_offset.dataPtr(), n_ranks);
             for (int r = 1; r < n_ranks; ++r)
             {
@@ -916,7 +921,7 @@ exit(-1);
             }
 
             /* DEBUG
-            Print(rank) << "id_offset[" << rank << "]: " << id_offset[rank] << std::endl;
+            Print(rank) << "2 id_offset[" << rank << "]: " << id_offset[rank] << std::endl;
             */
         }
 
@@ -952,6 +957,14 @@ exit(-1);
                     });
                     Gpu::synchronize();
                 }
+            }
+        }
+
+        // SHARE INFO
+        {
+            for (int lev = 0; lev <= this->linear_direct_solver_finest_level; ++lev)
+            {
+                Solution & solution = *this->solutions[lev];
                 solution.elm_id.FillBoundary(this->geom[lev].periodicity());
             }
         }
@@ -1176,7 +1189,7 @@ exit(-1);
      * \brief Update the element position within the linear system to be solved.
     */
     template <typename IBVP>
-    void update_linear_system_ordering(Vector<iMultiFab> & csr_dom_info, const IBVP & ibvp)
+    void update_linear_system_ordering(Vector<int> & posX_offset, Vector<iMultiFab> & csr_dom_info, const IBVP & ibvp)
     {
         // PARAMETERS -------------------------------------------------
         const int n_ranks = ParallelDescriptor::NProcs();
@@ -1188,7 +1201,6 @@ exit(-1);
 
         // VARIABLES --------------------------------------------------
         int posX;
-        Vector<int> posX_offset(n_ranks);
         // ------------------------------------------------------------
 
         // ELEMENT DOF ORDERING LOCAL TO EACH PROCESSOR ---------------
@@ -1205,10 +1217,22 @@ exit(-1);
         // APPLY OFFSET AMONG PROCESSORS ------------------------------
         {
             const int lev = this->linear_direct_solver_finest_level;
+            const Solution & solution = *this->solutions[lev];
+            const int sp = solution.params.space_p;
+            const int sNp = AMREX_D_TERM((1+sp),*(1+sp),*(1+sp));
             const int dom = n_domains-1;
+            int u_lo, u_hi;
+            ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+            const int Nu = u_hi-u_lo;
+            const int elm_n_dof = Nu*sNp;
             const bool local = true;
             
-            posX_offset[rank] = this->solutions[lev]->elm_id.max(dom, 0, local);
+            posX_offset[rank] = csr_dom_info[lev].max(CSR_DOM_INFO_POS_X(dom), 0, local)+elm_n_dof;
+
+            /* DEBUG
+            Print(rank) << "1 posX_offset[" << rank << "]: " << posX_offset[rank] << std::endl;
+            */
+
             ParallelDescriptor::ReduceIntMax(posX_offset.dataPtr(), n_ranks);
             for (int r = 1; r < n_ranks; ++r)
             {
@@ -1216,7 +1240,7 @@ exit(-1);
             }
 
             /* DEBUG
-            Print(rank) << "posX_offset[" << rank << "]: " << posX_offset[rank] << std::endl;
+            Print(rank) << "2 posX_offset[" << rank << "]: " << posX_offset[rank] << std::endl;
             */
         }
 
@@ -1229,7 +1253,7 @@ exit(-1);
                 const iMultiFab & mask = this->masks[lev];
                 Solution & solution = *this->solutions[lev];
 
-                for (MFIter mfi(solution.elm_id); mfi.isValid(); ++mfi)
+                for (MFIter mfi(csr_dom_info[lev]); mfi.isValid(); ++mfi)
                 {
                     const Box & bx = mfi.validbox();
 
@@ -1252,6 +1276,13 @@ exit(-1);
                     });
                     Gpu::synchronize();
                 }
+            }
+        }
+
+        // SHARE INFO
+        {
+            for (int lev = 0; lev <= this->linear_direct_solver_finest_level; ++lev)
+            {
                 csr_dom_info[lev].FillBoundary(this->geom[lev].periodicity());
             }
         }
@@ -1272,25 +1303,27 @@ exit(-1);
         Vector<iMultiFab> elm_nbr_info(this->linear_direct_solver_finest_level+1);
         // ------------------------------------------------------------
 
-        // AT THE MOMENT WE ALLOW ONE PROCESSOR ONLY ------------------
+#ifdef AMREX_USE_PARDISO
+        // AT THE MOMENT PARDISO ALLOWS ONE PROCESSOR ONLY -------------
         if (n_procs != 1)
         {
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver_pardiso\n";
+            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver\n";
             msg += "| At the moment, pardiso can only be called with 1 MPI rank.\n";
             msg += "| n_procs: "+std::to_string(n_procs)+".\n";
             Abort(msg);
         }
         // ------------------------------------------------------------
+#endif
 
         // AT THE MOMENT WE ALLOW ONE AMR LEVEL ONLY ------------------
         if (this->max_level != 0)
         {
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver_pardiso\n";
-            msg += "| At the moment, pardiso can only be called with 1 AMR level.\n";
+            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver\n";
+            msg += "| At the moment, the linear solver can only be called with 1 AMR level.\n";
             msg += "| max_level: "+std::to_string(this->max_level)+".\n";
             Abort(msg);
         }
@@ -1301,7 +1334,7 @@ exit(-1);
         // ------------------------------------------------------------
 
         // SET POSITION OF THE ELEMENT DOFS WITHIN THE SYSTEM ---------
-        this->update_linear_system_ordering(ls.dom_info, ibvp);
+        this->update_linear_system_ordering(ls.posX_offset, ls.dom_info, ibvp);
         // ------------------------------------------------------------
 
         // GATHER NEIGHBOR INFORMATION --------------------------------
@@ -1316,7 +1349,7 @@ exit(-1);
         {
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver_pardiso\n";
+            msg +=  "ERROR: AMReX_dG_AMR.H - SinglePatch::init_linear_solver\n";
             msg += "| Gathering neighbors information with multilevel AMR is not supported at the moment.\n";
             msg += "| linear_direct_solver_finest_level: "+std::to_string(this->linear_direct_solver_finest_level)+".\n";
             Abort(msg);

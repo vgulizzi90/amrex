@@ -28,8 +28,16 @@ namespace dG
     
     void LinearSolverPardiso::init()
     {
+        // PARAMETERS -------------------------------------------------
+        const int n_ranks = ParallelDescriptor::NProcs();
+        // ------------------------------------------------------------
+
         // VARIABLES --------------------------------------------------
         char * c_var;
+        // ------------------------------------------------------------
+
+        // DOF POSITION IN THE GLOBAL SYSTEM --------------------------
+        this->posX_offset.resize(n_ranks);
         // ------------------------------------------------------------
 
         // PARDISO BASE CONTROL PARAMETERS ----------------------------

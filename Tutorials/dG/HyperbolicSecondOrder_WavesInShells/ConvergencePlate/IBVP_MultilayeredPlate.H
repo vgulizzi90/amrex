@@ -1117,10 +1117,6 @@ struct IBVP
         return NU;
     }
     /**
-     * \brief Return the parent domain of the u-th unknown field.
-     *
-    */
-    /**
      * \brief Return the unknown fields index bounds for the dom-th domain.
      *
     */
@@ -1130,6 +1126,10 @@ struct IBVP
         u_lo = 0;
         u_hi = this->theory[0]+this->theory[1]+this->theory[2]+3;
     }
+    /**
+     * \brief Return the parent domain of the u-th unknown field.
+     *
+    */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     int unknown_field_parent_domain(const int /*u*/) const
     {
@@ -2775,7 +2775,12 @@ public amrex::dG::amr::SinglePatch
     amrex::Vector<amrex::MultiFab> Xd;
 
     // LINEAR DIRECT SOLVER
+#ifdef AMREX_USE_PARDISO
     amrex::dG::LinearSolverPardiso pardiso;
+#endif
+#ifdef AMREX_USE_HYPRE
+    amrex::dG::LinearSolverHypre hypre;
+#endif
 
     // NORM
     std::string norm;
@@ -3007,6 +3012,7 @@ exit(-1);
         }
         else if (solution.time_integration_is_implicit_Newmark())
         {
+#ifdef AMREX_USE_PARDISO
             amrex::dG::hyperbolic_2nd_order_pde::take_time_step_using_implicit_Newmark(*this,
                                                                                        t_, dt,
                                                                                        this->MCh,
@@ -3014,6 +3020,16 @@ exit(-1);
                                                                                        this->Xd,
                                                                                        this->pardiso,
                                                                                        this->ibvp);
+#endif
+#ifdef AMREX_USE_HYPRE
+            amrex::dG::hyperbolic_2nd_order_pde::take_time_step_using_implicit_Newmark(*this,
+                                                                                       t_, dt,
+                                                                                       this->MCh,
+                                                                                       this->X,
+                                                                                       this->Xd,
+                                                                                       this->hypre,
+                                                                                       this->ibvp);
+#endif
         }
         else
         {
@@ -3030,6 +3046,7 @@ exit(-1);
     // LINEAR SOLVER ==================================================
     void init_linear_solver()
     {
+#ifdef AMREX_USE_PARDISO
         // INPUT FILE
         this->pardiso.read_input_file();
 
@@ -3038,11 +3055,27 @@ exit(-1);
         
         // INIT DATA STRUCTURES
         amrex::dG::amr::SinglePatch::init_linear_solver(this->pardiso, this->ibvp);
+#endif
+#ifdef AMREX_USE_HYPRE
+        // INPUT FILE
+        this->hypre.read_input_file();
+
+        // HYPRE BASE CONTROL PARAMETERS
+        this->hypre.init();
+        
+        // INIT DATA STRUCTURES
+        amrex::dG::amr::SinglePatch::init_linear_solver(this->hypre, this->ibvp);
+#endif
     }
 
     void terminate_linear_solver()
     {
+#ifdef AMREX_USE_PARDISO
         this->pardiso.terminate();
+#endif
+#ifdef AMREX_USE_PARDISO
+        this->hypre.terminate();
+#endif
     }
     // ================================================================
 

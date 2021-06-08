@@ -2,39 +2,38 @@
 // Author : Vincenzo Gulizzi (LBL)
 // Contact: vgulizzi@lbl.gov
 //
-/** \file AMReX_dG_Pardiso.H
- * \brief Contains utilities to call pardiso linear solver.
+/** \file AMReX_dG_Hypre.H
+ * \brief Contains utilities to call hypre linear solver.
 */
 
-#ifndef AMREX_DG_PARDISO_H_
-#define AMREX_DG_PARDISO_H_
+#ifndef AMREX_DG_HYPRE_H_
+#define AMREX_DG_HYPRE_H_
 
 #include <AMReX_ParmParse.H>
 #include <AMReX_Vector.H>
 #include <AMReX_iMultiFab.H>
 
-/* PARDISO prototype. */
-extern "C" void pardisoinit(void *, int *, int *, int *, double *, int *);
-extern "C" void pardiso_chkmatrix(int *, int *, double *, int *, int *, int *);
-extern "C" void pardiso_printstats (int *, int *, double *, int *, int *, int *, double *, int *);
-extern "C" void pardiso(void *, int *, int *, int *, int *, int *, double *, int *, int *, int *, int *, int *, int *, double *, double *, int *, double *);
+#include <AMReX_HypreIJIface.H>
 
-#define __DG_PARDISO_REAL_STRUCTURAL_SYMMETRIC_MATRIX__ 1
-#define __DG_PARDISO_REAL_SYMMETRIC_POS_DEFINITE_MATRIX__ 2
-#define __DG_PARDISO_REAL_SYMMETRIC_INDEFINITE_MATRIX__ -2
-#define __DG_PARDISO_REAL_NONSYMMETRIC_MATRIX__ 11
+#include <AMReX_dG_Utils.H>
+
+#define __DG_HYPRE_REAL_STRUCTURAL_SYMMETRIC_MATRIX__ 1
+#define __DG_HYPRE_REAL_SYMMETRIC_POS_DEFINITE_MATRIX__ 2
+#define __DG_HYPRE_REAL_SYMMETRIC_INDEFINITE_MATRIX__ -2
+#define __DG_HYPRE_REAL_NONSYMMETRIC_MATRIX__ 11
 
 namespace amrex
 {
 namespace dG
 {
 
-// PARDISO ############################################################
-struct LinearSolverPardiso
+
+// HYPRE ##############################################################
+struct LinearSolverHypre
 {
     // DATA MEMBERS ===================================================
     Vector<int> posX_offset;
-    
+
     int mtype;
 
     int n;
@@ -43,16 +42,13 @@ struct LinearSolverPardiso
     int nnz;
     int n_rhs;
 
-    void * pt[64];
-
-    int i_params[64];
-    Real d_params[64];
-    int maxfct, mnum, phase, error, msglvl, solver;
-
-    int num_procs;
+    int msglvl;
 
     Vector<iMultiFab> dom_info;
     Vector<Array<iMultiFab, AMREX_SPACEDIM>> bou_info;
+
+    int rlo, rhi;
+    HYPRE_IJMatrix AIJ;
 
     bool first_call;
     // ================================================================
@@ -100,6 +96,7 @@ struct LinearSolverPardiso
     // ================================================================
 };
 // ####################################################################
+
 
 } // namespace dG
 } // namespace amrex

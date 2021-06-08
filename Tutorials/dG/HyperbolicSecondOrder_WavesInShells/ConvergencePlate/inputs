@@ -15,7 +15,8 @@ time.T = 16.546020964 # Orthotropic plate
 #time.T = 8.273010482
 #time.T = 4.136505241
 
-#time.T = 8.426996044 # Multilayered plate
+#time.T = 16.853992088 # Multilayered plate
+#time.T = 8.426996044 
 #time.T = 4.213498022
 
 time.n_steps = 10000
@@ -27,8 +28,8 @@ time.n_steps = 10000
 # AMR =================================================================
 amr.v = 1
 
-amr.n_cell        = 16 16 16
-amr.max_grid_size = 16 16 16
+amr.n_cell        = 8 8 8
+amr.max_grid_size = 4 4 4
 
 amr.max_level = 0
 # =====================================================================
@@ -55,10 +56,17 @@ solution[0].post_processing_grid_order = 8
 solution[0].post_processing_shell_thickness_grid_order = 1
 # =====================================================================
 
+
 # LINEAR SOLVER =======================================================
+# READ IF USE_PARDISO = TRUE
 pardiso.mtype = -2
 pardiso.n_rhs = 1
 pardiso.msglvl = 0
+
+# READ IF USE_HYPRE = TRUE
+hypre.mtype = -2
+hypre.n_rhs = 1
+hypre.msglvl = 0
 
 amr.linear_direct_solver_finest_level = 0
 # =====================================================================

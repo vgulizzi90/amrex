@@ -896,7 +896,7 @@ void add_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                         nbr_bfu.eval(x, nbr_u_lo, nbr_u_hi, nbr_U);
 
                         // Numerical flux as a functions of (t, x, un, U^-, U^+)
-                        ibvp.eval_NFn_EB(dom, nbr_dom, t, x, un, U, nbr_U, NFn);
+                        //ibvp.eval_NFn_EB(dom, nbr_dom, t, x, un, U, nbr_U, NFn);
 
                         // Integral contribution
                         for (int ru = u_lo; ru < u_hi; ++ru)

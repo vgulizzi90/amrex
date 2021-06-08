@@ -15,6 +15,9 @@
 #ifdef AMREX_USE_PARDISO
 #include <AMReX_dG_Pardiso.H>
 #endif
+#ifdef AMREX_USE_HYPRE
+#include <AMReX_dG_Hypre.H>
+#endif
 #include <AMReX_dG_LinearDirectSolver.H>
 #include <AMReX_dG_BasisFunctions.H>
 #include <AMReX_dG_LinAlg.H>

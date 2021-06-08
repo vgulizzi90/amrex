@@ -135,6 +135,16 @@ struct IBVP
         return IDEAL_GAS_NU;
     }
     /**
+     * \brief Return the unknown fields index bounds for the dom-th domain.
+     *
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void domain_unknown_fields_index_bounds(const int /*dom*/, int & u_lo, int & u_hi) const
+    {
+        u_lo = 0;
+        u_hi = IDEAL_GAS_NU;
+    }
+    /**
      * \brief Return the parent domain of the u-th unknown field.
      *
     */
@@ -360,6 +370,29 @@ struct IBVP
     {
         ideal_gas::eval_NFn_wall(this->gamma, un, U, NFn);
     }
+
+    /**
+     * \brief Eval the numerical flux at the embedded boundaries.
+     *
+     * \param[in] dom: index of the domain.
+     * \param[in] nbr_dom: index of the domain that is neighbor with dom.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] m_U: pointer to memory containing the conserved variables on the negative side of the
+     *                 unit normal.
+     * \param[in] p_U: pointer to memory containing the conserved variables on the positive side of the
+     *                 unit normal.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_NF_EB(const int /*dom*/, const int /*nbr_dom*/,
+                    const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * /*un*/,
+                    const amrex::Real * /*m_U*/, const amrex::Real * /*p_U*/, amrex::Real * /*NFn*/) const
+    {
+amrex::Print() << "eval_NFn_EB" << std::endl;
+exit(-1);
+    }
     // ================================================================
 
 
@@ -420,6 +453,24 @@ struct IBVP
                                "density_error"};
     }
 
+    /**
+     * \brief Fill F with fields to be output.
+     * 
+     * \param[in] dom: domain index.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] U: pointer to memory that stores the conserved variables at (t,x).
+     * \param[out] F: pointer to memory that will be filled with values of the output fields at (t,x).
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_output_fields(const int /*dom*/, const amrex::Real t, const amrex::Real * x,
+                            const amrex::Real * U, AMREX_D_DECL(const amrex::Real * U_1, const amrex::Real * U_2, const amrex::Real * U_3),
+                            amrex::Real * F) const
+    {
+amrex::Print() << "eval_output_fields" << std::endl;
+exit(-1);
+    }
+    
     /**
      * \brief Fill F with fields to be output.
      * 
