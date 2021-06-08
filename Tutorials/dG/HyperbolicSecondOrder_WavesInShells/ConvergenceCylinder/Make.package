@@ -1,0 +1,3 @@
+CEXE_headers += IBVP_MultilayeredShell.H
+
+CEXE_sources += main.cpp

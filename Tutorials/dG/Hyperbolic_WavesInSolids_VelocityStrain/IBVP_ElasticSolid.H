@@ -751,8 +751,381 @@ void eval_NFn_Riemann_solver(const amrex::Real rho, const amrex::Real * c, const
     /* DEBUG
     amrex::Print() << "NFn: " << std::endl;
     amrex::dG::io::print_real_array_2d(1, N_VS, NFn);
-    exit(-1);
     */
+    // ----------------------------------------------------------------
+}
+
+/**
+ * \brief Solve the Riemann problem between two adjacent states.
+ *
+ * \param[in] m_rho: density of the material on the negative side of the unit normal.
+ * \param[in] m_c: pointer to memory containing the coefficients of the stiffness matrix of the material
+ *               on the negative side of the unit normal.
+ * \param[in] p_rho: density of the material on the positive side of the unit normal.
+ * \param[in] p_c: pointer to memory containing the coefficients of the stiffness matrix of the
+ *                 material on the positive side of the unit normal.
+ * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+ * \param[in] m_U: pointer to memory containing the conserved variables on the negative side of the
+ *                 unit normal.
+ * \param[in] p_U: pointer to memory containing the conserved variables on the positive side of the
+ *                 unit normal.
+ * \param[out] NFn: pointer to memory that will contain the numerical flux.
+ *
+ * Ref:
+ * Title: An exact Riemann solver for wave propagation in arbitrary anisotropic elastic media with
+ *        fluid coupling
+ * Authors: Qiwei Zhan et al
+ * Journal (Year): Computer Methods in Applied Mechanics and Engineering (2018)
+ *
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void eval_NFn_Riemann_solver(const amrex::Real m_rho, const amrex::Real * m_c, const amrex::Real p_rho, const amrex::Real * p_c, const amrex::Real * un,
+                             const amrex::Real * m_U, const amrex::Real * p_U, amrex::Real * NFn)
+{
+    // PARAMETERS -----------------------------------------------------
+    const amrex::Real AMREX_D_DECL(n1 = un[0], n2 = un[1], n3 = un[2]);
+    // ----------------------------------------------------------------
+
+    // VARIABLES ------------------------------------------------------
+    amrex::Real m_w[AMREX_SPACEDIM], m_v[AMREX_SPACEDIM*AMREX_SPACEDIM], m_iv[AMREX_SPACEDIM*AMREX_SPACEDIM];
+    amrex::Real p_w[AMREX_SPACEDIM], p_v[AMREX_SPACEDIM*AMREX_SPACEDIM], p_iv[AMREX_SPACEDIM*AMREX_SPACEDIM];
+    amrex::Real m_Z[AMREX_SPACEDIM*AMREX_SPACEDIM], p_Z[AMREX_SPACEDIM*AMREX_SPACEDIM], sZ[AMREX_SPACEDIM*AMREX_SPACEDIM], iZ[AMREX_SPACEDIM*AMREX_SPACEDIM];
+    amrex::Real dFn[N_VS];
+    // ----------------------------------------------------------------
+
+    // EIGENVALUES AND VECTORS OF THE TRANSFORMED CHRISTOFFEL SYMBOL --
+    eval_eig_InTcIn_compact_c(m_rho, m_c, un, m_w, m_v);
+    eval_eig_InTcIn_compact_c(p_rho, p_c, un, p_w, p_v);
+#if (AMREX_SPACEDIM == 1)
+    m_iv[0] = 1.0/m_v[0];
+    p_iv[0] = 1.0/p_v[0];
+#endif
+#if (AMREX_SPACEDIM == 2)
+    amrex::dG::linalg::dge2i(m_v, m_iv);
+    amrex::dG::linalg::dge2i(p_v, p_iv);
+#endif
+#if (AMREX_SPACEDIM == 3)
+    amrex::dG::linalg::dge3i(m_v, m_iv);
+    amrex::dG::linalg::dge3i(p_v, p_iv);
+#endif
+    // ----------------------------------------------------------------
+
+    // IMPEDANCE MATRIX -----------------------------------------------
+#if (AMREX_SPACEDIM == 1)
+    {
+        const amrex::Real w1 = std::sqrt(m_w[0]);
+        const amrex::Real v11 = m_v[0];
+        const amrex::Real iv11 = m_iv[0];
+
+        m_Z[0] = m_rho*(iv11*v11*w1);
+    }
+    {
+        const amrex::Real w1 = std::sqrt(p_w[0]);
+        const amrex::Real v11 = p_v[0];
+        const amrex::Real iv11 = p_iv[0];
+
+        p_Z[0] = p_rho*(iv11*v11*w1);
+    }
+
+    iZ[0] = 1.0/(m_Z[0]+p_Z[0]);
+#endif
+#if (AMREX_SPACEDIM == 2)
+    {
+        const amrex::Real w1 = std::sqrt(m_w[0]);
+        const amrex::Real w2 = std::sqrt(m_w[1]);
+        const amrex::Real v11 = m_v[0+0*2];
+        const amrex::Real v12 = m_v[0+1*2];
+        const amrex::Real v21 = m_v[1+0*2];
+        const amrex::Real v22 = m_v[1+1*2];
+        const amrex::Real iv11 = m_iv[0+0*2];
+        const amrex::Real iv12 = m_iv[0+1*2];
+        const amrex::Real iv21 = m_iv[1+0*2];
+        const amrex::Real iv22 = m_iv[1+1*2];
+
+        m_Z[0+0*2] = m_rho*(iv11*v11*w1+iv21*v12*w2); m_Z[0+1*2] = m_rho*(iv12*v11*w1+iv22*v12*w2);
+        m_Z[1+0*2] = m_rho*(iv11*v21*w1+iv21*v22*w2); m_Z[1+1*2] = m_rho*(iv12*v21*w1+iv22*v22*w2);
+    }
+    {
+        const amrex::Real w1 = std::sqrt(p_w[0]);
+        const amrex::Real w2 = std::sqrt(p_w[1]);
+        const amrex::Real v11 = p_v[0+0*2];
+        const amrex::Real v12 = p_v[0+1*2];
+        const amrex::Real v21 = p_v[1+0*2];
+        const amrex::Real v22 = p_v[1+1*2];
+        const amrex::Real iv11 = p_iv[0+0*2];
+        const amrex::Real iv12 = p_iv[0+1*2];
+        const amrex::Real iv21 = p_iv[1+0*2];
+        const amrex::Real iv22 = p_iv[1+1*2];
+
+        p_Z[0+0*2] = p_rho*(iv11*v11*w1+iv21*v12*w2); p_Z[0+1*2] = p_rho*(iv12*v11*w1+iv22*v12*w2);
+        p_Z[1+0*2] = p_rho*(iv11*v21*w1+iv21*v22*w2); p_Z[1+1*2] = p_rho*(iv12*v21*w1+iv22*v22*w2);
+    }
+
+    for (int k = 0; k < AMREX_SPACEDIM*AMREX_SPACEDIM; ++k)
+    {
+        sZ[k] = m_Z[k]+p_Z[k];
+    }
+    amrex::dG::linalg::dge2i(sZ, iZ);
+#endif
+#if (AMREX_SPACEDIM == 3)
+    {
+        const amrex::Real w1 = std::sqrt(m_w[0]);
+        const amrex::Real w2 = std::sqrt(m_w[1]);
+        const amrex::Real w3 = std::sqrt(m_w[2]);
+        const amrex::Real v11 = m_v[0+0*3];
+        const amrex::Real v12 = m_v[0+1*3];
+        const amrex::Real v13 = m_v[0+2*3];
+        const amrex::Real v21 = m_v[1+0*3];
+        const amrex::Real v22 = m_v[1+1*3];
+        const amrex::Real v23 = m_v[1+2*3];
+        const amrex::Real v31 = m_v[2+0*3];
+        const amrex::Real v32 = m_v[2+1*3];
+        const amrex::Real v33 = m_v[2+2*3];
+        const amrex::Real iv11 = m_iv[0+0*3];
+        const amrex::Real iv12 = m_iv[0+1*3];
+        const amrex::Real iv13 = m_iv[0+2*3];
+        const amrex::Real iv21 = m_iv[1+0*3];
+        const amrex::Real iv22 = m_iv[1+1*3];
+        const amrex::Real iv23 = m_iv[1+2*3];
+        const amrex::Real iv31 = m_iv[2+0*3];
+        const amrex::Real iv32 = m_iv[2+1*3];
+        const amrex::Real iv33 = m_iv[2+2*3];
+
+        m_Z[0+0*3] = m_rho*(iv11*v11*w1+iv21*v12*w2+iv31*v13*w3); m_Z[0+1*3] = m_rho*(iv12*v11*w1+iv22*v12*w2+iv32*v13*w3); m_Z[0+2*3] = m_rho*(iv13*v11*w1+iv23*v12*w2+iv33*v13*w3);
+        m_Z[1+0*3] = m_rho*(iv11*v21*w1+iv21*v22*w2+iv31*v23*w3); m_Z[1+1*3] = m_rho*(iv12*v21*w1+iv22*v22*w2+iv32*v23*w3); m_Z[1+2*3] = m_rho*(iv13*v21*w1+iv23*v22*w2+iv33*v23*w3);
+        m_Z[2+0*3] = m_rho*(iv11*v31*w1+iv21*v32*w2+iv31*v33*w3); m_Z[2+1*3] = m_rho*(iv12*v31*w1+iv22*v32*w2+iv32*v33*w3); m_Z[2+2*3] = m_rho*(iv13*v31*w1+iv23*v32*w2+iv33*v33*w3);
+    }
+    {
+        const amrex::Real w1 = std::sqrt(p_w[0]);
+        const amrex::Real w2 = std::sqrt(p_w[1]);
+        const amrex::Real w3 = std::sqrt(p_w[2]);
+        const amrex::Real v11 = p_v[0+0*3];
+        const amrex::Real v12 = p_v[0+1*3];
+        const amrex::Real v13 = p_v[0+2*3];
+        const amrex::Real v21 = p_v[1+0*3];
+        const amrex::Real v22 = p_v[1+1*3];
+        const amrex::Real v23 = p_v[1+2*3];
+        const amrex::Real v31 = p_v[2+0*3];
+        const amrex::Real v32 = p_v[2+1*3];
+        const amrex::Real v33 = p_v[2+2*3];
+        const amrex::Real iv11 = p_iv[0+0*3];
+        const amrex::Real iv12 = p_iv[0+1*3];
+        const amrex::Real iv13 = p_iv[0+2*3];
+        const amrex::Real iv21 = p_iv[1+0*3];
+        const amrex::Real iv22 = p_iv[1+1*3];
+        const amrex::Real iv23 = p_iv[1+2*3];
+        const amrex::Real iv31 = p_iv[2+0*3];
+        const amrex::Real iv32 = p_iv[2+1*3];
+        const amrex::Real iv33 = p_iv[2+2*3];
+
+        p_Z[0+0*3] = p_rho*(iv11*v11*w1+iv21*v12*w2+iv31*v13*w3); p_Z[0+1*3] = p_rho*(iv12*v11*w1+iv22*v12*w2+iv32*v13*w3); p_Z[0+2*3] = p_rho*(iv13*v11*w1+iv23*v12*w2+iv33*v13*w3);
+        p_Z[1+0*3] = p_rho*(iv11*v21*w1+iv21*v22*w2+iv31*v23*w3); p_Z[1+1*3] = p_rho*(iv12*v21*w1+iv22*v22*w2+iv32*v23*w3); p_Z[1+2*3] = p_rho*(iv13*v21*w1+iv23*v22*w2+iv33*v23*w3);
+        p_Z[2+0*3] = p_rho*(iv11*v31*w1+iv21*v32*w2+iv31*v33*w3); p_Z[2+1*3] = p_rho*(iv12*v31*w1+iv22*v32*w2+iv32*v33*w3); p_Z[2+2*3] = p_rho*(iv13*v31*w1+iv23*v32*w2+iv33*v33*w3);
+    }
+
+    for (int k = 0; k < AMREX_SPACEDIM*AMREX_SPACEDIM; ++k)
+    {
+        sZ[k] = m_Z[k]+p_Z[k];
+    }
+    amrex::dG::linalg::dge3i(sZ, iZ);
+#endif
+
+    /* DEBUG */
+    amrex::Print() << "un: " << std::endl;
+    amrex::dG::io::print_real_array_2d(1, AMREX_SPACEDIM, un);
+    amrex::Print() << "m_w: " << std::endl;
+    amrex::dG::io::print_real_array_2d(1, AMREX_SPACEDIM, m_w);
+    amrex::Print() << "m_v: " << std::endl;
+    amrex::dG::io::print_real_array_2d(AMREX_SPACEDIM, AMREX_SPACEDIM, m_v);
+    amrex::Print() << "m_iv: " << std::endl;
+    amrex::dG::io::print_real_array_2d(AMREX_SPACEDIM, AMREX_SPACEDIM, m_iv);
+    amrex::Print() << "m_Z: " << std::endl;
+    amrex::dG::io::print_real_array_2d(AMREX_SPACEDIM, AMREX_SPACEDIM, m_Z);
+    amrex::Print() << "p_w: " << std::endl;
+    amrex::dG::io::print_real_array_2d(1, AMREX_SPACEDIM, p_w);
+    amrex::Print() << "p_v: " << std::endl;
+    amrex::dG::io::print_real_array_2d(AMREX_SPACEDIM, AMREX_SPACEDIM, p_v);
+    amrex::Print() << "p_iv: " << std::endl;
+    amrex::dG::io::print_real_array_2d(AMREX_SPACEDIM, AMREX_SPACEDIM, p_iv);
+    amrex::Print() << "p_Z: " << std::endl;
+    amrex::dG::io::print_real_array_2d(AMREX_SPACEDIM, AMREX_SPACEDIM, p_Z);
+    amrex::Print() << "iZ: " << std::endl;
+    amrex::dG::io::print_real_array_2d(AMREX_SPACEDIM, AMREX_SPACEDIM, iZ);
+    /**/
+    // ----------------------------------------------------------------
+
+    // AUXILIARY MATRIX Iun.T*Iun -------------------------------------
+    // We use m_v and m_iv as temporary variables
+#if (AMREX_SPACEDIM == 1)
+    m_v[0] = 1.0;
+    m_iv[0] = 1.0;
+#endif
+#if (AMREX_SPACEDIM == 2)
+    m_v[0+0*2] = 1.0;   m_v[0+1*2] = n1*n2;
+    m_v[1+0*2] = n1*n2; m_v[1+1*2] = 1.0;
+    amrex::dG::linalg::dge2i(m_v, m_iv);
+#endif
+#if (AMREX_SPACEDIM == 3)
+    m_v[0+0*3] = 1.0;   m_v[0+1*3] = n1*n2; m_v[0+2*3] = n1*n3;
+    m_v[1+0*3] = n1*n2; m_v[1+1*3] = 1.0;   m_v[1+2*3] = n2*n3;
+    m_v[2+0*3] = n1*n3; m_v[2+1*3] = n2*n3; m_v[2+2*3] = 1.0;
+    amrex::dG::linalg::dge3i(m_v, m_iv);
+#endif
+
+    /* DEBUG */
+    amrex::Print() << "Isq: " << std::endl;
+    amrex::dG::io::print_real_array_2d(AMREX_SPACEDIM, AMREX_SPACEDIM, m_v);
+    amrex::Print() << "iIsq: " << std::endl;
+    amrex::dG::io::print_real_array_2d(AMREX_SPACEDIM, AMREX_SPACEDIM, m_iv);
+    /**/
+    // ----------------------------------------------------------------
+
+    // FLUXES ---------------------------------------------------------
+    eval_AnU_compact_c(m_rho, m_c, un, m_U, NFn);
+    eval_AnU_compact_c(m_rho, m_c, un, p_U, dFn);
+
+    /* DEBUG */
+    amrex::Print() << "m_U: " << std::endl;
+    amrex::dG::io::print_real_array_2d(1, N_VS, m_U);
+    amrex::Print() << "p_U: " << std::endl;
+    amrex::dG::io::print_real_array_2d(1, N_VS, p_U);
+    amrex::Print() << "m_Fn: " << std::endl;
+    amrex::dG::io::print_real_array_2d(1, N_VS, NFn);
+    amrex::Print() << "p_Fn: " << std::endl;
+    amrex::dG::io::print_real_array_2d(1, N_VS, dFn);
+    /**/
+
+#if (AMREX_SPACEDIM == 1)
+    // Jump in the flux
+    dFn[V1] -= NFn[V1];
+    dFn[E11] -= NFn[E11];
+
+    // Use m_w as a temporary variable
+    m_w[V1] = n1*dFn[E11];
+#endif
+#if (AMREX_SPACEDIM == 2)
+    // Jump in the flux
+    dFn[V1] -= NFn[V1];
+    dFn[V2] -= NFn[V2];
+    dFn[E11] -= NFn[E11];
+    dFn[E22] -= NFn[E22];
+    dFn[E12] -= NFn[E12];
+
+    // Use m_w as a temporary variable
+    m_w[V1] = n1*dFn[E11]+n2*dFn[E12];
+    m_w[V2] = n1*dFn[E12]+n2*dFn[E22];
+#endif
+#if (AMREX_SPACEDIM == 3)
+    // Jump in the flux
+    dFn[V1] -= NFn[V1];
+    dFn[V2] -= NFn[V2];
+    dFn[V3] -= NFn[V3];
+    dFn[E11] -= NFn[E11];
+    dFn[E22] -= NFn[E22];
+    dFn[E33] -= NFn[E33];
+    dFn[E23] -= NFn[E23];
+    dFn[E13] -= NFn[E13];
+    dFn[E12] -= NFn[E12];
+
+    // Use m_w as a temporary variable
+    m_w[V1] = n1*dFn[E11]+n2*dFn[E12]+n3*dFn[E13];
+    m_w[V2] = n1*dFn[E12]+n2*dFn[E22]+n3*dFn[E23];
+    m_w[V3] = n1*dFn[E13]+n2*dFn[E23]+n3*dFn[E33];
+#endif
+
+    /* DEBUG */
+    amrex::Print() << "dFn: " << std::endl;
+    amrex::dG::io::print_real_array_2d(1, N_VS, dFn);
+    /**/
+    // ----------------------------------------------------------------
+
+    // NUMERICAL FLUX -------------------------------------------------
+#if (AMREX_SPACEDIM == 1)
+    {
+        const amrex::Real w1 = m_w[V1];
+        const amrex::Real z11 = m_Z[0];
+        const amrex::Real iv11 = m_iv[0];
+        const amrex::Real iz11 = iZ[0];
+
+        NFn[V1] += 0.5*(dFn[V1]+w1*(iv11*z11));
+        NFn[E11] += 0.5*(iz11*n1*dFn[V1]+iv11*n1*w1);
+    }
+#endif
+#if (AMREX_SPACEDIM == 2)
+    {
+        const amrex::Real w1 = m_w[V1];
+        const amrex::Real w2 = m_w[V2];
+        const amrex::Real z11 = m_Z[0+0*2];
+        const amrex::Real z12 = m_Z[0+1*2];
+        const amrex::Real z21 = m_Z[1+0*2];
+        const amrex::Real z22 = m_Z[1+1*2];
+        const amrex::Real iv11 = m_iv[0+0*2];
+        const amrex::Real iv12 = m_iv[0+1*2];
+        const amrex::Real iv21 = m_iv[1+0*2];
+        const amrex::Real iv22 = m_iv[1+1*2];
+        const amrex::Real iz11 = iZ[0+0*2];
+        const amrex::Real iz12 = iZ[0+1*2];
+        const amrex::Real iz21 = iZ[1+0*2];
+        const amrex::Real iz22 = iZ[1+1*2];
+
+        NFn[V1] += 0.5*(dFn[V1]+w1*(iv11*z11+iv21*z12)+w2*(iv12*z11+iv22*z12));
+        NFn[V2] += 0.5*(dFn[V2]+w1*(iv11*z21+iv21*z22)+w2*(iv12*z21+iv22*z22));
+        NFn[E11] += 0.5*(          iz11*n1*dFn[V1]+          iz12*n1*dFn[V2]+          iv11*n1*w1+          iv12*n1*w2);
+        NFn[E22] += 0.5*(          iz21*n2*dFn[V1]+          iz22*n2*dFn[V2]+          iv21*n2*w1+          iv22*n2*w2);
+        NFn[E12] += 0.5*((iz21*n1+iz11*n2)*dFn[V1]+(iz22*n1+iz12*n2)*dFn[V2]+(iv21*n1+iv11*n2)*w1+(iv22*n1+iv12*n2)*w2);
+    }
+#endif
+#if (AMREX_SPACEDIM == 3)
+    {
+        const amrex::Real w1 = m_w[V1];
+        const amrex::Real w2 = m_w[V2];
+        const amrex::Real w3 = m_w[V3];
+        const amrex::Real z11 = m_Z[0+0*3];
+        const amrex::Real z12 = m_Z[0+1*3];
+        const amrex::Real z13 = m_Z[0+2*3];
+        const amrex::Real z21 = m_Z[1+0*3];
+        const amrex::Real z22 = m_Z[1+1*3];
+        const amrex::Real z23 = m_Z[1+2*3];
+        const amrex::Real z31 = m_Z[2+0*3];
+        const amrex::Real z32 = m_Z[2+1*3];
+        const amrex::Real z33 = m_Z[2+2*3];
+        const amrex::Real iv11 = m_iv[0+0*3];
+        const amrex::Real iv12 = m_iv[0+1*3];
+        const amrex::Real iv13 = m_iv[0+2*3];
+        const amrex::Real iv21 = m_iv[1+0*3];
+        const amrex::Real iv22 = m_iv[1+1*3];
+        const amrex::Real iv23 = m_iv[1+2*3];
+        const amrex::Real iv31 = m_iv[2+0*3];
+        const amrex::Real iv32 = m_iv[2+1*3];
+        const amrex::Real iv33 = m_iv[2+2*3];
+        const amrex::Real iz11 = iZ[0+0*3];
+        const amrex::Real iz12 = iZ[0+1*3];
+        const amrex::Real iz13 = iZ[0+2*3];
+        const amrex::Real iz21 = iZ[1+0*3];
+        const amrex::Real iz22 = iZ[1+1*3];
+        const amrex::Real iz23 = iZ[1+2*3];
+        const amrex::Real iz31 = iZ[2+0*3];
+        const amrex::Real iz32 = iZ[2+1*3];
+        const amrex::Real iz33 = iZ[2+2*3];
+
+        NFn[V1] += 0.5*(dFn[V1]+w1*(iv11*z11+iv21*z12+iv31*z13)+w2*(iv12*z11+iv22*z12+iv32*z13)+w3*(iv13*z11+iv23*z12+iv33*z13));
+        NFn[V2] += 0.5*(dFn[V2]+w1*(iv11*z21+iv21*z22+iv31*z23)+w2*(iv12*z21+iv22*z22+iv32*z23)+w3*(iv13*z21+iv23*z22+iv33*z23));
+        NFn[V3] += 0.5*(dFn[V3]+w1*(iv11*z31+iv21*z32+iv31*z33)+w2*(iv12*z31+iv22*z32+iv32*z33)+w3*(iv13*z31+iv23*z32+iv33*z33));
+        NFn[E11] += 0.5*(          iz11*n1*dFn[V1]+          iz12*n1*dFn[V2]          +iz13*n1*dFn[V3]+          iv11*n1*w1          +iv12*n1*w2          +iv13*n1*w3);
+        NFn[E22] += 0.5*(          iz21*n2*dFn[V1]+          iz22*n2*dFn[V2]          +iz23*n2*dFn[V3]+          iv21*n2*w1          +iv22*n2*w2          +iv23*n2*w3);
+        NFn[E33] += 0.5*(          iz31*n3*dFn[V1]+          iz32*n3*dFn[V2]          +iz33*n3*dFn[V3]+          iv31*n3*w1          +iv32*n3*w2          +iv33*n3*w3);
+        NFn[E23] += 0.5*((iz31*n2+iz21*n3)*dFn[V1]+(iz32*n2+iz22*n3)*dFn[V2]+(iz33*n2+iz23*n3)*dFn[V3]+(iv31*n2+iv21*n3)*w1+(iv32*n2+iv22*n3)*w2+(iv33*n2+iv23*n3)*w3);
+        NFn[E13] += 0.5*((iz31*n1+iz11*n3)*dFn[V1]+(iz32*n1+iz12*n3)*dFn[V2]+(iz33*n1+iz13*n3)*dFn[V3]+(iv31*n1+iv11*n3)*w1+(iv32*n1+iv12*n3)*w2+(iv33*n1+iv13*n3)*w3);
+        NFn[E12] += 0.5*((iz21*n1+iz11*n2)*dFn[V1]+(iz22*n1+iz12*n2)*dFn[V2]+(iz23*n1+iz13*n2)*dFn[V3]+(iv21*n1+iv11*n2)*w1+(iv22*n1+iv12*n2)*w2+(iv23*n1+iv13*n2)*w3);
+    }
+#endif
+
+    /* DEBUG */
+    amrex::Print() << "NFn: " << std::endl;
+    amrex::dG::io::print_real_array_2d(1, N_VS, NFn);
+    exit(-1);
+    /**/
     // ----------------------------------------------------------------
 }
 

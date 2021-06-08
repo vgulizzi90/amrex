@@ -2,7 +2,7 @@
 // Author : Vincenzo Gulizzi (LBL)
 // Contact: vgulizzi@lbl.gov
 //
-/** \file IBVP_MultilayeredPlate.H
+/** \file IBVP_MultilayeredShell.H
  * \brief Contains constants and data structures for the considered IBVP.
 */
 
@@ -47,7 +47,7 @@
 // ####################################################################
 
 
-namespace multilayered_plate
+namespace multilayered_shell
 {
 // SINGLE PHASE DOMAIN: LEVEL SET #####################################
 template <int N>
@@ -151,6 +151,8 @@ struct Material
 struct IBVP
 {
     // DATA MEMBERS ===================================================
+    amrex::Real Rc;
+    
     Material materials[MAX_N_MATERIALS];
     int n_layers;
     int layers_material[MAX_N_LAYERS];
@@ -184,6 +186,12 @@ struct IBVP
         int n_materials;
         // ------------------------------------------------------------
 
+        // READ GEOMETRICAL PROPERTIES --------------------------------
+        {
+            pp.get("cylinder_radius", this->Rc);
+        }
+        // ------------------------------------------------------------
+
         // READ MATERIAL PROPERTIES -----------------------------------
         pp.get("n_materials", n_materials);
 
@@ -191,7 +199,7 @@ struct IBVP
         {
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
+            msg +=  "ERROR: IBVP_MultilayeredShell.H - IBVP::IBVP\n";
             msg += "| Number of materials must be positive.\n";
             amrex::Abort(msg);
         }
@@ -199,7 +207,7 @@ struct IBVP
         {
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
+            msg +=  "ERROR: IBVP_MultilayeredShell.H - IBVP::IBVP\n";
             msg += "| Number of materials cannot exceed "+std::to_string(MAX_N_MATERIALS)+".\n";
             amrex::Abort(msg);
         }
@@ -266,7 +274,7 @@ struct IBVP
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
+                msg +=  "ERROR: IBVP_MultilayeredShell.H - IBVP::IBVP\n";
                 msg += "| Unexpected input material type: "+material_type+".\n";
                 amrex::Abort(msg);
             }
@@ -295,7 +303,7 @@ struct IBVP
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
+                msg +=  "ERROR: IBVP_MultilayeredShell.H - IBVP::IBVP\n";
                 msg += "| Number of layers cannot exceed "+std::to_string(MAX_N_LAYERS)+".\n";
                 amrex::Abort(msg);
             }
@@ -328,7 +336,7 @@ struct IBVP
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
+                msg +=  "ERROR: IBVP_MultilayeredShell.H - IBVP::IBVP\n";
                 msg += "| Shell theory[0]+theory[1]+theory[2]+3 does not match "+std::to_string(SHELL_NU)+".\n";
                 msg += "| Shell theory: "+std::to_string(int_aux[0])+" "+std::to_string(int_aux[1])+" "+std::to_string(int_aux[2])+".\n";
                 amrex::Abort(msg);
@@ -403,7 +411,7 @@ struct IBVP
         // EVAL DATA STRUCTURES FOR THE EXACT SOLUTION ----------------
         {
             const int m1 = 1;
-            const amrex::Real L1 = 1.0;
+            const amrex::Real L1 = M_PI/4.0;
             const int m2 = 1;
             const amrex::Real L2 = 1.0;
 
@@ -455,7 +463,7 @@ struct IBVP
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
+                msg +=  "ERROR: IBVP_MultilayeredShell.H - IBVP::IBVP\n";
                 msg += "| Something went wrong during the factorization of the mass matrix (dpotf2).\n";
                 msg += "| info: "+std::to_string(info)+".\n";
                 amrex::Abort(msg);
@@ -477,26 +485,30 @@ struct IBVP
 
             // PARTICULAR SOLUTION
             {
-                const amrex::Real x[2] = {0.0, 0.0};
+                const amrex::Real x[2] = {0.1*M_PI, 0.0};
 
                 const amrex::Real q1 = 0.0, q2 = 0.0, q3 = 1.0;
-                const amrex::Real tt[3] = {q1,
-                                           q2,
-                                           q3};
                 const int l = this->n_layers-1;
                 const amrex::Real x3b = this->layers_x3b[l];
                 const amrex::Real tau = this->layers_thickness[l];
                 const amrex::Real x3 = x3b+tau;
                 const amrex::Real g = this->shell_map_eval_surface_Jacobian(x, x3, 2);
 
-                amrex::Real iK[SHELL_NU*SHELL_NU], RF[3*SHELL_NU];
+                amrex::Real iK[SHELL_NU*SHELL_NU], R[3*3], RF[3*SHELL_NU], tt[3];
+                amrex::Real * gu3;
+
+                this->shell_map_eval_R(x, x3, R);
+                gu3 = &R[2*3];
+                tt[0] = q3*gu3[0];
+                tt[1] = q3*gu3[1];
+                tt[2] = q3*gu3[2];
 
                 this->shell_theory_eval_RF_operator(x, x3, RF);
 
                 amrex::dG::linalg::dgemv('T', 3, SHELL_NU, g, RF, 3, tt, 1, 0.0, this->Us, 1);
 
-                //amrex::Print() << "Us: " << std::endl;
-                //amrex::dG::io::print_real_array_2d(SHELL_NU, 1, this->Us);
+                amrex::Print() << "Us: " << std::endl;
+                amrex::dG::io::print_real_array_2d(SHELL_NU, 1, this->Us);
 
                 // FACTORIZATION OF THE STIFFNESS MATRIX
                 std::copy(A, A+SHELL_NU*SHELL_NU, iK);
@@ -506,7 +518,7 @@ struct IBVP
                 {
                     std::string msg;
                     msg  = "\n";
-                    msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
+                    msg +=  "ERROR: IBVP_MultilayeredShell.H - IBVP::IBVP\n";
                     msg += "| Something went wrong during the factorization of the stiffness matrix (dpotf2).\n";
                     msg += "| info: "+std::to_string(info)+".\n";
                     amrex::Abort(msg);
@@ -523,7 +535,7 @@ struct IBVP
                 {
                     std::string msg;
                     msg  = "\n";
-                    msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
+                    msg +=  "ERROR: IBVP_MultilayeredShell.H - IBVP::IBVP\n";
                     msg += "| Something went wrong during the inversion of the stiffness matrix (dpotrs).\n";
                     msg += "| info: "+std::to_string(info)+".\n";
                     amrex::Abort(msg);
@@ -540,7 +552,7 @@ struct IBVP
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
+                msg +=  "ERROR: IBVP_MultilayeredShell.H - IBVP::IBVP\n";
                 msg += "| Something went wrong during the inversion of the mass matrix (dpotrs).\n";
                 msg += "| info: "+std::to_string(info)+".\n";
                 amrex::Abort(msg);
@@ -563,7 +575,7 @@ struct IBVP
                 {
                     std::string msg;
                     msg  = "\n";
-                    msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
+                    msg +=  "ERROR: IBVP_MultilayeredShell.H - IBVP::IBVP\n";
                     msg += "| Something went wrong during the solution of the eigenproblem (dgeev_).\n";
                     msg += "| info: "+std::to_string(info)+".\n";
                     amrex::Abort(msg);
@@ -595,7 +607,7 @@ struct IBVP
                 {
                     std::string msg;
                     msg  = "\n";
-                    msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
+                    msg +=  "ERROR: IBVP_MultilayeredShell.H - IBVP::IBVP\n";
                     msg += "| Something went wrong during the factorization of the right eigenvectors matrix (dgetrf).\n";
                     msg += "| info: "+std::to_string(info)+".\n";
                     amrex::Abort(msg);
@@ -611,7 +623,7 @@ struct IBVP
                 {
                     std::string msg;
                     msg  = "\n";
-                    msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
+                    msg +=  "ERROR: IBVP_MultilayeredShell.H - IBVP::IBVP\n";
                     msg += "| Something went wrong during the inversion of the right eigenvectors matrix (dgetrs).\n";
                     msg += "| info: "+std::to_string(info)+".\n";
                     amrex::Abort(msg);
@@ -623,7 +635,7 @@ struct IBVP
             amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, A);
             amrex::Print() << "cvA: " << std::endl;
             amrex::dG::io::print_real_array_2d(SHELL_NU, 1, this->cvA);
-            //exit(-1);
+            exit(-1);
             /**/
         }
         // ------------------------------------------------------------
@@ -639,9 +651,9 @@ struct IBVP
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void shell_map(const amrex::Real * x, amrex::Real * X) const
     {
-        X[0] = x[0];
-        X[1] = x[1];
-        X[2] = 0.0;
+        X[0] = x[1];
+        X[1] = this->Rc*std::cos(x[0]);
+        X[2] = this->Rc*std::sin(x[0]);
     }
 
     /**
@@ -672,11 +684,11 @@ struct IBVP
     {
         this->shell_map(x, X);
 
-        X_1[0] = 1.0;
-        X_1[1] = 0.0;
-        X_1[2] = 0.0;
-        X_2[0] = 0.0;
-        X_2[1] = 1.0;
+        X_1[0] = 0.0;
+        X_1[1] = -this->Rc*std::sin(x[0]);
+        X_1[2] = this->Rc*std::cos(x[0]);
+        X_2[0] = 1.0;
+        X_2[1] = 0.0;
         X_2[2] = 0.0;
     }
 
@@ -693,8 +705,8 @@ struct IBVP
         this->shell_map_eval_derivatives(x, X, X_1, X_2);
 
         X_11[0] = 0.0;
-        X_11[1] = 0.0;
-        X_11[2] = 0.0;
+        X_11[1] = -this->Rc*std::cos(x[0]);
+        X_11[2] = -this->Rc*std::sin(x[0]);
         X_22[0] = 0.0;
         X_22[1] = 0.0;
         X_22[2] = 0.0;
@@ -717,8 +729,8 @@ struct IBVP
         this->shell_map_eval_derivatives(x, X, X_1, X_2, X_11, X_22, X_12);
 
         X_111[0] = 0.0;
-        X_111[1] = 0.0;
-        X_111[2] = 0.0;
+        X_111[1] = this->Rc*std::sin(x[0]);
+        X_111[2] = -this->Rc*std::cos(x[0]);
         X_222[0] = 0.0;
         X_222[1] = 0.0;
         X_222[2] = 0.0;
@@ -1015,6 +1027,26 @@ struct IBVP
         R_3[2+0*3] = -(A11*R11*R31 + A12*R21*R31 + A21*R11*R32 + A22*R21*R32 + A31*R11*R33 + A32*R21*R33 + R31*(A13*R31 + A23*R32 + A33*R33));
         R_3[2+1*3] = -(A11*R12*R31 + A12*R22*R31 + R32*(A21*R12 + A22*R22 + A13*R31 + A23*R32) + (A31*R12 + A32*R22 + A33*R32)*R33);
         R_3[2+2*3] = -(A11*R13*R31 + A12*R23*R31 + A21*R13*R32 + A22*R23*R32 + (A31*R13 + A32*R23 + A13*R31 + A23*R32)*R33 + A33*R33*R33);
+
+        /* DEBUG
+        amrex::Print() << "x: "; amrex::dG::io::print_real_array_2d(1, 2, x);
+        amrex::Print() << "x3: " << x3 << std::endl;
+        amrex::Print() << "X: "; amrex::dG::io::print_real_array_2d(1, 3, X);
+        amrex::Print() << "X_1: "; amrex::dG::io::print_real_array_2d(1, 3, X_1);
+        amrex::Print() << "X_2: "; amrex::dG::io::print_real_array_2d(1, 3, X_2);
+        amrex::Print() << "X_11: "; amrex::dG::io::print_real_array_2d(1, 3, X_11);
+        amrex::Print() << "X_22: "; amrex::dG::io::print_real_array_2d(1, 3, X_22);
+        amrex::Print() << "X_12: "; amrex::dG::io::print_real_array_2d(1, 3, X_12);
+        amrex::Print() << "R: " << std::endl;
+        amrex::dG::io::print_real_array_2d(3, 3, R);
+        amrex::Print() << "R_1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(3, 3, R_1);
+        amrex::Print() << "R_2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(3, 3, R_2);
+        amrex::Print() << "R_3: " << std::endl;
+        amrex::dG::io::print_real_array_2d(3, 3, R_3);
+        exit(-1);
+        */
     }
 
     /**
@@ -1157,7 +1189,7 @@ struct IBVP
     void eval_exact_solution(const amrex::Real t, const amrex::Real * x, amrex::Real * U) const
     {
         const int m1 = 1;
-        const amrex::Real L1 = 1.0;
+        const amrex::Real L1 = M_PI/4.0;
         const int m2 = 1;
         const amrex::Real L2 = 1.0;
         const amrex::Real c1 = std::cos((m1*M_PI/L1)*x[0]);
@@ -1194,7 +1226,7 @@ struct IBVP
     void eval_exact_solution(const amrex::Real t, const amrex::Real * x, amrex::Real * U, amrex::Real * U_1, amrex::Real * U_2) const
     {
         const int m1 = 1;
-        const amrex::Real L1 = 1.0;
+        const amrex::Real L1 = M_PI/4.0;
         const int m2 = 1;
         const amrex::Real L2 = 1.0;
         const amrex::Real c1 = std::cos((m1*M_PI/L1)*x[0]);
@@ -1526,6 +1558,12 @@ exit(-1);
         /* DEBUG
         amrex::Print() << "R: " << std::endl;
         amrex::dG::io::print_real_array_2d(3, 3, R);
+        amrex::Print() << "R_1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(3, 3, R_1);
+        amrex::Print() << "R_2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(3, 3, R_2);
+        amrex::Print() << "R_3: " << std::endl;
+        amrex::dG::io::print_real_array_2d(3, 3, R_3);
         amrex::Print() << "J1: " << std::endl;
         amrex::dG::io::print_real_array_2d(6, SHELL_NU, J1);
         amrex::Print() << "J2: " << std::endl;
@@ -1745,12 +1783,13 @@ exit(-1);
                 amrex::dG::linalg::dgemm('T', 'N', SHELL_NU, SHELL_NU, 6, w, J3, 6, tmp6NU, 6, 1.0, S_, SHELL_NU);
 
                 /*
+                amrex::Print() << "x3: " << x3 << std::endl;
+                amrex::Print() << "J1: " << std::endl;
+                amrex::dG::io::print_real_array_2d(6, SHELL_NU, J1);
+                amrex::Print() << "J2: " << std::endl;
+                amrex::dG::io::print_real_array_2d(6, SHELL_NU, J2);
                 amrex::Print() << "J3: " << std::endl;
                 amrex::dG::io::print_real_array_2d(6, SHELL_NU, J3);
-                amrex::Print() << "R2_: " << std::endl;
-                amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, R2_);
-                amrex::Print() << "S_: " << std::endl;
-                amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, S_);
                 exit(-1);
                 */
 
@@ -1814,7 +1853,7 @@ exit(-1);
                 AMREX_D_DECL(amrex::Real * D1, amrex::Real * D2, amrex::Real * D3), amrex::Real * R) const
     {
         // VARIABLES
-        amrex::Real RF[3*SHELL_NU];
+        amrex::Real Rxi[3*3], RF[3*SHELL_NU];
 
         amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, 1.0, this->Q11, SHELL_NU, U_1, 1, 0.0, D1, 1);
         amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, 1.0, this->Q12, SHELL_NU, U_2, 1, 1.0, D1, 1);
@@ -1831,19 +1870,24 @@ exit(-1);
         // CONTRIBUTION OF THE EXTERNAL FORCES: TOP SURFACE
         {
             const int m1 = 1;
-            const amrex::Real L1 = 1.0;
+            const amrex::Real L1 = M_PI/4.0;
             const int m2 = 1;
             const amrex::Real L2 = 1.0;
             const amrex::Real q1 = 0.0, q2 = 0.0, q3 = 1.0;
-            const amrex::Real tt[3] = {q1*std::cos((m1*M_PI/L1)*x[0])*std::sin((m2*M_PI/L2)*x[1]),
-                                       q2*std::sin((m1*M_PI/L1)*x[0])*std::cos((m2*M_PI/L2)*x[1]),
-                                       q3*std::sin((m1*M_PI/L1)*x[0])*std::sin((m2*M_PI/L2)*x[1])};
 
             const int l = this->n_layers-1;
             const amrex::Real x3b = this->layers_x3b[l];
             const amrex::Real tau = this->layers_thickness[l];
             const amrex::Real x3 = x3b+tau;
             const amrex::Real g = this->shell_map_eval_surface_Jacobian(x, x3, 2);
+            amrex::Real * gu3;
+            amrex::Real tt[3];
+
+            this->shell_map_eval_R(x, x3, Rxi);
+            gu3 = &Rxi[2*3];
+            tt[0] = q3*std::sin((m1*M_PI/L1)*x[0])*std::sin((m2*M_PI/L2)*x[1])*gu3[0];
+            tt[1] = q3*std::sin((m1*M_PI/L1)*x[0])*std::sin((m2*M_PI/L2)*x[1])*gu3[1];
+            tt[2] = q3*std::sin((m1*M_PI/L1)*x[0])*std::sin((m2*M_PI/L2)*x[1])*gu3[2];
 
             this->shell_theory_eval_RF_operator(x, x3, RF);
 
@@ -2556,7 +2600,7 @@ exit(-1);
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     int get_number_of_shell_output_fields() const
     {
-        return 12;
+        return 13;
     }
     /**
      * \brief Return the parent domain of the u-th output field.
@@ -2596,7 +2640,8 @@ exit(-1);
     {
         output_fields_names = {"X1", "X2", "X3",
                                "ux", "uy", "uz",
-                               "sxx", "syy", "szz", "syz", "sxz", "sxy"};
+                               "sxx", "syy", "szz", "syz", "sxz", "sxy",
+                               "sxi1xi1"};
     }
 
     /**
@@ -2710,6 +2755,9 @@ exit(-1);
         F[3+6] = S_[3];
         F[4+6] = S_[4];
         F[5+6] = S_[5];
+        F[0+12] = S_[1]*std::cos(x[0])*std::cos(x[0])+
+                  S_[2]*std::sin(x[0])*std::sin(x[0])-
+                  2.0*S_[3]*std::sin(x[0])*std::cos(x[0]);
 
         /*
         if ((std::abs(x[0]-0.5) < 1.0e-5) && (std::abs(x[1]-0.5) < 1.0e-5) && (std::abs(x3-0.5*0.01) < 1.0e-7))
@@ -2870,7 +2918,7 @@ public amrex::dG::amr::SinglePatch
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_MultilayeredPlate.H - AMR::init\n";
+                msg +=  "ERROR: IBVP_MultilayeredShell.H - AMR::init\n";
                 msg += "| Unexpected time integration method: "+solution.params.time_integration+".\n";
                 amrex::Abort(msg);
             }
@@ -2913,7 +2961,7 @@ exit(-1);
         {
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: IBVP_MultilayeredPlate.H - AMR::MakeNewLevelFromScratch\n";
+            msg +=  "ERROR: IBVP_MultilayeredShell.H - AMR::MakeNewLevelFromScratch\n";
             msg += "| Unexpected method used to define the embedded geometry.\n";
             msg += "| Unexpected method: "+mesh.params.embedded_geometry_defined_by+".\n";
             amrex::Abort(msg);
@@ -2949,7 +2997,7 @@ exit(-1);
         {
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: IBVP_MultilayeredPlate.H - AMR::MakeNewLevelFromScratch\n";
+            msg +=  "ERROR: IBVP_MultilayeredShell.H - AMR::MakeNewLevelFromScratch\n";
             msg += "| Unexpected time integration method: "+solution.params.time_integration+".\n";
             amrex::Abort(msg);
         }
@@ -2974,7 +3022,7 @@ exit(-1);
         {
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: IBVP_MultilayeredPlate.H - AMR::eval_error\n";
+            msg +=  "ERROR: IBVP_MultilayeredShell.H - AMR::eval_error\n";
             msg += "| Unexpected error norm.\n";
             msg += "| requested norm           : "+this->norm+".\n";
             amrex::Abort(msg);
@@ -3019,7 +3067,7 @@ exit(-1);
         {
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: IBVP_MultilayeredPlate.H - AMR::take_time_step\n";
+            msg +=  "ERROR: IBVP_MultilayeredShell.H - AMR::take_time_step\n";
             msg += "| Unexpected time integration method: "+solution.params.time_integration+".\n";
             amrex::Abort(msg);
         }
@@ -3062,7 +3110,7 @@ exit(-1);
 
         // RECEIVERS INFO
         const int n_sampling_points = 2;
-        const amrex::Vector<amrex::Real> sampling_points_coordinates = {0.0, 0.5, 0.5, 0.5};
+        const amrex::Vector<amrex::Real> sampling_points_coordinates = {0.5*M_PI/4.0, 0.0, 0.5*M_PI/4.0, 0.5};
         const int n_sampled_fields_per_point = 8;
         // ------------------------------------------------------------
 
@@ -3168,9 +3216,11 @@ exit(-1);
                             }
                             
                             sampled_fields[n_sampled_fields_per_point*s+0] = u[0];
-                            sampled_fields[n_sampled_fields_per_point*s+1] = u[2];
+                            sampled_fields[n_sampled_fields_per_point*s+1] = U[2];
                             sampled_fields[n_sampled_fields_per_point*s+2] = S[0];
-                            sampled_fields[n_sampled_fields_per_point*s+3] = S[4];
+                            sampled_fields[n_sampled_fields_per_point*s+3] = S[1]*std::cos(xs[0])*std::cos(xs[0])+
+                                                                             S[2]*std::sin(xs[0])*std::sin(xs[0])-
+                                                                             2.0*S[3]*std::sin(xs[0])*std::cos(xs[0]);
 
                             // EVAL FIELDS: EXACT SOLUTION
                             {
@@ -3199,9 +3249,11 @@ exit(-1);
                             }
                             
                             sampled_fields[n_sampled_fields_per_point*s+4] = u[0];
-                            sampled_fields[n_sampled_fields_per_point*s+5] = u[2];
+                            sampled_fields[n_sampled_fields_per_point*s+5] = U_exact[2];
                             sampled_fields[n_sampled_fields_per_point*s+6] = S[0];
-                            sampled_fields[n_sampled_fields_per_point*s+7] = S[4];
+                            sampled_fields[n_sampled_fields_per_point*s+7] = S[1]*std::cos(xs[0])*std::cos(xs[0])+
+                                                                             S[2]*std::sin(xs[0])*std::sin(xs[0])-
+                                                                             2.0*S[3]*std::sin(xs[0])*std::cos(xs[0]);
                         }
                     }
                 }
@@ -3258,8 +3310,8 @@ exit(-1);
                 fp << std::setw(16) << "t ";
                 for (int s = 0; s < n_sampling_points; ++s)
                 {
-                    fp << std::setw(13) << "u1(t,R" << std::to_string(s) << ") " << std::setw(13) << "u3(t,R" << std::to_string(s) << ") " << std::setw(13) << "s11(t,R" << std::to_string(s) << ") " << std::setw(13) << "s13(t,R" << std::to_string(s) << ") "
-                       << std::setw(13) << " u1_e(t,R" << std::to_string(s) << ") " << std::setw(13) << "u3_e(t,R" << std::to_string(s) << ") " << std::setw(13) << "s11_e(t,R" << std::to_string(s) << ") " << std::setw(13) << "s13_e(t,R" << std::to_string(s) << ")";
+                    fp << std::setw(13) << "u1(t,R" << std::to_string(s) << ") " << std::setw(13) << "uxi3(t,R" << std::to_string(s) << ") " << std::setw(13) << "s11(t,R" << std::to_string(s) << ") " << std::setw(13) << "sthth(t,R" << std::to_string(s) << ") "
+                       << std::setw(13) << " u1_e(t,R" << std::to_string(s) << ") " << std::setw(13) << "uxi3_e(t,R" << std::to_string(s) << ") " << std::setw(13) << "s11_e(t,R" << std::to_string(s) << ") " << std::setw(13) << "sthth_e(t,R" << std::to_string(s) << ")";
                 }
                 fp << std::endl;
             }
@@ -3319,7 +3371,7 @@ exit(-1);
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_MultilayeredPlate.H - AMR::export_solution\n";
+                msg +=  "ERROR: IBVP_MultilayeredShell.H - AMR::export_solution\n";
                 msg += "| Unexpected method used to define the embedded geometry.\n";
                 msg += "| Unexpected method: "+mesh.params.embedded_geometry_defined_by+".\n";
                 amrex::Abort(msg);

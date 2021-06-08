@@ -374,6 +374,7 @@ struct IBVP
                              const amrex::Real * m_U, const amrex::Real * p_U, amrex::Real * NFn) const
     {
         elastic_solid::eval_NFn_Riemann_solver(this->density, this->c, un, m_U, p_U, NFn);
+        //elastic_solid::eval_NFn_Riemann_solver(this->density, this->c, this->density, this->c, un, m_U, p_U, NFn);
     }
 
     /**

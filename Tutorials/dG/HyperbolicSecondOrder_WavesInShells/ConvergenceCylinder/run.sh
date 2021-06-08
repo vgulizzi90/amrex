@@ -4,4 +4,4 @@ export LD_LIBRARY_PATH=/home/vgulizzi/RACE/Projects/2021/amrex/Tutorials/dG/Pard
 
 export OMP_NUM_THREADS=6
 
-mpirun -n 1 ./main2d.gnu.TPROF.MPI.OMP.ex inputs
+mpirun -n 1 ./main2d.gnu.DEBUG.TPROF.MPI.OMP.ex inputs

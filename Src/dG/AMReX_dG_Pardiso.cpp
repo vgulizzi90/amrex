@@ -280,6 +280,7 @@ namespace dG
                 &this->error,
                 this->d_params);
 
+        /*
         if (this->error != 0)
         {
             std::string msg;
@@ -289,6 +290,7 @@ namespace dG
             msg += "| Error: "+std::to_string(this->error)+".\n";
             Abort(msg);
         }
+        */
         // ------------------------------------------------------------
 
         if (this->i_params[19] < 0)
