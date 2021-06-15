@@ -39,7 +39,7 @@ namespace explicit_RK
  *
  * The following integral is evaluated: 
  *
- * int_{V} BF(x)_{,k}^T F_k(t, x, U)
+ * int_{V} BF(x)_{,k}^T F_k(t, x, U) - BF(x)^T R(t, x, U)
  *
 */
 template <typename IBVP>
@@ -103,6 +103,7 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                 Real integrand;
                 Real U[__DG_MAX_N_UNKNOWN_FIELDS__];
                 Real AMREX_D_DECL(F1[__DG_MAX_N_UNKNOWN_FIELDS__], F2[__DG_MAX_N_UNKNOWN_FIELDS__], F3[__DG_MAX_N_UNKNOWN_FIELDS__]);
+                Real R[__DG_MAX_N_UNKNOWN_FIELDS__];
 
                 // UNKNOWN FIELDS
                 space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
@@ -126,8 +127,8 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                     bfu.eval_bf_table(x);
                     bfu.eval_unsafe(u_lo, u_hi, U);
 
-                    // Fluxes as functions of (t, x, U)
-                    ibvp.eval_F(dom, t, x, U, AMREX_D_DECL(F1, F2, F3));
+                    // Fluxes/Reactive terms as functions of (t, x, U)
+                    ibvp.eval_FR(dom, t, x, U, AMREX_D_DECL(F1, F2, F3), R);
 
                     // Integral contribution
                     for (int ru = u_lo; ru < u_hi; ++ru)
@@ -139,6 +140,7 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                             integrand += bfu.dBFdx2[rs]*F2[ru];,
                             integrand += bfu.dBFdx3[rs]*F3[ru];
                         )
+                        integrand -= bfu.BF[rs]*R[ru];
                         
                         dXdt_fab(i,j,k,rs+ru*sNp) += integrand*w;
                     }
@@ -896,7 +898,7 @@ void add_bou_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                         nbr_bfu.eval(x, nbr_u_lo, nbr_u_hi, nbr_U);
 
                         // Numerical flux as a functions of (t, x, un, U^-, U^+)
-                        //ibvp.eval_NFn_EB(dom, nbr_dom, t, x, un, U, nbr_U, NFn);
+                        ibvp.eval_NFn_EB(dom, nbr_dom, t, x, un, U, nbr_U, NFn);
 
                         // Integral contribution
                         for (int ru = u_lo; ru < u_hi; ++ru)

@@ -635,7 +635,7 @@ struct IBVP
             amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, A);
             amrex::Print() << "cvA: " << std::endl;
             amrex::dG::io::print_real_array_2d(SHELL_NU, 1, this->cvA);
-            exit(-1);
+            //exit(-1);
             /**/
         }
         // ------------------------------------------------------------
@@ -2755,8 +2755,8 @@ exit(-1);
         F[3+6] = S_[3];
         F[4+6] = S_[4];
         F[5+6] = S_[5];
-        F[0+12] = S_[1]*std::cos(x[0])*std::cos(x[0])+
-                  S_[2]*std::sin(x[0])*std::sin(x[0])-
+        F[0+12] = S_[1]*std::sin(x[0])*std::sin(x[0])+
+                  S_[2]*std::cos(x[0])*std::cos(x[0])-
                   2.0*S_[3]*std::sin(x[0])*std::cos(x[0]);
 
         /*
@@ -3218,8 +3218,8 @@ exit(-1);
                             sampled_fields[n_sampled_fields_per_point*s+0] = u[0];
                             sampled_fields[n_sampled_fields_per_point*s+1] = U[2];
                             sampled_fields[n_sampled_fields_per_point*s+2] = S[0];
-                            sampled_fields[n_sampled_fields_per_point*s+3] = S[1]*std::cos(xs[0])*std::cos(xs[0])+
-                                                                             S[2]*std::sin(xs[0])*std::sin(xs[0])-
+                            sampled_fields[n_sampled_fields_per_point*s+3] = S[1]*std::sin(xs[0])*std::sin(xs[0])+
+                                                                             S[2]*std::cos(xs[0])*std::cos(xs[0])-
                                                                              2.0*S[3]*std::sin(xs[0])*std::cos(xs[0]);
 
                             // EVAL FIELDS: EXACT SOLUTION
@@ -3251,8 +3251,8 @@ exit(-1);
                             sampled_fields[n_sampled_fields_per_point*s+4] = u[0];
                             sampled_fields[n_sampled_fields_per_point*s+5] = U_exact[2];
                             sampled_fields[n_sampled_fields_per_point*s+6] = S[0];
-                            sampled_fields[n_sampled_fields_per_point*s+7] = S[1]*std::cos(xs[0])*std::cos(xs[0])+
-                                                                             S[2]*std::sin(xs[0])*std::sin(xs[0])-
+                            sampled_fields[n_sampled_fields_per_point*s+7] = S[1]*std::sin(xs[0])*std::sin(xs[0])+
+                                                                             S[2]*std::cos(xs[0])*std::cos(xs[0])-
                                                                              2.0*S[3]*std::sin(xs[0])*std::cos(xs[0]);
                         }
                     }

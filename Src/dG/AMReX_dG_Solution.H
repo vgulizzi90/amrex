@@ -666,6 +666,12 @@ struct Solution
 
                     if (CELLS_ARE_MERGED(i, j, k, etype, nbr_i, nbr_j, nbr_k, nbr_etype) || ELM_BOU_IS_EMPTY(ebtype))
                     {
+                        /* DEBUG
+                        Print() << "Dir: " << dir << ", CELLS_ARE_MERGED(" << i << ", " << j << ", " << k << ", " << etype << ", "
+                                            << nbr_i << ", " << nbr_j << ", " << nbr_k << ", " << nbr_etype << "): " <<
+                                            (CELLS_ARE_MERGED(i, j, k, etype, nbr_i, nbr_j, nbr_k, nbr_etype) ? "yes" : "no") <<
+                                            ", ELM_BOU_IS_EMPTY(" << ebtype << "): " << ELM_BOU_IS_EMPTY(ebtype) << std::endl;
+                        */
                         elm_bou_type_fab(fi,fj,fk,ELM_BOU_TYPE(dom)) = __DG_ELM_BOU_TYPE_PARTIAL_INVALID__;
                     }
                 });
@@ -1824,6 +1830,7 @@ struct Solution
                         msg  = "\n";
                         msg +=  "ERROR: AMReX_dG_Solution.H - Solution::eval_space_mass_matrix\n";
                         msg += "| Something went wrong during the evaluation of the Cholesky decomposition of the mass matrix:\n";
+                        msg += "| dpotf2 info: "+std::to_string(info)+"\n";
                         msg += "| Domain: "+std::to_string(dom)+"\n";
                         msg += "| cell indices: "+std::to_string(i)+","+std::to_string(j)+","+std::to_string(k)+"\n";
                         Abort(msg);

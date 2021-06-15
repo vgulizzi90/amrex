@@ -931,7 +931,7 @@ void eval_NFn_Riemann_solver(const amrex::Real m_rho, const amrex::Real * m_c, c
     amrex::dG::linalg::dge3i(sZ, iZ);
 #endif
 
-    /* DEBUG */
+    /* DEBUG
     amrex::Print() << "un: " << std::endl;
     amrex::dG::io::print_real_array_2d(1, AMREX_SPACEDIM, un);
     amrex::Print() << "m_w: " << std::endl;
@@ -952,7 +952,7 @@ void eval_NFn_Riemann_solver(const amrex::Real m_rho, const amrex::Real * m_c, c
     amrex::dG::io::print_real_array_2d(AMREX_SPACEDIM, AMREX_SPACEDIM, p_Z);
     amrex::Print() << "iZ: " << std::endl;
     amrex::dG::io::print_real_array_2d(AMREX_SPACEDIM, AMREX_SPACEDIM, iZ);
-    /**/
+    */
     // ----------------------------------------------------------------
 
     // AUXILIARY MATRIX Iun.T*Iun -------------------------------------
@@ -973,19 +973,19 @@ void eval_NFn_Riemann_solver(const amrex::Real m_rho, const amrex::Real * m_c, c
     amrex::dG::linalg::dge3i(m_v, m_iv);
 #endif
 
-    /* DEBUG */
+    /* DEBUG
     amrex::Print() << "Isq: " << std::endl;
     amrex::dG::io::print_real_array_2d(AMREX_SPACEDIM, AMREX_SPACEDIM, m_v);
     amrex::Print() << "iIsq: " << std::endl;
     amrex::dG::io::print_real_array_2d(AMREX_SPACEDIM, AMREX_SPACEDIM, m_iv);
-    /**/
+    */
     // ----------------------------------------------------------------
 
     // FLUXES ---------------------------------------------------------
     eval_AnU_compact_c(m_rho, m_c, un, m_U, NFn);
     eval_AnU_compact_c(m_rho, m_c, un, p_U, dFn);
 
-    /* DEBUG */
+    /* DEBUG
     amrex::Print() << "m_U: " << std::endl;
     amrex::dG::io::print_real_array_2d(1, N_VS, m_U);
     amrex::Print() << "p_U: " << std::endl;
@@ -994,7 +994,7 @@ void eval_NFn_Riemann_solver(const amrex::Real m_rho, const amrex::Real * m_c, c
     amrex::dG::io::print_real_array_2d(1, N_VS, NFn);
     amrex::Print() << "p_Fn: " << std::endl;
     amrex::dG::io::print_real_array_2d(1, N_VS, dFn);
-    /**/
+    */
 
 #if (AMREX_SPACEDIM == 1)
     // Jump in the flux
@@ -1034,98 +1034,53 @@ void eval_NFn_Riemann_solver(const amrex::Real m_rho, const amrex::Real * m_c, c
     m_w[V3] = n1*dFn[E13]+n2*dFn[E23]+n3*dFn[E33];
 #endif
 
-    /* DEBUG */
+    /* DEBUG
     amrex::Print() << "dFn: " << std::endl;
     amrex::dG::io::print_real_array_2d(1, N_VS, dFn);
-    /**/
+    */
     // ----------------------------------------------------------------
 
     // NUMERICAL FLUX -------------------------------------------------
-#if (AMREX_SPACEDIM == 1)
     {
-        const amrex::Real w1 = m_w[V1];
-        const amrex::Real z11 = m_Z[0];
-        const amrex::Real iv11 = m_iv[0];
-        const amrex::Real iz11 = iZ[0];
+        amrex::Real t1DxD[AMREX_SPACEDIM*AMREX_SPACEDIM], t2DxD[AMREX_SPACEDIM*AMREX_SPACEDIM];
+        amrex::Real tmp3[AMREX_SPACEDIM];
 
-        NFn[V1] += 0.5*(dFn[V1]+w1*(iv11*z11));
-        NFn[E11] += 0.5*(iz11*n1*dFn[V1]+iv11*n1*w1);
-    }
+        amrex::dG::linalg::dgemm('N', 'N', AMREX_SPACEDIM, AMREX_SPACEDIM, AMREX_SPACEDIM, 1.0, m_Z, AMREX_SPACEDIM, iZ, AMREX_SPACEDIM, 0.0, t1DxD, AMREX_SPACEDIM);
+        amrex::dG::linalg::dgemv('N', AMREX_SPACEDIM, AMREX_SPACEDIM, 1.0, t1DxD, AMREX_SPACEDIM, dFn, 1, 1.0, NFn, 1);
+
+        amrex::dG::linalg::dgemm('N', 'N', AMREX_SPACEDIM, AMREX_SPACEDIM, AMREX_SPACEDIM, 1.0, t1DxD, AMREX_SPACEDIM, p_Z, AMREX_SPACEDIM, 0.0, t2DxD, AMREX_SPACEDIM);
+        amrex::dG::linalg::dgemm('N', 'N', AMREX_SPACEDIM, AMREX_SPACEDIM, AMREX_SPACEDIM, 1.0, t2DxD, AMREX_SPACEDIM, m_iv, AMREX_SPACEDIM, 0.0, t1DxD, AMREX_SPACEDIM);
+        amrex::dG::linalg::dgemv('N', AMREX_SPACEDIM, AMREX_SPACEDIM, 1.0, t1DxD, AMREX_SPACEDIM, m_w, 1, 1.0, NFn, 1);
+
+        amrex::dG::linalg::dgemv('N', AMREX_SPACEDIM, AMREX_SPACEDIM, 1.0, iZ, AMREX_SPACEDIM, dFn, 1, 0.0, tmp3, 1);
+
+        amrex::dG::linalg::dgemm('N', 'N', AMREX_SPACEDIM, AMREX_SPACEDIM, AMREX_SPACEDIM, 1.0, iZ, AMREX_SPACEDIM, p_Z, AMREX_SPACEDIM, 0.0, t2DxD, AMREX_SPACEDIM);
+        amrex::dG::linalg::dgemm('N', 'N', AMREX_SPACEDIM, AMREX_SPACEDIM, AMREX_SPACEDIM, 1.0, t2DxD, AMREX_SPACEDIM, m_iv, AMREX_SPACEDIM, 0.0, t1DxD, AMREX_SPACEDIM);
+        amrex::dG::linalg::dgemv('N', AMREX_SPACEDIM, AMREX_SPACEDIM, 1.0, t1DxD, AMREX_SPACEDIM, m_w, 1, 1.0, tmp3, 1);
+
+#if (AMREX_SPACEDIM == 1)
+        NFn[E11] += n1*tmp3[V1];
 #endif
 #if (AMREX_SPACEDIM == 2)
-    {
-        const amrex::Real w1 = m_w[V1];
-        const amrex::Real w2 = m_w[V2];
-        const amrex::Real z11 = m_Z[0+0*2];
-        const amrex::Real z12 = m_Z[0+1*2];
-        const amrex::Real z21 = m_Z[1+0*2];
-        const amrex::Real z22 = m_Z[1+1*2];
-        const amrex::Real iv11 = m_iv[0+0*2];
-        const amrex::Real iv12 = m_iv[0+1*2];
-        const amrex::Real iv21 = m_iv[1+0*2];
-        const amrex::Real iv22 = m_iv[1+1*2];
-        const amrex::Real iz11 = iZ[0+0*2];
-        const amrex::Real iz12 = iZ[0+1*2];
-        const amrex::Real iz21 = iZ[1+0*2];
-        const amrex::Real iz22 = iZ[1+1*2];
-
-        NFn[V1] += 0.5*(dFn[V1]+w1*(iv11*z11+iv21*z12)+w2*(iv12*z11+iv22*z12));
-        NFn[V2] += 0.5*(dFn[V2]+w1*(iv11*z21+iv21*z22)+w2*(iv12*z21+iv22*z22));
-        NFn[E11] += 0.5*(          iz11*n1*dFn[V1]+          iz12*n1*dFn[V2]+          iv11*n1*w1+          iv12*n1*w2);
-        NFn[E22] += 0.5*(          iz21*n2*dFn[V1]+          iz22*n2*dFn[V2]+          iv21*n2*w1+          iv22*n2*w2);
-        NFn[E12] += 0.5*((iz21*n1+iz11*n2)*dFn[V1]+(iz22*n1+iz12*n2)*dFn[V2]+(iv21*n1+iv11*n2)*w1+(iv22*n1+iv12*n2)*w2);
-    }
+        NFn[E11] += n1*tmp3[V1];
+        NFn[E22] += n2*tmp3[V2];
+        NFn[E12] += n1*tmp3[V2]+n2*tmp3[V1];
 #endif
 #if (AMREX_SPACEDIM == 3)
-    {
-        const amrex::Real w1 = m_w[V1];
-        const amrex::Real w2 = m_w[V2];
-        const amrex::Real w3 = m_w[V3];
-        const amrex::Real z11 = m_Z[0+0*3];
-        const amrex::Real z12 = m_Z[0+1*3];
-        const amrex::Real z13 = m_Z[0+2*3];
-        const amrex::Real z21 = m_Z[1+0*3];
-        const amrex::Real z22 = m_Z[1+1*3];
-        const amrex::Real z23 = m_Z[1+2*3];
-        const amrex::Real z31 = m_Z[2+0*3];
-        const amrex::Real z32 = m_Z[2+1*3];
-        const amrex::Real z33 = m_Z[2+2*3];
-        const amrex::Real iv11 = m_iv[0+0*3];
-        const amrex::Real iv12 = m_iv[0+1*3];
-        const amrex::Real iv13 = m_iv[0+2*3];
-        const amrex::Real iv21 = m_iv[1+0*3];
-        const amrex::Real iv22 = m_iv[1+1*3];
-        const amrex::Real iv23 = m_iv[1+2*3];
-        const amrex::Real iv31 = m_iv[2+0*3];
-        const amrex::Real iv32 = m_iv[2+1*3];
-        const amrex::Real iv33 = m_iv[2+2*3];
-        const amrex::Real iz11 = iZ[0+0*3];
-        const amrex::Real iz12 = iZ[0+1*3];
-        const amrex::Real iz13 = iZ[0+2*3];
-        const amrex::Real iz21 = iZ[1+0*3];
-        const amrex::Real iz22 = iZ[1+1*3];
-        const amrex::Real iz23 = iZ[1+2*3];
-        const amrex::Real iz31 = iZ[2+0*3];
-        const amrex::Real iz32 = iZ[2+1*3];
-        const amrex::Real iz33 = iZ[2+2*3];
-
-        NFn[V1] += 0.5*(dFn[V1]+w1*(iv11*z11+iv21*z12+iv31*z13)+w2*(iv12*z11+iv22*z12+iv32*z13)+w3*(iv13*z11+iv23*z12+iv33*z13));
-        NFn[V2] += 0.5*(dFn[V2]+w1*(iv11*z21+iv21*z22+iv31*z23)+w2*(iv12*z21+iv22*z22+iv32*z23)+w3*(iv13*z21+iv23*z22+iv33*z23));
-        NFn[V3] += 0.5*(dFn[V3]+w1*(iv11*z31+iv21*z32+iv31*z33)+w2*(iv12*z31+iv22*z32+iv32*z33)+w3*(iv13*z31+iv23*z32+iv33*z33));
-        NFn[E11] += 0.5*(          iz11*n1*dFn[V1]+          iz12*n1*dFn[V2]          +iz13*n1*dFn[V3]+          iv11*n1*w1          +iv12*n1*w2          +iv13*n1*w3);
-        NFn[E22] += 0.5*(          iz21*n2*dFn[V1]+          iz22*n2*dFn[V2]          +iz23*n2*dFn[V3]+          iv21*n2*w1          +iv22*n2*w2          +iv23*n2*w3);
-        NFn[E33] += 0.5*(          iz31*n3*dFn[V1]+          iz32*n3*dFn[V2]          +iz33*n3*dFn[V3]+          iv31*n3*w1          +iv32*n3*w2          +iv33*n3*w3);
-        NFn[E23] += 0.5*((iz31*n2+iz21*n3)*dFn[V1]+(iz32*n2+iz22*n3)*dFn[V2]+(iz33*n2+iz23*n3)*dFn[V3]+(iv31*n2+iv21*n3)*w1+(iv32*n2+iv22*n3)*w2+(iv33*n2+iv23*n3)*w3);
-        NFn[E13] += 0.5*((iz31*n1+iz11*n3)*dFn[V1]+(iz32*n1+iz12*n3)*dFn[V2]+(iz33*n1+iz13*n3)*dFn[V3]+(iv31*n1+iv11*n3)*w1+(iv32*n1+iv12*n3)*w2+(iv33*n1+iv13*n3)*w3);
-        NFn[E12] += 0.5*((iz21*n1+iz11*n2)*dFn[V1]+(iz22*n1+iz12*n2)*dFn[V2]+(iz23*n1+iz13*n2)*dFn[V3]+(iv21*n1+iv11*n2)*w1+(iv22*n1+iv12*n2)*w2+(iv23*n1+iv13*n2)*w3);
-    }
+        NFn[E11] += n1*tmp3[V1];
+        NFn[E22] += n2*tmp3[V2];
+        NFn[E33] += n3*tmp3[V3];
+        NFn[E23] += tmp3[V3]*n2+tmp3[V2]*n3;
+        NFn[E13] += tmp3[V3]*n1+tmp3[V1]*n3;
+        NFn[E12] += tmp3[V2]*n1+tmp3[V1]*n2;
 #endif
+    }
 
-    /* DEBUG */
+    /* DEBUG
     amrex::Print() << "NFn: " << std::endl;
     amrex::dG::io::print_real_array_2d(1, N_VS, NFn);
     exit(-1);
-    /**/
+    */
     // ----------------------------------------------------------------
 }
 

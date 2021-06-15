@@ -21,7 +21,7 @@ namespace hyperbolic_2nd_order_pde
 namespace implicit_Newmark
 {
 
-// DG METHOD: JACOBIAN ################################################
+// DG METHOD: RESIDUALS AND JACOBIAN ##################################
 /**
  * \brief Add domain contribution to the residuals (and Jacobian) of the implicit Newmark scheme.
  *
@@ -1002,6 +1002,417 @@ void add_bou_contrib_to_residuals_sym(const Real cb, const Real t,
 }
 
 /**
+ * \brief Add domain contribution to the residuals (and Jacobian) of the implicit Newmark scheme.
+ *
+ * \param[in] cb: parameters of the Newmark algorithm.
+ * \param[in] t: time.
+ * \param[in] geom: amrex geometry object.
+ * \param[in] mesh: Mesh object; contains information about embedded geometries.
+ * \param[in] solution: Solution object; contains information about embedded geometries.
+ * \param[in] X a MultiFab containing the current dG coefficients.
+ * \param[in] Xd a MultiFab containing the current dG coefficients time derivatives.
+ * \param[in] Res: Vector containing the residuals.
+ * \param[in] ia: Vector containing the number of non-zeros at each row of the Jacobian.
+ * \param[in] Jac: Vector containing the non-zeros at each row of the Jacobian.
+ * \param[in] csr_dom_info: a iMultiFab containing info about how to access the sparse data
+ *                          structures when domain integration is performed.
+ * \param[in] csr_bou_info: an Array of iMultiFabs containing info about how to access the sparse
+ *                          data structures when boundary integration is performed.
+ * \param[in] ibvp: initial boundary value problem object.
+ *
+ *
+*/
+template <typename IBVP>
+void add_int_bou_contrib_to_residuals_sym(const Real cb, const Real t,
+                                          const Geometry & geom, const Mesh & mesh, const Solution & solution,
+                                          const MultiFab & X, const MultiFab & /*Xd*/,
+                                          Vector<Real> & Res, const Vector<int> & ia, Vector<Real> & Jac, const iMultiFab & csr_dom_info,
+                                          const IBVP & ibvp,
+                                          const bool update_Jacobian = false)
+{
+    // PROFILING ------------------------------------------------------
+    BL_PROFILE("dG::hyperbolic_2nd_order_pde::implicit_Newmark::add_int_bou_contrib_to_residuals_sym(...)");
+    // ----------------------------------------------------------------
+
+    // PARAMETERS -----------------------------------------------------
+    // GRID
+    const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+    const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
+
+    // DOMAINS
+    const int n_domains = ibvp.get_number_of_domains();
+    const int max_Nu = solution.get_max_number_of_unknown_fields_per_domain(ibvp);
+
+    // ORDER
+    const int sp = solution.params.space_p;
+    const int sNp = AMREX_D_TERM((1+sp),*(1+sp),*(1+sp));
+
+    // 0- vs 1-BASED INDEXING
+    const int idx = ia[0];
+    // ----------------------------------------------------------------
+
+    // EVAL THE DOMAIN INTEGRALS: VALID ELEMENTS ----------------------
+    // This part CAN be parallelized (in the sense of OpenMP) because
+    // valid elements access different memory locations.
+    // ----------------------------------------------------------------
+#ifdef AMREX_USE_GPU
+    Real const * cell_int_bou_quad_mem_ptr = mesh.cell_int_bou_quad_dev_mem.data();
+    Real * Res_mem_ptr = Res.data();
+    const int * ia_mem_ptr = ia.data();
+    Real * Jac_mem_ptr = Jac.data();
+#else
+    Real const * cell_int_bou_quad_mem_ptr = mesh.cell_int_bou_quad_host_mem.data();
+    Real * Res_mem_ptr = Res.data();
+    const int * ia_mem_ptr = ia.data();
+    Real * Jac_mem_ptr = Jac.data();
+#endif
+
+    for (MFIter mfi(csr_dom_info); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+
+        Array4<long const> const & cell_int_bou_quad_info_fab = mesh.cell_int_bou_quad_info.array(mfi);
+        Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+        Array4<int const> const & csr_dom_info_fab = csr_dom_info.array(mfi);
+        Array4<Real const> const & X_fab = X.array(mfi);
+
+        ParallelFor(bx, n_domains,
+        [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+        {
+            // ELEMENT TYPE
+            const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+            const bool elm_is_valid = ELM_IS_VALID(etype);
+
+            if (elm_is_valid)
+            {
+                // LOCAL PARAMETERS
+                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                   prob_lo[1]+j*dx[1],
+                                                                   prob_lo[2]+k*dx[2])};
+
+                // QUADRATURE INFO
+                const int bou_Nq = cell_int_bou_quad_info_fab(i,j,k,CELL_INT_BOU_QUAD_NQ(dom));
+                const long pos = cell_int_bou_quad_info_fab(i,j,k,CELL_INT_BOU_QUAD_POS(dom));
+                const Real * x_ptr = &cell_int_bou_quad_mem_ptr[pos];
+
+                // LOCAL VARIABLES
+                Real x[AMREX_SPACEDIM], w, un[AMREX_SPACEDIM];
+                Real integrand;
+                Real U[__DG_MAX_NU__];
+                Real AMREX_D_DECL(U_1[__DG_MAX_NU__], U_2[__DG_MAX_NU__], U_3[__DG_MAX_NU__]);
+                Real AMREX_D_DECL(ND1[__DG_MAX_NU__], ND2[__DG_MAX_NU__], ND3[__DG_MAX_NU__]);
+                Real NFn[__DG_MAX_NU__];
+                Real AMREX_D_DECL(dND1dU[__DG_MAX_NU2__], dND2dU[__DG_MAX_NU2__], dND3dU[__DG_MAX_NU2__]);
+                Real AMREX_D_DECL(dNFndU_1[__DG_MAX_NU2__], dNFndU_2[__DG_MAX_NU2__], dNFndU_3[__DG_MAX_NU2__]);
+                Real dNFndU[__DG_MAX_NU2__];
+                
+                Real RB[__DG_MAX_SPACE_Np__*__DG_MAX_NU__];
+                Real JB[__DG_MAX_SPACE_Np__*__DG_MAX_NU__*__DG_MAX_SPACE_Np__*__DG_MAX_NU__];
+
+                // UNKNOWN FIELDS
+                space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+                int u_lo, u_hi;
+                ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+                const int Nu = u_hi-u_lo;
+                const int Nup = Nu*sNp;
+
+                // EVAL THE INTEGRAL
+                std::fill(RB, RB+Nup, 0.0);
+                std::fill(JB, JB+Nup*Nup, 0.0);
+                for (int q = 0; q < bou_Nq; ++q)
+                {
+                    // Quadrature point, weight and unit normal
+                    const long x_pos = (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*q;
+                    AMREX_D_TERM
+                    (
+                        x[0] = x_ptr[x_pos+0];,
+                        x[1] = x_ptr[x_pos+1];,
+                        x[2] = x_ptr[x_pos+2];
+                    )
+                    w = x_ptr[x_pos+AMREX_SPACEDIM];
+                    AMREX_D_TERM
+                    (
+                        un[0] = x_ptr[x_pos+AMREX_SPACEDIM+1+0];,
+                        un[1] = x_ptr[x_pos+AMREX_SPACEDIM+1+1];,
+                        un[2] = x_ptr[x_pos+AMREX_SPACEDIM+1+2];
+                    )
+
+                    // Solution at (t, x)
+                    bfu.eval_bf_table(x);
+                    bfu.eval_unsafe(u_lo, u_hi, U);
+                    bfu.eval_derivatives_unsafe(u_lo, u_hi, AMREX_D_DECL(U_1, U_2, U_3));
+
+                    // Numerical flux as functions of (t, x, un, U, U_{,k})
+                    // (t, x, U, U_{,k})
+                    ibvp.eval_NF_EB(dom, t, x, un, U, AMREX_D_DECL(U_1, U_2, U_3), AMREX_D_DECL(ND1, ND2, ND3), NFn);
+
+                    for (int ru = 0; ru < Nu; ++ru)
+                    for (int rs = 0; rs < sNp; ++rs)
+                    {
+                        AMREX_D_TERM
+                        (
+                            integrand  = bfu.dBFdx1[rs]*ND1[ru];,
+                            integrand += bfu.dBFdx2[rs]*ND2[ru];,
+                            integrand += bfu.dBFdx3[rs]*ND3[ru];
+                        )
+                        integrand += bfu.BF[rs]*NFn[ru];
+
+                        const int rm = sNp*ru+rs;
+                        RB[rm] += integrand*w;
+                    }
+
+                    if (update_Jacobian)
+                    {
+                        // Gradients of Numerical flux with respect to U and U_{,k}
+                        // as functions of (t, x, un, U, U_{,k})
+                        ibvp.eval_dNFdU_EB(dom, t, x, un,
+                                           U, AMREX_D_DECL(U_1, U_2, U_3),
+                                           AMREX_D_DECL(dND1dU, dND2dU, dND3dU), 
+                                           AMREX_D_DECL(dNFndU_1, dNFndU_2, dNFndU_3),
+                                           dNFndU);
+
+                        for (int ru = 0; ru < Nu; ++ru)
+                        for (int cu = 0; cu < Nu; ++cu)
+                        for (int rs = 0; rs < sNp; ++rs)
+                        for (int cs = 0; cs < sNp; ++cs)
+                        {
+                            integrand = 0.0;        
+#if (AMREX_SPACEDIM == 1)
+                            integrand += bfu.dBFdx1[rs]*   dND1dU[ru+cu*Nu]*bfu.BF[cs]    ;
+                            integrand +=     bfu.BF[rs]* dNFndU_1[ru+cu*Nu]*bfu.dBFdx1[cs];
+                            integrand +=     bfu.BF[rs]*   dNFndU[ru+cu*Nu]*bfu.BF[cs]    ;
+#endif
+#if (AMREX_SPACEDIM == 2)
+                            integrand += bfu.dBFdx1[rs]*   dND1dU[ru+cu*Nu]*bfu.BF[cs]    ;
+                            integrand += bfu.dBFdx2[rs]*   dND2dU[ru+cu*Nu]*bfu.BF[cs]    ;
+                            integrand +=     bfu.BF[rs]* dNFndU_1[ru+cu*Nu]*bfu.dBFdx1[cs];
+                            integrand +=     bfu.BF[rs]* dNFndU_2[ru+cu*Nu]*bfu.dBFdx2[cs];
+                            integrand +=     bfu.BF[rs]*   dNFndU[ru+cu*Nu]*bfu.BF[cs]    ;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                            integrand += bfu.dBFdx1[rs]*   dND1dU[ru+cu*Nu]*bfu.BF[cs]    ;
+                            integrand += bfu.dBFdx2[rs]*   dND2dU[ru+cu*Nu]*bfu.BF[cs]    ;
+                            integrand += bfu.dBFdx3[rs]*   dND3dU[ru+cu*Nu]*bfu.BF[cs]    ;
+                            integrand +=     bfu.BF[rs]* dNFndU_1[ru+cu*Nu]*bfu.dBFdx1[cs];
+                            integrand +=     bfu.BF[rs]* dNFndU_2[ru+cu*Nu]*bfu.dBFdx2[cs];
+                            integrand +=     bfu.BF[rs]* dNFndU_3[ru+cu*Nu]*bfu.dBFdx3[cs];
+                            integrand +=     bfu.BF[rs]*   dNFndU[ru+cu*Nu]*bfu.BF[cs]    ;
+#endif
+
+                            const int rm = sNp*ru+rs;
+                            const int cm = sNp*cu+cs;
+
+                            JB[rm+cm*Nup] += integrand*w;
+                        }
+                    }
+                }
+
+                // CONTRIBUTION TO THE GLOBAL SYSTEM
+                const int posX = csr_dom_info_fab(i,j,k,CSR_DOM_INFO_POS_X(dom));
+
+                for (int r = 0; r < Nup; ++r)
+                {
+                    Res_mem_ptr[posX+r] -= cb*RB[r];
+                }
+
+                if (update_Jacobian)
+                {
+                    for (int r = 0; r < Nup; ++r)
+                    {
+                        const int posJ = ia_mem_ptr[posX+r]-idx;
+                        
+                        for (int c = r; c < Nup; ++c)
+                        {
+                            // We access JB by column (i.e. use JB[c+r*Nup]
+                            // instead of JB[r+c*Nup]) because of symmetry
+                            Jac_mem_ptr[posJ+c-r] -= cb*JB[c+r*Nup];
+                        }
+                    }
+                }
+            }
+        });
+        Gpu::synchronize();
+    }
+    // ----------------------------------------------------------------
+
+    // EVAL THE DOMAIN INTEGRALS: SMALL ELEMENTS ----------------------
+    // This part CANNOT be parallelized (in the sense of OpenMP)
+    // because multiple small elements can be merged with (and thus
+    // access the memory of) the same valid element.
+    // ----------------------------------------------------------------
+    for (MFIter mfi(csr_dom_info); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = mfi.validbox();
+        const Dim3 lo = lbound(bx);
+        const Dim3 hi = ubound(bx);
+
+        Array4<long const> const & cell_int_bou_quad_info_fab = mesh.cell_int_bou_quad_info.array(mfi);
+        Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
+        Array4<int const> const & csr_dom_info_fab = csr_dom_info.array(mfi);
+        Array4<Real const> const & X_fab = X.array(mfi);
+
+        for (int dom = 0; dom < n_domains; ++dom)
+        for (int k = lo.z; k <= hi.z; ++k)
+        for (int j = lo.y; j <= hi.y; ++j)
+        for (int i = lo.x; i <= hi.x; ++i)
+        {
+            // ELEMENT TYPE
+            const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+            const bool elm_is_small = ELM_IS_SMALL(etype);
+
+            if (elm_is_small)
+            {
+                // LOCAL PARAMETERS
+                const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                   prob_lo[1]+j*dx[1],
+                                                                   prob_lo[2]+k*dx[2])};
+
+                // QUADRATURE INFO
+                const int bou_Nq = cell_int_bou_quad_info_fab(i,j,k,CELL_INT_BOU_QUAD_NQ(dom));
+                const long pos = cell_int_bou_quad_info_fab(i,j,k,CELL_INT_BOU_QUAD_POS(dom));
+                const Real * x_ptr = &cell_int_bou_quad_mem_ptr[pos];
+
+                // LOCAL VARIABLES
+                Real x[AMREX_SPACEDIM], w, un[AMREX_SPACEDIM];
+                Real integrand;
+                Real U[__DG_MAX_NU__];
+                Real AMREX_D_DECL(U_1[__DG_MAX_NU__], U_2[__DG_MAX_NU__], U_3[__DG_MAX_NU__]);
+                Real AMREX_D_DECL(ND1[__DG_MAX_NU__], ND2[__DG_MAX_NU__], ND3[__DG_MAX_NU__]);
+                Real NFn[__DG_MAX_NU__];
+                Real AMREX_D_DECL(dND1dU[__DG_MAX_NU2__], dND2dU[__DG_MAX_NU2__], dND3dU[__DG_MAX_NU2__]);
+                Real AMREX_D_DECL(dNFndU_1[__DG_MAX_NU2__], dNFndU_2[__DG_MAX_NU2__], dNFndU_3[__DG_MAX_NU2__]);
+                Real dNFndU[__DG_MAX_NU2__];
+                
+                Real RB[__DG_MAX_SPACE_Np__*__DG_MAX_NU__];
+                Real JB[__DG_MAX_SPACE_Np__*__DG_MAX_NU__*__DG_MAX_SPACE_Np__*__DG_MAX_NU__];
+
+                // UNKNOWN FIELDS
+                space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+                int u_lo, u_hi;
+                ibvp.domain_unknown_fields_index_bounds(dom, u_lo, u_hi);
+                const int Nu = u_hi-u_lo;
+                const int Nup = Nu*sNp;
+
+                // EVAL THE INTEGRAL
+                std::fill(RB, RB+Nup, 0.0);
+                std::fill(JB, JB+Nup*Nup, 0.0);
+                for (int q = 0; q < bou_Nq; ++q)
+                {
+                    // Quadrature point, weight and unit normal
+                    const long x_pos = (AMREX_SPACEDIM+1+AMREX_SPACEDIM)*q;
+                    AMREX_D_TERM
+                    (
+                        x[0] = x_ptr[x_pos+0];,
+                        x[1] = x_ptr[x_pos+1];,
+                        x[2] = x_ptr[x_pos+2];
+                    )
+                    w = x_ptr[x_pos+AMREX_SPACEDIM];
+                    AMREX_D_TERM
+                    (
+                        un[0] = x_ptr[x_pos+AMREX_SPACEDIM+1+0];,
+                        un[1] = x_ptr[x_pos+AMREX_SPACEDIM+1+1];,
+                        un[2] = x_ptr[x_pos+AMREX_SPACEDIM+1+2];
+                    )
+
+                    // Solution at (t, x)
+                    bfu.eval_bf_table(x);
+                    bfu.eval_unsafe(u_lo, u_hi, U);
+                    bfu.eval_derivatives_unsafe(u_lo, u_hi, AMREX_D_DECL(U_1, U_2, U_3));
+
+                    // Numerical flux as functions of (t, x, un, U, U_{,k})
+                    // (t, x, U, U_{,k})
+                    ibvp.eval_NF_EB(dom, t, x, un, U, AMREX_D_DECL(U_1, U_2, U_3), AMREX_D_DECL(ND1, ND2, ND3), NFn);
+
+                    for (int ru = 0; ru < Nu; ++ru)
+                    for (int rs = 0; rs < sNp; ++rs)
+                    {
+                        AMREX_D_TERM
+                        (
+                            integrand  = bfu.dBFdx1[rs]*ND1[ru];,
+                            integrand += bfu.dBFdx2[rs]*ND2[ru];,
+                            integrand += bfu.dBFdx3[rs]*ND3[ru];
+                        )
+                        integrand += bfu.BF[rs]*NFn[ru];
+
+                        const int rm = sNp*ru+rs;
+                        RB[rm] += integrand*w;
+                    }
+
+                    if (update_Jacobian)
+                    {
+                        // Gradients of Numerical flux with respect to U and U_{,k}
+                        // as functions of (t, x, un, U, U_{,k})
+                        ibvp.eval_dNFdU_EB(dom, t, x, un,
+                                           U, AMREX_D_DECL(U_1, U_2, U_3),
+                                           AMREX_D_DECL(dND1dU, dND2dU, dND3dU), 
+                                           AMREX_D_DECL(dNFndU_1, dNFndU_2, dNFndU_3),
+                                           dNFndU);
+
+                        for (int ru = 0; ru < Nu; ++ru)
+                        for (int cu = 0; cu < Nu; ++cu)
+                        for (int rs = 0; rs < sNp; ++rs)
+                        for (int cs = 0; cs < sNp; ++cs)
+                        {
+                            integrand = 0.0;        
+#if (AMREX_SPACEDIM == 1)
+                            integrand += bfu.dBFdx1[rs]*   dND1dU[ru+cu*Nu]*bfu.BF[cs]    ;
+                            integrand +=     bfu.BF[rs]* dNFndU_1[ru+cu*Nu]*bfu.dBFdx1[cs];
+                            integrand +=     bfu.BF[rs]*   dNFndU[ru+cu*Nu]*bfu.BF[cs]    ;
+#endif
+#if (AMREX_SPACEDIM == 2)
+                            integrand += bfu.dBFdx1[rs]*   dND1dU[ru+cu*Nu]*bfu.BF[cs]    ;
+                            integrand += bfu.dBFdx2[rs]*   dND2dU[ru+cu*Nu]*bfu.BF[cs]    ;
+                            integrand +=     bfu.BF[rs]* dNFndU_1[ru+cu*Nu]*bfu.dBFdx1[cs];
+                            integrand +=     bfu.BF[rs]* dNFndU_2[ru+cu*Nu]*bfu.dBFdx2[cs];
+                            integrand +=     bfu.BF[rs]*   dNFndU[ru+cu*Nu]*bfu.BF[cs]    ;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                            integrand += bfu.dBFdx1[rs]*   dND1dU[ru+cu*Nu]*bfu.BF[cs]    ;
+                            integrand += bfu.dBFdx2[rs]*   dND2dU[ru+cu*Nu]*bfu.BF[cs]    ;
+                            integrand += bfu.dBFdx3[rs]*   dND3dU[ru+cu*Nu]*bfu.BF[cs]    ;
+                            integrand +=     bfu.BF[rs]* dNFndU_1[ru+cu*Nu]*bfu.dBFdx1[cs];
+                            integrand +=     bfu.BF[rs]* dNFndU_2[ru+cu*Nu]*bfu.dBFdx2[cs];
+                            integrand +=     bfu.BF[rs]* dNFndU_3[ru+cu*Nu]*bfu.dBFdx3[cs];
+                            integrand +=     bfu.BF[rs]*   dNFndU[ru+cu*Nu]*bfu.BF[cs]    ;
+#endif
+
+                            const int rm = sNp*ru+rs;
+                            const int cm = sNp*cu+cs;
+
+                            JB[rm+cm*Nup] += integrand*w;
+                        }
+                    }
+                }
+
+                // CONTRIBUTION TO THE GLOBAL SYSTEM
+                const int posX = csr_dom_info_fab(i,j,k,CSR_DOM_INFO_POS_X(dom));
+
+                for (int r = 0; r < Nup; ++r)
+                {
+                    Res_mem_ptr[posX+r] -= cb*RB[r];
+                }
+
+                if (update_Jacobian)
+                {
+                    for (int r = 0; r < Nup; ++r)
+                    {
+                        const int posJ = ia_mem_ptr[posX+r]-idx;
+                        
+                        for (int c = r; c < Nup; ++c)
+                        {
+                            // We access JB by column (i.e. use JB[c+r*Nup]
+                            // instead of JB[r+c*Nup]) because of symmetry
+                            Jac_mem_ptr[posJ+c-r] -= cb*JB[c+r*Nup];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // ----------------------------------------------------------------
+}
+
+/**
  * \brief Eval the residuals (and Jacobian) of the implicit Newmark scheme.
  *
  * \param[in] gamma, beta: parameters of the Newmark algorithm.
@@ -1113,6 +1524,11 @@ void eval_residuals_sym(const Real gamma, const Real beta, const Real t, const R
     // BOUNDARY CONTRIBUTION ------------------------------------------
     add_bou_contrib_to_residuals_sym(beta*dt*dt, t, geom, mesh, solution, X, Xd, Res, ia, Jac, csr_dom_info, csr_bou_info, ibvp, update_Jacobian);
     add_bou_contrib_to_residuals_sym((0.5-beta)*dt*dt, t, geom, mesh, solution, X_old, Xd_old, Res, ia, Jac, csr_dom_info, csr_bou_info, ibvp, false);
+    // ----------------------------------------------------------------
+
+    // INTERNAL BOUNDARIES CONTRIBUTION -------------------------------
+    add_int_bou_contrib_to_residuals_sym(beta*dt*dt, t, geom, mesh, solution, X, Xd, Res, ia, Jac, csr_dom_info, ibvp, update_Jacobian);
+    add_int_bou_contrib_to_residuals_sym((0.5-beta)*dt*dt, t, geom, mesh, solution, X_old, Xd_old, Res, ia, Jac, csr_dom_info, ibvp, false);
     // ----------------------------------------------------------------
 
     /* DEBUG

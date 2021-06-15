@@ -3,7 +3,7 @@ CEXE_headers += AMReX_dG_Tables.H
 CEXE_headers += AMReX_dG_Utils.H
 CEXE_headers += AMReX_VTK_Utils.H
 ifeq ($(USE_PARDISO),TRUE)
-    CEXE_headers += AMReX_dG_Pardiso.H
+CEXE_headers += AMReX_dG_Pardiso.H
 endif
 ifeq ($(USE_HYPRE),TRUE)
     CEXE_headers += AMReX_dG_Hypre.H
@@ -17,6 +17,7 @@ CEXE_headers += AMReX_dG_Mesh.H
 CEXE_headers += AMReX_dG_Mesh_Output.H
 CEXE_headers += AMReX_dG_BFX.H
 CEXE_headers += AMReX_dG_Solution.H
+CEXE_headers += AMReX_dG_IBVP_Base.H
 CEXE_headers += AMReX_dG_Solution_Utils.H
 CEXE_headers += AMReX_dG_Solution_RungeKutta.H
 CEXE_headers += AMReX_dG_Solution_CentralDifference.H
@@ -29,7 +30,7 @@ CEXE_headers += AMReX_dG.H
 CEXE_sources += AMReX_dG_Utils.cpp
 CEXE_sources += AMReX_VTK_Utils.cpp
 ifeq ($(USE_PARDISO),TRUE)
-    CEXE_sources += AMReX_dG_Pardiso.cpp
+CEXE_sources += AMReX_dG_Pardiso.cpp
 endif
 ifeq ($(USE_HYPRE),TRUE)
     CEXE_sources += AMReX_dG_Hypre.cpp

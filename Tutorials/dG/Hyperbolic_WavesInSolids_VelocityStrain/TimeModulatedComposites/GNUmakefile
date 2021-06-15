@@ -12,8 +12,6 @@ TINY_PROFILE = TRUE
 USE_MPI = TRUE
 USE_CUDA = FALSE
 
-USE_PARDISO = FALSE
-
 DIM = 1
 
 include ./Make.package

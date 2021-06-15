@@ -75,6 +75,8 @@ struct LevelSet
 
 // SINGLE PHASE DOMAIN: IBVP ##########################################
 struct IBVP
+:
+public amrex::dG::IBVP_Base
 {
     // DATA MEMBERS ===================================================
     amrex::Real density, c[NS*(NS+1)/2], max_wave_speed;
@@ -198,7 +200,7 @@ struct IBVP
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     int get_number_of_unknown_fields() const
     {
-        return N_VS;
+        return N_VS+1;
     }
     /**
      * \brief Return the unknown fields index bounds for the dom-th domain.
@@ -208,7 +210,7 @@ struct IBVP
     void domain_unknown_fields_index_bounds(const int /*dom*/, int & u_lo, int & u_hi) const
     {
         u_lo = 0;
-        u_hi = N_VS;
+        u_hi = N_VS+1;
     }
     /**
      * \brief Return the parent domain of the u-th unknown field.
@@ -240,6 +242,9 @@ struct IBVP
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_exact_solution(const amrex::Real t, const amrex::Real * x, amrex::Real * U) const
     {
+        const amrex::Real a = 64.0;
+        const amrex::Real a2 = a*a;
+        const amrex::Real x0 = 0.25;
         const amrex::Real x_dot_wn = (this->wn[0]*x[0]);
         
         for (int r = 0; r < N_VS; ++r)
@@ -248,9 +253,27 @@ struct IBVP
             for (int k = 0; k < N_VS; ++k)
             {
                 const amrex::Real tx = x_dot_wn-this->w[k]*t;
-                const amrex::Real ftx = std::exp(-4096.0*(0.25-tx)*(0.25-tx));
+                //const amrex::Real ftx = std::exp(-a2*(x0-tx)*(x0-tx)); // (*)
+                const amrex::Real ftx = +2.0*a2*(x0-tx)*this->wn[0]*std::exp(-a2*(x0-tx)*(x0-tx)); // (**)
 
                 U[r] += this->R[r+k*N_VS]*this->cR[k]*ftx;
+            }
+        }
+
+        // DISPLACEMENT FIELD
+        {
+            const int r = E11;
+
+            U[E11+1] = 0.0;
+
+            for (int k = 0; k < N_VS; ++k)
+            {
+                const amrex::Real wt = this->w[k]*t;
+                const amrex::Real tx = x_dot_wn-wt;
+                //const amrex::Real ftx = std::sqrt(M_PI)/(2.0*a*this->wn[0])*(std::erf(a*(x0+wt))-std::erf(a*(x0-tx))); // (*)
+                const amrex::Real ftx = std::exp(-a2*(x0-tx)*(x0-tx)); // (**)
+
+                U[E11+1] += this->R[r+k*N_VS]*this->cR[k]*ftx;
             }
         }
     }
@@ -345,11 +368,15 @@ struct IBVP
      * \param[out] F1, F2, F3: pointer to memory that will contain the fluxes.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_F(const int /*dom*/,
-                const amrex::Real /*t*/, const amrex::Real * /*x*/,
-                const amrex::Real * U, AMREX_D_DECL(amrex::Real * F1, amrex::Real * F2, amrex::Real * F3)) const
+    void eval_FR(const int /*dom*/,
+                 const amrex::Real /*t*/, const amrex::Real * /*x*/,
+                 const amrex::Real * U, AMREX_D_DECL(amrex::Real * F1, amrex::Real * F2, amrex::Real * F3), amrex::Real * R) const
     {
         elastic_solid::eval_F_compact_c(this->density, this->c, U, AMREX_D_DECL(F1, F2, F3));
+        
+        R[V1] = 0.0;
+        R[E11] = 0.0;
+        R[E11+1] = -U[V1]/this->density;
     }
     // ================================================================
 
@@ -373,8 +400,10 @@ struct IBVP
                              const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
                              const amrex::Real * m_U, const amrex::Real * p_U, amrex::Real * NFn) const
     {
-        elastic_solid::eval_NFn_Riemann_solver(this->density, this->c, un, m_U, p_U, NFn);
-        //elastic_solid::eval_NFn_Riemann_solver(this->density, this->c, this->density, this->c, un, m_U, p_U, NFn);
+        //elastic_solid::eval_NFn_Riemann_solver(this->density, this->c, un, m_U, p_U, NFn);
+        elastic_solid::eval_NFn_Riemann_solver(this->density, this->c, this->density, this->c, un, m_U, p_U, NFn);
+
+        NFn[E11+1] = 0.0;
     }
 
     /**
@@ -395,71 +424,8 @@ struct IBVP
         const amrex::Real T[AMREX_SPACEDIM] = {0.0};
 
         elastic_solid::eval_NFn_Riemann_solver_prescribed_tractions(this->density, this->c, un, U, T, NFn);
-    }
 
-    /**
-     * \brief Eval the numerical flux at the embedded boundaries.
-     *
-     * \param[in] dom: index of the domain.
-     * \param[in] t: time.
-     * \param[in] x: pointer to memory containing the space location.
-     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
-     * \param[in] U: pointer to memory containing the conserved variables.
-     * \param[out] NFn: pointer to memory that will contain the numerical flux.
-    */
-    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_NFn_EB(const int dom,
-                      const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
-                      const amrex::Real * U, amrex::Real * NFn) const
-    {
-amrex::Print() << "eval_NFn_EB" << std::endl;
-exit(-1);
-    }
-
-    /**
-     * \brief Eval the numerical flux at the embedded boundaries.
-     *
-     * \param[in] dom: index of the domain.
-     * \param[in] nbr_dom: index of the domain that is neighbor with dom.
-     * \param[in] t: time.
-     * \param[in] x: pointer to memory containing the space location.
-     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
-     * \param[in] m_U: pointer to memory containing the conserved variables on the negative side of the
-     *                 unit normal.
-     * \param[in] p_U: pointer to memory containing the conserved variables on the positive side of the
-     *                 unit normal.
-     * \param[out] NFn: pointer to memory that will contain the numerical flux.
-    */
-    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_NFn_EB(const int dom, const int nbr_dom,
-                     const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
-                     const amrex::Real * m_U, const amrex::Real * p_U, amrex::Real * NFn) const
-    {
-amrex::Print() << "eval_NFn_EB" << std::endl;
-exit(-1);
-    }
-    // ================================================================
-
-
-    // FV =============================================================
-    /**
-     * \brief Reconstruct and limit the slopes for FV schemes.
-     *
-     * \param[in] geom: amrex geometry object.
-     * \param[in] solution: Solution object.
-     * \param[in] mesh: Mesh object.
-     * \param[in] X: a MultiFabs containing the solution states.
-     * \param[out] dX: a MultiFabs that will contain the solution slopes.
-     *
-    */
-    void eval_FV_slopes(const amrex::Geometry & geom,
-                        const amrex::dG::Mesh & mesh,
-                        const amrex::dG::Solution & solution,
-                        const amrex::MultiFab & X,
-                        amrex::MultiFab & dX) const
-    {
-amrex::Print() << "eval_FV_slopes" << std::endl;
-exit(-1);
+        NFn[E11+1] = 0.0;
     }
     // ================================================================
 
@@ -472,7 +438,7 @@ exit(-1);
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     int get_number_of_output_fields() const
     {
-        return N_VS+2;
+        return N_VS+2+2;
     }
     /**
      * \brief Return the parent domain of the u-th output field.
@@ -491,7 +457,8 @@ exit(-1);
     void get_output_fields_names(amrex::Vector<std::string> & output_fields_names) const
     {
         output_fields_names = {"m_x", "g_xx",
-                               "m_x_error", "g_xx_error"};
+                               "m_x_error", "g_xx_error",
+                               "u", "u_error"};
     }
 
     /**
@@ -517,6 +484,9 @@ exit(-1);
 
         F[E11+1] = U[V1]-U_exact[V1];
         F[E11+2] = U[E11]-U_exact[E11];
+
+        F[E11+3] = U[E11+1];
+        F[E11+4] = U[E11+1]-U_exact[E11+1];
     }
 
     /**

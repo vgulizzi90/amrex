@@ -39,13 +39,10 @@
 #define C65 19
 
 #define C66 20
-
-/*
-#define INSERT_HOLE
-#define HOLE_RADIUS 0.11
-*/
 // ####################################################################
 
+#define LEVEL_SET_HOLE
+//#define LEVEL_SET_BEAN
 
 namespace multilayered_plate
 {
@@ -83,11 +80,19 @@ struct LevelSet
     // EVALUATION =====================================================
     amrex::Real eval(const amrex::Real * x) const
     {
-#ifdef INSERT_HOLE
-        const amrex::Real xc[2] = {0.5, 0.5};
-        const amrex::Real res = HOLE_RADIUS*HOLE_RADIUS-((x[0]-xc[0])*(x[0]-xc[0])+(x[1]-xc[1])*(x[1]-xc[1]));
-#else
-        const amrex::Real res = -1.0;
+#ifdef LEVEL_SET_HOLE
+        const amrex::Real Rc = 0.5;
+        const amrex::Real xc[2] = {0.0, 0.0};
+        const amrex::Real res = -Rc*Rc+((x[0]-xc[0])*(x[0]-xc[0])+(x[1]-xc[1])*(x[1]-xc[1]));
+#endif
+#ifdef LEVEL_SET_BEAN
+        const amrex::Real Rc = 0.2;
+        const amrex::Real X = x[0];
+        const amrex::Real Y = x[1];
+        amrex::Real res;
+
+        res = X*X*X*X+2.0*Y*Y-X*Y-Rc*Rc;
+        res *= -1.0;
 #endif
         return res;
     }
@@ -98,11 +103,19 @@ struct LevelSet
     template <typename T>
     T operator() (const amrex::GpuArray<T, N> & x) const
     {
-#ifdef INSERT_HOLE
-        const amrex::Real xc[2] = {0.5, 0.5};
-        const T res = HOLE_RADIUS*HOLE_RADIUS-((x[0]-xc[0])*(x[0]-xc[0])+(x[1]-xc[1])*(x[1]-xc[1]));
-#else
-        const T res = (x[0]-x[0]-1.0);
+#ifdef LEVEL_SET_HOLE
+        const amrex::Real Rc = 0.5;
+        const amrex::Real xc[2] = {0.0, 0.0};
+        const T res = -Rc*Rc+((x[0]-xc[0])*(x[0]-xc[0])+(x[1]-xc[1])*(x[1]-xc[1]));
+#endif
+#ifdef LEVEL_SET_BEAN
+        const amrex::Real Rc = 0.2;
+        const T X = x[0];
+        const T Y = x[1];
+        T res;
+
+        res = X*X*X*X+2.0*Y*Y-X*Y-Rc*Rc;
+        res *= -1.0;
 #endif
         return res;
     }
@@ -110,13 +123,20 @@ struct LevelSet
     template <typename T>
     amrex::GpuArray<T, N> grad(const amrex::GpuArray<T, N> & x) const
     {
-#ifdef INSERT_HOLE
-        const amrex::Real xc[2] = {0.5, 0.5};
-        const amrex::GpuArray<T, N> res = {-2.0*(x[0]-xc[0]), -2.0*(x[1]-xc[1])};
-#else
-        const amrex::GpuArray<T, N> res = {AMREX_D_DECL(x[0]-x[0], x[0]-x[0], x[0]-x[0])};
+#ifdef LEVEL_SET_HOLE
+        const amrex::Real xc[2] = {0.0, 0.0};
+        const amrex::GpuArray<T, N> res = {+2.0*(x[0]-xc[0]), +2.0*(x[1]-xc[1])};
 #endif
+#ifdef LEVEL_SET_BEAN
+        const T X = x[0];
+        const T Y = x[1];
+        amrex::GpuArray<T, N> res;
 
+        res[0] = 4.0*X*X*X-Y;
+        res[1] = 4.0*Y-X;
+        res[0] *= -1.0;
+        res[1] *= -1.0;
+#endif
         return res;
     }
     // ================================================================
@@ -402,229 +422,7 @@ struct IBVP
 
         // EVAL DATA STRUCTURES FOR THE EXACT SOLUTION ----------------
         {
-            const int m1 = 1;
-            const amrex::Real L1 = 1.0;
-            const int m2 = 1;
-            const amrex::Real L2 = 1.0;
-
-            int info;
-            amrex::Real I[SHELL_NU*SHELL_NU], I1[SHELL_NU*SHELL_NU], I2[SHELL_NU*SHELL_NU], I11[SHELL_NU*SHELL_NU], I12[SHELL_NU*SHELL_NU], I22[SHELL_NU*SHELL_NU];
-            amrex::Real iM[SHELL_NU*SHELL_NU];
-            amrex::Real A[SHELL_NU*SHELL_NU];
-
-            // AUXILIARY MATRICES
-            amrex::dG::linalg::eye(SHELL_NU, I);
-            amrex::dG::linalg::eye(SHELL_NU, I1);
-            amrex::dG::linalg::eye(SHELL_NU, I2);
-            amrex::dG::linalg::eye(SHELL_NU, I11);
-            amrex::dG::linalg::eye(SHELL_NU, I12);
-            amrex::dG::linalg::eye(SHELL_NU, I22);
-            for (int u = 0; u < SHELL_NU; ++u)
-            {
-                if ((u%3) == 0)
-                {
-                    I1[u+u*SHELL_NU] *= -(m1*M_PI/L1);
-                    I2[u+u*SHELL_NU] *= +(m2*M_PI/L2);
-                    I12[u+u*SHELL_NU] *= -(m1*M_PI/L1)*(m2*M_PI/L2);
-                }
-                else if ((u%3) == 1)
-                {
-                    I1[u+u*SHELL_NU] *= +(m1*M_PI/L1);
-                    I2[u+u*SHELL_NU] *= -(m2*M_PI/L2);
-                    I12[u+u*SHELL_NU] *= -(m1*M_PI/L1)*(m2*M_PI/L2);
-                }
-                else if ((u%3) == 2)
-                {
-                    I1[u+u*SHELL_NU] *= +(m1*M_PI/L1);
-                    I2[u+u*SHELL_NU] *= +(m2*M_PI/L2);
-                    I12[u+u*SHELL_NU] *= +(m1*M_PI/L1)*(m2*M_PI/L2);
-                }
-
-                I11[u+u*SHELL_NU] *= -(m1*M_PI/L1)*(m1*M_PI/L1);
-                I22[u+u*SHELL_NU] *= -(m2*M_PI/L2)*(m2*M_PI/L2);
-            }
-
-            // FACTORIZATION OF THE MASS MATRIX
-            std::copy(this->M, this->M+SHELL_NU*SHELL_NU, iM);
-            amrex::dG::linalg::dpotf2('U', SHELL_NU, iM, SHELL_NU, info);
-
-            amrex::Print() << "iM: " << std::endl;
-            amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, iM);
-
-            if (info != 0)
-            {
-                std::string msg;
-                msg  = "\n";
-                msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
-                msg += "| Something went wrong during the factorization of the mass matrix (dpotf2).\n";
-                msg += "| info: "+std::to_string(info)+".\n";
-                amrex::Abort(msg);
-            }
-            
-            // STIFFNESS MATRIX
-            std::fill(A, A+SHELL_NU*SHELL_NU, 0.0);
-
-            amrex::dG::linalg::dgemm('N', 'N', SHELL_NU, SHELL_NU, SHELL_NU, 1.0, this->S, SHELL_NU, I, SHELL_NU, 0.0, A, SHELL_NU);
-            amrex::dG::linalg::dgemm('T', 'N', SHELL_NU, SHELL_NU, SHELL_NU, 1.0, this->R1, SHELL_NU, I1, SHELL_NU, 1.0, A, SHELL_NU);
-            amrex::dG::linalg::dgemm('T', 'N', SHELL_NU, SHELL_NU, SHELL_NU, 1.0, this->R2, SHELL_NU, I2, SHELL_NU, 1.0, A, SHELL_NU);
-            
-            amrex::dG::linalg::dgemm('N', 'N', SHELL_NU, SHELL_NU, SHELL_NU, -1.0, this->Q11, SHELL_NU, I11, SHELL_NU, 1.0, A, SHELL_NU);
-            amrex::dG::linalg::dgemm('N', 'N', SHELL_NU, SHELL_NU, SHELL_NU, -1.0, this->Q12, SHELL_NU, I12, SHELL_NU, 1.0, A, SHELL_NU);
-            amrex::dG::linalg::dgemm('N', 'N', SHELL_NU, SHELL_NU, SHELL_NU, -1.0, this->R1, SHELL_NU, I1, SHELL_NU, 1.0, A, SHELL_NU);
-            amrex::dG::linalg::dgemm('T', 'N', SHELL_NU, SHELL_NU, SHELL_NU, -1.0, this->Q12, SHELL_NU, I12, SHELL_NU, 1.0, A, SHELL_NU);
-            amrex::dG::linalg::dgemm('N', 'N', SHELL_NU, SHELL_NU, SHELL_NU, -1.0, this->Q22, SHELL_NU, I22, SHELL_NU, 1.0, A, SHELL_NU);
-            amrex::dG::linalg::dgemm('N', 'N', SHELL_NU, SHELL_NU, SHELL_NU, -1.0, this->R2, SHELL_NU, I2, SHELL_NU, 1.0, A, SHELL_NU);
-
-            // PARTICULAR SOLUTION
-            {
-                const amrex::Real x[2] = {0.0, 0.0};
-
-                const amrex::Real q1 = 0.0, q2 = 0.0, q3 = 1.0;
-                const amrex::Real tt[3] = {q1,
-                                           q2,
-                                           q3};
-                const int l = this->n_layers-1;
-                const amrex::Real x3b = this->layers_x3b[l];
-                const amrex::Real tau = this->layers_thickness[l];
-                const amrex::Real x3 = x3b+tau;
-                const amrex::Real g = this->shell_map_eval_surface_Jacobian(x, x3, 2);
-
-                amrex::Real iK[SHELL_NU*SHELL_NU], RF[3*SHELL_NU];
-
-                this->shell_theory_eval_RF_operator(x, x3, RF);
-
-                amrex::dG::linalg::dgemv('T', 3, SHELL_NU, g, RF, 3, tt, 1, 0.0, this->Us, 1);
-
-                //amrex::Print() << "Us: " << std::endl;
-                //amrex::dG::io::print_real_array_2d(SHELL_NU, 1, this->Us);
-
-                // FACTORIZATION OF THE STIFFNESS MATRIX
-                std::copy(A, A+SHELL_NU*SHELL_NU, iK);
-                amrex::dG::linalg::dpotf2('U', SHELL_NU, iK, SHELL_NU, info);
-
-                if (info != 0)
-                {
-                    std::string msg;
-                    msg  = "\n";
-                    msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
-                    msg += "| Something went wrong during the factorization of the stiffness matrix (dpotf2).\n";
-                    msg += "| info: "+std::to_string(info)+".\n";
-                    amrex::Abort(msg);
-                }
-
-                amrex::Print() << "iK: " << std::endl;
-                amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, iK);
-
-                // MULTIPLY BY INVERSE STIFFNESS MATRIX
-                // (STATIC SOLUTION)
-                amrex::dG::linalg::dpotrs('U', SHELL_NU, 1, iK, SHELL_NU, this->Us, SHELL_NU, info);
-
-                if (info != 0)
-                {
-                    std::string msg;
-                    msg  = "\n";
-                    msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
-                    msg += "| Something went wrong during the inversion of the stiffness matrix (dpotrs).\n";
-                    msg += "| info: "+std::to_string(info)+".\n";
-                    amrex::Abort(msg);
-                }
-
-                //amrex::Print() << "Us: " << std::endl;
-                //amrex::dG::io::print_real_array_2d(SHELL_NU, 1, this->Us);
-            }
-
-            // MULTIPLY BY INVERSE MASS MATRIX
-            amrex::dG::linalg::dpotrs('U', SHELL_NU, SHELL_NU, iM, SHELL_NU, A, SHELL_NU, info);
-
-            if (info != 0)
-            {
-                std::string msg;
-                msg  = "\n";
-                msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
-                msg += "| Something went wrong during the inversion of the mass matrix (dpotrs).\n";
-                msg += "| info: "+std::to_string(info)+".\n";
-                amrex::Abort(msg);
-            }
-
-            // EIGENVALUE PROBLEM
-            {
-                char jobvl = 'N';
-                char jobvr = 'V';
-                int n = SHELL_NU;
-                amrex::Real A_copy[SHELL_NU*SHELL_NU];
-                amrex::Real wA_im[SHELL_NU];
-                amrex::Real work[SHELL_NU*SHELL_NU];
-                int lwork = SHELL_NU*SHELL_NU;
-
-                std::copy(A, A+SHELL_NU*SHELL_NU, A_copy);
-                dgeev_(&jobvl, &jobvr, &n, A_copy, &n, wA, wA_im, nullptr, &n, this->vA, &n, work, &lwork, &info);
-
-                if (info != 0)
-                {
-                    std::string msg;
-                    msg  = "\n";
-                    msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
-                    msg += "| Something went wrong during the solution of the eigenproblem (dgeev_).\n";
-                    msg += "| info: "+std::to_string(info)+".\n";
-                    amrex::Abort(msg);
-                }
-
-                // STORE EIGENVALUES
-                for (int u = 0; u < SHELL_NU; ++u)
-                {
-                    this->wA[u] = std::sqrt(this->wA[u]);
-                }
-            }
-
-            amrex::Print() << "Eigenvalues: " << std::endl;
-            amrex::dG::io::print_real_array_2d(1, SHELL_NU, this->wA);
-            amrex::Print() << "Right eigenvectors: " << std::endl;
-            amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, this->vA);
-            amrex::Print() << "Period: " << 2.0*M_PI/(*std::min_element(this->wA, this->wA+SHELL_NU)) << std::endl;
-
-            // COEFFICIENTS OF THE EIGENVECTORS
-            {
-                amrex::Real vA_copy[SHELL_NU*SHELL_NU];
-                int ipiv[SHELL_NU];
-
-                std::copy(this->vA, this->vA+SHELL_NU*SHELL_NU, vA_copy);
-
-                amrex::dG::linalg::dgetrf(SHELL_NU, SHELL_NU, vA_copy, SHELL_NU, ipiv, info);
-
-                if (info != 0)
-                {
-                    std::string msg;
-                    msg  = "\n";
-                    msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
-                    msg += "| Something went wrong during the factorization of the right eigenvectors matrix (dgetrf).\n";
-                    msg += "| info: "+std::to_string(info)+".\n";
-                    amrex::Abort(msg);
-                }
-
-                for (int u = 0; u < SHELL_NU; ++u)
-                {
-                    this->cvA[u] = -this->Us[u];
-                }
-                amrex::dG::linalg::dgetrs('N', SHELL_NU, 1, vA_copy, SHELL_NU, ipiv, this->cvA, SHELL_NU, info);
-
-                if (info != 0)
-                {
-                    std::string msg;
-                    msg  = "\n";
-                    msg +=  "ERROR: IBVP_MultilayeredPlate.H - IBVP::IBVP\n";
-                    msg += "| Something went wrong during the inversion of the right eigenvectors matrix (dgetrs).\n";
-                    msg += "| info: "+std::to_string(info)+".\n";
-                    amrex::Abort(msg);
-                }
-            }
-
-            /* DEBUG */
-            amrex::Print() << "A: " << std::endl;
-            amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, A);
-            amrex::Print() << "cvA: " << std::endl;
-            amrex::dG::io::print_real_array_2d(SHELL_NU, 1, this->cvA);
-            //exit(-1);
-            /**/
+            // DO WE NEED BESSEL_J FUNCTIONS?
         }
         // ------------------------------------------------------------
     }
@@ -1156,28 +954,8 @@ struct IBVP
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_exact_solution(const amrex::Real t, const amrex::Real * x, amrex::Real * U) const
     {
-        const int m1 = 1;
-        const amrex::Real L1 = 1.0;
-        const int m2 = 1;
-        const amrex::Real L2 = 1.0;
-        const amrex::Real c1 = std::cos((m1*M_PI/L1)*x[0]);
-        const amrex::Real s1 = std::sin((m1*M_PI/L1)*x[0]);
-        const amrex::Real c2 = std::cos((m2*M_PI/L2)*x[1]);
-        const amrex::Real s2 = std::sin((m2*M_PI/L2)*x[1]);
-        const amrex::Real fxi[3] = {c1*s2,
-                                    s1*c2,
-                                    s1*s2};
-
-        for (int r = 0; r < SHELL_NU; ++r)
-        {
-            U[r] = this->Us[r];
-            for (int k = 0; k < SHELL_NU; ++k)
-            {
-                U[r] += this->vA[r+k*SHELL_NU]*this->cvA[k]*std::cos(this->wA[k]*t);
-            }
-
-            U[r] *= fxi[r%3];
-        }
+amrex::Print() << "eval_exact_solution" << std::endl;
+exit(-1);
     }
 
     /**
@@ -1193,40 +971,8 @@ struct IBVP
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_exact_solution(const amrex::Real t, const amrex::Real * x, amrex::Real * U, amrex::Real * U_1, amrex::Real * U_2) const
     {
-        const int m1 = 1;
-        const amrex::Real L1 = 1.0;
-        const int m2 = 1;
-        const amrex::Real L2 = 1.0;
-        const amrex::Real c1 = std::cos((m1*M_PI/L1)*x[0]);
-        const amrex::Real s1 = std::sin((m1*M_PI/L1)*x[0]);
-        const amrex::Real c2 = std::cos((m2*M_PI/L2)*x[1]);
-        const amrex::Real s2 = std::sin((m2*M_PI/L2)*x[1]);
-        const amrex::Real fxi[3] = {c1*s2,
-                                    s1*c2,
-                                    s1*s2};
-        const amrex::Real fxi_1[3] = {-(m1*M_PI/L1)*s1*s2,
-                                       (m1*M_PI/L1)*c1*c2,
-                                       (m1*M_PI/L1)*c1*s2};
-        const amrex::Real fxi_2[3] = { (m2*M_PI/L2)*c1*c2,
-                                      -(m2*M_PI/L2)*s1*s2,
-                                       (m2*M_PI/L2)*s1*c2};
-
-        for (int r = 0; r < SHELL_NU; ++r)
-        {
-            U[r] = this->Us[r];
-            U_1[r] = this->Us[r];
-            U_2[r] = this->Us[r];
-            for (int k = 0; k < SHELL_NU; ++k)
-            {
-                U[r] += this->vA[r+k*SHELL_NU]*this->cvA[k]*std::cos(this->wA[k]*t);
-                U_1[r] += this->vA[r+k*SHELL_NU]*this->cvA[k]*std::cos(this->wA[k]*t);
-                U_2[r] += this->vA[r+k*SHELL_NU]*this->cvA[k]*std::cos(this->wA[k]*t);
-            }
-
-            U[r] *= fxi[r%3];
-            U_1[r] *= fxi_1[r%3];
-            U_2[r] *= fxi_2[r%3];
-        }
+amrex::Print() << "eval_exact_solution" << std::endl;
+exit(-1);
     }
 
     /**
@@ -1830,14 +1576,10 @@ exit(-1);
 
         // CONTRIBUTION OF THE EXTERNAL FORCES: TOP SURFACE
         {
-            const int m1 = 1;
-            const amrex::Real L1 = 1.0;
-            const int m2 = 1;
-            const amrex::Real L2 = 1.0;
             const amrex::Real q1 = 0.0, q2 = 0.0, q3 = 1.0;
-            const amrex::Real tt[3] = {q1*std::cos((m1*M_PI/L1)*x[0])*std::sin((m2*M_PI/L2)*x[1]),
-                                       q2*std::sin((m1*M_PI/L1)*x[0])*std::cos((m2*M_PI/L2)*x[1]),
-                                       q3*std::sin((m1*M_PI/L1)*x[0])*std::sin((m2*M_PI/L2)*x[1])};
+            const amrex::Real tt[3] = {q1,
+                                       q2,
+                                       q3};
 
             const int l = this->n_layers-1;
             const amrex::Real x3b = this->layers_x3b[l];
@@ -2466,7 +2208,7 @@ exit(-1);
     }
 
     /**
-     * \brief Eval the numerical flux at the embedded boundaries.
+     * \brief Eval the numerical flux at embedded boundaries.
      *
      * \param[in] dom: index of the domain.
      * \param[in] t: time.
@@ -2474,19 +2216,178 @@ exit(-1);
      * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
      * \param[in] U: pointer to memory containing the conserved variables.
      * \param[in] U_1, U_2, U_3: pointer to memory containing the derivatives of the conserved
-     *                           variables.
+     *            variables.
      * \param[out] ND1, ND2, ND3: pointer to memory that will contain the numerical fluxes.
      * \param[out] NFn: pointer to memory that will contain the numerical flux.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_NF_EB(const int /*dom*/,
-                    const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * /*un*/,
-                    const amrex::Real * /*U*/, AMREX_D_DECL(const amrex::Real * /*U_1*/, const amrex::Real * /*U_2*/, const amrex::Real * /*U_3*/),
-                    AMREX_D_DECL(amrex::Real * /*ND1*/, amrex::Real * /*ND2*/, amrex::Real * ND3),
-                    amrex::Real * /*NFn*/) const
+                    const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
+                    const amrex::Real * U, AMREX_D_DECL(const amrex::Real * U_1, const amrex::Real * U_2, const amrex::Real * U_3),
+                    AMREX_D_DECL(amrex::Real * ND1, amrex::Real * ND2, amrex::Real * ND3),
+                    amrex::Real * NFn) const
     {
-amrex::Print() << "eval_NFn_EB - 1" << std::endl;
-exit(-1);
+        // PARAMETERS
+        const amrex::Real mu = this->muD;
+
+        // VARIABLES
+        amrex::Real dU[SHELL_NU];
+        amrex::Real T[SHELL_NU];
+        
+        // ZERO-DISPLACEMENT BCS
+        {
+            // GENERALIZED DISPLACEMENT JUMP
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                dU[u] = U[u];
+            }
+
+            // GENERALIZED TRACTIONS (INTERNAL, NON-PRESCRIBED)
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[0], this->Q11, SHELL_NU, U_1, 1, 0.0, T, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[0], this->Q12, SHELL_NU, U_2, 1, 1.0, T, 1);
+            amrex::dG::linalg::dgemv('T', SHELL_NU, SHELL_NU, un[1], this->Q12, SHELL_NU, U_1, 1, 1.0, T, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[1], this->Q22, SHELL_NU, U_2, 1, 1.0, T, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[0], this->R1, SHELL_NU, U, 1, 1.0, T, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[1], this->R2, SHELL_NU, U, 1, 1.0, T, 1);
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                T[u] *= 1.0;
+            }
+
+            amrex::dG::linalg::dgemv('T', SHELL_NU, SHELL_NU, un[0], this->R1, SHELL_NU, dU, 1, 0.0, NFn, 1);
+            amrex::dG::linalg::dgemv('T', SHELL_NU, SHELL_NU, un[1], this->R2, SHELL_NU, dU, 1, 1.0, NFn, 1);
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                NFn[u] += -mu*dU[u]+T[u];
+            }
+
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[0], this->Q11, SHELL_NU, dU, 1, 0.0, ND1, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[1], this->Q12, SHELL_NU, dU, 1, 1.0, ND1, 1);
+
+            amrex::dG::linalg::dgemv('T', SHELL_NU, SHELL_NU, un[0], this->Q12, SHELL_NU, dU, 1, 0.0, ND2, 1);
+            amrex::dG::linalg::dgemv('N', SHELL_NU, SHELL_NU, un[1], this->Q22, SHELL_NU, dU, 1, 1.0, ND2, 1);
+        }
+
+        /* DEBUG
+        amrex::Print() << "un: " << std::endl;
+        amrex::dG::io::print_real_array_2d(1, AMREX_SPACEDIM, un);
+        
+        amrex::Print() << "Q11: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q11);
+        amrex::Print() << "Q22: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q22);
+        amrex::Print() << "Q12: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q12);
+        amrex::Print() << "R1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, R1);
+        amrex::Print() << "R2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, R2);
+        
+        amrex::Print() << "U: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U);
+        amrex::Print() << "U_1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U_1);
+        amrex::Print() << "U_2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U_2);
+        
+        amrex::Print() << "dU: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, dU);
+        amrex::Print() << "T: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, T);
+
+        amrex::Print() << "NFn: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, NFn);
+        amrex::Print() << "ND1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, ND1);
+        amrex::Print() << "ND2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, ND2);
+        exit(-1);
+        */
+    }
+
+    /**
+     * \brief Eval the gradient of the numerical flux at the embedded boundaries.
+     *
+     * \param[in] dom: index of the domain.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[in] U_1, U_2, U_3: pointer to memory containing the derivatives of the conserved
+     *            variables.
+     * \param[out] dNDidU: pointer to memory that will contain the derivative of the numerical flux
+     *                     NDi with respect to U.
+     * \param[out] dNFndU_j: pointer to memory that will contain the derivative of the numerical flux
+     *                       NFn with respect to U_j.
+     * \param[out] dNFndU: pointer to memory that will contain the derivative of the numerical flux
+     *                     NFn with respect to U.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_dNFdU_EB(const int /*dom*/,
+                       const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
+                       const amrex::Real * U, AMREX_D_DECL(const amrex::Real * U_1, const amrex::Real * U_2, const amrex::Real * /*U_3*/),
+                       AMREX_D_DECL(amrex::Real * dND1dU, amrex::Real * dND2dU, amrex::Real * dND3dU), 
+                       AMREX_D_DECL(amrex::Real * dNFndU_1, amrex::Real * dNFndU_2, amrex::Real * dNFndU_3),
+                       amrex::Real * dNFndU) const
+    {
+        // PARAMETERS
+        const amrex::Real mu = this->muD;
+        
+        // ZERO-DISPLACEMENT BCS
+        {
+            for (int v = 0; v < SHELL_NU; ++v)
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                dND1dU[u+v*SHELL_NU]  = this->Q11[u+v*SHELL_NU]*un[0];
+                dND1dU[u+v*SHELL_NU] += this->Q12[u+v*SHELL_NU]*un[1];
+                
+                dND2dU[u+v*SHELL_NU]  = this->Q12[v+u*SHELL_NU]*un[0];
+                dND2dU[u+v*SHELL_NU] += this->Q22[u+v*SHELL_NU]*un[1];
+
+                dNFndU_1[u+v*SHELL_NU]  = this->Q11[u+v*SHELL_NU]*un[0];
+                dNFndU_1[u+v*SHELL_NU] += this->Q12[v+u*SHELL_NU]*un[1];
+
+                dNFndU_2[u+v*SHELL_NU]  = this->Q12[u+v*SHELL_NU]*un[0];
+                dNFndU_2[u+v*SHELL_NU] += this->Q22[u+v*SHELL_NU]*un[1];
+
+                dNFndU[u+v*SHELL_NU]  = this->R1[u+v*SHELL_NU]*un[0];
+                dNFndU[u+v*SHELL_NU] += this->R2[u+v*SHELL_NU]*un[1];
+                dNFndU[u+v*SHELL_NU] += this->R1[v+u*SHELL_NU]*un[0];
+                dNFndU[u+v*SHELL_NU] += this->R2[v+u*SHELL_NU]*un[1];
+            }
+
+            for (int u = 0; u < SHELL_NU; ++u)
+            {
+                dNFndU[u+u*SHELL_NU] -= mu;
+            }
+        }
+
+        /* DEBUG
+        amrex::Print() << "un: " << std::endl;
+        amrex::dG::io::print_real_array_2d(1, AMREX_SPACEDIM, un);
+        
+        amrex::Print() << "Q11: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q11);
+        amrex::Print() << "Q22: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q22);
+        amrex::Print() << "Q12: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, Q12);
+        amrex::Print() << "R1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, R1);
+        amrex::Print() << "R2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, R2);
+        
+        amrex::Print() << "U: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U);
+        amrex::Print() << "U_1: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U_1);
+        amrex::Print() << "U_2: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, 1, U_2);
+
+        amrex::Print() << "dNFndU: " << std::endl;
+        amrex::dG::io::print_real_array_2d(SHELL_NU, SHELL_NU, dNFndU);
+        exit(-1);
+        */
     }
 
     /**
@@ -3094,8 +2995,8 @@ exit(-1);
         const int dom = 0;
 
         // RECEIVERS INFO
-        const int n_sampling_points = 2;
-        const amrex::Vector<amrex::Real> sampling_points_coordinates = {0.0, 0.5, 0.5, 0.5};
+        const int n_sampling_points = 1;
+        const amrex::Vector<amrex::Real> sampling_points_coordinates = {0.0, 0.0};
         const int n_sampled_fields_per_point = 8;
         // ------------------------------------------------------------
 
@@ -3172,7 +3073,7 @@ exit(-1);
                             bfu.eval_unsafe(0, SHELL_NU, U);
                             bfu.eval_derivatives_unsafe(0, SHELL_NU, U_1, U_2);
 
-                            this->ibvp.eval_exact_solution(t_, xs, U_exact, U_1_exact, U_2_exact);
+                            //this->ibvp.eval_exact_solution(t_, xs, U_exact, U_1_exact, U_2_exact);
 
                             // EVAL FIELDS: DG
                             {
@@ -3203,38 +3104,17 @@ exit(-1);
                             sampled_fields[n_sampled_fields_per_point*s+0] = u[0];
                             sampled_fields[n_sampled_fields_per_point*s+1] = u[2];
                             sampled_fields[n_sampled_fields_per_point*s+2] = S[0];
-                            sampled_fields[n_sampled_fields_per_point*s+3] = S[4];
+                            sampled_fields[n_sampled_fields_per_point*s+3] = S[1];
 
                             // EVAL FIELDS: EXACT SOLUTION
                             {
-                                const int l = this->ibvp.n_layers-1;
-                                const amrex::Real x3b = this->ibvp.layers_x3b[l];
-                                const amrex::Real tau = this->ibvp.layers_thickness[l];
-                                const amrex::Real th = this->ibvp.layers_orientation[l];
-                                const Material & mat = this->ibvp.materials[this->ibvp.layers_material[l]];
-                                const amrex::Real x3 = x3b+tau;
-
-                                amrex::Real RF[3*SHELL_NU];
-                                amrex::Real J1[6*SHELL_NU], J2[6*SHELL_NU], J3[6*SHELL_NU];
-                                amrex::Real cSE[6*6];
-
-                                this->ibvp.shell_theory_eval_RF_operator(xs, x3, RF);
-                                this->ibvp.shell_theory_eval_Ji_operators(xs, x3, J1, J2, J3);
-                                this->ibvp.shell_theory_eval_cSE(xs, x3, mat.cSE, th, cSE);
-
-                                amrex::dG::linalg::dgemv('N', 3, SHELL_NU, 1.0, RF, 3, U_exact, 1, 0.0, u, 1);
-                                
-                                amrex::dG::linalg::dgemv('N', 6, SHELL_NU, 1.0, J3, 6, U_exact, 1, 0.0, E, 1);
-                                amrex::dG::linalg::dgemv('N', 6, SHELL_NU, 1.0, J1, 6, U_1_exact, 1, 1.0, E, 1);
-                                amrex::dG::linalg::dgemv('N', 6, SHELL_NU, 1.0, J2, 6, U_2_exact, 1, 1.0, E, 1);
-
-                                amrex::dG::linalg::dgemv('N', 6, 6, 1.0, cSE, 6, E, 1, 0.0, S, 1);
+                                //...
                             }
                             
-                            sampled_fields[n_sampled_fields_per_point*s+4] = u[0];
-                            sampled_fields[n_sampled_fields_per_point*s+5] = u[2];
-                            sampled_fields[n_sampled_fields_per_point*s+6] = S[0];
-                            sampled_fields[n_sampled_fields_per_point*s+7] = S[4];
+                            sampled_fields[n_sampled_fields_per_point*s+4] = 0.0;
+                            sampled_fields[n_sampled_fields_per_point*s+5] = 0.0;
+                            sampled_fields[n_sampled_fields_per_point*s+6] = 0.0;
+                            sampled_fields[n_sampled_fields_per_point*s+7] = 0.0;
                         }
                     }
                 }
@@ -3291,8 +3171,8 @@ exit(-1);
                 fp << std::setw(16) << "t ";
                 for (int s = 0; s < n_sampling_points; ++s)
                 {
-                    fp << std::setw(13) << "u1(t,R" << std::to_string(s) << ") " << std::setw(13) << "u3(t,R" << std::to_string(s) << ") " << std::setw(13) << "s11(t,R" << std::to_string(s) << ") " << std::setw(13) << "s13(t,R" << std::to_string(s) << ") "
-                       << std::setw(13) << " u1_e(t,R" << std::to_string(s) << ") " << std::setw(13) << "u3_e(t,R" << std::to_string(s) << ") " << std::setw(13) << "s11_e(t,R" << std::to_string(s) << ") " << std::setw(13) << "s13_e(t,R" << std::to_string(s) << ")";
+                    fp << std::setw(13) << "u1(t,R" << std::to_string(s) << ") " << std::setw(13) << "u3(t,R" << std::to_string(s) << ") " << std::setw(13) << "s11(t,R" << std::to_string(s) << ") " << std::setw(13) << "s22(t,R" << std::to_string(s) << ") "
+                       << std::setw(13) << " u1_e(t,R" << std::to_string(s) << ") " << std::setw(13) << "u3_e(t,R" << std::to_string(s) << ") " << std::setw(13) << "s11_e(t,R" << std::to_string(s) << ") " << std::setw(13) << "s22_e(t,R" << std::to_string(s) << ")";
                 }
                 fp << std::endl;
             }

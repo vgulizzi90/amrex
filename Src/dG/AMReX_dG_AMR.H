@@ -651,11 +651,11 @@ void remake_solution(const Real /*t*/,
  * \param[in] ibvp: initial boundary value problem object.
 */
 template <typename IBVP>
-void restrict(const Geometry & f_geom, const Solution & f_solution, const MultiFab & f_X,
+void restrict(const Geometry & /*f_geom*/, const Solution & f_solution, const MultiFab & f_X,
               const IntVect rr,
               const Geometry & c_geom, const Solution & c_solution, MultiFab & c_X, const iMultiFab & c_mask,
               const IBVP & ibvp,
-              const bool use_fabbox = false)
+              const bool /*use_fabbox*/ = false)
 {
     // PROFILING ------------------------------------------------------
     BL_PROFILE("amrex::dG::amr_utils::restrict(...)");
