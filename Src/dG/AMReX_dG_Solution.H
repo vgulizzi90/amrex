@@ -2885,6 +2885,7 @@ struct Solution
 
                     // INITIALIZATION
                     err_x = 0.0;
+                    err_norm_x = 0.0;
 
                     // LOOP OVER THE QUADRATURE POINTS
                     for (int q = 0; q < dom_Nq; ++q)
@@ -3053,6 +3054,128 @@ struct Solution
         {
             err = amrex::max(err, elm_err.max(2*dom));
             err_norm = amrex::max(err_norm, elm_err.max(2*dom+1));
+        }
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Eval the error using the L_2 norm.
+     *
+     * \param[in] t: time.
+     * \param[in] geom: amrex geometry object.
+     * \param[in] mesh: Mesh object; contains information about embedded geometries.
+     * \param[in] X: a MultiFab object containing the dG coefficients.
+     * \param[in] mask: a iMultiFab object that contains a single value for each cell.
+     * \param[out] err: L_2-based error.
+     * \param[out] err_norm: L_2-based error normalization.
+     * \param[in] ibvp: initial boundary value problem object.
+    */
+    template <typename IBVP>
+    void eval_error_L_2(const Real t, const Geometry & geom, const Mesh & mesh, const MultiFab & X, const iMultiFab & mask, Real & err, Real & err_norm, const IBVP & ibvp) const
+    {
+        // PARAMETERS -------------------------------------------------
+        // GRID
+        const GpuArray<Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
+        const GpuArray<Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
+
+        // DOMAINS / UNKNOWN FIELDS
+        const int n_domains = ibvp.get_number_of_domains();
+        const int n_unknown_fields = ibvp.get_number_of_unknown_fields();
+
+        // ORDER
+        const int sp = this->params.space_p;
+        // ------------------------------------------------------------
+
+        // VARIABLES --------------------------------------------------
+        MultiFab elm_err;
+        // ------------------------------------------------------------
+
+        // INITIALIZATION ---------------------------------------------
+        elm_err.define(this->elm_type.boxarray, this->elm_type.distributionMap, 2*n_domains, this->dom_data_n_grow);
+        elm_err = 0.0;
+        // ------------------------------------------------------------
+
+        // EVAL THE ERROR ---------------------------------------------
+#ifdef AMREX_USE_GPU
+        Real const * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_dev_mem.data();
+#else
+        Real const * cell_dom_quad_mem_ptr = mesh.cell_dom_quad_host_mem.data();
+#endif
+        for (MFIter mfi(elm_err); mfi.isValid(); ++mfi)
+        {
+            const Box & bx = mfi.validbox();
+
+            Array4<long const> const & cell_dom_quad_info_fab = mesh.cell_dom_quad_info.array(mfi);
+            Array4<int const> const & mask_fab = mask.array(mfi);
+            Array4<short const> const & elm_type_fab = this->elm_type.array(mfi);
+            Array4<Real const> const & X_fab = X.array(mfi);
+
+            Array4<Real> const & elm_err_fab = elm_err.array(mfi);
+
+            ParallelFor(bx, n_domains,
+            [=] AMREX_GPU_DEVICE (int i, int j, int k, int dom) noexcept
+            {
+                // ELEMENT TYPE
+                const short etype = elm_type_fab(i,j,k,ELM_TYPE(dom));
+
+                if (CELL_IS_NOT_MASKED(mask_fab(i,j,k)) && ELM_IS_NOT_EMPTY(etype))
+                {
+                    // LOCAL PARAMETERS
+                    const Real cell_lo[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+i*dx[0],
+                                                                       prob_lo[1]+j*dx[1],
+                                                                       prob_lo[2]+k*dx[2])};
+                    const int dom_Nq = cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_NQ(dom));
+                    const long pos = cell_dom_quad_info_fab(i,j,k,CELL_DOM_QUAD_POS(dom));
+                    const Real * x_ptr = &cell_dom_quad_mem_ptr[pos];
+
+                    // LOCAL VARIABLES
+                    Real x[AMREX_SPACEDIM], w, err_x, err_norm_x, ex, nx;
+                    Real U[__DG_MAX_N_UNKNOWN_FIELDS__];
+
+                    // UNKNOWN FIELDS
+                    space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
+
+                    // INITIALIZATION
+                    err_x = 0.0;
+                    err_norm_x = 0.0;
+
+                    // LOOP OVER THE QUADRATURE POINTS
+                    for (int q = 0; q < dom_Nq; ++q)
+                    {
+                        const long x_pos = (AMREX_SPACEDIM+1)*q;
+                        AMREX_D_TERM
+                        (
+                            x[0] = x_ptr[x_pos+0]+cell_lo[0];,
+                            x[1] = x_ptr[x_pos+1]+cell_lo[1];,
+                            x[2] = x_ptr[x_pos+2]+cell_lo[2];
+                        )
+                        w = x_ptr[x_pos+AMREX_SPACEDIM];
+
+                        // EVAL SOLUTION
+                        bfu.eval(x, 0, n_unknown_fields, U);
+
+                        // EVAL ERROR
+                        ibvp.eval_error_L_2(dom, t, x, U, ex, nx);
+                        err_x += ex*w;
+                        err_norm_x += nx*w;
+                    }
+
+                    // STORE ERROR
+                    elm_err_fab(i,j,k,2*dom) = err_x;
+                    elm_err_fab(i,j,k,2*dom+1) = err_norm_x;
+                }
+            });
+            Gpu::synchronize();
+        }
+        // ------------------------------------------------------------
+
+        // GLOBAL ERROR -----------------------------------------------
+        err = elm_err.sum(0);
+        err_norm = elm_err.sum(1);
+        for (int dom = 1; dom < n_domains; ++dom)
+        {
+            err += elm_err.sum(2*dom);
+            err_norm += elm_err.sum(2*dom+1);
         }
         // ------------------------------------------------------------
     }

@@ -66,6 +66,8 @@ struct LevelSet
 
 // SINGLE PHASE DOMAIN: IBVP ##########################################
 struct IBVP
+:
+public amrex::dG::IBVP_Base
 {
     // DATA MEMBERS ===================================================
     amrex::Real density, c[NS*(NS+1)/2], max_wave_speed;
@@ -542,29 +544,6 @@ exit(-1);
                      const amrex::Real * /*m_U*/, const amrex::Real * /*p_U*/, amrex::Real * /*NFn*/) const
     {
 amrex::Print() << "eval_NFn_EB" << std::endl;
-exit(-1);
-    }
-    // ================================================================
-
-
-    // FV =============================================================
-    /**
-     * \brief Reconstruct and limit the slopes for FV schemes.
-     *
-     * \param[in] geom: amrex geometry object.
-     * \param[in] solution: Solution object.
-     * \param[in] mesh: Mesh object.
-     * \param[in] X: a MultiFabs containing the solution states.
-     * \param[out] dX: a MultiFabs that will contain the solution slopes.
-     *
-    */
-    void eval_FV_slopes(const amrex::Geometry & /*geom*/,
-                        const amrex::dG::Mesh & /*mesh*/,
-                        const amrex::dG::Solution & /*solution*/,
-                        const amrex::MultiFab & /*X*/,
-                        amrex::MultiFab & /*dX*/) const
-    {
-amrex::Print() << "eval_FV_slopes" << std::endl;
 exit(-1);
     }
     // ================================================================

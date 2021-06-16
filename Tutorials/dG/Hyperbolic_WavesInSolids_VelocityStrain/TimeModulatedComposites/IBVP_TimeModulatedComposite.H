@@ -43,7 +43,7 @@ struct LevelSet
 
 
     // EVALUATION =====================================================
-    amrex::Real eval(const amrex::Real * x) const
+    amrex::Real eval(const amrex::Real * /*x*/) const
     {
         const amrex::Real res = -1.0;
         return res;
@@ -83,7 +83,7 @@ public amrex::dG::IBVP_Base
     
     // INITIAL CONDITION / EXACT SOLUTION
     amrex::Real wn[AMREX_SPACEDIM];
-    amrex::Real w[N_VS], R[N_VS*N_VS], cR[N_VS];
+    amrex::Real w[N_VS], RV[N_VS*N_VS], cRV[N_VS];
     // ================================================================
 
 
@@ -92,7 +92,7 @@ public amrex::dG::IBVP_Base
     {
         amrex::ParmParse pp;
         amrex::Vector<amrex::Real> material_constants;
-        amrex::Real cSE[NS*NS];
+        //amrex::Real cSE[NS*NS];
 
         // READ MATERIAL PROPERTIES -----------------------------------
         {
@@ -157,11 +157,11 @@ public amrex::dG::IBVP_Base
 
                 // Store eigenvalues and eigenvectors
                 std::copy(wAn, wAn+N_VS, this->w);
-                std::copy(vAn, vAn+N_VS*N_VS, this->R);
+                std::copy(vAn, vAn+N_VS*N_VS, this->RV);
             }
 
-            this->cR[V1] = 1.0;
-            this->cR[E11] = 0.0;
+            this->cRV[V1] = 1.0;
+            this->cRV[E11] = 0.0;
 
             amrex::Print() << "wn: " << std::endl;
             amrex::dG::io::print_real_array_2d(1, AMREX_SPACEDIM, this->wn);
@@ -170,9 +170,9 @@ public amrex::dG::IBVP_Base
             amrex::Print() << "Eigenvalues of An: " << std::endl;
             amrex::dG::io::print_real_array_2d(1, N_VS, this->w);
             amrex::Print() << "Right eigenvectors of An: " << std::endl;
-            amrex::dG::io::print_real_array_2d(N_VS, N_VS, this->R);
+            amrex::dG::io::print_real_array_2d(N_VS, N_VS, this->RV);
             amrex::Print() << "Right eigenvectors coefficients: " << std::endl;
-            amrex::dG::io::print_real_array_2d(1, N_VS, this->cR);
+            amrex::dG::io::print_real_array_2d(1, N_VS, this->cRV);
             {
                 amrex::Real max_wn = *std::max_element(this->w, this->w+N_VS);
                 amrex::Print() << "max wn: " << max_wn << std::endl;
@@ -256,7 +256,7 @@ public amrex::dG::IBVP_Base
                 //const amrex::Real ftx = std::exp(-a2*(x0-tx)*(x0-tx)); // (*)
                 const amrex::Real ftx = +2.0*a2*(x0-tx)*this->wn[0]*std::exp(-a2*(x0-tx)*(x0-tx)); // (**)
 
-                U[r] += this->R[r+k*N_VS]*this->cR[k]*ftx;
+                U[r] += this->RV[r+k*N_VS]*this->cRV[k]*ftx;
             }
         }
 
@@ -273,7 +273,7 @@ public amrex::dG::IBVP_Base
                 //const amrex::Real ftx = std::sqrt(M_PI)/(2.0*a*this->wn[0])*(std::erf(a*(x0+wt))-std::erf(a*(x0-tx))); // (*)
                 const amrex::Real ftx = std::exp(-a2*(x0-tx)*(x0-tx)); // (**)
 
-                U[E11+1] += this->R[r+k*N_VS]*this->cR[k]*ftx;
+                U[E11+1] += this->RV[r+k*N_VS]*this->cRV[k]*ftx;
             }
         }
     }
@@ -340,7 +340,7 @@ public amrex::dG::IBVP_Base
     amrex::Real eval_dt(const int /*dom*/,
                         const amrex::Real * dx,
                         const amrex::Real /*t*/, const amrex::Real * /*x*/,
-                        const amrex::Real * U) const
+                        const amrex::Real * /*U*/) const
     {
         const amrex::Real ws = this->max_wave_speed;
 #if (AMREX_SPACEDIM == 1)
@@ -417,8 +417,8 @@ public amrex::dG::IBVP_Base
      * \param[out] NFn: pointer to memory that will contain the numerical flux.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_NFn_BCs(const int dom,
-                      const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
+    void eval_NFn_BCs(const int /*dom*/,
+                      const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
                       const amrex::Real * U, amrex::Real * NFn) const
     {
         const amrex::Real T[AMREX_SPACEDIM] = {0.0};

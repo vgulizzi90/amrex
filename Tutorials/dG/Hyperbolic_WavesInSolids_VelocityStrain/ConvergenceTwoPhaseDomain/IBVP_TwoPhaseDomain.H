@@ -71,6 +71,8 @@ struct LevelSet
 
 // TWO-PHASE DOMAIN: IBVP #############################################
 struct IBVP
+:
+public amrex::dG::IBVP_Base
 {
     // DATA MEMBERS ===================================================
     amrex::Real density[N_PHASES], c[N_PHASES][NS*(NS+1)/2], max_wave_speed;

@@ -1514,7 +1514,9 @@ struct Mesh
             const int ii = ((2-dir)*(1-dir))/2;
             const int jj = (4+dir-dir*dir)/2;
 #endif
+#if (AMREX_SPACEDIM != 1)
             const Real entire_boundary_surface = AMREX_D_PICK(1.0, dx[ii], dx[ii]*dx[jj]);
+#endif
 
             for (MFIter mfi(this->cell_bou_type[dir]); mfi.isValid(); ++mfi)
             {
@@ -1543,7 +1545,10 @@ struct Mesh
                                                                            prob_lo[2]+(k+1)*dx[2])};
 
                         // LOCAL VARIABLES
-                        Real boundary_surface, surface_fraction;
+#if (AMREX_SPACEDIM != 1)
+                        Real boundary_surface;
+#endif
+                        Real surface_fraction;
 
                         // BOUNDARY QUADRATURE
                         {

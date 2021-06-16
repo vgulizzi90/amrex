@@ -87,7 +87,7 @@ struct IBVP_Base
      * \param[out] U: pointer to memory that will be filled with the value of the solution at (t, x).
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_exact_solution(const amrex::Real /*t*/, const amrex::Real * /*x*/, amrex::Real * /*U*/) const
+    void eval_exact_solution(const Real /*t*/, const Real * /*x*/, Real * /*U*/) const
     {
         Abort("IBVP_Base - eval_exact_solution: We should not end up in here. The user must implement this function.");
     }
@@ -100,7 +100,7 @@ struct IBVP_Base
      *                the solution at x.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_ICs(const amrex::Real * /*x*/, amrex::Real * /*U*/) const
+    void eval_ICs(const Real * /*x*/, Real * /*U*/) const
     {
         Abort("IBVP_Base - eval_ICs: We should not end up in here. The user must implement this function.");
     }
@@ -113,7 +113,7 @@ struct IBVP_Base
      *                  the time-derivatives of the solution at x.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_ICs_der(const amrex::Real * /*x*/, amrex::Real * /*U_t*/) const
+    void eval_ICs_der(const Real * /*x*/, Real * /*U_t*/) const
     {
         Abort("IBVP_Base - eval_ICs_der: We should not end up in here. The user must implement this function.");
     }
@@ -134,9 +134,9 @@ struct IBVP_Base
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_error_L_inf(const int /*dom*/,
-                          const amrex::Real /*t*/, const amrex::Real * /*x*/,
-                          const amrex::Real * /*U*/,
-                          amrex::Real & /*err*/, amrex::Real & /*err_norm*/) const
+                          const Real /*t*/, const Real * /*x*/,
+                          const Real * /*U*/,
+                          Real & /*err*/, Real & /*err_norm*/) const
     {
         Abort("IBVP_Base - eval_error_L_inf: We should not end up in here. The user must implement this function.");
     }
@@ -156,10 +156,10 @@ struct IBVP_Base
      * \return: time increment based on solution at (t, x).
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    amrex::Real eval_dt(const int /*dom*/,
-                        const amrex::Real * /*dx*/,
-                        const amrex::Real /*t*/, const amrex::Real * /*x*/,
-                        const amrex::Real * /*U*/) const
+    Real eval_dt(const int /*dom*/,
+                        const Real * /*dx*/,
+                        const Real /*t*/, const Real * /*x*/,
+                        const Real * /*U*/) const
     {
         Abort("IBVP_Base - eval_dt: We should not end up in here. The user must implement this function.");
         return 0.0;
@@ -178,8 +178,8 @@ struct IBVP_Base
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_M(const int /*dom*/,
-                const amrex::Real /*t*/, const amrex::Real * /*x*/,
-                amrex::Real * /*M*/) const
+                const Real /*t*/, const Real * /*x*/,
+                Real * /*M*/) const
     {
         Abort("IBVP_Base - eval_M: We should not end up in here. The user must implement this function.");
     }
@@ -195,8 +195,8 @@ struct IBVP_Base
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_F(const int /*dom*/,
-                const amrex::Real /*t*/, const amrex::Real * /*x*/,
-                const amrex::Real * /*U*/, AMREX_D_DECL(amrex::Real * /*F1*/, amrex::Real * /*F2*/, amrex::Real * /*F3*/)) const
+                const Real /*t*/, const Real * /*x*/,
+                const Real * /*U*/, AMREX_D_DECL(Real * /*F1*/, Real * /*F2*/, Real * /*F3*/)) const
     {
         Abort("IBVP_Base - eval_F: We should not end up in here. The user must implement this function.");
     }
@@ -213,8 +213,8 @@ struct IBVP_Base
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_FR(const int /*dom*/,
-                const amrex::Real /*t*/, const amrex::Real * /*x*/,
-                const amrex::Real * /*U*/, AMREX_D_DECL(amrex::Real * /*F1*/, amrex::Real * /*F2*/, amrex::Real * /*F3*/), amrex::Real * /*R*/) const
+                const Real /*t*/, const Real * /*x*/,
+                const Real * /*U*/, AMREX_D_DECL(Real * /*F1*/, Real * /*F2*/, Real * /*F3*/), Real * /*R*/) const
     {
         Abort("IBVP_Base - eval_FR: We should not end up in here. The user must implement this function.");
     }
@@ -232,9 +232,9 @@ struct IBVP_Base
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_DR(const int /*dom*/,
-                 const amrex::Real /*t*/, const amrex::Real * /*x*/,
-                 const amrex::Real * /*U*/, AMREX_D_DECL(const amrex::Real * /*U_1*/, const amrex::Real * /*U_2*/, const amrex::Real * /*U_3*/),
-                 AMREX_D_DECL(amrex::Real * /*D1*/, amrex::Real * /*D2*/, amrex::Real * /*D3*/), amrex::Real * /*R*/) const
+                 const Real /*t*/, const Real * /*x*/,
+                 const Real * /*U*/, AMREX_D_DECL(const Real * /*U_1*/, const Real * /*U_2*/, const Real * /*U_3*/),
+                 AMREX_D_DECL(Real * /*D1*/, Real * /*D2*/, Real * /*D3*/), Real * /*R*/) const
     {
         Abort("IBVP_Base - eval_DR: We should not end up in here. The user must implement this function.");
     }
@@ -258,10 +258,10 @@ struct IBVP_Base
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_dDRdU(const int /*dom*/,
-                    const amrex::Real /*t*/, const amrex::Real * /*x*/,
-                    const amrex::Real * /*U*/, AMREX_D_DECL(const amrex::Real * /*U_1*/, const amrex::Real * /*U_2*/, const amrex::Real * /*U_3*/),
-                    amrex::Real * /*dD1dU_1*/, amrex::Real * /*dD1dU_2*/, amrex::Real * /*dD2dU_1*/, amrex::Real * /*dD2dU_2*/, amrex::Real * /*dD1dU*/, amrex::Real * /*dD2dU*/,
-                    amrex::Real * /*dRdU_1*/, amrex::Real * /*dRdU_2*/, amrex::Real * /*dRdU*/) const
+                    const Real /*t*/, const Real * /*x*/,
+                    const Real * /*U*/, AMREX_D_DECL(const Real * /*U_1*/, const Real * /*U_2*/, const Real * /*U_3*/),
+                    Real * /*dD1dU_1*/, Real * /*dD1dU_2*/, Real * /*dD2dU_1*/, Real * /*dD2dU_2*/, Real * /*dD1dU*/, Real * /*dD2dU*/,
+                    Real * /*dRdU_1*/, Real * /*dRdU_2*/, Real * /*dRdU*/) const
     {
         Abort("IBVP_Base - eval_dDRdU: We should not end up in here. The user must implement this function.");
     }
@@ -284,8 +284,8 @@ struct IBVP_Base
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_NFn_intraphase(const int /*dom*/,
-                             const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * /*un*/,
-                             const amrex::Real * /*m_U*/, const amrex::Real * /*p_U*/, amrex::Real * /*NFn*/) const
+                             const Real /*t*/, const Real * /*x*/, const Real * /*un*/,
+                             const Real * /*m_U*/, const Real * /*p_U*/, Real * /*NFn*/) const
     {
         Abort("IBVP_Base - eval_NFn_intraphase: We should not end up in here. The user must implement this function.");
     }
@@ -302,8 +302,8 @@ struct IBVP_Base
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_NFn_BCs(const int /*dom*/,
-                      const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * /*un*/,
-                      const amrex::Real * /*U*/, amrex::Real * /*NFn*/) const
+                      const Real /*t*/, const Real * /*x*/, const Real * /*un*/,
+                      const Real * /*U*/, Real * /*NFn*/) const
     {
         Abort("IBVP_Base - eval_NFn_BCs: We should not end up in here. The user must implement this function.");
     }
@@ -320,8 +320,8 @@ struct IBVP_Base
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_NFn_EB(const int /*dom*/,
-                     const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * /*un*/,
-                     const amrex::Real * /*U*/, amrex::Real * /*NFn*/) const
+                     const Real /*t*/, const Real * /*x*/, const Real * /*un*/,
+                     const Real * /*U*/, Real * /*NFn*/) const
     {
         Abort("IBVP_Base - eval_NFn_EB: We should not end up in here. The user must implement this function.");
     }
@@ -342,8 +342,8 @@ struct IBVP_Base
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_NFn_EB(const int /*dom*/, const int /*nbr_dom*/,
-                     const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * /*un*/,
-                     const amrex::Real * /*m_U*/, const amrex::Real * /*p_U*/, amrex::Real * /*NFn*/) const
+                     const Real /*t*/, const Real * /*x*/, const Real * /*un*/,
+                     const Real * /*m_U*/, const Real * /*p_U*/, Real * /*NFn*/) const
     {
         Abort("IBVP_Base - eval_NFn_EB: We should not end up in here. The user must implement this function.");
     }
@@ -436,9 +436,9 @@ struct IBVP_Base
      * \param[out] F: pointer to memory that will be filled with values of the output fields at (t,x).
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_output_fields(const int /*dom*/, const amrex::Real /*t*/, const amrex::Real * /*x*/,
-                            const amrex::Real * /*U*/,
-                            amrex::Real * /*F*/) const
+    void eval_output_fields(const int /*dom*/, const Real /*t*/, const Real * /*x*/,
+                            const Real * /*U*/,
+                            Real * /*F*/) const
     {
         Abort("IBVP_Base - eval_output_fields: We should not end up in here. The user must implement this function.");
     }
@@ -455,9 +455,9 @@ struct IBVP_Base
      * \param[out] F: pointer to memory that will be filled with values of the output fields at (t,x).
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_output_fields(const int /*dom*/, const amrex::Real /*t*/, const amrex::Real * /*x*/,
-                            const amrex::Real * /*U*/, AMREX_D_DECL(const amrex::Real * /*U_1*/, const amrex::Real * /*U_2*/, const amrex::Real * /*U_3*/),
-                            amrex::Real * /*F*/) const
+    void eval_output_fields(const int /*dom*/, const Real /*t*/, const Real * /*x*/,
+                            const Real * /*U*/, AMREX_D_DECL(const Real * /*U_1*/, const Real * /*U_2*/, const Real * /*U_3*/),
+                            Real * /*F*/) const
     {
         Abort("IBVP_Base - eval_output_fields: We should not end up in here. The user must implement this function.");
     }

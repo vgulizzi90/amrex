@@ -128,7 +128,8 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                     bfu.eval_unsafe(u_lo, u_hi, U);
 
                     // Fluxes/Reactive terms as functions of (t, x, U)
-                    ibvp.eval_FR(dom, t, x, U, AMREX_D_DECL(F1, F2, F3), R);
+                    //ibvp.eval_FR(dom, t, x, U, AMREX_D_DECL(F1, F2, F3), R);
+                    ibvp.eval_F(dom, t, x, U, AMREX_D_DECL(F1, F2, F3));
 
                     // Integral contribution
                     for (int ru = u_lo; ru < u_hi; ++ru)
@@ -140,7 +141,7 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                             integrand += bfu.dBFdx2[rs]*F2[ru];,
                             integrand += bfu.dBFdx3[rs]*F3[ru];
                         )
-                        integrand -= bfu.BF[rs]*R[ru];
+                        //integrand -= bfu.BF[rs]*R[ru];
                         
                         dXdt_fab(i,j,k,rs+ru*sNp) += integrand*w;
                     }
@@ -502,7 +503,7 @@ void eval_bou_fluxes(const Real t, const Geometry & geom, const Mesh & mesh, con
 */
 template <typename IBVP>
 void eval_dG_dG_bou_fluxes(const Real t,
-                           const Geometry & c_geom, const Mesh & c_mesh, const Solution & c_solution, const MultiFab & c_X,
+                           const Geometry & c_geom, const Mesh & /*c_mesh*/, const Solution & c_solution, const MultiFab & c_X,
                            const IntVect rr,
                            const Geometry & f_geom, const Mesh & f_mesh, const Solution & f_solution, const MultiFab & f_X,
                            Array<MultiFab, AMREX_SPACEDIM> & FX, const int FX_offset, const IBVP & ibvp)
@@ -525,7 +526,7 @@ void eval_dG_dG_bou_fluxes(const Real t,
 
     // ORDER
     const int f_sp = f_solution.params.space_p;
-    const int f_sNp = AMREX_D_TERM((1+f_sp),*(1+f_sp),*(1+f_sp));
+    //const int f_sNp = AMREX_D_TERM((1+f_sp),*(1+f_sp),*(1+f_sp));
     const int c_sp = c_solution.params.space_p;
     const int c_sNp = AMREX_D_TERM((1+c_sp),*(1+c_sp),*(1+c_sp));
     // ----------------------------------------------------------------
@@ -1332,7 +1333,7 @@ void FX_ICS(const int dom, const Real t,
 */
 template <typename IBVP>
 void eval_dG_FV_bou_fluxes(const Real t,
-                           const Geometry & c_geom, const Mesh & c_mesh, const Solution & c_solution, const MultiFab & c_X,
+                           const Geometry & c_geom, const Mesh & /*c_mesh*/, const Solution & c_solution, const MultiFab & c_X,
                            const IntVect rr,
                            const Geometry & f_geom, const Mesh & f_mesh, const Solution & f_solution, const MultiFab & f_X, const MultiFab & f_dX,
                            Array<MultiFab, AMREX_SPACEDIM> & FX, const int FX_offset, const IBVP & ibvp)

@@ -1111,6 +1111,43 @@ exit(-1);
             err_norm = amrex::max(err_norm, err_norm_lev);
         }
     }
+
+    /**
+     * \brief Eval the error among the levels using the L_2 norm.
+     *
+     * \param[in] t: time.
+     * \param[in] X: a vector of MultiFabs containing the solution coefficients.
+     * \param[out] err: L_2-based error computed over the levels.
+     * \param[out] err_norm: L_2-based error normalization computed over the levels.
+     * \param[in] ibvp: initial boundary value problem object.
+    */
+    template <typename IBVP>
+    void eval_error_L_2(const Real t, const Vector<MultiFab> & X, Real & err, Real & err_norm, const IBVP & ibvp) const
+    {
+        err = 0.0;
+        err_norm = 0.0;
+
+        for (int lev = 0; lev <= this->finest_level; ++lev)
+        {
+            const Mesh & mesh = *this->meshes[lev];
+            const Solution & solution = *this->solutions[lev];
+            const iMultiFab & mask = this->masks[lev];
+            
+            Real err_lev, err_norm_lev;
+
+            if ((solution.params.space_p == 0) && solution.params.FV_is_active)
+            {
+                //solution.eval_FV_error_L_2(t, this->geom[lev], mesh, X[lev], mask, err_lev, err_norm_lev, ibvp);
+            }
+            else
+            {
+                solution.eval_error_L_2(t, this->geom[lev], mesh, X[lev], mask, err_lev, err_norm_lev, ibvp);
+            }
+
+            err += err_lev;
+            err_norm += err_norm_lev;
+        }
+    }
     // ================================================================
 
 

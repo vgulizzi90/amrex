@@ -50,7 +50,7 @@ void main_main()
     amrex::Real t0;
 
     // ERROR
-    amrex::Real err, err_norm;
+    amrex::Real err_L_inf, err_L_inf_norm, err_L_2, err_L_2_norm;
     // ================================================================
 
 
@@ -179,11 +179,13 @@ void main_main()
     {
         const amrex::Real t = t0;
 
-        amr.eval_error(t, err, err_norm);
-        err = err/err_norm;
+        amr.eval_error(t, err_L_inf, err_L_inf_norm, err_L_2, err_L_2_norm);
+        err_L_inf = err_L_inf/err_L_inf_norm;
+        err_L_2 = std::sqrt(err_L_2/err_L_2_norm);
 
         amrex::Print() << "INITIAL ERROR REPORT:" << std::endl;
-        amrex::Print() << "| err(t = " << t << "): " << std::scientific << std::setprecision(5) << std::setw(12) << err << std::endl;
+        amrex::Print() << "| err_L_inf(t = " << t << "): " << std::scientific << std::setprecision(5) << std::setw(12) << err_L_inf << std::endl;
+        amrex::Print() << "|   err_L_2(t = " << t << "): " << std::scientific << std::setprecision(5) << std::setw(12) << err_L_2 << std::endl;
     }
     // ================================================================
 
@@ -228,8 +230,9 @@ void main_main()
             }
 
             // EVAL ERROR
-            amr.eval_error(t, err, err_norm);
-            err = err/err_norm;
+            amr.eval_error(t, err_L_inf, err_L_inf_norm, err_L_2, err_L_2_norm);
+            err_L_inf = err_L_inf/err_L_inf_norm;
+            err_L_2 = std::sqrt(err_L_2/err_L_2_norm);
 
             // TIME STEP TOC
             time_keeper.toc();
@@ -242,7 +245,7 @@ void main_main()
             // REPORT TO SCREEN
             amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
             amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
-                            << dt << ", t = " << t << ", err = " << err
+                            << dt << ", t = " << t << ", err_L_inf = " << err_L_inf << ", err_L_2 = " << err_L_2
                             << ", ct [s] = " << ct_avg 
                             << ", eta = " << amrex::dG::seconds_to_hms(eta) << std::endl;
         }

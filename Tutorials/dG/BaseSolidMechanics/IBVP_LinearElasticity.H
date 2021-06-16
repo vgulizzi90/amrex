@@ -35,8 +35,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void v_to_vn(const amrex::Real * un, const amrex::Real * v, amrex::Real * vn)
 {
 #if (AMREX_SPACEDIM == 1)
-amrex::Print() << "linear_elasticity::v_to_vn - DIM = 1" << std::endl;
-exit(-1);
+        vn[0] = un[0]*v[0];
 #endif
 #if (AMREX_SPACEDIM == 2)
         const amrex::Real c = un[0], s = un[1];
@@ -76,8 +75,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void vn_to_v(const amrex::Real * un, const amrex::Real * vn, amrex::Real * v)
 {
 #if (AMREX_SPACEDIM == 1)
-amrex::Print() << "linear_elasticity::vn_to_v - DIM = 1" << std::endl;
-exit(-1);
+        v[0] = un[0]*vn[0];
 #endif
 #if (AMREX_SPACEDIM == 2)
         const amrex::Real c = un[0], s = un[1];
@@ -116,8 +114,9 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void S_to_Sn(const amrex::Real * un, const amrex::Real * S, amrex::Real * Sn)
 {
 #if (AMREX_SPACEDIM == 1)
-amrex::Print() << "linear_elasticity::S_to_Sn - DIM = 1" << std::endl;
-exit(-1);
+        const amrex::Real c = un[0];
+
+        Sn[0] = c*c*S[0];
 #endif
 #if (AMREX_SPACEDIM == 2)
         const amrex::Real c = un[0], s = un[1];
@@ -161,8 +160,9 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void Sn_to_S(const amrex::Real * un, const amrex::Real * Sn, amrex::Real * S)
 {
 #if (AMREX_SPACEDIM == 1)
-amrex::Print() << "linear_elasticity::Sn_to_S - DIM = 1" << std::endl;
-exit(-1);
+        const amrex::Real c = un[0];
+
+        S[0] = c*c*Sn[0];
 #endif
 #if (AMREX_SPACEDIM == 2)
         const amrex::Real c = un[0], s = un[1];
@@ -457,7 +457,7 @@ void get_stiffness_matrix_3d_orthotropic_eng_constants(const amrex::Real E1, con
 */
 AMREX_FORCE_INLINE
 void get_stiffness_matrix_3d_orthotropic_eng_constants_plane_stress(const amrex::Real E1, const amrex::Real E2, const amrex::Real E3,
-                                                                    const amrex::Real nu23, const amrex::Real nu13, const amrex::Real nu12,
+                                                                    const amrex::Real /*nu23*/, const amrex::Real /*nu13*/, const amrex::Real nu12,
                                                                     const amrex::Real G23, const amrex::Real G13, const amrex::Real G12,
                                                                     amrex::Real * c,
                                                                     const amrex::Real shear_factor = 1.0)

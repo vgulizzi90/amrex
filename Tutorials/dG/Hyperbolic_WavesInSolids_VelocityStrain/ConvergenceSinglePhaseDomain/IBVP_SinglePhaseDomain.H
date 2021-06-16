@@ -95,6 +95,8 @@ struct LevelSet
 
 // SINGLE PHASE DOMAIN: IBVP ##########################################
 struct IBVP
+:
+public amrex::dG::IBVP_Base
 {
     // DATA MEMBERS ===================================================
     amrex::Real density, c[NS*(NS+1)/2], max_wave_speed;
@@ -532,6 +534,36 @@ struct IBVP
         err_norm = amrex::max(err_norm, std::abs(U_exact[E12]));
 #endif
     }
+
+    /**
+     * \brief Eval the error at (t, x) to be used for the L_2 norm error.
+     *
+     * \param[in] dom: domain index.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] U: pointer to memory containing the value of the conserved variables at (t, x).
+     * \param[out] err: error at (t, x).
+     * \param[out] err_norm: error normalization at (t, x).
+     *
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_error_L_2(const int /*dom*/,
+                        const amrex::Real t, const amrex::Real * x,
+                        const amrex::Real * U,
+                        amrex::Real & err, amrex::Real & err_norm) const
+    {
+        amrex::Real U_exact[N_VS];
+
+        this->eval_exact_solution(t, x, U_exact);
+
+        err_norm = elastic_solid::eval_total_energy_compact_c(this->density, this->c, U_exact);
+
+        for (int u = 0; u < N_VS; ++u)
+        {
+            U_exact[u] -= U[u];
+        }
+        err = elastic_solid::eval_total_energy_compact_c(this->density, this->c, U_exact);
+    }
     // ================================================================
 
 
@@ -713,29 +745,6 @@ exit(-1);
     // ================================================================
 
 
-    // FV =============================================================
-    /**
-     * \brief Reconstruct and limit the slopes for FV schemes.
-     *
-     * \param[in] geom: amrex geometry object.
-     * \param[in] solution: Solution object.
-     * \param[in] mesh: Mesh object.
-     * \param[in] X: a MultiFabs containing the solution states.
-     * \param[out] dX: a MultiFabs that will contain the solution slopes.
-     *
-    */
-    void eval_FV_slopes(const amrex::Geometry & geom,
-                        const amrex::dG::Mesh & mesh,
-                        const amrex::dG::Solution & solution,
-                        const amrex::MultiFab & X,
-                        amrex::MultiFab & dX) const
-    {
-amrex::Print() << "eval_FV_slopes" << std::endl;
-exit(-1);
-    }
-    // ================================================================
-
-
     // OUTPUT FIELDS ==================================================
     /**
      * \brief Return the number of output fields.
@@ -814,6 +823,24 @@ exit(-1);
 #endif
         F[E12+1] = U[V1]-U_exact[V1];
         F[E12+2] = U[E11]-U_exact[E11];
+    }
+
+    /**
+     * \brief Fill F with fields to be output.
+     * 
+     * \param[in] dom: domain index.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] U: pointer to memory that stores the conserved variables at (t,x).
+     * \param[out] F: pointer to memory that will be filled with values of the output fields at (t,x).
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_output_fields(const int /*dom*/, const amrex::Real /*t*/, const amrex::Real * /*x*/,
+                            const amrex::Real * /*U*/, AMREX_D_DECL(const amrex::Real * /*U_1*/, const amrex::Real * /*U_2*/, const amrex::Real * /*U_3*/),
+                            amrex::Real * /*F*/) const
+    {
+amrex::Print() << "eval_output_fields" << std::endl;
+exit(-1);
     }
     // ================================================================
 };
@@ -956,15 +983,24 @@ exit(-1);
         {
             this->eval_error_L_inf(t, this->X, err, err_norm, this->ibvp);
         }
+        else if (this->norm.compare("L_2") == 0)
+        {
+            this->eval_error_L_2(t, this->X, err, err_norm, this->ibvp);
+        }
         else
         {
             std::string msg;
             msg  = "\n";
             msg +=  "ERROR: IBVP_SinglePhaseDomain.H - AMR::eval_error\n";
-            msg += "| Unexpected error norm.\n";
-            msg += "| requested norm           : "+this->norm+".\n";
+            msg += "| Unexpected error norm: "+this->norm+".\n";
             amrex::Abort(msg);
         }
+    }
+
+    void eval_error(const amrex::Real t, amrex::Real & err_L_inf, amrex::Real & err_L_inf_norm, amrex::Real & err_L_2, amrex::Real & err_L_2_norm) const
+    {
+        this->eval_error_L_inf(t, this->X, err_L_inf, err_L_inf_norm, this->ibvp);
+        this->eval_error_L_2(t, this->X, err_L_2, err_L_2_norm, this->ibvp);
     }
     // ================================================================
 
