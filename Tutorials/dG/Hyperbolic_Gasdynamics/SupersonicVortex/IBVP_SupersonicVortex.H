@@ -93,6 +93,8 @@ struct LevelSet
 
 // SUPERSONIC VORTEX: IBVP ############################################
 struct IBVP
+:
+public amrex::dG::IBVP_Base
 {
     // DATA MEMBERS ===================================================
     amrex::Real gamma;
@@ -386,9 +388,9 @@ struct IBVP
      * \param[out] NFn: pointer to memory that will contain the numerical flux.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_NF_EB(const int /*dom*/, const int /*nbr_dom*/,
-                    const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * /*un*/,
-                    const amrex::Real * /*m_U*/, const amrex::Real * /*p_U*/, amrex::Real * /*NFn*/) const
+    void eval_NFn_EB(const int /*dom*/, const int /*nbr_dom*/,
+                     const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * /*un*/,
+                     const amrex::Real * /*m_U*/, const amrex::Real * /*p_U*/, amrex::Real * /*NFn*/) const
     {
 amrex::Print() << "eval_NFn_EB" << std::endl;
 exit(-1);
@@ -463,9 +465,9 @@ exit(-1);
      * \param[out] F: pointer to memory that will be filled with values of the output fields at (t,x).
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_output_fields(const int /*dom*/, const amrex::Real t, const amrex::Real * x,
-                            const amrex::Real * U, AMREX_D_DECL(const amrex::Real * U_1, const amrex::Real * U_2, const amrex::Real * U_3),
-                            amrex::Real * F) const
+    void eval_output_fields(const int /*dom*/, const amrex::Real /*t*/, const amrex::Real * /*x*/,
+                            const amrex::Real * /*U*/, AMREX_D_DECL(const amrex::Real * /*U_1*/, const amrex::Real * /*U_2*/, const amrex::Real * /*U_3*/),
+                            amrex::Real * /*F*/) const
     {
 amrex::Print() << "eval_output_fields" << std::endl;
 exit(-1);

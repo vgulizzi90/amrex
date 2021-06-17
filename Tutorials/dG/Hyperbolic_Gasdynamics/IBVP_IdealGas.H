@@ -878,7 +878,11 @@ void eval_FV_slopes(const amrex::Real g,
 
                 // LOCAL VARIABLES
                 amrex::Real xc[AMREX_SPACEDIM];
-                amrex::Real U[IDEAL_GAS_NU], P[IDEAL_GAS_NU];
+#if defined(BJ_USES_P) && defined(APPLY_LIMITER)
+#else
+                amrex::Real U[IDEAL_GAS_NU];
+#endif
+                amrex::Real P[IDEAL_GAS_NU];
                 int n_nbr;
                 int nbr_is_valid[__DG_BASE_STENCIL_N_NBR__];
                 amrex::Real nbr_Ps[IDEAL_GAS_NU*__DG_BASE_STENCIL_N_NBR__];
