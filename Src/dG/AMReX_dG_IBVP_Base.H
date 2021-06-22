@@ -140,6 +140,26 @@ struct IBVP_Base
     {
         Abort("IBVP_Base - eval_error_L_inf: We should not end up in here. The user must implement this function.");
     }
+
+    /**
+     * \brief Eval the error at (t, x) to be used for the L_2 norm error.
+     *
+     * \param[in] dom: domain index.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] U: pointer to memory containing the value of the conserved variables at (t, x).
+     * \param[out] err: error at (t, x).
+     * \param[out] err_norm: error normalization at (t, x).
+     *
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_error_L_2(const int /*dom*/,
+                        const Real /*t*/, const Real * /*x*/,
+                        const Real * /*U*/,
+                        Real & /*err*/, Real & /*err_norm*/) const
+    {
+        Abort("IBVP_Base - eval_error_L_2: We should not end up in here. The user must implement this function.");
+    }
     // ================================================================
 
 
@@ -190,7 +210,7 @@ struct IBVP_Base
      * \param[in] dom: index of the domain.
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
-     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[in] U: pointer to memory containing the solution.
      * \param[out] F1, F2, F3: pointer to memory that will contain the fluxes.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -207,7 +227,7 @@ struct IBVP_Base
      * \param[in] dom: index of the domain.
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
-     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[in] U: pointer to memory containing the solution.
      * \param[out] F1, F2, F3: pointer to memory that will contain the fluxes.
      * \param[out] R: pointer to memory that will contain the reactive term.
     */
@@ -291,13 +311,44 @@ struct IBVP_Base
     }
 
     /**
+     * \brief Eval the numerical flux at the intraphase boundary.
+     *
+     * \param[in] dom: index of the domain.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] m_U: pointer to memory containing the solution on the negative side of the unit
+     *                 normal.
+     * \param[in] m_U_1, m_U_2, m_U_3: pointer to memory containing the derivatives of the solution
+     *                                 on the negative side of the unit normal.
+     * \param[in] p_U: pointer to memory containing the solution on the positive side of the unit
+     *                 normal.
+     * \param[in] p_U_1, p_U_2, p_U_3: pointer to memory containing the derivatives of the solution
+     *                                 on the positive side of the unit normal.
+     * \param[out] m_ND1, m_ND2, m_ND3: pointer to memory that will contain the numerical fluxes.
+     * \param[out] m_NFn: pointer to memory that will contain the numerical flux.
+     * \param[out] p_ND1, p_ND2, p_ND3: pointer to memory that will contain the numerical fluxes.
+     * \param[out] p_NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_NF_intraphase(const int /*dom*/,
+                            const Real /*t*/, const Real * /*x*/, const Real * /*un*/,
+                            const Real * /*m_U*/, AMREX_D_DECL(const Real * /*m_U_1*/, const Real * /*m_U_2*/, const Real * /*m_U_3*/),
+                            const Real * /*p_U*/, AMREX_D_DECL(const Real * /*p_U_1*/, const Real * /*p_U_2*/, const Real * /*p_U_3*/),
+                            AMREX_D_DECL(Real * /*m_ND1*/, Real * /*m_ND2*/, Real * /*m_ND3*/), Real * /*m_NFn*/,
+                            AMREX_D_DECL(Real * /*p_ND1*/, Real * /*p_ND2*/, Real * /*p_ND3*/), Real * /*p_NFn*/) const
+    {
+        Abort("IBVP_Base - eval_NF_intraphase: We should not end up in here. The user must implement this function.");
+    }
+
+    /**
      * \brief Eval the numerical flux at a grid's boundary.
      *
      * \param[in] dom: index of the domain.
      * \param[in] t: time.
      * \param[in] x: pointer to memory containing the space location.
      * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
-     * \param[in] U: pointer to memory containing the conserved variables.
+     * \param[in] U: pointer to memory containing the solution.
      * \param[out] NFn: pointer to memory that will contain the numerical flux.
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -306,6 +357,28 @@ struct IBVP_Base
                       const Real * /*U*/, Real * /*NFn*/) const
     {
         Abort("IBVP_Base - eval_NFn_BCs: We should not end up in here. The user must implement this function.");
+    }
+
+    /**
+     * \brief Eval the numerical flux at a grid's boundary.
+     *
+     * \param[in] dom: index of the domain.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] U: pointer to memory containing the solution.
+     * \param[in] U_1, U_2, U_3: pointer to memory containing the derivatives of the solution.
+     * \param[out] ND1, ND2, ND3: pointer to memory that will contain the numerical fluxes.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_NF_BCs(const int /*dom*/,
+                     const Real /*t*/, const Real * /*x*/, const Real * /*un*/,
+                     const Real * /*U*/, AMREX_D_DECL(const Real * /*U_1*/, const Real * /*U_2*/, const Real * /*U_3*/),
+                     AMREX_D_DECL(Real * /*ND1*/, Real * /*ND2*/, Real * /*ND3*/),
+                     Real * /*NFn*/) const
+    {
+        Abort("IBVP_Base - eval_NF_BCs: We should not end up in here. The user must implement this function.");
     }
 
     /**
@@ -324,6 +397,28 @@ struct IBVP_Base
                      const Real * /*U*/, Real * /*NFn*/) const
     {
         Abort("IBVP_Base - eval_NFn_EB: We should not end up in here. The user must implement this function.");
+    }
+
+    /**
+     * \brief Eval the numerical flux at the embedded boundaries.
+     *
+     * \param[in] dom: index of the domain.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+     * \param[in] U: pointer to memory containing the solution.
+     * \param[in] U_1, U_2, U_3: pointer to memory containing the derivatives of the solution.
+     * \param[out] ND1, ND2, ND3: pointer to memory that will contain the numerical fluxes.
+     * \param[out] NFn: pointer to memory that will contain the numerical flux.
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_NF_EB(const int /*dom*/,
+                    const Real /*t*/, const Real * /*x*/, const Real * /*un*/,
+                    const Real * /*U*/, AMREX_D_DECL(const Real * /*U_1*/, const Real * /*U_2*/, const Real * /*U_3*/),
+                    AMREX_D_DECL(Real * /*ND1*/, Real * /*ND2*/, Real * /*ND3*/),
+                    Real * /*NFn*/) const
+    {
+        Abort("IBVP_Base - eval_NF_EB: We should not end up in here. The user must implement this function.");
     }
 
     /**

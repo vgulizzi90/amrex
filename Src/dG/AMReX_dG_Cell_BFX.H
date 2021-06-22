@@ -398,7 +398,7 @@ struct space_cell_bfx_algoim_base
 
 #if (AMREX_SPACEDIM == 1)
         DG_space_1d_BF_Table_NxL(1, this->p,
-                                 x, this->lo[0], this->hi[0],
+                                 &x[0], this->lo[0], this->hi[0],
                                  T_BF);
 #endif
 #if (AMREX_SPACEDIM == 2)
@@ -456,7 +456,7 @@ struct space_cell_bfx_algoim_base
 
 #if (AMREX_SPACEDIM == 1)
         DG_space_1d_BF_Table_NxL(1, this->p,
-                                 x, this->lo[0], this->hi[0],
+                                 &x[0], this->lo[0], this->hi[0],
                                  T_BF, T_dBFdx1);
 #endif
 #if (AMREX_SPACEDIM == 2)

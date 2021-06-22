@@ -9,7 +9,7 @@ geometry.is_periodic = 0 0 0
 # TIME ################################################################
 # Sample isotropic material
 time.T = 0.9539392014 # (2D)
-#time.T = 0.8618916074 # (3D) XXX
+#time.T = 0.8618916074 # (3D)
 
 # Copper crystal
 #time.T = 0.206344544 # (2D)
