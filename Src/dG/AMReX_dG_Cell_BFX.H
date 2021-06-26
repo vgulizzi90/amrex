@@ -11,7 +11,7 @@
 
 #include <AMReX_dG_BasisFunctions.H>
 
-#define __DG_MAX_SPACE_p__ 6
+#define __DG_MAX_SPACE_p__ 3
 #if (AMREX_SPACEDIM == 1)
 #define __DG_MAX_SPACE_Np__ (1+__DG_MAX_SPACE_p__)
 #endif
@@ -22,7 +22,7 @@
 #define __DG_MAX_SPACE_Np__ ((1+__DG_MAX_SPACE_p__)*(1+__DG_MAX_SPACE_p__)*(1+__DG_MAX_SPACE_p__))
 #endif
 
-#define __DG_MAX_SPACE_p_LEVEL_SET__ 8
+#define __DG_MAX_SPACE_p_LEVEL_SET__ 7
 #if (AMREX_SPACEDIM == 1)
 #define __DG_MAX_SPACE_Np_LEVEL_SET__ (1+__DG_MAX_SPACE_p_LEVEL_SET__)
 #endif

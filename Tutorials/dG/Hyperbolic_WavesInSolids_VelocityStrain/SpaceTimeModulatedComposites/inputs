@@ -1,0 +1,118 @@
+# SPACE ###############################################################
+geometry.prob_lo     = 0.0
+geometry.prob_hi     = 3.0
+geometry.is_periodic = 0
+#######################################################################
+
+
+
+# TIME ################################################################
+time.T = 1.5
+
+time.n_steps = 10000
+#######################################################################
+
+
+
+# DISCRETIZATION ######################################################
+# AMR =================================================================
+amr.v = 1
+
+amr.n_cell        = 2000
+amr.max_grid_size = 16
+
+amr.max_level = 0
+# =====================================================================
+
+
+# MESH ================================================================
+mesh[0].embedded_geometry_is_active = 1
+mesh[0].embedded_geometry_defined_by = level_set
+mesh[0].box_pruning_is_active = 1
+mesh[0].quadrature_order_regular_elements = 4
+mesh[0].quadrature_order_cut_elements = 8
+# =====================================================================
+
+
+# SOLUTION ============================================================
+solution[0].space_p = 1
+solution[0].cell_merging_is_active = 1
+solution[0].cell_merging_volume_fraction_threshold = 0.3
+solution[0].time_integration = explicit_RKdG
+solution[0].time_integration_CFL = 0.5
+solution[0].post_processing_grid_order = 8
+# =====================================================================
+#######################################################################
+
+
+
+# PROBLEM #############################################################
+# HOMOGENEOUS DOMAIN ==================================================
+#domain_type = homogeneous
+
+#n_phases = 1
+
+#phase[0].material_type = isotropic
+#phase[0].material_constants = 3.0 0.6
+# =====================================================================
+
+
+# SPACE-MODULATED LAMINATE ============================================
+domain_type = space_laminate
+
+n_phases = 2
+
+phase[0].material_type = isotropic
+phase[0].material_constants = 3.0 0.6
+phase[1].material_type = isotropic
+phase[1].material_constants = 2.0 0.2
+
+space_box = 0.15
+# =====================================================================
+
+
+# TIME-MODULATED LAMINATE =============================================
+#domain_type = time_laminate
+
+#n_phases = 2
+
+#phase[0].material_type = isotropic
+#phase[0].material_constants = 3.0 0.6
+#phase[1].material_type = isotropic
+#phase[1].material_constants = 2.0 0.2
+
+#time_box = 0.36
+# =====================================================================
+
+
+# SPACE-TIME-MODULATED LAMINATE =======================================
+#domain_type = space_time_laminate
+
+#n_phases = 2
+
+#phase[0].material_type = isotropic
+#phase[0].material_constants = 3.0 1.5
+#phase[1].material_type = isotropic
+#phase[1].material_constants = 2.0 1.0
+
+#space_box = 0.15
+#time_box = 0.3
+# =====================================================================
+
+norm = L_inf
+#######################################################################
+#...
+#######################################################################
+
+
+
+# POST-PROCESSING INFO ################################################
+wall_time = 10.0
+wall_time_units = s
+
+output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_p$(solution[0].space_p)_nc$(amr.n_cell)_gs$(amr.max_grid_size)
+plot_int = 25
+output_overwrite = 1
+
+restart = -1
+#######################################################################

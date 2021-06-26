@@ -582,6 +582,53 @@ public amrex::dG::IBVP_Base
 #endif
         }
     }
+
+    /**
+     * \brief Eval the error at (t, x) to be used for the L_2 norm error.
+     *
+     * \param[in] dom: domain index.
+     * \param[in] t: time.
+     * \param[in] x: pointer to memory containing the space location.
+     * \param[in] U: pointer to memory containing the value of the conserved variables at (t, x).
+     * \param[out] err: error at (t, x).
+     * \param[out] err_norm: error normalization at (t, x).
+     *
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_error_L_2(const int dom,
+                        const amrex::Real t, const amrex::Real * x,
+                        const amrex::Real * U,
+                        amrex::Real & err, amrex::Real & err_norm) const
+    {
+        const amrex::Real * Ua = U;
+        const amrex::Real * Ub = &U[N_VS];
+        amrex::Real U_exact[N_PHASES*N_VS];
+
+        this->eval_exact_solution(t, x, U_exact);
+        amrex::Real * Ua_exact = U_exact;
+        amrex::Real * Ub_exact = &U_exact[N_VS];
+
+        if (dom == 0)
+        {
+            err_norm = elastic_solid::eval_total_energy_compact_c(this->density[dom], &(this->c[dom][0]), Ua_exact);
+
+            for (int u = 0; u < N_VS; ++u)
+            {
+                Ua_exact[u] -= Ua[u];
+            }
+            err = elastic_solid::eval_total_energy_compact_c(this->density[dom], &(this->c[dom][0]), Ua_exact);
+        }
+        else
+        {
+            err_norm = elastic_solid::eval_total_energy_compact_c(this->density[dom], &(this->c[dom][0]), Ub_exact);
+
+            for (int u = 0; u < N_VS; ++u)
+            {
+                Ub_exact[u] -= Ub[u];
+            }
+            err = elastic_solid::eval_total_energy_compact_c(this->density[dom], &(this->c[dom][0]), Ub_exact);
+        }
+    }
     // ================================================================
 
 
@@ -1029,6 +1076,12 @@ exit(-1);
             msg += "| requested norm           : "+this->norm+".\n";
             amrex::Abort(msg);
         }
+    }
+
+    void eval_error(const amrex::Real t, amrex::Real & err_L_inf, amrex::Real & err_L_inf_norm, amrex::Real & err_L_2, amrex::Real & err_L_2_norm) const
+    {
+        this->eval_error_L_inf(t, this->X, err_L_inf, err_L_inf_norm, this->ibvp);
+        this->eval_error_L_2(t, this->X, err_L_2, err_L_2_norm, this->ibvp);
     }
     // ================================================================
 

@@ -19,7 +19,7 @@
 #include <AMReX_dG_Mesh.H>
 #include <AMReX_dG_BFX.H>
 
-#define __DG_MAX_N_UNKNOWN_FIELDS__ 5
+#define __DG_MAX_N_UNKNOWN_FIELDS__ 10
 #define __DG_MAX_NU__ __DG_MAX_N_UNKNOWN_FIELDS__
 #define __DG_MAX_NU2__ (__DG_MAX_NU__*__DG_MAX_NU__)
 #define __DG_MAX_N_OUTPUT_FIELDS__ 22
