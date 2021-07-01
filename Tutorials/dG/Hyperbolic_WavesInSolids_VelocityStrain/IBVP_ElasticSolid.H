@@ -1096,6 +1096,119 @@ void eval_NFn_Riemann_solver(const amrex::Real m_rho, const amrex::Real * m_c, c
 }
 
 /**
+ * \brief Solve the Riemann problem between two adjacent states using Voigt averages.
+ *
+ * \param[in] m_rho: density of the material on the negative side of the unit normal.
+ * \param[in] m_c: pointer to memory containing the coefficients of the stiffness matrix of the material
+ *               on the negative side of the unit normal.
+ * \param[in] p_rho: density of the material on the positive side of the unit normal.
+ * \param[in] p_c: pointer to memory containing the coefficients of the stiffness matrix of the
+ *                 material on the positive side of the unit normal.
+ * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+ * \param[in] m_U: pointer to memory containing the conserved variables on the negative side of the
+ *                 unit normal.
+ * \param[in] p_U: pointer to memory containing the conserved variables on the positive side of the
+ *                 unit normal.
+ * \param[out] NFn: pointer to memory that will contain the numerical flux.
+ *
+ * Ref:
+ * Title: A unified variational framework for the space discontinuous Galerkin method for elastic
+ *        wave propagation in anisotropic andpiecewise homogeneous media
+ * Authors: Tie et al
+ * Journal (Year): Computer Methods in Applied Mechanics and Engineering (2018)
+ *
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void eval_NFn_Riemann_solver_Voigt_avg(const amrex::Real m_rho, const amrex::Real * m_c, const amrex::Real p_rho, const amrex::Real * p_c, const amrex::Real * un,
+                                       const amrex::Real * m_U, const amrex::Real * p_U, amrex::Real * NFn)
+{
+    const amrex::Real rho = 2.0/(1.0/m_rho+1.0/p_rho);
+    amrex::Real c[NS*(NS+1)/2];
+    for (int i = 0; i < (NS*(NS+1)/2); ++i)
+    {
+        c[i] = 0.5*(m_c[i]+p_c[i]);
+    }
+    eval_NFn_Riemann_solver(rho, c, un, m_U, p_U, NFn);
+}
+
+/**
+ * \brief Compute the numerical flux between two adjacent states using Rusanov flux.
+ *
+ * \param[in] m_rho: density of the material on the negative side of the unit normal.
+ * \param[in] m_c: pointer to memory containing the coefficients of the stiffness matrix of the material
+ *               on the negative side of the unit normal.
+ * \param[in] p_rho: density of the material on the positive side of the unit normal.
+ * \param[in] p_c: pointer to memory containing the coefficients of the stiffness matrix of the
+ *                 material on the positive side of the unit normal.
+ * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+ * \param[in] m_U: pointer to memory containing the conserved variables on the negative side of the
+ *                 unit normal.
+ * \param[in] p_U: pointer to memory containing the conserved variables on the positive side of the
+ *                 unit normal.
+ * \param[out] NFn: pointer to memory that will contain the numerical flux.
+ *
+ * Ref:
+ * Title: An arbitrary high-order discontinuous Galerkin method for elastic waves on unstructured
+ *        meshes – IV. Anisotropy
+ * Authors: de la Puente et al
+ * Journal (Year): Geophysical Journal International (2007)
+ *
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void eval_NFn_Rusanov(const amrex::Real rho, const amrex::Real * c, const amrex::Real w_max, const amrex::Real * un,
+                      const amrex::Real * m_U, const amrex::Real * p_U, amrex::Real * NFn)
+{
+    amrex::Real m_AnU[N_VS], p_AnU[N_VS];
+
+    eval_AnU_compact_c(rho, c, un, m_U, m_AnU);
+    eval_AnU_compact_c(rho, c, un, p_U, p_AnU);
+
+    for (int u = 0; u < N_VS; ++u)
+    {
+        NFn[u] = 0.5*(m_AnU[u]+p_AnU[u])+0.5*w_max*(m_U[u]-p_U[u]);
+    }
+}
+
+/**
+ * \brief Compute the numerical flux between two adjacent states using Rusanov flux.
+ *
+ * \param[in] m_rho: density of the material on the negative side of the unit normal.
+ * \param[in] m_c: pointer to memory containing the coefficients of the stiffness matrix of the material
+ *               on the negative side of the unit normal.
+ * \param[in] p_rho: density of the material on the positive side of the unit normal.
+ * \param[in] p_c: pointer to memory containing the coefficients of the stiffness matrix of the
+ *                 material on the positive side of the unit normal.
+ * \param[in] un: pointer to memory containing the outward unit normal of the boundary.
+ * \param[in] m_U: pointer to memory containing the conserved variables on the negative side of the
+ *                 unit normal.
+ * \param[in] p_U: pointer to memory containing the conserved variables on the positive side of the
+ *                 unit normal.
+ * \param[out] NFn: pointer to memory that will contain the numerical flux.
+ *
+ * Ref:
+ * Title: An arbitrary high-order discontinuous Galerkin method for elastic waves on unstructured
+ *        meshes – IV. Anisotropy
+ * Authors: de la Puente et al
+ * Journal (Year): Geophysical Journal International (2007)
+ *
+ *
+*/
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void eval_NFn_Rusanov(const amrex::Real m_rho, const amrex::Real * m_c, const amrex::Real p_rho, const amrex::Real * p_c, const amrex::Real w_max, const amrex::Real * un,
+                      const amrex::Real * m_U, const amrex::Real * p_U, amrex::Real * NFn)
+{
+    const amrex::Real rho = 2.0/(1.0/m_rho+1.0/p_rho);
+    amrex::Real c[NS*(NS+1)/2];
+    for (int i = 0; i < (NS*(NS+1)/2); ++i)
+    {
+        c[i] = 0.5*(m_c[i]+p_c[i]);
+    }
+    eval_NFn_Rusanov(rho, c, w_max, un, m_U, p_U, NFn);
+}
+
+/**
  * \brief Solve the Riemann problem to enforce prescribed tractions BCs.
  *
  * \param[in] rho: density.

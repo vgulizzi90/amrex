@@ -2,11 +2,34 @@
 // Author : Vincenzo Gulizzi (LBL)
 // Contact: vgulizzi@lbl.gov
 //
-/** \file IBVP_TimeModulatedComposite.H
+/** \file IBVP_SpaceTimeModulatedCompositeScalar.H
  * \brief Contains constants and data structures for the considered IBVP.
 */
 
-#include "../IBVP_ElasticSolid.H"
+// IBVP PARAMETERS ####################################################
+// NUMBER OF UNKNOWN SOLUTION FIELDS
+#define N_U (1+AMREX_SPACEDIM+1)
+
+// SOLUTION FIELDS ORDER
+#if (AMREX_SPACEDIM == 1)
+#define MM 0
+#define E11 1
+#define UU 2
+#endif
+#if (AMREX_SPACEDIM == 2)
+#define MM 0
+#define E11 1
+#define E22 2
+#define UU 3
+#endif
+#if (AMREX_SPACEDIM == 3)
+#define MM 0
+#define E11 1
+#define E22 2
+#define E33 3
+#define UU 4
+#endif
+// ####################################################################
 
 #define MAX_N_PHASES 2
 
@@ -87,16 +110,17 @@ public amrex::dG::IBVP_Base
     const int domain_type_space_laminate_y = 21;
     const int domain_type_space_laminate_z = 22;
     const int domain_type_space_time_checkerboard = 3;
+    const int domain_type_space_checkerboard = 4;
 
     int domain_type_flag;
-    amrex::Real density[MAX_N_PHASES], c[MAX_N_PHASES][NS*(NS+1)/2], max_wave_speed;
+    amrex::Real density[MAX_N_PHASES], stiffness[MAX_N_PHASES], max_wave_speed;
 
     amrex::Real space_box[AMREX_SPACEDIM], time_box, space_eps, time_eps;
     // ================================================================
 
 
     // CONSTRUCTOR ====================================================
-    IBVP()
+    IBVP(const amrex::Real * dx)
     {
         amrex::ParmParse pp;
         std::string domain_type;
@@ -141,11 +165,16 @@ public amrex::dG::IBVP_Base
             {
                 this->domain_type_flag = this->domain_type_space_time_checkerboard;
             }
+            // SPACE CHECKERBOARD
+            else if (domain_type.compare("space_checkerboard") == 0)
+            {
+                this->domain_type_flag = this->domain_type_space_checkerboard;
+            }
             else
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_SpaceTimeModulatedComposites.H - IBVP::IBVP\n";
+                msg +=  "ERROR: IBVP_SpaceTimeModulatedCompositeScalar.H - IBVP::IBVP\n";
                 msg += "| Unexpected domain type: "+domain_type+".\n";
                 amrex::Abort(msg);
             }
@@ -161,7 +190,7 @@ public amrex::dG::IBVP_Base
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_SpaceTimeModulatedComposites.H - IBVP::IBVP\n";
+                msg +=  "ERROR: IBVP_SpaceTimeModulatedCompositeScalar.H - IBVP::IBVP\n";
                 msg += "| MAX_N_PHASES should be increased to at least: "+std::to_string(n_phases)+".\n";
                 amrex::Abort(msg);
             }
@@ -174,65 +203,24 @@ public amrex::dG::IBVP_Base
             amrex::ParmParse phase_pp("phase["+std::to_string(a)+"]");
             std::string material_type;
             amrex::Vector<amrex::Real> material_constants;
-            amrex::Real cSE[NS*NS];
 
             phase_pp.get("material_type", material_type);
 
             if (material_type.compare("isotropic") == 0)
             {
-#if (AMREX_SPACEDIM > 1)
-                amrex::Real E, nu;
-#endif
-
                 phase_pp.getarr("material_constants", material_constants);
 
                 this->density[a] = material_constants[0];
-#if (AMREX_SPACEDIM > 1)
-                E = material_constants[1];
-                nu = material_constants[2];
-#endif
-                
-#if (AMREX_SPACEDIM == 1)
-                cSE[0] = material_constants[1];
-#endif
-#if (AMREX_SPACEDIM == 2)
-                linear_elasticity::get_stiffness_matrix_2d_isotropic(E, nu, cSE);
-#endif
-#if (AMREX_SPACEDIM == 3)
-                linear_elasticity::get_stiffness_matrix_3d_isotropic(E, nu, cSE);
-#endif
+                this->stiffness[a] = material_constants[1];
             }
             else
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_SpaceTimeModulatedComposites.H - IBVP::IBVP\n";
+                msg +=  "ERROR: IBVP_SpaceTimeModulatedCompositeScalar.H - IBVP::IBVP\n";
                 msg += "| Unexpected input material type: "+material_type+" for phase: "+std::to_string(a)+".\n";
                 amrex::Abort(msg);
             }
-
-            // STORE STIFFNESS CONSTANTS
-#if (AMREX_SPACEDIM == 1)
-            this->c[a][C11] = cSE[0];
-#endif
-#if (AMREX_SPACEDIM == 2)
-            this->c[a][C11] = cSE[0+0*NS];
-            this->c[a][C21] = cSE[1+0*NS]; this->c[a][C22] = cSE[1+1*NS];
-            this->c[a][C61] = cSE[2+0*NS]; this->c[a][C62] = cSE[2+1*NS]; this->c[a][C66] = cSE[2+2*NS];
-#endif
-#if (AMREX_SPACEDIM == 3)
-            this->c[a][C11] = cSE[0+0*NS];
-            this->c[a][C21] = cSE[1+0*NS]; this->c[a][C22] = cSE[1+1*NS];
-            this->c[a][C31] = cSE[2+0*NS]; this->c[a][C32] = cSE[2+1*NS]; this->c[a][C33] = cSE[2+2*NS];
-            this->c[a][C41] = cSE[3+0*NS]; this->c[a][C42] = cSE[3+1*NS]; this->c[a][C43] = cSE[3+2*NS]; this->c[a][C44] = cSE[3+3*NS];
-            this->c[a][C51] = cSE[4+0*NS]; this->c[a][C52] = cSE[4+1*NS]; this->c[a][C53] = cSE[4+2*NS]; this->c[a][C54] = cSE[4+3*NS]; this->c[a][C55] = cSE[4+4*NS];
-            this->c[a][C61] = cSE[5+0*NS]; this->c[a][C62] = cSE[5+1*NS]; this->c[a][C63] = cSE[5+2*NS]; this->c[a][C64] = cSE[5+3*NS]; this->c[a][C65] = cSE[5+4*NS]; this->c[a][C66] = cSE[5+5*NS];
-#endif
-
-            /* DEBUG */
-            amrex::Print() << "Phase " << a << " - cSE: " << std::endl;
-            amrex::dG::io::print_real_array_2d(NS, NS, cSE);
-            /**/
         }
         // ------------------------------------------------------------
 
@@ -241,63 +229,7 @@ public amrex::dG::IBVP_Base
 
         for (int a = 0; a < n_phases; ++a)
         {
-#if (AMREX_SPACEDIM == 1)
-            this->max_wave_speed = amrex::max(this->max_wave_speed, std::sqrt(this->c[a][C11]/this->density[a]));
-
-#else
-            amrex::ParmParse phase_pp("phase["+std::to_string(a)+"]");
-            std::string material_type;
-
-            phase_pp.get("material_type", material_type);
-
-            if (material_type.compare("isotropic") == 0)
-            {
-                const amrex::Real G = this->c[a][C66];
-                const amrex::Real lam = this->c[a][C21];
-
-                this->max_wave_speed = amrex::max(this->max_wave_speed, std::sqrt((2.0*G+lam)/this->density[a]));
-            }
-            else
-            {
-                const int n_th = 360;
-                const amrex::Real dth = 2.0*M_PI/n_th;
-#if (AMREX_SPACEDIM == 3)
-                const int n_ph = n_th/2;
-                const amrex::Real dph = M_PI/n_ph;
-#endif
-
-                amrex::Real th;
-#if (AMREX_SPACEDIM == 3)
-                amrex::Real ph;
-#endif
-                amrex::Real un[AMREX_SPACEDIM];
-                amrex::Real w2[AMREX_SPACEDIM], v[AMREX_SPACEDIM*AMREX_SPACEDIM];
-
-#if (AMREX_SPACEDIM == 2)
-                for (int i = 0; i < n_th; ++i)
-                {
-                    th = i*dth;
-                    un[0] = std::cos(th);
-                    un[1] = std::sin(th);
-                    elastic_solid::eval_eig_InTcIn_compact_c(this->density[a], &(this->c[a][0]), un, w2, v);
-                    this->max_wave_speed = amrex::max(this->max_wave_speed, std::sqrt(*std::max_element(w2, w2+AMREX_SPACEDIM)));
-                }
-#endif
-#if (AMREX_SPACEDIM == 3)
-                for (int j = 0; j < n_ph; ++j)
-                for (int i = 0; i < n_th; ++i)
-                {
-                    th = i*dth;
-                    ph = j*dph;
-                    un[0] = std::cos(th)*std::sin(ph);
-                    un[1] = std::sin(th)*std::sin(ph);
-                    un[2] = std::cos(ph);
-                    elastic_solid::eval_eig_InTcIn_compact_c(this->density[a], &(this->c[a][0]), un, w2, v);
-                    this->max_wave_speed = amrex::max(this->max_wave_speed, std::sqrt(*std::max_element(w2, w2+AMREX_SPACEDIM)));
-                }
-#endif
-            }
-#endif
+            this->max_wave_speed = amrex::max(this->max_wave_speed, std::sqrt(this->stiffness[a]/this->density[a]));
         }
         
         amrex::Print() << "Max wave speed: " << this->max_wave_speed << std::endl;
@@ -340,13 +272,13 @@ public amrex::dG::IBVP_Base
             pp.get("space_box", this->space_box[0]);
             this->time_box = max_real;
 
-            this->space_eps = 1.0e-5*this->space_box[0];
+            this->space_eps = 1.0e-5*dx[0];
             this->time_eps = 0.0;
 
 #if (AMREX_SPACEDIM != 1)
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: IBVP_SpaceTimeModulatedComposites.H - IBVP::IBVP\n";
+            msg +=  "ERROR: IBVP_SpaceTimeModulatedCompositeScalar.H - IBVP::IBVP\n";
             msg += "| The space_laminate is supposed to work with AMREX_SPACEDIM = 1.\n";
             amrex::Abort(msg);
 #endif
@@ -364,7 +296,7 @@ public amrex::dG::IBVP_Base
             )
             this->time_box = max_real;
 
-            this->space_eps = 1.0e-5*sb;
+            this->space_eps = 1.0e-5*dx[0];
             this->time_eps = 0.0;
         }
         // SPACE-TIME CHECKERBOARD
@@ -381,17 +313,34 @@ public amrex::dG::IBVP_Base
             pp.get("time_box", this->time_box);
 
 #if (AMREX_SPACEDIM == 1)
-            this->space_eps = 1.0e-5*this->space_box[0];
+            this->space_eps = 1.0e-5*dx[0];
 #else
-            this->space_eps = 1.0e-5*amrex::min(AMREX_D_DECL(this->space_box[0], this->space_box[1], this->space_box[2]));
+            this->space_eps = 1.0e-5*amrex::min(AMREX_D_DECL(dx[0], dx[1], dx[2]));
 #endif
             this->time_eps = 1.0e-5*this->time_box;
+        }
+        // SPACE CHECKERBOARD
+        else if (domain_type.compare("space_checkerboard") == 0)
+        {
+            amrex::Vector<amrex::Real> sb;
+            pp.getarr("space_box", sb);
+            AMREX_D_TERM
+            (
+                this->space_box[0] = sb[0];,
+                this->space_box[1] = sb[1];,
+                this->space_box[2] = sb[2];
+            )
+
+            this->time_box = max_real;
+
+            this->space_eps = 1.0e-5*dx[0];
+            this->time_eps = 0.0;
         }
         else
         {
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: IBVP_SpaceTimeModulatedComposites.H - IBVP::IBVP\n";
+            msg +=  "ERROR: IBVP_SpaceTimeModulatedCompositeScalar.H - IBVP::IBVP\n";
             msg += "| Unexpected domain type: "+domain_type+".\n";
             amrex::Abort(msg);
         }
@@ -417,7 +366,7 @@ public amrex::dG::IBVP_Base
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     int get_number_of_unknown_fields() const
     {
-        return N_VS+AMREX_SPACEDIM;
+        return N_U;
     }
     /**
      * \brief Return the unknown fields index bounds for the dom-th domain.
@@ -427,7 +376,7 @@ public amrex::dG::IBVP_Base
     void domain_unknown_fields_index_bounds(const int /*dom*/, int & u_lo, int & u_hi) const
     {
         u_lo = 0;
-        u_hi = N_VS+AMREX_SPACEDIM;
+        u_hi = N_U;
     }
     /**
      * \brief Return the parent domain of the u-th unknown field.
@@ -457,13 +406,10 @@ public amrex::dG::IBVP_Base
      *                at (t, x).
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-    void eval_exact_solution(const amrex::Real t, const amrex::Real * x, amrex::Real * U) const
+    void eval_exact_solution(const amrex::Real /*t*/, const amrex::Real * /*x*/, amrex::Real * /*U*/) const
     {
 amrex::Print() << "eval_exact_solution" << std::endl;
 exit(-1);
-        U[V1] = 0.0;
-        U[E11] = 0.0;
-        U[E11+1] = 0.0;
     }
 
     /**
@@ -476,27 +422,29 @@ exit(-1);
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_ICs(const amrex::Real * x, amrex::Real * U) const
     {
-        //const amrex::Real x0 = 1.425;
+#if (AMREX_SPACEDIM == 1)
         const amrex::Real x0 = 0.75;
-        //const amrex::Real s2 = 100.0*100.0;
         const amrex::Real s2 = 10.0*10.0;
         const amrex::Real f = std::exp(-s2*(x[0]-x0)*(x[0]-x0));
-        const amrex::Real df = -2.0*s2*(x[0]-x0)*std::exp(-s2*(x[0]-x0)*(x[0]-x0));
-
-#if (AMREX_SPACEDIM == 1)
-        U[V1] = 0.0;
-        U[E11] = df;
-        U[E11+1] = f;
+        const amrex::Real dfdx = -2.0*s2*(x[0]-x0)*std::exp(-s2*(x[0]-x0)*(x[0]-x0));
 #endif
 #if (AMREX_SPACEDIM == 2)
-        U[V1] = 0.0;
-        U[V2] = 0.0;
-        U[E11] = df;
-        U[E22] = 0.0;
-        U[E12] = 0.0;
-        U[E12+1] = f;
-        U[E12+2] = 0.0;
+        const amrex::Real x0 = 1.5;
+        const amrex::Real x1 = 1.5;
+        const amrex::Real s2 = 10.0*10.0;
+        const amrex::Real f = std::exp(-s2*(x[0]-x0)*(x[0]-x0)-s2*(x[1]-x1)*(x[1]-x1));
+        const amrex::Real dfdx = -2.0*s2*(x[0]-x0)*std::exp(-s2*(x[0]-x0)*(x[0]-x0)-s2*(x[1]-x1)*(x[1]-x1));
+        const amrex::Real dfdy = -2.0*s2*(x[1]-x1)*std::exp(-s2*(x[0]-x0)*(x[0]-x0)-s2*(x[1]-x1)*(x[1]-x1));
 #endif
+
+        U[MM] = 0.0;
+        AMREX_D_TERM
+        (
+            U[E11] = dfdx;,
+            U[E22] = dfdy;,
+            U[E33] = dfdz;
+        )
+        U[UU] = f;
     }
     // ================================================================
 
@@ -515,8 +463,8 @@ exit(-1);
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_error_L_inf(const int /*dom*/,
-                          const amrex::Real t, const amrex::Real * x,
-                          const amrex::Real * U,
+                          const amrex::Real /*t*/, const amrex::Real * /*x*/,
+                          const amrex::Real * /*U*/,
                           amrex::Real & err, amrex::Real & err_norm) const
     {
         err = 1.0;
@@ -639,6 +587,29 @@ amrex::Print() << "eval_phase" << std::endl;
 exit(-1);
 #endif
         }
+        // SPACE CHECKERBOARD
+        else if (this->domain_type_flag == this->domain_type_space_checkerboard)
+        {
+            const amrex::Real * sb = this->space_box;
+
+#if (AMREX_SPACEDIM == 2)
+
+            const int ix = (int) std::floor(x[0]/sb[0]);
+            const int iy = (int) std::floor(x[1]/sb[1]);
+
+            //amrex::Print() << "sb: " << sb << std::endl;
+            //amrex::Print() << "x[0]: " << x[0] << std::endl;
+            //amrex::Print() << "ix: " << ix << std::endl;
+            //amrex::Print() << "tb: " << tb << std::endl;
+            //amrex::Print() << "t: " << t << std::endl;
+            //amrex::Print() << "it: " << it << std::endl;
+
+            a = ((ix%2)^(iy%2));
+#else
+amrex::Print() << "eval_phase" << std::endl;
+exit(-1);
+#endif
+        }
         else
         {
 
@@ -696,38 +667,99 @@ exit(-1);
                  const amrex::Real * U, AMREX_D_DECL(amrex::Real * F1, amrex::Real * F2, amrex::Real * F3), amrex::Real * R) const
     {
         const int a = this->eval_phase(t, x);
+        const amrex::Real rho = this->density[a];
+        const amrex::Real E = this->stiffness[a];
+
 #if (AMREX_SPACEDIM == 1)
-        elastic_solid::eval_F_compact_c(this->density[a], this->c[a], U, AMREX_D_DECL(F1, F2, F3));
-        F1[E11+1] = 0.0;
-        
-        R[V1] = 0.0;
-        R[E11] = 0.0;
-        R[E11+1] = -U[V1]/this->density[a];
+        F1[MM] = -E*U[E11];
+        F1[E11] = -U[MM]/rho;
+        F1[UU] = 0.0;
 #endif
 #if (AMREX_SPACEDIM == 2)
-        elastic_solid::eval_F_compact_c(this->density[a], this->c[a], U, AMREX_D_DECL(F1, F2, F3));
-        F1[E12+1] = 0.0;
-        F1[E12+2] = 0.0;
-        F2[E12+1] = 0.0;
-        F2[E12+2] = 0.0;
-        
-        R[V1] = 0.0;
-        R[V2] = 0.0;
-        R[E11] = 0.0;
-        R[E22] = 0.0;
-        R[E12] = 0.0;
-        R[E12+1] = -U[V1]/this->density[a];
-        R[E12+2] = -U[V2]/this->density[a];
+        F1[MM] = -E*U[E11];
+        F1[E11] = -U[MM]/rho;
+        F1[E22] = 0.0;
+        F1[UU] = 0.0;
+
+        F2[MM] = -E*U[E22];
+        F2[E11] = 0.0;
+        F2[E22] = -U[MM]/rho;
+        F2[UU] = 0.0;
 #endif
 #if (AMREX_SPACEDIM == 3)
-amrex::Print() << "eval_FR" << std::endl;
-exit(-1);
+        F1[MM] = -E*U[E11];
+        F1[E11] = -U[MM]/rho;
+        F1[E22] = 0.0;
+        F1[E33] = 0.0;
+        F1[UU] = 0.0;
+
+        F2[MM] = -E*U[E22];
+        F2[E11] = 0.0;
+        F2[E22] = -U[MM]/rho;
+        F2[E33] = 0.0;
+        F2[UU] = 0.0;
+
+        F3[MM] = -E*U[E33];
+        F3[E11] = 0.0;
+        F3[E22] = 0.0;
+        F3[E33] = -U[MM]/rho;
+        F3[UU] = 0.0;
 #endif
+
+        R[MM] = 0.0;
+        AMREX_D_TERM
+        (
+            R[E11] = 0.0;,
+            R[E22] = 0.0;,
+            R[E33] = 0.0;
+        )
+        R[UU] = -U[MM]/rho;
     }
     // ================================================================
 
 
     // DG =============================================================
+    /**
+    * \brief Fill memory pointed to by AnU with the product of the hyperbolic operator An and U.
+    *
+    * \param[in] rho: density.
+    * \param[in] E: stiffness.
+    * \param[in] U: pointer to memory containing the conserved variables.
+    * \param[out] AnU: pointer to memory that will contain AnU.
+    *
+    */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    void eval_AnU(const amrex::Real rho, const amrex::Real E, const amrex::Real * un, const amrex::Real * U, amrex::Real * AnU) const
+    {
+        // PARAMETERS
+        const amrex::Real inv_rho = 1.0/rho;
+        AMREX_D_TERM
+        (
+            const amrex::Real n1 = un[0];,
+            const amrex::Real n2 = un[1];,
+            const amrex::Real n3 = un[2];
+        )
+
+#if (AMREX_SPACEDIM == 1)
+        AnU[MM] = -n1*E*U[E11];
+        AnU[E11] = -n1*inv_rho*U[MM];
+        AnU[UU] = 0.0;
+#endif
+#if (AMREX_SPACEDIM == 2)
+        AnU[MM] = -n1*E*U[E11]-n2*E*U[E22];
+        AnU[E11] = -n1*inv_rho*U[MM];
+        AnU[E22] = -n2*inv_rho*U[MM];
+        AnU[UU] = 0.0;
+#endif
+#if (AMREX_SPACEDIM == 3)
+        AnU[MM] = -n1*E*U[E11]-n2*E*U[E22]-n3*E*U[E33];
+        AnU[E11] = -n1*inv_rho*U[MM];
+        AnU[E22] = -n2*inv_rho*U[MM];
+        AnU[E33] = -n3*inv_rho*U[MM];
+        AnU[UU] = 0.0;
+#endif
+    }
+
     /**
      * \brief Eval the numerical flux at the intraphase boundary.
      *
@@ -748,23 +780,25 @@ exit(-1);
     {
         int m_a, p_a;
         this->eval_phase(t, x, un, m_a, p_a);
-        
-        //elastic_solid::eval_NFn_Riemann_solver(this->density[m_a], this->c[m_a], this->density[p_a], this->c[p_a], un, m_U, p_U, NFn);
-        //elastic_solid::eval_NFn_Riemann_solver_Voigt_avg(this->density[m_a], this->c[m_a], this->density[p_a], this->c[p_a], un, m_U, p_U, NFn);
-        elastic_solid::eval_NFn_Rusanov(this->density[m_a], this->c[m_a], this->density[p_a], this->c[p_a], this->max_wave_speed, un, m_U, p_U, NFn);
+        const amrex::Real m_rho = this->density[m_a];
+        const amrex::Real m_E = this->stiffness[m_a];
+        const amrex::Real p_rho = this->density[p_a];
+        const amrex::Real p_E = this->stiffness[p_a];
+        const amrex::Real rho = 2.0/(1.0/m_rho+1.0/p_rho);
+        const amrex::Real E = 0.5*(m_E+p_E);
+        const amrex::Real w_max = this->max_wave_speed;
+        //const amrex::Real w_max = 0.5*(std::sqrt(m_E/m_rho)+std::sqrt(p_E/p_rho));
 
-#if (AMREX_SPACEDIM == 1)
-        NFn[E11+1] = 0.0;
-#endif
-#if (AMREX_SPACEDIM == 2)
-        NFn[E12+1] = 0.0;
-        NFn[E12+2] = 0.0;
-#endif
-#if (AMREX_SPACEDIM == 3)
-        NFn[E12+1] = 0.0;
-        NFn[E12+2] = 0.0;
-        NFn[E12+3] = 0.0;
-#endif
+        amrex::Real m_AnU[N_U], p_AnU[N_U];
+
+        this->eval_AnU(rho, E, un, m_U, m_AnU);
+        this->eval_AnU(rho, E, un, p_U, p_AnU);
+
+        for (int u = 0; u < (1+AMREX_SPACEDIM); ++u)
+        {
+            NFn[u] = 0.5*(m_AnU[u]+p_AnU[u])+0.5*w_max*(m_U[u]-p_U[u]);
+        }
+        NFn[UU] = 0.0;
     }
 
     /**
@@ -782,89 +816,32 @@ exit(-1);
                       const amrex::Real t, const amrex::Real * x, const amrex::Real * un,
                       const amrex::Real * U, amrex::Real * NFn) const
     {
-        const amrex::Real T[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
         int a;
+        amrex::Real U_ghost[N_U];
+        amrex::Real AnU[N_U], AnU_ghost[N_U];
         
         this->eval_phase(t, x, un, a);
+        const amrex::Real rho = this->density[a];
+        const amrex::Real E = this->stiffness[a];
+        const amrex::Real w_max = this->max_wave_speed;
 
-        elastic_solid::eval_NFn_Riemann_solver_prescribed_tractions(this->density[a], this->c[a], un, U, T, NFn);
-#if (AMREX_SPACEDIM == 1)
-        NFn[E11+1] = 0.0;
-#endif
-#if (AMREX_SPACEDIM == 2)
-        NFn[E12+1] = 0.0;
-        NFn[E12+2] = 0.0;
-#endif
-#if (AMREX_SPACEDIM == 3)
-        NFn[E12+1] = 0.0;
-        NFn[E12+2] = 0.0;
-        NFn[E12+3] = 0.0;
-#endif
-    }
-    // ================================================================
+        U_ghost[MM] = -U[MM];
+        AMREX_D_TERM
+        (
+            U_ghost[E11] = U[E11];,
+            U_ghost[E22] = U[E22];,
+            U_ghost[E33] = U[E33];
+        )
+        U_ghost[UU] = U[UU];
 
+        this->eval_AnU(rho, E, un, U, AnU);
+        this->eval_AnU(rho, E, un, U_ghost, AnU_ghost);
 
-    // FV =============================================================
-    /**
-     * \brief Reconstruct and limit the slopes for FV schemes.
-     *
-     * \param[in] geom: amrex geometry object.
-     * \param[in] solution: Solution object.
-     * \param[in] mesh: Mesh object.
-     * \param[in] X: a MultiFabs containing the solution states.
-     * \param[out] dX: a MultiFabs that will contain the solution slopes.
-     *
-    */
-    void eval_FV_slopes(const amrex::Geometry & geom,
-                        const amrex::dG::Mesh & mesh,
-                        const amrex::dG::Solution & solution,
-                        const amrex::MultiFab & X,
-                        amrex::MultiFab & dX) const
-    {
-        // PARAMETERS -------------------------------------------------
-        // GRID
-        const amrex::Box domain = geom.Domain();
-        const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = geom.CellSizeArray();
-        const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo = geom.ProbLoArray();
-        const amrex::GpuArray<int, AMREX_SPACEDIM> is_periodic = geom.isPeriodicArray();
-
-        // DOMAINS
-        const int dom = 0;
-        // ------------------------------------------------------------
-
-        // INITIALIZATION ---------------------------------------------
-        dX = 0.0;
-        // ------------------------------------------------------------
-
-        // EVAL THE SLOPES --------------------------------------------
-        for (amrex::MFIter mfi(dX); mfi.isValid(); ++mfi)
+        for (int u = 0; u < (1+AMREX_SPACEDIM); ++u)
         {
-            const amrex::Box & bx = mfi.validbox();
-
-            amrex::Array4<short const> const & elm_type_fab = solution.elm_type.array(mfi);
-            amrex::Array4<amrex::Real const> const & elm_centroid_fab = solution.elm_centroid.array(mfi);
-            amrex::Array4<amrex::Real const> const & X_fab = X.array(mfi);
-            
-            amrex::Array4<amrex::Real> const & dX_fab = dX.array(mfi);
-
-            amrex::ParallelFor(bx,
-            [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
-            {
-                for (int u = 0; u < (N_VS+AMREX_SPACEDIM); ++u)
-                {
-                    AMREX_D_TERM
-                    (
-                        dX_fab(i,j,k,0+AMREX_SPACEDIM*u) = 0.5*(X_fab(i-1,j,k,u)+X_fab(i+1,j,k,u))/dx[0];,
-                        dX_fab(i,j,k,1+AMREX_SPACEDIM*u) = 0.5*(X_fab(i,j-1,k,u)+X_fab(i,j+1,k,u))/dx[1];,
-                        dX_fab(i,j,k,2+AMREX_SPACEDIM*u) = 0.5*(X_fab(i,j,k-1,u)+X_fab(i,j,k+1,u))/dx[2];
-                    )
-                }
-            });
-            amrex::Gpu::synchronize();
+            NFn[u] = 0.5*(AnU[u]+AnU_ghost[u])+0.5*w_max*(U[u]-U_ghost[u]);
         }
-
-        dX.FillBoundary(geom.periodicity());
-        // ------------------------------------------------------------
+        NFn[UU] = 0.0;
     }
     // ================================================================
 
@@ -877,7 +854,7 @@ exit(-1);
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     int get_number_of_output_fields() const
     {
-        return N_VS+AMREX_SPACEDIM+2;
+        return N_U+2;
     }
     /**
      * \brief Return the parent domain of the u-th output field.
@@ -895,12 +872,7 @@ exit(-1);
     */
     void get_output_fields_names(amrex::Vector<std::string> & output_fields_names) const
     {
-#if (AMREX_SPACEDIM == 1)
-        output_fields_names = {"mx", "gxx", "ux", "density", "stiffness"};
-#endif
-#if (AMREX_SPACEDIM == 2)
-        output_fields_names = {"mx", "my", "gxx", "gyy", "gxy", "ux", "uy", "rho", "E"};
-#endif
+        output_fields_names = {"m", AMREX_D_DECL("gx", "gy", "gz"), "u", "density", "stiffness"};
     }
 
     /**
@@ -921,28 +893,16 @@ exit(-1);
         
         a = this->eval_phase(t, x);
 
-#if (AMREX_SPACEDIM == 1)
-        F[V1] = U[V1];
-        F[E11] = U[E11];
-        F[E11+1] = U[E11+1];
-        F[E11+2] = this->density[a];
-        F[E11+3] = this->c[a][C11];
-#endif
-#if (AMREX_SPACEDIM == 2)
-        const amrex::Real c11 = this->c[a][C11];
-        const amrex::Real c12 = this->c[a][C21];
-        const amrex::Real E = (c11*c11-c12*c12)/c11;
-
-        F[V1] = U[V1];
-        F[V2] = U[V2];
-        F[E11] = U[E11];
-        F[E22] = U[E22];
-        F[E12] = U[E12];
-        F[E12+1] = U[E12+1];
-        F[E12+2] = U[E12+2];
-        F[E12+3] = this->density[a];
-        F[E12+4] = E;
-#endif
+        F[MM] = U[MM];
+        AMREX_D_TERM
+        (
+            F[E11] = U[E11];,
+            F[E22] = U[E22];,
+            F[E33] = U[E33];
+        )
+        F[UU] = U[UU];
+        F[UU+1] = this->density[a];
+        F[UU+2] = this->stiffness[a];
     }
 
     /**
@@ -991,7 +951,8 @@ public amrex::dG::amr::SinglePatch
     // CONSTRUCTOR ====================================================
     AMR()
     :
-    amrex::dG::amr::SinglePatch::SinglePatch()
+    amrex::dG::amr::SinglePatch::SinglePatch(),
+    ibvp(this->geom[0].CellSize())
     {
         const int n_levels = this->max_level+1;
 
@@ -1044,14 +1005,12 @@ exit(-1);
     void check_space_boxes() const
     {
         // PARAMETERS -------------------------------------------------
-        const amrex::Real T = this->inputs.time.T;
         const amrex::Box domain = this->Geom(0).Domain();
         const amrex::IntVect n_cells = domain.bigEnd()-domain.smallEnd()+1;
         const amrex::Real * prob_lo = this->Geom(0).ProbLo();
         const amrex::Real * prob_hi = this->Geom(0).ProbHi();
         const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = this->Geom(0).CellSizeArray();
         const amrex::Real * sb = this->ibvp.space_box;
-        const amrex::Real tb = this->ibvp.time_box;
         // ------------------------------------------------------------
 
         // HOMOGENEOUS DOMAIN
@@ -1068,7 +1027,7 @@ exit(-1);
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_SpaceTimeModulatedComposites.H - AMR::check_space_boxes\n";
+                msg +=  "ERROR: IBVP_SpaceTimeModulatedCompositeScalar.H - AMR::check_space_boxes\n";
                 msg += "| The discretization is incompatible with the space box size: \n";
                 msg += "| prob_lo:"+std::to_string(prob_lo[0])+"\n";
                 msg += "| prob_hi:"+std::to_string(prob_hi[0])+"\n";
@@ -1089,7 +1048,7 @@ exit(-1);
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_SpaceTimeModulatedComposites.H - AMR::check_space_boxes\n";
+                msg +=  "ERROR: IBVP_SpaceTimeModulatedCompositeScalar.H - AMR::check_space_boxes\n";
                 msg += "| The discretization is incompatible with the space box size: \n";
                 msg += "| prob_lo:"+std::to_string(prob_lo[0])+"\n";
                 msg += "| prob_hi:"+std::to_string(prob_hi[0])+"\n";
@@ -1110,7 +1069,7 @@ exit(-1);
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_SpaceTimeModulatedComposites.H - AMR::check_space_boxes\n";
+                msg +=  "ERROR: IBVP_SpaceTimeModulatedCompositeScalar.H - AMR::check_space_boxes\n";
                 msg += "| The discretization in the x direction is incompatible with the space box size: \n";
                 msg += "| prob_lo:"+std::to_string(prob_lo[0])+"\n";
                 msg += "| prob_hi:"+std::to_string(prob_hi[0])+"\n";
@@ -1126,7 +1085,7 @@ exit(-1);
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_SpaceTimeModulatedComposites.H - AMR::check_space_boxes\n";
+                msg +=  "ERROR: IBVP_SpaceTimeModulatedCompositeScalar.H - AMR::check_space_boxes\n";
                 msg += "| The discretization in the y direction is incompatible with the space box size: \n";
                 msg += "| prob_lo:"+std::to_string(prob_lo[1])+"\n";
                 msg += "| prob_hi:"+std::to_string(prob_hi[1])+"\n";
@@ -1143,7 +1102,7 @@ exit(-1);
             {
                 std::string msg;
                 msg  = "\n";
-                msg +=  "ERROR: IBVP_SpaceTimeModulatedComposites.H - AMR::check_space_boxes\n";
+                msg +=  "ERROR: IBVP_SpaceTimeModulatedCompositeScalar.H - AMR::check_space_boxes\n";
                 msg += "| The discretization in the z direction is incompatible with the space box size: \n";
                 msg += "| prob_lo:"+std::to_string(prob_lo[2])+"\n";
                 msg += "| prob_hi:"+std::to_string(prob_hi[2])+"\n";

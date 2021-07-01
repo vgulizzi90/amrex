@@ -128,8 +128,8 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                     bfu.eval_unsafe(u_lo, u_hi, U);
 
                     // Fluxes/Reactive terms as functions of (t, x, U)
-                    //ibvp.eval_FR(dom, t, x, U, AMREX_D_DECL(F1, F2, F3), R);
-                    ibvp.eval_F(dom, t, x, U, AMREX_D_DECL(F1, F2, F3));
+                    ibvp.eval_FR(dom, t, x, U, AMREX_D_DECL(F1, F2, F3), R);
+                    //ibvp.eval_F(dom, t, x, U, AMREX_D_DECL(F1, F2, F3));
 
                     // Integral contribution
                     for (int ru = u_lo; ru < u_hi; ++ru)
@@ -141,7 +141,7 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                             integrand += bfu.dBFdx2[rs]*F2[ru];,
                             integrand += bfu.dBFdx3[rs]*F3[ru];
                         )
-                        //integrand -= bfu.BF[rs]*R[ru];
+                        integrand -= bfu.BF[rs]*R[ru];
                         
                         dXdt_fab(i,j,k,rs+ru*sNp) += integrand*w;
                     }
