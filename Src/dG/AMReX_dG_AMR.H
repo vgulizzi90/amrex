@@ -230,7 +230,7 @@ void remake_level_set(const Real /*t*/, const BoxArray & ba, const DistributionM
     // ----------------------------------------------------------------
 
     // OVERWRITE WITH OLD LEVEL SET -----------------------------------
-    f_L_new.ParallelCopy(f_L, 0, 0, f_L.n_comp, f_L.n_grow, f_L.n_grow, f_geom.periodicity());
+    f_L_new.ParallelCopy(f_L, 0, 0, f_L.n_comp, 0, 0, f_geom.periodicity());
     f_L_new.FillBoundary(f_geom.periodicity());
     // ----------------------------------------------------------------
 
@@ -576,6 +576,22 @@ void interpolate(const Geometry & c_geom, const Solution & c_solution, const Mul
                 {
                     f_X_fab(f_i,f_j,f_k,rs+ru*f_sNp) += I_ptr[rs+cs*f_sNp]*c_X_fab(c_i,c_j,c_k,cs+ru*c_sNp);
                 }
+
+/*
+if (ru == 0 && f_i == __i__ && f_j == __j__)
+{
+Print() << "computing " << f_i << ", " << f_j << ", " << f_k << " from " << c_i << ", " << c_j << ", " << c_k << std::endl;
+Print() << "pos: " << pos << std::endl;
+for (int cs = 0; cs < c_sNp; ++cs)
+{
+    Print() << "c_X_fab(" << c_i << "," << c_j << "," << c_k << "," << cs << "+" << ru << "*" << c_sNp << "): " << c_X_fab(c_i,c_j,c_k,cs+ru*c_sNp) << std::endl;
+}
+for (int rs = 0; rs < f_sNp; ++rs)
+{
+    Print() << "f_X_fab(" << f_i << "," << f_j << "," << f_k << "," << rs << "+" << ru << "*" << f_sNp << "): " << f_X_fab(f_i,f_j,f_k,rs+ru*f_sNp) << std::endl;
+}
+}
+*/
             }
         });
         Gpu::synchronize();
@@ -586,6 +602,58 @@ void interpolate(const Geometry & c_geom, const Solution & c_solution, const Mul
     f_solution.add_small_elements_contribution(f_geom, f_X, ibvp);
     f_solution.multiply_by_inverse_space_mass_matrix(f_geom, f_X, ibvp, use_fabbox);
     f_solution.copy_solution_to_small_elements(f_geom, f_X, ibvp);
+
+    /* DEBUG
+    for (MFIter mfi(f_X); mfi.isValid(); ++mfi)
+    {
+        const Box & bx = use_fabbox ? mfi.fabbox() : mfi.validbox();
+
+        // Coarse mesh
+        Array4<Real const> const & c_X_fab = safe_c_X_ptr->array(mfi);
+
+        // Interpolation operator
+        Array4<long const> const & elm_I_info_fab = f_solution.elm_I_info.array(mfi);
+
+        // Fine mesh
+        Array4<Real const> const & f_X_fab = f_X.array(mfi);
+
+        ParallelFor(bx, n_unknown_fields,
+        [=] AMREX_GPU_DEVICE (int f_i, int f_j, int f_k, int ru) noexcept
+        {
+            // ELEMENT TYPE (USING elm_I_info_fab)
+            const int dom = ibvp.unknown_field_parent_domain(ru);
+            const long pos = elm_I_info_fab(f_i,f_j,f_k,dom);
+
+            if (pos != -1L)
+            {
+                // LOCAL PARAMETERS
+                const Real * I_ptr = &elm_I_mem_ptr[pos];
+
+                // LOCAL VARIABLES
+                int c_i, c_j, c_k;
+
+                // INDICES OF THE COARSE CELL
+                FINE_TO_COARSE(f_i, f_j, f_k, rr, c_i, c_j, c_k);
+
+if (ru == 0 && f_i == __i__ && f_j == __j__)
+{
+Print() << "computed " << f_i << ", " << f_j << ", " << f_k << " from " << c_i << ", " << c_j << ", " << c_k << std::endl;
+Print() << "pos: " << pos << std::endl;
+for (int cs = 0; cs < c_sNp; ++cs)
+{
+    Print() << "c_X_fab(" << c_i << "," << c_j << "," << c_k << "," << cs << "+" << ru << "*" << c_sNp << "): " << c_X_fab(c_i,c_j,c_k,cs+ru*c_sNp) << std::endl;
+}
+for (int rs = 0; rs < f_sNp; ++rs)
+{
+    Print() << "f_X_fab(" << f_i << "," << f_j << "," << f_k << "," << rs << "+" << ru << "*" << f_sNp << "): " << f_X_fab(f_i,f_j,f_k,rs+ru*f_sNp) << std::endl;
+}
+}
+            }
+        });
+        Gpu::synchronize();
+    }
+    */
+
 }
 
 /**
@@ -624,7 +692,7 @@ void remake_solution(const Real /*t*/,
     // ----------------------------------------------------------------
 
     // OVERWRITE WITH OLD SOLUTION ------------------------------------
-    f_X_new.ParallelCopy(f_X, 0, 0, f_X.n_comp, f_X.n_grow, f_X.n_grow, f_geom.periodicity());
+    f_X_new.ParallelCopy(f_X, 0, 0, f_X.n_comp, 0, 0, f_geom.periodicity());
     f_X_new.FillBoundary(f_geom.periodicity());
     f_solution.copy_solution_to_small_elements(f_geom, f_X_new, ibvp);
     // ----------------------------------------------------------------
@@ -796,6 +864,8 @@ void restrict(const Geometry & /*f_geom*/, const Solution & f_solution, const Mu
         });
         Gpu::synchronize();
     }
+    c_X.FillBoundary(c_geom.periodicity());
+    c_solution.copy_solution_to_small_elements(c_geom, c_X, ibvp);
     // ----------------------------------------------------------------
 }
 // ####################################################################
@@ -974,6 +1044,60 @@ exit(-1);
         // ...
         // ------------------------------------------------------------
     }
+
+    /**
+     * \brief Init solution from a checkpoint.
+     *
+     * \param[in] restart_n: index of the restart checkpoint.
+     * \param[in] filename_root: root of the filename of the checkpoint files.
+     * \param[out] X: vector of multifabs containing the solution at each level.
+     * \param[out] L: vector of multifabs containing the level set at each level.
+     * \param[in] ibvp: initial boundary value problem object.
+    */
+    template <typename IBVP>
+    void init_from_checkpoint_using_projected_level_set(const int restart_n, const std::string & filename_root,
+                                                        Vector<MultiFab> & X, Vector<MultiFab> & L,
+                                                        const IBVP & ibvp)
+    {
+        // PARAMETERS -------------------------------------------------
+        const int mask_n_grow = 1;
+        // ------------------------------------------------------------
+
+        // READ THE CHECKPOINT ----------------------------------------
+        this->read_checkpoint_using_projected_level_set(restart_n, filename_root, X, L);
+        // ------------------------------------------------------------
+
+        // INIT THE LEVELS
+        for (int lev = 0; lev <= this->max_level; ++lev)
+        {
+            const BoxArray & ba = L[lev].boxarray;
+            const DistributionMapping & dm = L[lev].distributionMap;
+            Mesh & mesh = *this->meshes[lev];
+            Solution & solution = *this->solutions[lev];
+
+            // MESH ---------------------------------------------------
+            mesh.make_from_scratch_by_projected_level_set(this->inputs.restart_time, this->geom[lev], ba, dm, L[lev], ibvp);
+            this->SetBoxArray(lev, mesh.ba);
+            this->SetDistributionMap(lev, mesh.dm);
+            // --------------------------------------------------------
+
+            // SOLUTION -----------------------------------------------
+            solution.make_from_scratch(this->inputs.restart_time, this->geom[lev], mesh, ibvp);
+            solution.eval_space_mass_matrix(this->geom[lev], mesh, ibvp);
+
+            // INTERPOLATION OPERATOR
+            if (lev > 0)
+            {
+                this->eval_space_interpolation(lev, ibvp);
+            }
+            // --------------------------------------------------------
+
+            // MASKS --------------------------------------------------
+            this->masks[lev].define(mesh.ba, mesh.dm, 1, mask_n_grow);
+            this->masks[lev] = __DG_CELL_NOT_MASKED__;
+            // --------------------------------------------------------
+        }
+    }
     // ================================================================
 
 
@@ -990,6 +1114,10 @@ exit(-1);
         const Solution & solution = *this->solutions[lev];
         const int n_domains = solution.elm_type.n_comp/__DG_ELM_TYPE_N_COMP_PER_DOM__;
         const char tagged = TagBox::BUF;
+        // ------------------------------------------------------------
+
+        // SHARE TAG INFO ---------------------------------------------
+        tags.FillBoundary(this->geom[lev].periodicity());
         // ------------------------------------------------------------
 
         // TAG SMALL CELLS THAT ARE MERGED WITH TAGGED CELLS ----------
@@ -1626,6 +1754,14 @@ exit(-1);
         }
         // ------------------------------------------------------------
     }
+
+    void make_step_checkpoint_folder(const int n, const Real t) const;
+    void write_checkpoint_header_file(const int n, const Real t, const std::string & filename_root) const;
+    void write_checkpoint_multifabs_header_file(const int n, const Real t, const std::string & filename_root, const Vector<MultiFab> & X, const Vector<MultiFab> & L) const;
+    void write_checkpoint_using_projected_level_set(const int n, const Real t, const std::string & filename_root, const Vector<MultiFab> & X, const Vector<MultiFab> & L) const;
+    void read_checkpoint_header_file(const int restart_n, const std::string & filename_root);
+    void read_checkpoint_multifabs_header_file(const int restart_n, const std::string & filename_root, Vector<MultiFab> & X, Vector<MultiFab> & L);
+    void read_checkpoint_using_projected_level_set(const int restart_n, const std::string & filename_root, Vector<MultiFab> & X, Vector<MultiFab> & L);
     // ================================================================
 };
 // ####################################################################

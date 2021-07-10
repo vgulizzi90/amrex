@@ -207,6 +207,7 @@ public InputReaderBase
 
     // READERS ========================================================
     bool plot(const int n, const Real t) const;
+    bool checkpoint(const int n, const Real t) const;
     bool regrid(const int n) const;
     // ================================================================
 
@@ -215,6 +216,7 @@ public InputReaderBase
     std::string get_step_string(const int n) const;
     std::string get_level_folderpath(const int lev) const;
     std::string get_level_step_folderpath(const int lev, const int n) const;
+    std::string get_level_checkpoint_folderpath(const int lev, const int n) const;
     // ================================================================
 };
 // ####################################################################

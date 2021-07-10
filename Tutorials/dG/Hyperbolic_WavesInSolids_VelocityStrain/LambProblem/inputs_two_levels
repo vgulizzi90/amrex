@@ -1,6 +1,6 @@
 # SPACE ###############################################################
-geometry.prob_lo     = 0.0 0.0 0.0
-geometry.prob_hi     = 4000.0 2000.0 1.0
+geometry.prob_lo     = 0.0 0.0
+geometry.prob_hi     = 4000.0 3000.0
 geometry.is_periodic = 0 0 0
 #######################################################################
 
@@ -8,7 +8,7 @@ geometry.is_periodic = 0 0 0
 
 # TIME ################################################################
 # Sample isotropic material
-time.T = 1.3 # (2D)
+time.T = 1.0 # (2D)
 
 time.n_steps = 10000
 #######################################################################
@@ -19,14 +19,14 @@ time.n_steps = 10000
 # AMR =================================================================
 amr.v = 1
 
-amr.n_cell        = 64 32 32
-amr.max_grid_size = 16 16 16
+amr.n_cell        = 64 48
+amr.max_grid_size = 4 4
 
 amr.max_level = 1
 
-amr.ref_ratio = 2
-amr.blocking_factor = 2
-amr.n_error_buf = 1
+amr.ref_ratio = 4
+amr.blocking_factor = 4
+amr.n_error_buf = 2
 amr.grid_eff = 1.0
 
 amr.regrid_int = 5
@@ -55,14 +55,14 @@ solution[0].space_p = 1
 solution[0].cell_merging_is_active = 1
 solution[0].cell_merging_volume_fraction_threshold = 0.3
 solution[0].time_integration = explicit_RKdG
-solution[0].time_integration_CFL = 0.3
+solution[0].time_integration_CFL = 0.25
 solution[0].post_processing_grid_order = 4
 
 solution[1].space_p = 3
 solution[1].cell_merging_is_active = 1
 solution[1].cell_merging_volume_fraction_threshold = 0.3
 solution[1].time_integration = explicit_RKdG
-solution[1].time_integration_CFL = 0.3
+solution[1].time_integration_CFL = 0.25
 solution[1].post_processing_grid_order = 4
 # =====================================================================
 #######################################################################
@@ -71,11 +71,11 @@ solution[1].post_processing_grid_order = 4
 
 # PROBLEM #############################################################
 # Sample isotropic material
-material_type = isotropic
-material_constants = 2200.0 2.00246628e10 0.333348
+material_type = isotropic_wave_velocities
+material_constants = 2200.0 3200.0 1847.5
 
 # AMR parameters
-threshold_amr = 1.0e-9
+threshold_amr = 1.0e-12
 #######################################################################
 # material_type: type of the considered material; this string determines
 #                how material_constants is read.
@@ -88,8 +88,9 @@ threshold_amr = 1.0e-9
 wall_time = 10.0
 wall_time_units = s
 
-output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_$(material_type)_p$(solution[0].space_p)p$(solution[1].space_p)_nc$(amr.n_cell)_gs$(amr.max_grid_size)
-plot_int = 200
+output_folderpath = PROBLEM_$(AMREX_SPACEDIM)D_$(material_type)_p$(solution[0].space_p)p$(solution[1].space_p)_nc$(amr.n_cell)
+checkpoint_int = 400
+plot_int = 400
 output_overwrite = 1
 
 restart = -1

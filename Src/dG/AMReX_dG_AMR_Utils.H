@@ -320,6 +320,37 @@ void eval_dXdt_explicit_RKdG(const amr::SinglePatch & amr, const Real t, const V
     }
 #endif
 
+#ifdef AMREX_DG_CHECK_FOR_LARGE_NUMBERS
+    // CHECK FOR LARGE NUMBERS
+    for (int lev = 0; lev < n_levels; ++lev)
+    {
+        for (int dir = 0; dir < AMREX_SPACEDIM; ++dir)
+        {
+            for (int c = 0; c < FX[lev][dir].n_comp; ++c)
+            {
+                if (FX[lev][dir].max(c) > __DG_LARGE_NUMBER__)
+                {
+                    std::string msg;
+                    msg  = "\n";
+                    msg += "ERROR: AMReX_dG_AMR_Utils.H - eval_dXdt_explicit_RKdG\n";
+                    msg += "| Fluxes in direction "+std::to_string(dir)+" contains large positive number at level "+std::to_string(lev)+".\n";
+                    msg += "| FX[lev][dir].max("+std::to_string(c)+"): "+std::to_string(FX[lev][dir].max(c))+".\n";
+                    Abort(msg);
+                }
+                if ((-FX[lev][dir].min(c)) > __DG_LARGE_NUMBER__)
+                {
+                    std::string msg;
+                    msg  = "\n";
+                    msg += "ERROR: AMReX_dG_AMR_Utils.H - eval_dXdt_explicit_RKdG\n";
+                    msg += "| Fluxes in direction "+std::to_string(dir)+" contains large negative number at level "+std::to_string(lev)+".\n";
+                    msg += "| FX[lev][dir].min("+std::to_string(c)+"): "+std::to_string(FX[lev][dir].min(c))+".\n";
+                    Abort(msg);
+                }
+            }
+        }
+    }
+#endif
+
     // COPY FLUXES FROM FINE TO COARSE LEVEL
     for (int lev = (n_levels-1); lev > 0; --lev)
     {

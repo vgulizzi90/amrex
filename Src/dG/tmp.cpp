@@ -1,3 +1,36 @@
+// PARAMETERS -----------------------------------------------------
+    const int finest_level = AMR.maxLevel();
+    // ----------------------------------------------------------------
+
+    // GLOBAL HEADER FILE ---------------------------------------------
+    if (ParallelDescriptor::IOProcessor())
+    {
+        const std::string header_filepath = dG::io::make_path({level_checkpoint_folderpath, filename_root+"_header"+".txt"});
+        time_t date_and_time = time(0);
+        char * date_and_time_ = ctime(&date_and_time);
+        VisMF::IO_Buffer io_buffer(VisMF::IO_Buffer_Size);
+
+        std::ofstream fp;
+        fp.precision(17);
+        fp.rdbuf()->pubsetbuf(io_buffer.dataPtr(), io_buffer.size());
+
+        fp.open(header_filepath.c_str(), std::ofstream::app);
+        if(!fp.good())
+        {
+            FileOpenFailed(header_filepath);
+        }
+        
+        fp << std::endl << "CHECKPOINT HEADER FILE - " << date_and_time_ << "\n";
+        fp << "| Number of levels: " << finest_level+1 << std::endl;
+        fp << "| time: " << t << std::endl;
+        fp.close();
+    }
+    // ----------------------------------------------------------------
+
+    // MULTIFABS HEADER FILES -----------------------------------------
+    // ----------------------------------------------------------------
+
+
 #define __DG_N_NBRS_N_COMP_PER_DOM__ 2
 
 #define __DG_NNZ_N_COMP_PER_DOM__ 3

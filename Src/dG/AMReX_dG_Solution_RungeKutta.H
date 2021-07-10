@@ -103,7 +103,7 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                 Real integrand;
                 Real U[__DG_MAX_N_UNKNOWN_FIELDS__];
                 Real AMREX_D_DECL(F1[__DG_MAX_N_UNKNOWN_FIELDS__], F2[__DG_MAX_N_UNKNOWN_FIELDS__], F3[__DG_MAX_N_UNKNOWN_FIELDS__]);
-                Real R[__DG_MAX_N_UNKNOWN_FIELDS__];
+                //Real R[__DG_MAX_N_UNKNOWN_FIELDS__];
 
                 // UNKNOWN FIELDS
                 space_elm_bfx bfu(&prob_lo[0], &dx[0], i, j, k, etype, sp, X_fab);
@@ -128,8 +128,8 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                     bfu.eval_unsafe(u_lo, u_hi, U);
 
                     // Fluxes/Reactive terms as functions of (t, x, U)
-                    ibvp.eval_FR(dom, t, x, U, AMREX_D_DECL(F1, F2, F3), R);
-                    //ibvp.eval_F(dom, t, x, U, AMREX_D_DECL(F1, F2, F3));
+                    //ibvp.eval_FR(dom, t, x, U, AMREX_D_DECL(F1, F2, F3), R);
+                    ibvp.eval_F(dom, t, x, U, AMREX_D_DECL(F1, F2, F3));
 
                     // Integral contribution
                     for (int ru = u_lo; ru < u_hi; ++ru)
@@ -141,7 +141,7 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
                             integrand += bfu.dBFdx2[rs]*F2[ru];,
                             integrand += bfu.dBFdx3[rs]*F3[ru];
                         )
-                        integrand -= bfu.BF[rs]*R[ru];
+                        //integrand -= bfu.BF[rs]*R[ru];
                         
                         dXdt_fab(i,j,k,rs+ru*sNp) += integrand*w;
                     }
@@ -152,11 +152,11 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
     }
     // ----------------------------------------------------------------
 
-/*
+/* // hpAMR */
     // CONCENTRATED SOURCE TERM ---------------------------------------
     const Real th = 10.0*M_PI/180.0;
     const Real tth = std::tan(th);
-    const amrex::Real x1S = 1720.0;
+    const Real x1S = 1720.0;
     const GpuArray<Real, AMREX_SPACEDIM> xs = {AMREX_D_DECL(x1S, 2000.0+tth*x1S, 0.0)};
     const Real alpha = 1.0;
 
@@ -226,7 +226,7 @@ void add_dom_contrib_to_dXdt(const Real t, const Geometry & geom, const Mesh & m
     }
 //exit(-1);
     // ----------------------------------------------------------------
-*/
+/**/
 }
 // ####################################################################
 

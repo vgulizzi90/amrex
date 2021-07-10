@@ -91,8 +91,8 @@
 #define __DG_CSR_BOU_INFO_N_COMP_PER_DOM__ 2
 
 // DEBUG
-#define __i__ 2
-#define __j__ 2
+#define __i__ 120
+#define __j__ 147
 #define __k__ 0
 
 namespace amrex

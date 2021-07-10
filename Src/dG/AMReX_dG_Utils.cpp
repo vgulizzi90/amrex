@@ -446,9 +446,9 @@ void print_real_array_2d(const int Nr, const int Nc, const Real * src, std::ostr
         this->plot_filename = "plt"+std::to_string(date_and_time);
         
         pp.query("output_folderpath", this->output_folderpath);
-        pp.query("checkpoint_filename", this->checkpoint_filename);
+        //pp.query("checkpoint_filename", this->checkpoint_filename);
         pp.query("checkpoint_int", this->checkpoint_int);
-        pp.query("plot_filename", this->plot_filename);
+        //pp.query("plot_filename", this->plot_filename);
         pp.query("plot_int", this->plot_int);
 
         tmp_int = 1;
@@ -543,6 +543,16 @@ void print_real_array_2d(const int Nr, const int Nc, const Real * src, std::ostr
 
         return res;
     }
+    bool InputReaderSinglePatch::checkpoint(const int n, const Real t) const
+    {
+        bool res;
+        res = (n%(this->checkpoint_int) == 0);
+        res = res || (n == this->time.n_steps);
+        res = res || (std::abs(t/this->time.T-1.0) < 1.0e-12);
+        res = res && (this->checkpoint_int > 0);
+
+        return res;
+    }
     bool InputReaderSinglePatch::regrid(const int n) const
     {
         bool res;
@@ -584,6 +594,19 @@ void print_real_array_2d(const int Nr, const int Nc, const Real * src, std::ostr
         const std::string level_step_folderpath = io::make_path({this->output_folderpath, level_folder, step_folder});
 
         return level_step_folderpath;
+    }
+
+    std::string InputReaderSinglePatch::get_level_checkpoint_folderpath(const int lev, const int n) const
+    {
+        int n_digits;
+        n_digits = 1;
+        while (std::pow(10, n_digits) <= this->time.n_steps) n_digits += 1;
+
+        const std::string level_folder = "Level_"+std::to_string(lev);
+        const std::string checkpoint_folder = Concatenate("Checkpoint_", n, n_digits);
+        const std::string level_checkpoint_folderpath = io::make_path({this->output_folderpath, level_folder, checkpoint_folder});
+
+        return level_checkpoint_folderpath;
     }
     // ================================================================
 // ####################################################################

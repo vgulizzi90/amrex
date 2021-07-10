@@ -23,6 +23,10 @@ namespace dG
 #endif
 
 #define AMREX_DG_CHECK_FOR_NAN
+#define AMREX_DG_CHECK_FOR_LARGE_NUMBERS
+#ifdef AMREX_DG_CHECK_FOR_LARGE_NUMBERS
+#define __DG_LARGE_NUMBER__ 1.0e8
+#endif
 
 // TYPEDEFS ###########################################################
 // MULTIFABS ==========================================================

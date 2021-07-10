@@ -86,6 +86,7 @@ void main_main()
         if (amr.inputs.plot(n, t))
         {
             amr.make_step_output_folder(n, t);
+            //amr.export_mesh(n, "mesh");
             amr.export_solution(n, "solution", t);
         }
     }
@@ -136,12 +137,20 @@ void main_main()
             if (amr.inputs.plot(n, t))
             {
                 amr.make_step_output_folder(n, t);
+                //amr.export_mesh(n, "mesh");
                 amr.export_solution(n, "solution", t);
             }
 
             // EXPORT SAMPLED SOLUTION
             {
                 amr.write_sampled_solution(n, t);
+            }
+
+            // CHECKPOINT
+            if (amr.inputs.checkpoint(n, t))
+            {
+                amr.make_step_checkpoint_folder(n, t);
+                amr.write_checkpoint(n, t);
             }
 
             // REGRID

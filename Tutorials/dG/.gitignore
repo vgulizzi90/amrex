@@ -1,6 +1,6 @@
 *.txt
-*._D_*
-*._H
+*_D_*
+*_H
 *.vtk
 *.vtu
 *.pvtu

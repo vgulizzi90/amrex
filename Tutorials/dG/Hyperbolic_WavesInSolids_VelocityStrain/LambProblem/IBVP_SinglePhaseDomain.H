@@ -334,8 +334,8 @@ public amrex::dG::IBVP_Base
     void eval_ICs(const amrex::Real * /*x*/, amrex::Real * U) const
     {
 #if (AMREX_SPACEDIM == 2)
-        U[V1] = 0.0;
-        U[V2] = 0.0;
+        U[V1] = 0.0; // hpAMR
+        U[V2] = 0.0; // hpAMR
         U[E11] = 0.0;
         U[E22] = 0.0;
         U[E12] = 0.0;
@@ -485,10 +485,11 @@ public amrex::dG::IBVP_Base
     */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     void eval_NFn_BCs(const int /*dom*/,
-                      const amrex::Real /*t*/, const amrex::Real * /*x*/, const amrex::Real * un,
+                      const amrex::Real /*t*/, const amrex::Real * x, const amrex::Real * un,
                       const amrex::Real * U, amrex::Real * NFn) const
     {
 #if (AMREX_SPACEDIM == 2)
+        /* // hpAMR */
         if (un[1] > 0.5)
         {
             const amrex::Real T[AMREX_SPACEDIM] = {AMREX_D_DECL(0.0, 0.0, 0.0)};
@@ -498,6 +499,13 @@ public amrex::dG::IBVP_Base
         {
             elastic_solid::eval_NFn_Riemann_solver_absorbing_boundary(this->density, this->c, un, U, NFn);
         }
+        /**/
+
+        // hpAMR
+        //amrex::Real U_0[N_VS];
+        //this->eval_ICs(x, U_0);
+        //elastic_solid::eval_NFn_Riemann_solver(this->density, this->c, un, U, U_0, NFn);
+        
 #endif
 #if (AMREX_SPACEDIM == 3)
 amrex::Print() << "eval_NFn_BCs" << std::endl;
@@ -695,8 +703,20 @@ public amrex::dG::amr::SinglePatch
         else
         // INIT SOLUTION FROM CHECKPOINT ------------------------------
         {
-amrex::Print() << "INIT SOLUTION FROM CHECKPOINT" << std::endl;
-exit(-1);
+            if (this->meshes[0]->uses_projected_level_set())
+            {
+                this->init_from_checkpoint_using_projected_level_set(this->inputs.restart, "checkpoint", this->X, this->L, this->ibvp);
+                this->t = this->inputs.restart_time;
+            }
+            else
+            {
+                std::string msg;
+                msg  = "\n";
+                msg +=  "ERROR: IBVP_SinglePhaseDomain.H - AMR::init\n";
+                msg += "| Unexpected method used to define the embedded geometry.\n";
+                msg += "| Unexpected method: "+this->meshes[0]->params.embedded_geometry_defined_by+".\n";
+                amrex::Abort(msg);
+            }
         }
         // ------------------------------------------------------------
 
@@ -785,8 +805,14 @@ exit(-1);
         // ------------------------------------------------------------
 
         // MANUAL TAGGING AT THE CONCENTRATED SOURCE ------------------
-        if (this->t < 0.2)
+        if (this->t < 0.2) // hpAMR
         {
+            const amrex::Real th = 10.0*M_PI/180.0;
+            const amrex::Real tth = std::tan(th);
+            const amrex::Real x1S = 1720.0;
+            const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> xs = {AMREX_D_DECL(x1S, 2000.0+tth*x1S, 0.0)}; // hpAMR
+            //const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> xs = {x1S, 2000.0+tth*x1S-2*2000.0*t}; // hpAMR
+
             const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = this->geom[lev].CellSizeArray();
             const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> prob_lo = this->geom[lev].ProbLoArray();
 
@@ -808,7 +834,7 @@ exit(-1);
                         const amrex::Real xc[AMREX_SPACEDIM] = {AMREX_D_DECL(prob_lo[0]+(i+0.5)*dx[0],
                                                                              prob_lo[1]+(j+0.5)*dx[1],
                                                                              prob_lo[2]+(k+0.5)*dx[2])};
-                        const amrex::Real y[AMREX_SPACEDIM] = {AMREX_D_DECL(xc[0]-2000.0, xc[1]-2000.0, xc[2]-2000.0)};
+                        const amrex::Real y[AMREX_SPACEDIM] = {AMREX_D_DECL(xc[0]-xs[0], xc[1]-xs[1], xc[2]-xs[2])};
                         const amrex::Real d = std::sqrt(AMREX_D_TERM(y[0]*y[0],+y[1]*y[1],+y[2]*y[2]));
 
                         if (d < 2.0*amrex::max(AMREX_D_DECL(dx[0], dx[1], dx[2])))
@@ -824,7 +850,7 @@ exit(-1);
         // ------------------------------------------------------------
 
         // TAGGING ----------------------------------------------------
-        elastic_solid::tag_cells_single_phase_domain(this->ibvp.density, this->ibvp.c, this->Geom(lev), mesh, solution, this->X[lev], this->threshold_amr[lev], tags, tagged);
+        elastic_solid::tag_cells_single_phase_domain(this->ibvp.density, this->ibvp.c, this->Geom(lev), mesh, solution, this->X[lev], this->threshold_amr[lev], tags, tagged); // hpAMR
         // ------------------------------------------------------------
     }
     // ================================================================
@@ -833,6 +859,10 @@ exit(-1);
     // REMAKE AN EXISTING LEVEL =======================================
     virtual void RemakeLevel(int lev, amrex::Real /*time*/, const amrex::BoxArray & ba, const amrex::DistributionMapping & dm) override
     {
+        // PROFILING --------------------------------------------------
+        BL_PROFILE("single_phase_domain::AMR::RemakeLevel(...)");
+        // ------------------------------------------------------------
+
         // PARAMETERS -------------------------------------------------
         const int mask_n_grow = 1;
         // ------------------------------------------------------------
@@ -847,7 +877,7 @@ exit(-1);
         {
             std::string msg;
             msg  = "\n";
-            msg +=  "ERROR: IBVP_EmbeddedSodsTube.H - AMR::RemakeLevel\n";
+            msg +=  "ERROR: IBVP_SinglePhaseDomain.H - AMR::RemakeLevel\n";
             msg += "| Do not know how to remake level 0.\n";
             amrex::Abort(msg);
         }
@@ -871,6 +901,7 @@ exit(-1);
                 msg +=  "ERROR: IBVP_SinglePhaseDomain.H - AMR::RemakeLevel\n";
                 msg += "| Unexpected method used to define the embedded geometry.\n";
                 msg += "| Unexpected method: "+mesh.params.embedded_geometry_defined_by+".\n";
+                amrex::Abort(msg);
             }
             this->SetBoxArray(lev, mesh.ba);
             this->SetDistributionMap(lev, mesh.dm);
@@ -919,7 +950,7 @@ exit(-1);
 
 
     // INPUT/OUTPUT ===================================================
-    void write_sampled_solution(const int n, const amrex::Real t_)
+    void write_sampled_solution(const int n, const amrex::Real t_) const
     {
         // PARAMETERS -------------------------------------------------
         // CURRENT PROCESSOR
@@ -944,7 +975,7 @@ exit(-1);
 
         // VARIABLES --------------------------------------------------
         amrex::Vector<int> sampling_points_rank(n_sampling_points);
-        amrex::Vector<amrex::Real> sampled_fields(n_sampling_points*n_sampled_fields_per_point);
+        amrex::Vector<amrex::Real> sampled_fields(n_sampling_points*n_sampled_fields_per_point, 0.0);
 
         // WRITING TOOLS
         std::ofstream fp;
@@ -1145,6 +1176,23 @@ exit(-1);
                 msg += "| Unexpected method: "+mesh.params.embedded_geometry_defined_by+".\n";
                 amrex::Abort(msg);
             }
+        }
+    }
+
+    void write_checkpoint(const int n, const amrex::Real t_)
+    {
+        if (this->meshes[0]->uses_projected_level_set())
+        {
+            this->write_checkpoint_using_projected_level_set(n, t_, "checkpoint", this->X, this->L);
+        }
+        else
+        {
+            std::string msg;
+            msg  = "\n";
+            msg +=  "ERROR: IBVP_SinglePhaseDomain.H - AMR::write_checkpoint\n";
+            msg += "| Unexpected method used to define the embedded geometry.\n";
+            msg += "| Unexpected method: "+this->meshes[0]->params.embedded_geometry_defined_by+".\n";
+            amrex::Abort(msg);
         }
     }
     // ================================================================

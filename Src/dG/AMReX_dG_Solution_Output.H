@@ -1665,7 +1665,7 @@ void export_bou_data_using_level_set_to_VTK(const std::string & level_folderpath
 }
 
 /**
- * \brief Export the mesh to VTK format.
+ * \brief Export the solution to VTK format.
  *
  * \param[in] level_folderpath: path where the .pvtu files will be written.
  * \param[in] level_step_folderpath: path where the .vtu files will be written.
@@ -2061,6 +2061,13 @@ void export_dom_data_using_projected_level_set_to_VTK(const std::string & level_
 
                     ibvp.eval_output_fields(dom, t, x, U, F);
                     VTK_nodal_fields_ptr[o][VTK_nodal_field_pos] = F[o];
+
+/*
+if (i == __i__ && j == __j__)
+{
+Print() << "F(" << i << "," << j << ",k): "; io::print_real_array_2d(1, n_output_fields, F);
+}
+*/
                 }
 
                 // LEVEL SET
@@ -2472,22 +2479,22 @@ void export_bou_data_using_projected_level_set_to_VTK(const std::string & level_
         const std::string filepath = dG::io::make_path({level_step_folderpath, filename+"_"+std::to_string(rank)+".vtu"});
         
         vtk::print_unstructured_grid_data_vtu(filepath,
-                                                n_VTK_nodes,
-                                                n_VTK_cells,
-                                                VTK_nodes,
-                                                VTK_cell_conn,
-                                                VTK_cell_offset,
-                                                VTK_cell_type,
-                                                VTK_nodal_fields,
-                                                VTK_nodal_fields_names,
-                                                VTK_cell_fields,
-                                                VTK_cell_fields_names);
+                                              n_VTK_nodes,
+                                              n_VTK_cells,
+                                              VTK_nodes,
+                                              VTK_cell_conn,
+                                              VTK_cell_offset,
+                                              VTK_cell_type,
+                                              VTK_nodal_fields,
+                                              VTK_nodal_fields_names,
+                                              VTK_cell_fields,
+                                              VTK_cell_fields_names);
     }
     // ------------------------------------------------------------
 }
 
 /**
- * \brief Export the mesh to VTK format.
+ * \brief Export the solution to VTK format.
  *
  * \param[in] level_folderpath: path where the .pvtu files will be written.
  * \param[in] level_step_folderpath: path where the .vtu files will be written.
@@ -3264,16 +3271,16 @@ void export_FV_bou_data_using_level_set_to_VTK(const std::string & level_folderp
         const std::string filepath = dG::io::make_path({level_step_folderpath, filename+"_"+std::to_string(rank)+".vtu"});
         
         vtk::print_unstructured_grid_data_vtu(filepath,
-                                                n_VTK_nodes,
-                                                n_VTK_cells,
-                                                VTK_nodes,
-                                                VTK_cell_conn,
-                                                VTK_cell_offset,
-                                                VTK_cell_type,
-                                                VTK_nodal_fields,
-                                                VTK_nodal_fields_names,
-                                                VTK_cell_fields,
-                                                VTK_cell_fields_names);
+                                              n_VTK_nodes,
+                                              n_VTK_cells,
+                                              VTK_nodes,
+                                              VTK_cell_conn,
+                                              VTK_cell_offset,
+                                              VTK_cell_type,
+                                              VTK_nodal_fields,
+                                              VTK_nodal_fields_names,
+                                              VTK_cell_fields,
+                                              VTK_cell_fields_names);
     }
     // ------------------------------------------------------------
 }

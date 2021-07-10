@@ -285,6 +285,271 @@ namespace amr
         }
         // ------------------------------------------------------------
     }
+
+    /**
+     * \brief Make checkpoint folder path for the current step.
+     *
+     * \param[in] n: time step index.
+     * \param[in] t: time.
+    */
+    void SinglePatch::make_step_checkpoint_folder(const int n, const Real t) const
+    {
+        // CREATE LEVEL/CHECKPOINT DIRECTORIES ------------------------
+        for (int lev = 0; lev <= this->finest_level; ++lev)
+        {
+            UtilCreateDirectory(this->inputs.get_level_checkpoint_folderpath(lev, n), 0755);
+        }
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Write the general header file for the checkpoint.
+     *
+     * \param[in] n: time step index.
+     * \param[in] t: time.
+     * \param[in] filename_root: root of the general header file for the checkpoint.
+    */
+    void SinglePatch::write_checkpoint_header_file(const int n, const Real t, const std::string & filename_root) const
+    {
+        // PARAMETERS -------------------------------------------------
+        const std::string step_string = this->inputs.get_step_string(n);
+        // ------------------------------------------------------------
+
+        // HEADER FILE ------------------------------------------------
+        if (ParallelDescriptor::IOProcessor())
+        {
+            const std::string header_filepath = io::make_path({this->inputs.output_folderpath, filename_root+"_header_"+step_string+".txt"});
+            time_t date_and_time = time(0);
+            char * date_and_time_ = ctime(&date_and_time);
+            VisMF::IO_Buffer io_buffer(VisMF::IO_Buffer_Size);
+
+            std::ofstream fp;
+            fp.precision(17);
+            fp.rdbuf()->pubsetbuf(io_buffer.dataPtr(), io_buffer.size());
+
+            fp.open(header_filepath.c_str(), std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
+            if(!fp.good())
+            {
+                FileOpenFailed(header_filepath);
+            }
+            
+            fp << std::endl << "CHECKPOINT HEADER FILE - " << date_and_time_ << "\n";
+            fp << "| Number of levels: " << this->finest_level+1 << std::endl;
+            fp << "| time: " << t << std::endl;
+            fp.close();
+        }
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Write the multifab header file for the checkpoint.
+     *
+     * \param[in] n: time step index.
+     * \param[in] t: time.
+     * \param[in] filename_root: root of the multifab header file for the checkpoint.
+     * \param[in] X: vector of multifabs containing the solution at each level.
+     * \param[in] L: vector of multifabs containing the level set at each level.
+    */
+    void SinglePatch::write_checkpoint_multifabs_header_file(const int n, const Real /*t*/, const std::string & filename_root,
+                                                             const Vector<MultiFab> & X, const Vector<MultiFab> & L) const
+    {
+        // PARAMETERS -------------------------------------------------
+        const std::string step_string = this->inputs.get_step_string(n);
+        // ------------------------------------------------------------
+
+        // HEADER FILE FOR MULTIFABS ----------------------------------
+        if (ParallelDescriptor::IOProcessor())
+        {
+            const std::string header_filepath = io::make_path({this->inputs.output_folderpath, filename_root+"_header_multifabs_"+step_string+".txt"});
+            VisMF::IO_Buffer io_buffer(VisMF::IO_Buffer_Size);
+
+            std::ofstream fp;
+            fp.precision(17);
+            fp.rdbuf()->pubsetbuf(io_buffer.dataPtr(), io_buffer.size());
+            
+            fp.open(header_filepath.c_str(), std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
+            if(!fp.good())
+            {
+                FileOpenFailed(header_filepath);
+            }
+
+            fp << "Checkpoint file\n";
+            fp << this->finest_level << "\n";
+            for (int lev = 0; lev <= this->finest_level; ++lev)
+            {
+                {
+                    this->boxArray(lev).writeOn(fp);
+                    fp << '\n';
+                    fp << L[lev].n_comp << "\n";
+                    fp << L[lev].n_grow << "\n";
+                    fp << X[lev].n_comp << "\n";
+                    fp << X[lev].n_grow << "\n";
+                }
+            }
+            
+            fp.close();
+        }
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Write a checkpoint for a solution using a projected level set.
+     *
+     * \param[in] n: time step index.
+     * \param[in] t: time.
+     * \param[in] filename_root: root of the filename of the checkpoint files.
+     * \param[in] X: vector of multifabs containing the solution at each level.
+     * \param[in] L: vector of multifabs containing the level set at each level.
+    */
+    void SinglePatch::write_checkpoint_using_projected_level_set(const int n, const Real t, const std::string & filename_root,
+                                                                 const Vector<MultiFab> & X, const Vector<MultiFab> & L) const
+    {
+        // HEADER FILE ------------------------------------------------
+        this->write_checkpoint_header_file(n, t, filename_root);
+        // ------------------------------------------------------------
+
+        // HEADER FILE FOR MULTIFABS ----------------------------------
+        this->write_checkpoint_multifabs_header_file(n, t, filename_root, X, L);
+        // ------------------------------------------------------------
+
+        // SOLUTION AND LEVEL SET MULTIFABS ---------------------------
+        for (int lev = 0; lev <= this->finest_level; ++lev)
+        {
+            const std::string level_folderpath = this->inputs.get_level_folderpath(lev);
+            const std::string level_checkpoint_folderpath = this->inputs.get_level_checkpoint_folderpath(lev, n);
+
+            const std::string filepath_X = io::make_path({level_checkpoint_folderpath, filename_root+"_X"});
+            const std::string filepath_L = io::make_path({level_checkpoint_folderpath, filename_root+"_L"});
+
+            VisMF::Write(X[lev], filepath_X);
+            VisMF::Write(L[lev], filepath_L);
+        }
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Read the general header file for the checkpoint.
+     *
+     * \param[in] restart_n: index of the restart checkpoint.
+     * \param[in] filename_root: root of the general header file for the checkpoint.
+    */
+    void SinglePatch::read_checkpoint_header_file(const int restart_n, const std::string & filename_root)
+    {
+        // PARAMETERS -------------------------------------------------
+        const std::string step_string = this->inputs.get_step_string(restart_n);
+        // ------------------------------------------------------------
+
+        // HEADER FILE ------------------------------------------------
+        {
+            const std::string header_filepath = io::make_path({this->inputs.output_folderpath, filename_root+"_header_"+step_string+".txt"});
+            std::string line;
+            std::ifstream fp;
+
+            fp.open(header_filepath);
+            while (std::getline(fp, line))
+            {
+                if (line.find("time") != std::string::npos)
+                {
+                    std::istringstream is(line.substr(line.find(":")+1));
+                    is >> this->inputs.restart_time;
+                }
+            }
+            fp.close();
+        }
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Read the multifab header file for the checkpoint.
+     *
+     * \param[in] restart_n: index of the restart checkpoint.
+     * \param[in] filename_root: root of the multifab header file for the checkpoint.
+     * \param[in] X: vector of multifabs containing the solution at each level.
+     * \param[in] L: vector of multifabs containing the level set at each level.
+    */
+    void SinglePatch::read_checkpoint_multifabs_header_file(const int restart_n, const std::string & filename_root,
+                                                            Vector<MultiFab> & X, Vector<MultiFab> & L)
+    {
+        // PARAMETERS -------------------------------------------------
+        const std::string step_string = this->inputs.get_step_string(restart_n);
+
+        constexpr std::streamsize bl_ignore_max{100000};
+        // ------------------------------------------------------------
+
+        // HEADER FILE FOR MULTIFABS ----------------------------------
+        {
+            const std::string header_filepath = io::make_path({this->inputs.output_folderpath, filename_root+"_header_multifabs_"+step_string+".txt"});
+            VisMF::IO_Buffer io_buffer(VisMF::GetIOBufferSize());
+
+            Vector<char> file_char_ptr;
+            ParallelDescriptor::ReadAndBcastFile(header_filepath, file_char_ptr);
+            std::string file_char_ptr_str(file_char_ptr.dataPtr());
+            std::istringstream is(file_char_ptr_str, std::istringstream::in);
+
+            std::string line;
+            int n_comp;
+            IntVect n_grow;
+
+            std::getline(is, line);
+            is >> this->finest_level;
+            is.ignore(bl_ignore_max, '\n');
+            for (int lev = 0; lev <= this->max_level; ++lev)
+            {
+                BoxArray ba;
+                ba.readFrom(is);
+                is.ignore(bl_ignore_max, '\n');
+                DistributionMapping dm(ba, ParallelDescriptor::NProcs());
+
+                this->SetBoxArray(lev, ba);
+                this->SetDistributionMap(lev, dm);
+
+                is >> n_comp;
+                is >> n_grow;
+                
+                L[lev].define(this->grids[lev], this->dmap[lev], n_comp, n_grow);
+                
+                is >> n_comp;
+                is >> n_grow;
+                
+                X[lev].define(this->grids[lev], this->dmap[lev], n_comp, n_grow);
+            }
+        }
+        // ------------------------------------------------------------
+    }
+
+    /**
+     * \brief Read a checkpoint for a solution using a projected level set.
+     *
+     * \param[in] restart_n: index of the restart checkpoint.
+     * \param[in] filename_root: root of the filename of the checkpoint files.
+     * \param[in] X: vector of multifabs containing the solution at each level.
+     * \param[in] L: vector of multifabs containing the level set at each level.
+    */
+    void SinglePatch::read_checkpoint_using_projected_level_set(const int restart_n, const std::string & filename_root,
+                                                                Vector<MultiFab> & X, Vector<MultiFab> & L)
+    {
+        // HEADER FILE ------------------------------------------------
+        this->read_checkpoint_header_file(restart_n, filename_root);
+        // ------------------------------------------------------------
+
+        // HEADER FILE FOR MULTIFABS ----------------------------------
+        this->read_checkpoint_multifabs_header_file(restart_n, filename_root, X, L);
+        // ------------------------------------------------------------
+
+        // SOLUTION AND LEVEL SET MULTIFABS ---------------------------
+        for (int lev = 0; lev <= this->finest_level; ++lev)
+        {
+            const std::string level_folderpath = this->inputs.get_level_folderpath(lev);
+            const std::string level_checkpoint_folderpath = this->inputs.get_level_checkpoint_folderpath(lev, restart_n);
+
+            const std::string filepath_X = io::make_path({level_checkpoint_folderpath, filename_root+"_X"});
+            const std::string filepath_L = io::make_path({level_checkpoint_folderpath, filename_root+"_L"});
+
+            VisMF::Read(X[lev], filepath_X);
+            VisMF::Read(L[lev], filepath_L);
+        }
+        // ------------------------------------------------------------
+    }
     // ================================================================
 // ####################################################################
 
