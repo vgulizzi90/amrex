@@ -950,14 +950,14 @@ public amrex::dG::amr::SinglePatch
 
 
     // INPUT/OUTPUT ===================================================
-    void write_sampled_solution(const int n, const amrex::Real t_) const
+    void write_sampled_solution(const int lev, const int n, const amrex::Real t_) const
     {
         // PARAMETERS -------------------------------------------------
         // CURRENT PROCESSOR
         const int rank = amrex::ParallelDescriptor::MyProc();
 
         // OUTPUT FILEPATH
-        const std::string filepath = amrex::dG::io::make_path({this->inputs.output_folderpath, "sampled_solution.txt"});
+        const std::string filepath = amrex::dG::io::make_path({this->inputs.output_folderpath, "Level_"+std::to_string(lev)+"_sampled_solution.txt"});
 
         // DOMAIN
         const int dom = 0;
@@ -975,7 +975,7 @@ public amrex::dG::amr::SinglePatch
 
         // VARIABLES --------------------------------------------------
         amrex::Vector<int> sampling_points_rank(n_sampling_points);
-        amrex::Vector<amrex::Real> sampled_fields(n_sampling_points*n_sampled_fields_per_point, 0.0);
+        amrex::Vector<amrex::Real> sampled_fields(n_sampling_points*n_sampled_fields_per_point);
 
         // WRITING TOOLS
         std::ofstream fp;
@@ -984,8 +984,8 @@ public amrex::dG::amr::SinglePatch
 
         // SAMPLE THE FIELDS ------------------------------------------
         std::fill(sampling_points_rank.begin(), sampling_points_rank.end(), -1);
+        std::fill(sampled_fields.begin(), sampled_fields.end(), std::sqrt(-1.0));
 
-        for (int lev = 0; lev <= this->finest_level; ++lev)
         {
             // GRID
             const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = this->Geom(lev).CellSizeArray();
@@ -1035,6 +1035,7 @@ public amrex::dG::amr::SinglePatch
                             cond = cond && (cell_lo[1] <= xs[1]) && (xs[1] <= cell_hi[1]);,
                             cond = cond && (cell_lo[2] <= xs[2]) && (xs[2] <= cell_hi[2]);
                         )
+                        cond = cond && (sampling_points_rank[s] == -1);
 
                         if (cond)
                         {
@@ -1069,13 +1070,16 @@ public amrex::dG::amr::SinglePatch
         
         for (int s = 0; s < n_sampling_points; ++s)
         {
-            if ((sampling_points_rank[s] != rank) && (amrex::ParallelDescriptor::IOProcessor()))
+            if (sampling_points_rank[s] != -1)
             {
-                amrex::ParallelDescriptor::Recv(&sampled_fields[n_sampled_fields_per_point*s], n_sampled_fields_per_point, sampling_points_rank[s], 0);
-            }
-            else if ((sampling_points_rank[s] == rank) && (!amrex::ParallelDescriptor::IOProcessor()))
-            {
-                amrex::ParallelDescriptor::Send(&sampled_fields[n_sampled_fields_per_point*s], n_sampled_fields_per_point, amrex::ParallelDescriptor::IOProcessorNumber(), 0);
+                if ((sampling_points_rank[s] != rank) && (amrex::ParallelDescriptor::IOProcessor()))
+                {
+                    amrex::ParallelDescriptor::Recv(&sampled_fields[n_sampled_fields_per_point*s], n_sampled_fields_per_point, sampling_points_rank[s], 0);
+                }
+                else if ((sampling_points_rank[s] == rank) && (!amrex::ParallelDescriptor::IOProcessor()))
+                {
+                    amrex::ParallelDescriptor::Send(&sampled_fields[n_sampled_fields_per_point*s], n_sampled_fields_per_point, amrex::ParallelDescriptor::IOProcessorNumber(), 0);
+                }
             }
         }
         // ------------------------------------------------------------
@@ -1137,6 +1141,14 @@ public amrex::dG::amr::SinglePatch
             // CLOSE FILE
             fp.close();
             // ----------
+        }
+    }
+
+    void write_sampled_solution(const int n, const amrex::Real t_) const
+    {
+        for (int lev = 0; lev <= this->finest_level; ++lev)
+        {
+            this->write_sampled_solution(lev, n, t_);
         }
     }
 

@@ -172,7 +172,8 @@ void main_main()
             amrex::Print() << "| COMPUTED TIME STEP: n = "+std::to_string(n)+", dt = ";
             amrex::Print() << std::scientific << std::setprecision(5) << std::setw(12)
                             << dt << ", t = " << t
-                            << ", ct [s] = " << ct_avg 
+                            << ", ct [s] = " << ct
+                            << ", cta [s] = " << ct_avg 
                             << ", eta = " << amrex::dG::seconds_to_hms(eta) << std::endl;
         }
     }
